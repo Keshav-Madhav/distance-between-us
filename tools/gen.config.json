@@ -1,0 +1,9 @@
+{
+  "model": "gemini-3-pro-image",
+  "apiRevision": "2026-05-20",
+  "presets": {
+    "tile-topdown": "A single seamless tileable texture, photographed perfectly top-down (orthographic, no perspective, no horizon, no vanishing point), flat even overhead daylight with no strong cast shadows, filling the whole frame edge to edge, no objects, no text, no border, no vignette. Usable as a PBR albedo map for a video game.",
+    "tile-face": "A single seamless tileable texture of a vertical rock face, viewed perfectly straight-on (orthographic, no perspective, no sky, no ground, no horizon), flat even lighting with no strong cast shadows, filling the whole frame edge to edge, no text, no border. Usable as a PBR albedo map for a video game.",
+    "keyart": "Cinematic key art for a high-speed sci-fi racing-combat video game. Wide composition, dramatic, no text, no logos, no watermark."
+  }
+}

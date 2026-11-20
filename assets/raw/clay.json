@@ -1,0 +1,32 @@
+{
+  "name": "clay",
+  "model": "gemini-3-pro-image",
+  "preset": "tile-topdown",
+  "aspect": "1:1",
+  "size": "2K",
+  "request": "Sun-baked cracked mud of a dry desert riverbed seen from directly above: irregular polygon plates 10 to 30 cm across with slightly curled edges, deep thin cracks between them, pale tan-cream clay with a faint pink-orange tint, a little fine sand in the cracks.",
+  "prompt": "A single seamless tileable texture, photographed perfectly top-down (orthographic, no perspective, no horizon, no vanishing point), flat even overhead daylight with no strong cast shadows, filling the whole frame edge to edge, no objects, no text, no border, no vignette. Usable as a PBR albedo map for a video game.\n\nSubject: Sun-baked cracked mud of a dry desert riverbed seen from directly above: irregular polygon plates 10 to 30 cm across with slightly curled edges, deep thin cracks between them, pale tan-cream clay with a faint pink-orange tint, a little fine sand in the cracks.\n\nStyle bible: High-resolution, crisp, richly detailed natural desert material, slightly stylized: clean, vivid and\nsaturated colour (burnt orange, rust red, cream), high contrast, like a premium modern stylized-realistic\nvideo game such as a AAA racing game. Colour palette: burnt orange sand #D9824A, rust red rock #9E3A1E,\ncream bands #E8C49A, deep shadows tinted warm brown, never grey. No people, no vehicles, no plants unless asked, no text.",
+  "usage": {
+    "total_tokens": 1848,
+    "total_input_tokens": 248,
+    "input_tokens_by_modality": [
+      {
+        "modality": "text",
+        "tokens": 248
+      }
+    ],
+    "total_cached_tokens": 0,
+    "total_output_tokens": 1326,
+    "output_tokens_by_modality": [
+      {
+        "modality": "image",
+        "tokens": 1120
+      }
+    ],
+    "total_tool_use_tokens": 0,
+    "total_thought_tokens": 274,
+    "initial_input_tokens": 248
+  },
+  "ms": 30444,
+  "date": "2026-11-20T14:02:40.202Z"
+}

@@ -1,0 +1,8 @@
+node_modules
+dist
+shots
+.env
+.env.*
+.DS_Store
+assets/raw/*.jpg
+assets/check

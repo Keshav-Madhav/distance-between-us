@@ -1,0 +1,32 @@
+{
+  "name": "keyart",
+  "model": "gemini-3-pro-image",
+  "preset": "keyart",
+  "aspect": "16:9",
+  "size": "4K",
+  "request": "A sleek pearl-white futuristic hover-racer with three blazing orange-white rear thrusters and long glowing exhaust trails, screaming low over an endless orange desert at hypersonic speed, kicking up a rooster tail of sand, a visible vapour cone around it. Towering red sandstone mesas on the horizon, huge clear deep-blue sky, hard bright sun. Dark enemy drones with red glows explode in fireballs behind it. Strong motion blur at the edges, the craft sharp in the centre. Low chase-camera angle from behind.",
+  "prompt": "Cinematic key art for a high-speed sci-fi racing-combat video game. Wide composition, dramatic, no text, no logos, no watermark.\n\nSubject: A sleek pearl-white futuristic hover-racer with three blazing orange-white rear thrusters and long glowing exhaust trails, screaming low over an endless orange desert at hypersonic speed, kicking up a rooster tail of sand, a visible vapour cone around it. Towering red sandstone mesas on the horizon, huge clear deep-blue sky, hard bright sun. Dark enemy drones with red glows explode in fireballs behind it. Strong motion blur at the edges, the craft sharp in the centre. Low chase-camera angle from behind.\n\nStyle bible: High-resolution, crisp, richly detailed natural desert material, slightly stylized: clean, vivid and\nsaturated colour (burnt orange, rust red, cream), high contrast, like a premium modern stylized-realistic\nvideo game such as a AAA racing game. Colour palette: burnt orange sand #D9824A, rust red rock #9E3A1E,\ncream bands #E8C49A, deep shadows tinted warm brown, never grey. No people, no vehicles, no plants unless asked, no text.",
+  "usage": {
+    "total_tokens": 2859,
+    "total_input_tokens": 256,
+    "input_tokens_by_modality": [
+      {
+        "modality": "text",
+        "tokens": 256
+      }
+    ],
+    "total_cached_tokens": 0,
+    "total_output_tokens": 2227,
+    "output_tokens_by_modality": [
+      {
+        "modality": "image",
+        "tokens": 2000
+      }
+    ],
+    "total_tool_use_tokens": 0,
+    "total_thought_tokens": 376,
+    "initial_input_tokens": 256
+  },
+  "ms": 40542,
+  "date": "2026-11-20T14:02:50.300Z"
+}

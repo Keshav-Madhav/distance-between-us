@@ -1,0 +1,10 @@
+import { chromium } from 'playwright-core'
+const b = await chromium.launch({ channel: 'chrome', headless: true, args: ['--mute-audio','--use-gl=angle','--ignore-gpu-blocklist'] })
+const p = await (await b.newContext({ viewport: { width: 1280, height: 720 } })).newPage()
+await p.goto('http://localhost:4417/?fixed'); await p.waitForFunction('window.__g && window.__g.ready')
+await p.evaluate(() => { __g.start(); __g.autopilot(false); __g.CFG.speed.cruiseMach = 2.5; __g.setMach(2.5) })
+await p.waitForTimeout(1500)
+await p.evaluate(() => __g.boom(260))
+await p.waitForTimeout(150); await p.screenshot({ path: 'shots/boom1.png' })
+await p.waitForTimeout(250); await p.screenshot({ path: 'shots/boom2.png' })
+await b.close()
