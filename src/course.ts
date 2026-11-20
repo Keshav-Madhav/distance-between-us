@@ -110,14 +110,14 @@ export class Course {
     // ── gates ──
     const dark = new THREE.MeshStandardMaterial({ color: 0x24262b, roughness: 0.45, metalness: 0.8 })
     patchStandard(dark)
-    const towerGeo = new THREE.CylinderGeometry(4, 7, 90, 4, 1)
-    towerGeo.translate(0, 45, 0)
-    towerGeo.rotateY(Math.PI / 4)
+    // Square towers (faces along the track), a lit strip pair on each inner face.
+    const towerGeo = new THREE.BoxGeometry(8.5, 96, 8.5)
+    towerGeo.translate(0, 48, 0)
     const towers = new THREE.InstancedMesh(towerGeo, dark, K * 2)
-    const lightGeo = new THREE.BoxGeometry(1.2, 80, 1.2)
-    lightGeo.translate(0, 48, 0)
+    const lightGeo = new THREE.BoxGeometry(0.6, 78, 1.3)
+    lightGeo.translate(0, 50, 0)
     this.towerLights = new THREE.InstancedMesh(lightGeo, new THREE.MeshBasicMaterial({ color: 0xffffff }), K * 4)
-    const beamGeo = new THREE.BoxGeometry(GATE_HALF * 2, 3, 3)
+    const beamGeo = new THREE.BoxGeometry(GATE_HALF * 2 + 8, 5, 2.5)
     this.beamMesh = new THREE.InstancedMesh(beamGeo, new THREE.MeshBasicMaterial({ color: 0xffffff }), K)
     const m = new THREE.Matrix4(), q = new THREE.Quaternion(), s = new THREE.Vector3(1, 1, 1), v = new THREE.Vector3()
     const Y = new THREE.Vector3(0, 1, 0)
@@ -132,12 +132,13 @@ export class Course {
         const g = groundH(x, z)
         hmax = Math.max(hmax, g)
         towers.setMatrixAt(k * 2 + (side > 0 ? 1 : 0), m.compose(v.set(x, g - 4, z), q, s))
-        for (const off of [-4.5, 4.5]) {
-          const lx = x + c.tx * off, lz = z + c.tz * off
+        for (const off of [-2, 2]) {
+          // On the face toward the track: −side along the normal (tz, −tx).
+          const lx = x + c.tx * off - c.tz * 4.45 * side, lz = z + c.tz * off + c.tx * 4.45 * side
           this.towerLights.setMatrixAt(k * 4 + (side > 0 ? 2 : 0) + (off > 0 ? 1 : 0), m.compose(v.set(lx, g - 4, lz), q, s))
         }
       }
-      this.beamMesh.setMatrixAt(k, m.compose(v.set(c.x, hmax + 84, c.z), q, s))
+      this.beamMesh.setMatrixAt(k, m.compose(v.set(c.x, hmax + 90, c.z), q, s))
     }
     for (const im of [towers, this.towerLights, this.beamMesh]) { im.frustumCulled = false; this.group.add(im) }
 
@@ -281,7 +282,7 @@ export class Course {
       const pulse = 0.75 + 0.25 * Math.sin(time * 6)
       if (k === 0) this.col.setRGB(5, 1.6, 0.3).multiplyScalar(isNext ? pulse * 1.4 : 0.7)
       else if (isNext) this.col.setRGB(0.6, 3.2, 5).multiplyScalar(pulse)
-      else this.col.setRGB(0.9, 0.9, 1).multiplyScalar(0.35)
+      else this.col.setRGB(1.6, 1.2, 0.9).multiplyScalar(0.55)
       this.beamMesh.setColorAt(k, this.col)
       for (let j = 0; j < 4; j++) this.towerLights.setColorAt(k * 4 + j, this.col)
     }

@@ -11,8 +11,16 @@ npm run build && npm run preview   # http://localhost:4417
 node tools/shot.mjs  # screenshots + frame times into shots/ (needs the preview running)
 ```
 
-**Controls:** W/Shift boost · A/D steer · Q/E strafe (double-tap to dodge) · Space fire (lock first)
-· S air brake · Esc settings · ` debug · G feel GUI. Gamepad: RT boost, LT brake, stick, A fire.
+**Modes:** Race (Enter): three laps, 14 gates, five AI rivals, jumps and boost pads. Hunt (H): the
+combat sandbox with drones and the walker.
+
+**Controls:** W/Shift boost (hold it as the lights go for a perfect start) · A/D steer · Q/E strafe
+(double-tap to dodge) · S air brake, or dive in the air · R back to the last gate · Space fire (Hunt)
+· Esc settings (FOV, quality, volume) · ` debug · G feel GUI. Gamepad: RT boost, LT brake, stick, A
+fire.
+
+`node tools/race.mjs` drives a race with the autopilot and screenshots it. `node tools/shot.mjs`
+does the same for Hunt.
 
 Docs: `docs/DESIGN.md`, `docs/TECH.md`, `docs/ART_STYLE.md`, `docs/PERF_LOG.md`.
 

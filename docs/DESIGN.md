@@ -1,4 +1,4 @@
-# The Distance Between Us — design (POC vertical slice)
+# The Distance Between Us — design
 
 > Games never feel fast enough, so I'm making this.
 
@@ -6,46 +6,64 @@
 You aren't driving. You're falling forward at an impossible speed and barely holding on. Speed is
 something you feel, not a number on the HUD.
 
-## Core loop (first 2 minutes)
-1. **Launch** (0–10 s): from Mach 0.6, hold boost. Mach 1 to Mach 6 takes a few seconds. Each Mach
-   number cracks with a vapour cone, a flash and a camera kick.
-2. **The barrier:** at Mach 5.88 all sound cuts to near-silence and the frame goes white-hot for
-   0.5 s. Then the boom (a two-crack N-wave), a FOV punch, and you're past Mach 6.
-3. **Combat at speed:** drones overtake you and hold ahead, weaving and firing red tracers back at
-   you. Head-on passers scream by. A soft lock (a wobbling diamond) builds in about 0.4 s, then a
-   missile corkscrews after the target. The fireball keeps its momentum, then falls behind as you fly
-   through the smoke. The boom arrives late because sound travels at 343 m/s.
-4. **The Walker** (after 6 kills or 70 s): a 360 m reverse-jointed machine appears 15 km ahead, with
-   a warning banner, an edge arrow and a heavier score. It lobs leading three-orb plasma volleys that
-   you thread between. Kill its four glowing cores. It then collapses in slow motion, and a ground
-   shockwave chases you down and shoves you forward.
-5. Results card, then R to run again or C to keep flying.
+## Modes
+- **Race (the main game).** Six racers, three laps of a 40 km desert loop with 14 gates. AI rivals,
+  jumps, boost pads, and racing contact. Racing comes first; nobody is shooting.
+- **Hunt.** The original combat sandbox: lock-on missiles against drones, then a 360 m walker.
+
+## The race
+- **Grid and countdown:** 3-2-1-GO. Hold boost in the last half second for a perfect start (Mach 1.8
+  off the line). Pressing too early bogs you down.
+- **Gates:** each is a pair of 96 m towers with a glowing banner 520 m wide. The next gate is lit
+  cyan with a holographic curtain, and the finish is orange. Clipping past a gate or skipping one
+  costs +2 s. A gate chime plays as you pass; a lap gets a third note and a lap-time pop.
+- **Track reading:** pylons line both edges every 320 m (orange on one side, white on the other),
+  an arrow at the screen edge points to the next gate, and a minimap shows the whole loop.
+- **Boost pads:** chevron strips on the line add +Mach 0.75.
+- **Jumps:** mounds on and beside the line, plus riverbanks, launch you when taken fast.
+- **Rivals:** VEGA, KESTREL, NOMAD, ION and RUSH drive the same physics you do. They hold lanes,
+  swing out to pass, slow for bends their speed can't hold, and are rubber-banded mildly.
+- **Contact:** racers bump (a capped shove, sparks and a clang). Rock walls deflect you: a glancing
+  hit scrapes and keeps your speed, a head-on hit stops you. Wrecked racers respawn at their last
+  gate (R does this on demand) and pass through others as ghosts for 2.5 s.
+- Position, lap, time, penalties, live standings with gaps, wrong-way and off-course warnings, and a
+  results table at the end.
+
+## Flight
+Ground effect holds the craft over dunes. A crest that would strip more than 45 m/s of climb within
+40 m launches you; that's speed-dependent, so the same mound launches at Mach 3 and is just ridden
+over at Mach 1.5. In the air:
+- Gravity is 44 m/s².
+- Yaw keeps 60% authority, and brake turns into a dive.
+- The nose follows the flight path and levels itself for the landing.
+
+Landings are always survivable: suspension squash, a dust ring, a thump, and a small speed loss on
+hard ones. Jumps last about 2–3 s and reach about 50–60 m at Mach 3.
 
 ## Controls
 | Action | Keyboard | Gamepad |
 |---|---|---|
-| Boost (afterburner) | W / Shift / ↑ | RT |
+| Boost | W / Shift / ↑ | RT |
 | Steer | A D / ← → | left stick |
 | Strafe / dodge | Q E (double-tap dodges) | right stick / LB, B |
-| Fire missile | Space / click / J | A / RB |
-| Air brake (can't drop below Mach 0.9) | S / ↓ | LT |
-| Settings | Esc | |
+| Air brake (in the air: dive) | S / ↓ | LT |
+| Back to the last gate | R | |
+| Restart | Shift+R | |
+| Fire (Hunt) | Space / click | A |
+| Settings (quality, FOV, volume, shake) | Esc | |
 | Debug overlay / feel GUI | ` / G | |
 
 ## Feel
-- A twitchy yaw that eases in over about 60 ms. The craft drifts sideways out of turns, banks, and
-  pitches with G-force.
-- Chase camera: heading lags so turns whip it round. Acceleration pulls it back and braking shoves
-  it in. FOV runs from 64° to 100° with speed, with punches on boost and Mach breaks. Shake is noise
-  driven by trauma², with a constant rumble floor at high speed.
-- Hitstop on kills, slow motion on the Walker's fall and on death, gamepad rumble.
-- Riverbeds are flat, rock-free tracks. Boulders clip you (sparks, a jolt), and mesas wreck you (−30
-  hull, speed lost, deflected along the wall).
+- **Camera:** every part is a critically damped spring. It follows the real direction of travel, so
+  drifts show. G-force pulls it back on acceleration and pushes it in on braking. In the air it lifts
+  and frames the craft. It never goes inside rock or below the ground, and impacts kick it away from
+  the wall.
+- **FOV:** goes from 68° up to the FOV setting (98° by default) as speed rises.
+- **Impacts:** a big hit gives hitstop, a zoom-in, a camera kick, a chromatic aberration spike, a red
+  edge, sparks, rock debris, a sand plume and rumble. Scrapes throw a continuous stream of sparks
+  with a grinding sound.
+- **The Mach 6 barrier:** half a second of near-silence and white-out, then the sonic boom.
 
-## World and art
-An endless desert: wind-rippled orange sand, gravel patches, cracked-clay riverbeds, red sandstone
-mesas, buttes and spires, a huge blue sky. The style bible is in `ART_STYLE.md`.
-
-## Out of scope for the POC
-Canyons, a rear-view mirror, more enemy types, progression or upgrades, online leaderboards,
-touch controls, mobile tuning, KTX2 texture compression, story.
+## Out of scope (still)
+Canyons, a rear-view mirror, more tracks, career mode or upgrades, online play, touch controls,
+mobile tuning, KTX2 texture compression.

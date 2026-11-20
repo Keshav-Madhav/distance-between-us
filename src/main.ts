@@ -139,7 +139,7 @@ const PAINTS: Paint[] = [
   { body: 0x16324a, trim: 0x29d3ff, number: '88' },
   { body: 0xd8dde2, trim: 0xff3b30, number: '31' },
 ]
-interface Visual { craft: Craft; trail: Trail[]; vapour: Trail[]; lastDust: THREE.Vector3; heading: number }
+interface Visual { craft: Craft; trail: Trail[]; vapour: Trail[]; lastDust: THREE.Vector3; heading: number; wasDead: boolean; wasHidden: boolean }
 const visuals = new Map<Player, Visual>()
 race.racers.forEach((r, i) => {
   const craft = new Craft(env, PAINTS[i])
@@ -159,13 +159,32 @@ race.racers.forEach((r, i) => {
     vapour.push(t)
     scene.add(t.mesh)
   }
-  visuals.set(r.p, { craft, trail, vapour, lastDust: new THREE.Vector3(), heading: 0 })
+  visuals.set(r.p, { craft, trail, vapour, lastDust: new THREE.Vector3(), heading: 0, wasDead: false, wasHidden: false })
   if (r.ai) {
     r.p.onCrash = (sev, big, x, y, z) => { if (camera.position.distanceTo(r.p.pos) < 800) sparks(x, y, z, r.p.vel, big ? 30 : 10, 0.7 + sev) }
     r.p.onLand = (impact) => { if (camera.position.distanceTo(r.p.pos) < 700) landDust(r.p, impact) }
   }
 })
 const myCraft = visuals.get(player)!.craft
+
+// Blob shadows under the rivals (the player's is drawn by the ground shader itself).
+const shadowMesh = new THREE.InstancedMesh(
+  new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2),
+  new THREE.ShaderMaterial({
+    transparent: true,
+    depthWrite: false,
+    vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * viewMatrix * modelMatrix * instanceMatrix * vec4(position, 1.0); }',
+    fragmentShader: 'varying vec2 vUv; void main(){ vec2 p = vUv * 2.0 - 1.0; float a = 1.0 - smoothstep(0.35, 1.0, length(p)); gl_FragColor = vec4(0.05, 0.02, 0.01, a * 0.5); }',
+  }),
+  race.racers.length,
+)
+shadowMesh.frustumCulled = false
+shadowMesh.renderOrder = 1
+scene.add(shadowMesh)
+const shadowM = new THREE.Matrix4()
+const shadowQ = new THREE.Quaternion()
+const shadowS = new THREE.Vector3()
+const Y_AXIS = new THREE.Vector3(0, 1, 0)
 
 // Hunt mode: the old combat sandbox.
 const combat = new Combat({
@@ -297,10 +316,9 @@ function die(): void {
   sound.death()
   shake(1)
   slowmoT = 1.4
-  myCraft.root.visible = false
   if (mode === 'race') {
     race.racers[0].respawnT = 1.8
-    setTimeout(() => { if (mode === 'race') { myCraft.root.visible = true; sound.revive() } }, 1800)
+    setTimeout(() => { if (mode === 'race') sound.revive() }, 1800)
   } else setTimeout(() => showHuntOver(), 2200)
 }
 
@@ -544,9 +562,20 @@ function huntAutopilot(): void {
     dh = Math.atan2(Math.sin(dh), Math.cos(dh))
     steer = THREE.MathUtils.clamp(-dh * 2, -1, 1)
   }
-  c.steer = steer
+  // Rocks ahead: steer around them.
+  const look = Math.max(600, player.speed * 1.4)
+  const n = world.near(player.pos.x + player.fwd.x * look * 0.5, player.pos.z + player.fwd.z * look * 0.5, player.pos.y, look * 0.6, huntObs)
+  for (let i = 0; i < n; i++) {
+    const o = huntObs[i]
+    tmp.set(o.x - player.pos.x, 0, o.z - player.pos.z)
+    const ahead = tmp.dot(player.fwd)
+    const side = tmp.dot(player.right)
+    if (ahead > 0 && ahead < look && Math.abs(side) < o.cr + (o.big ? 160 : 30)) steer += side > 0 ? -1.2 : 1.2
+  }
+  c.steer = THREE.MathUtils.clamp(steer, -1, 1)
   input.fire = combat.locked
 }
+const huntObs: import('./world').Obstacle[] = []
 
 /** Draw one racer's craft, flames, trails and dust. */
 function drawRacer(p: Player, alpha: number, dt: number, isMe: boolean): void {
@@ -653,9 +682,36 @@ function frame(now: number): void {
   const alpha = mode === 'title' ? 1 : acc / STEP
 
   for (const r of race.racers) {
-    if (r.ai && mode !== 'race') { visuals.get(r.p)!.craft.root.visible = false; continue }
+    const v = visuals.get(r.p)!
+    if (r.ai && mode !== 'race') { v.craft.root.visible = false; continue }
+    // Wrecked: a fireball, then hidden until the respawn (visibility always follows the state).
+    if (r.p.dead && !v.wasDead && r.ai && camera.position.distanceTo(r.p.pos) < 3000) {
+      fx.explosion(r.p.pos.x, r.p.pos.y + 1, r.p.pos.z, r.p.vel.x * 0.6, 8, r.p.vel.z * 0.6, 1.6)
+      sound.explosion(camera.position.distanceTo(r.p.pos), 1.5)
+    }
+    v.wasDead = r.p.dead
+    v.craft.root.visible = !r.p.dead
+    if (!r.p.dead && v.wasHidden) { v.lastDust.copy(r.p.pos); for (const t of v.trail) t.reset() }
+    v.wasHidden = r.p.dead
     drawRacer(r.p, alpha, dt, r.p === player)
   }
+  let ns = 0
+  if (mode === 'race') for (const r of race.racers) {
+    if (!r.ai) continue
+    const c = visuals.get(r.p)!.craft
+    if (!c.root.visible) continue
+    const p = c.root.position
+    const g = groundH(p.x, p.z)
+    const h = Math.max(0, p.y - g)
+    // Cast along the sun; wider and fainter the higher it flies.
+    const k = 1 + h * 0.04
+    shadowS.set(6.4 * k, 1, 10.5 * k)
+    shadowQ.setFromAxisAngle(Y_AXIS, visuals.get(r.p)!.heading)
+    shadowM.compose(tmp.set(p.x - (SUN_DIR[0] / SUN_DIR[1]) * h, g + 0.3, p.z - (SUN_DIR[2] / SUN_DIR[1]) * h), shadowQ, shadowS)
+    if (h < 120) shadowMesh.setMatrixAt(ns++, shadowM)
+  }
+  shadowMesh.count = ns
+  shadowMesh.instanceMatrix.needsUpdate = true
   renderPos.copy(myCraft.root.position)
   const heading = visuals.get(player)!.heading
   coneA = Math.max(0, coneA - realDt * 2.2)
@@ -664,11 +720,13 @@ function frame(now: number): void {
 
   if (mode === 'title') {
     attractYaw += realDt * 0.12
-    const r = 13
-    const a = Math.PI * 0.82 + Math.sin(attractYaw) * 0.5
-    camera.position.set(renderPos.x + Math.sin(a) * r, renderPos.y + 1.4, renderPos.z + Math.cos(a) * r)
-    camera.lookAt(renderPos.x, renderPos.y + 2.6, renderPos.z)
-    camera.fov = 46
+    // A low three-quarter view, the ship in the lower right, the title above it.
+    const r = 17
+    const a = heading + Math.PI * 0.8 + Math.sin(attractYaw) * 0.3
+    camera.position.set(renderPos.x + Math.sin(a) * r, renderPos.y + 1.1, renderPos.z + Math.cos(a) * r)
+    tmp.set(-Math.cos(a), 0, Math.sin(a))
+    camera.lookAt(renderPos.x + tmp.x * 2.2, renderPos.y + 3.4, renderPos.z + tmp.z * 2.2)
+    camera.fov = 42
     camera.updateProjectionMatrix()
   } else {
     cam.update(realDt, time, player, renderPos, heading, world, fovMax)
@@ -886,7 +944,6 @@ addEventListener('keydown', (e) => {
       v.lastDust.copy(player.pos)
       for (const t of v.trail) t.reset()
       cam.snap(player.heading)
-      myCraft.root.visible = true
     }
   }
 })
@@ -941,6 +998,6 @@ const g = {
     tier, scale: renderScale, hull: Math.round(player.hull), air: player.airborne, agl: +player.agl.toFixed(1),
     place: race.racers[0].place, lap: race.lapOf(race.racers[0]), passed: race.racers[0].passed, race: race.state, particles: fx.glow.count + fx.smoke.count,
   }),
-  player, race, course, combat, walker, CFG,
+  player, race, course, combat, walker, CFG, world,
 }
 ;(window as unknown as { __g: typeof g }).__g = g

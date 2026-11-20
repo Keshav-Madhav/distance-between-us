@@ -40,10 +40,29 @@ const scenes = {
     }
     await shot('r-lap')
   },
+  async gate() {
+    await page.evaluate(() => { const g = window.__g; if (g.mode !== 'race') g.start(); g.skipCountdown(); g.autopilot(false) })
+    await wait(300)
+    await page.evaluate(() => { const g = window.__g; const c = g.course.cps[3]; g.player.reset(c.x - c.tx * 700, c.z - c.tz * 700, Math.atan2(c.tx, c.tz), 2.2) })
+    await wait(650); await shot('r-gate')
+  },
   async wall() {
-    // Aim at the nearest mesa beside the course and hit it.
-    await page.evaluate(() => { const g = window.__g; g.autopilot(false); g.setMach(3) })
-    await wait(2500); await shot('r-wall')
+    // Find a mesa near the player and fly straight at it.
+    await page.evaluate(() => { const g = window.__g; if (g.mode !== 'race') g.start(); g.skipCountdown(); g.autopilot(false) })
+    await wait(300)
+    const ok = await page.evaluate(() => {
+      const g = window.__g, p = g.player, out = []
+      g.world.update(p.pos, 0)
+      const n = g.world.near(p.pos.x, p.pos.z, p.pos.y, 6000, out)
+      const o = out.slice(0, n).filter((o) => o.big)[0]
+      if (!o) return false
+      const dx = o.x - p.pos.x, dz = o.z - p.pos.z, d = Math.hypot(dx, dz)
+      p.reset(o.x - dx / d * (o.cr + 900), o.z - dz / d * (o.cr + 900), Math.atan2(dx, dz), 2.5)
+      return true
+    })
+    if (!ok) { console.log('no mesa'); return }
+    for (let i = 0; i < 50; i++) { await wait(40); const s = await page.evaluate(() => window.__g.stats()); if (s.hull < 100) { await wait(40); await shot('r-wall'); await wait(400); await shot('r-wall2'); return } }
+    await shot('r-wall')
   },
 }
 for (const n of want.length ? want : ['title', 'grid', 'go', 'run', 'jump']) await scenes[n]()

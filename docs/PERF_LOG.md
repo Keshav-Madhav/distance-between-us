@@ -11,6 +11,8 @@ at 60 Hz.
 | 2026-11-20 | combat, 5 s sample | 60 | 16.60 / 16.70 / 16.80 | 60 | 802k | 1,485 |
 | 2026-11-20 | Walker fight | 60 | 16.7 | 77 | 799k | 113 |
 | 2026-11-20 | Walker collapse | 60 | 16.7 | 82 | 805k | 2,480 |
+| 2026-11-20 | race, 6 racers, 5 s sample | 60 | 16.70 p50 / 16.80 p99 | 92 | 835k | 1,170 |
+| 2026-11-20 | race start (all 6 near) | 60 | 16.7 | 111 | 880k | 1,250 |
 
 The triangle count is dominated by about 350 mesas (each around 1–2k tris, all drawn with no LODs)
 and the near terrain ring. The next lever is mesa LODs and per-instance culling.

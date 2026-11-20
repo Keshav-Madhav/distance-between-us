@@ -28,7 +28,7 @@ async function shot(name) {
 const scenes = {
   async title() { await wait(1500); await shot('title') },
   async launch() {
-    await page.evaluate(() => { window.__g.start(); window.__g.autopilot(true) })
+    await page.evaluate(() => { window.__g.startHunt(); window.__g.autopilot(true) })
     await wait(1200); await shot('launch')
     await wait(5000); await shot('cruise')
   },
@@ -50,7 +50,7 @@ const scenes = {
     await wait(4000); await shot('down')
   },
   async walkerview() {
-    await page.evaluate(() => { const g = window.__g; g.start(); g.autopilot(false); g.CFG.speed.cruiseMach = 1.2; g.setMach(1.2); g.walkerNear() })
+    await page.evaluate(() => { const g = window.__g; g.startHunt(); g.autopilot(false); g.CFG.speed.cruiseMach = 1.2; g.setMach(1.2); g.walkerNear() })
     await wait(2500); await shot('walkerview')
     await page.evaluate(() => window.__g.killCores())
     await wait(2200); await shot('wfall')
