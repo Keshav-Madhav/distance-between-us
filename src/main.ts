@@ -75,6 +75,8 @@ let slowmoT = 0
 let hitstop = 0
 let walkerDone = false
 let autopilot = params.has('auto')
+/** Tools: scripted controls override the keyboard. */
+let forced: import('./player').Controls | null = null
 let wrongT = 0
 let offT = 0
 let fovMax = CFG.camera.fovMax
@@ -242,6 +244,24 @@ player.onLand = (impact, air) => {
   cam.impulse(0, -1, 0, Math.min(1.5, impact / 50))
   input.rumble(Math.min(1, impact / 80), 0.5, 180)
   if (air > 1.2) pop(`AIR ${air.toFixed(1)} S`)
+}
+player.onSpin = (flip) => {
+  flash(flip ? 'FLIPPED' : 'SPUN OUT')
+  sound.crash(flip)
+  shake(flip ? 0.9 : 0.45)
+  cam.punch -= flip ? 6 : 2
+  impactPulse = Math.max(impactPulse, flip ? 1 : 0.4)
+  if (flip) { damageFlash = Math.max(damageFlash, 0.6); hitstop = Math.max(hitstop, 0.06) }
+  input.rumble(1, 0.8, flip ? 600 : 300)
+  fx.dust(player.pos.x, groundH(player.pos.x, player.pos.z), player.pos.z, player.vel.x * 0.3, player.vel.z * 0.3, flip ? 30 : 16, 14, 30)
+  if (player.hull <= 0) die()
+}
+player.onDriftBoost = (lvl) => {
+  flash(lvl === 2 ? 'DRIFT BOOST II' : 'DRIFT BOOST')
+  sound.pad()
+  cam.punch += lvl === 2 ? 7 : 4
+  shake(0.2 + lvl * 0.1)
+  input.rumble(0.5, 0.9, 200)
 }
 player.onCrash = (sev, big, x, y, z, nx, nz) => {
   sound.crash(big)
@@ -498,6 +518,7 @@ qSel.onchange = () => { tierName = qSel.value as Tier | 'auto'; tier = tierName 
 const vols = () => sound.setVolumes(+$<HTMLInputElement>('#vm').value, +$<HTMLInputElement>('#vmu').value, +$<HTMLInputElement>('#vs').value)
 for (const id of ['#vm', '#vmu', '#vs']) $(id).oninput = vols
 $<HTMLInputElement>('#rs').onchange = (e) => { CFG.camera.reduceShake = (e.target as HTMLInputElement).checked }
+$<HTMLSelectElement>('#as').onchange = (e) => { player.assist = +(e.target as HTMLSelectElement).value }
 $<HTMLInputElement>('#fov').oninput = (e) => { fovMax = +(e.target as HTMLInputElement).value }
 try {
   const saved = localStorage.getItem('dbu-fov')
@@ -533,11 +554,11 @@ function simStep(): void {
   if (mode === 'race') {
     const me = race.racers[0]
     if (autopilot) race.drive(me, STEP)
-    race.step(STEP, autopilot ? me.controls : input.c, world)
+    race.step(STEP, forced ?? (autopilot ? me.controls : input.c), world)
     if (race.state !== 'grid') runTime += STEP
   } else if (mode === 'hunt') {
     if (autopilot) huntAutopilot()
-    player.step(STEP, input.c, world)
+    player.step(STEP, forced ?? input.c, world)
     combat.step(STEP, input.fire)
     walker.step(STEP)
     rebase()
@@ -589,9 +610,13 @@ function drawRacer(p: Player, alpha: number, dt: number, isMe: boolean): void {
   v.heading = heading
   craft.root.position.copy(tmp)
   craft.root.rotation.set(0, heading, 0)
-  craft.body.rotation.set(THREE.MathUtils.lerp(p.prevPitch, p.pitch, alpha), 0, -THREE.MathUtils.lerp(p.prevBank, p.bank, alpha))
-  // Suspension squash on landing.
-  craft.body.position.y = -p.squash * 0.55
+  // A flip: two full rolls (eased) on top of the bank.
+  const tu = 1 - p.tumble
+  const roll = p.tumble > 0 ? p.tumbleDir * Math.PI * 4 * (1 - (1 - tu) * (1 - tu)) : 0
+  craft.body.rotation.set(THREE.MathUtils.lerp(p.prevPitch, p.pitch, alpha), 0, -THREE.MathUtils.lerp(p.prevBank, p.bank, alpha) + roll)
+  // Suspension squash on landing; a slow float bob on the ground effect.
+  const bob = p.airborne ? 0 : Math.sin(time * 1.9 + p.pos.x * 0.001) * 0.16 + Math.sin(time * 3.1) * 0.05
+  craft.body.position.y = -p.squash * 0.55 + bob
   craft.body.scale.set(1 + p.squash * 0.04, 1 - p.squash * 0.1, 1)
   craft.root.updateMatrixWorld(true)
   craft.lod(camera.position)
@@ -626,6 +651,31 @@ function drawRacer(p: Player, alpha: number, dt: number, isMe: boolean): void {
       e.life = 0.9 + Math.random() * 1.1; e.size0 = 1.5; e.size1 = 9 + p.boost * 8
       e.r = 0.8; e.g = 0.42; e.b = 0.21; e.a = 0.3 * (1 - p.agl / 8); e.drag = 2.4; e.grav = 6
       fx.smoke.emit(e)
+    }
+  }
+  // Drifting: sand sprayed out sideways from under the hull, and glow sparks showing the charge.
+  if (near && (p.drifting || p.spin > 0) && !p.airborne) {
+    const out = p.slip > 0 ? 1 : -1
+    for (let i = 0; i < (isMe ? 5 : 2); i++) {
+      const e = resetE()
+      e.x = tmp.x + p.right.x * out * 2 + (Math.random() - 0.5) * 3; e.y = groundH(tmp.x, tmp.z) + 0.6; e.z = tmp.z + p.right.z * out * 2 + (Math.random() - 0.5) * 3
+      const sp = 40 + Math.abs(p.slip) * 90
+      e.vx = p.vel.x * 0.25 + p.right.x * out * sp; e.vy = 8 + Math.random() * 18; e.vz = p.vel.z * 0.25 + p.right.z * out * sp
+      e.life = 0.9 + Math.random() * 0.8; e.size0 = 2; e.size1 = 12; e.r = 0.82; e.g = 0.45; e.b = 0.22; e.a = 0.4; e.drag = 2.4; e.grav = 8
+      fx.smoke.emit(e)
+    }
+    if (isMe && p.drift > 0.9) {
+      const l2 = p.drift >= 2
+      for (const side of [0, 1]) {
+        nozzleW.copy(craft.sidePuffs[side]).applyMatrix4(craft.body.matrixWorld)
+        const e = resetE()
+        e.x = nozzleW.x; e.y = nozzleW.y - 0.4; e.z = nozzleW.z
+        e.vx = p.vel.x * 0.9 + (Math.random() - 0.5) * 30; e.vy = Math.random() * 20; e.vz = p.vel.z * 0.9 + (Math.random() - 0.5) * 30
+        e.life = 0.25; e.size0 = 0.6; e.size1 = 0.3; e.streak = 1; e.drag = 2; e.grav = 30
+        if (l2) { e.r = 7; e.g = 2.5; e.b = 0.6 } else { e.r = 1.2; e.g = 3.5; e.b = 7 }
+        e.a = 1
+        fx.glow.emit(e)
+      }
     }
   }
   // Rubbing rock: a stream of sparks at the contact.
@@ -740,7 +790,7 @@ function frame(now: number): void {
   combat.group.visible = mode === 'hunt'
   fx.update(dt)
   for (const v of visuals.values()) for (const t of [...v.trail, ...v.vapour]) t.build(camera.position)
-  sound.scrape(mode === 'title' ? 0 : player.scrape)
+  sound.scrape(mode === 'title' ? 0 : Math.max(player.scrape, player.drifting || player.spin > 0 ? 0.25 + Math.abs(player.slip) * 0.35 : 0))
 
   world.update(camera.position, time)
   const G = world.ground
@@ -793,6 +843,18 @@ function updateHud(dt: number, slow: boolean): void {
     barCells[i].classList.toggle('on', m >= i + 0.5 || m > i + 1)
     barCells[i].classList.toggle('white', m >= 5.9)
   }
+  // In the air: how far the nose is from the travel — land straight or it spins.
+  const al = $('#align')
+  if (player.airborne && player.tumble <= 0 && player.airTime > 0.25) {
+    const deg = Math.abs(player.slip * 57.3)
+    al.style.display = 'block'
+    al.textContent = deg < 6 ? 'ALIGNED' : `NOSE ${deg.toFixed(0)}° OFF · ${player.slip > 0 ? 'STEER RIGHT' : 'STEER LEFT'}`
+    al.className = deg > 26 ? 'bad' : 'ok'
+  } else al.style.display = 'none'
+  const dm = $('#drift')
+  dm.style.opacity = player.drift > 0.02 ? '1' : '0'
+  ;(dm.firstElementChild as HTMLElement).style.width = `${(player.drift / 2.6) * 100}%`
+  dm.classList.toggle('l2', player.drift >= 2)
   hullFill.style.width = `${Math.max(0, player.hull)}%`
   hullEl.classList.toggle('low', player.hull < 35)
   flashT = Math.max(0, flashT - dt)
@@ -854,7 +916,7 @@ function updateHud(dt: number, slow: boolean): void {
   }
   if (debugEl.style.display === 'block' && slow) {
     const i = renderer.info
-    debugEl.textContent = `${fps.toFixed(0)} fps  ${lastMs.toFixed(1)} ms\ncalls ${i.render.calls}  tris ${(i.render.triangles / 1000).toFixed(0)}k\ntier ${tier} (${tierName})  scale ${renderScale.toFixed(2)}  pr ${pixelRatio().toFixed(2)}\nmach ${m.toFixed(2)}  agl ${player.agl.toFixed(1)}  air ${player.airborne}\nparticles ${fx.glow.count}+${fx.smoke.count}`
+    debugEl.textContent = `${fps.toFixed(0)} fps  ${lastMs.toFixed(1)} ms\ncalls ${i.render.calls}  tris ${(i.render.triangles / 1000).toFixed(0)}k\ntier ${tier} (${tierName})  scale ${renderScale.toFixed(2)}  pr ${pixelRatio().toFixed(2)}\nmach ${m.toFixed(2)}  agl ${player.agl.toFixed(1)}  air ${player.airborne}\nslip ${(player.slip * 57.3).toFixed(0)}°  yaw ${player.yawRate.toFixed(2)}  drift ${player.drift.toFixed(2)}  spin ${player.spin.toFixed(1)}\nparticles ${fx.glow.count}+${fx.smoke.count}`
   }
 }
 
@@ -979,6 +1041,7 @@ const g = {
   autopilot: (on: boolean) => { autopilot = on },
   setMach: (m: number) => { player.speed = m * MACH },
   skipCountdown: () => { race.countdown = 0.01 },
+  force: (c: import('./player').Controls | null) => { forced = c },
   /** Put the player just before jump k, at Mach m. */
   toJump: (k: number, m = 3) => {
     const f = [0.075, 0.17, 0.3, 0.41, 0.55, 0.64, 0.77, 0.88, 0.95][k] // on the line: k % 3 === 0
@@ -996,7 +1059,7 @@ const g = {
   stats: () => ({
     fps: Math.round(fps), ms: +lastMs.toFixed(1), calls: renderer.info.render.calls, tris: renderer.info.render.triangles, mach: +player.mach.toFixed(2),
     tier, scale: renderScale, hull: Math.round(player.hull), air: player.airborne, agl: +player.agl.toFixed(1),
-    place: race.racers[0].place, lap: race.lapOf(race.racers[0]), passed: race.racers[0].passed, race: race.state, particles: fx.glow.count + fx.smoke.count,
+    place: race.racers[0].place, slip: +(player.slip * 57.3).toFixed(1), spin: +player.spin.toFixed(2), drift: +player.drift.toFixed(2), yaw: +player.yawRate.toFixed(2), lap: race.lapOf(race.racers[0]), passed: race.racers[0].passed, race: race.state, particles: fx.glow.count + fx.smoke.count,
   }),
   player, race, course, combat, walker, CFG, world,
 }

@@ -26,7 +26,7 @@ export interface Controls {
 
 export type BarrierPhase = 'none' | 'silence' | 'boom'
 
-const GRAVITY = 44
+const GRAVITY = 34
 /** Launch when the ground would have to take more than this much upward speed (m/s) away within 40 m. */
 const LAUNCH_DV = 45
 
@@ -70,6 +70,22 @@ export class Player {
   topMach = 0
   /** Speed multiplier ceiling (AI skill / rubber band). */
   maxMach = CFG.speed.boostMach
+  /** Slip angle (rad): + = travelling to the right of the nose. */
+  slip = 0
+  /** Seconds left of a spin-out (no control). */
+  spin = 0
+  /** Flip animation, 1 → 0 (visual roll of two full turns). */
+  tumble = 0
+  tumbleDir = 1
+  /** Drift boost charge (0 … 2.6; level 1 at 0.9, level 2 at 2). */
+  drift = 0
+  drifting = false
+  /** Steering assist 0 … 1 (more grip, more self-align, automatic countersteer). */
+  assist = 0.3
+  bankV = 0
+  pitchV = 0
+  onSpin: ((flip: boolean) => void) | null = null
+  onDriftBoost: ((level: number) => void) | null = null
   /** Seconds left as a ghost (just respawned): passes through other racers. */
   ghost = 0
   /** Whether Mach crossings fire callbacks (the player only). */
@@ -99,6 +115,11 @@ export class Player {
     this.airborne = false
     this.airTime = 0
     this.squash = 0
+    this.slip = 0
+    this.spin = 0
+    this.tumble = 0
+    this.drift = 0
+    this.bankV = this.pitchV = 0
     this.bank = this.pitch = this.prevBank = this.prevPitch = 0
     this.hull = 100
     this.dead = false
@@ -163,7 +184,9 @@ export class Player {
     this.brake += ((c.brake ? 1 : 0) - this.brake) * Math.min(1, dt * 8)
     let target = S.cruiseMach * MACH
     let k = S.cruiseK
-    if (c.brake && !this.airborne) { target = S.brakeMach * MACH; k = S.brakeK }
+    // Brake with the stick over = a drift, not a stop: traction breaks, speed mostly stays.
+    const driftBrake = c.brake && Math.abs(c.steer) > 0.5
+    if (c.brake && !this.airborne) { target = S.brakeMach * MACH; k = driftBrake ? S.brakeK * 0.06 : S.brakeK }
     else if (boosting) { target = Math.min(S.boostMach, this.maxMach) * MACH; k = S.boostK }
     if (!(c.brake && !this.airborne) && !boosting && this.speed > target) k = 0.12
     // (In the air there is nothing to push against: the engines only hold speed.)
@@ -201,10 +224,27 @@ export class Player {
     this.accel = (this.speed - before) / dt
     this.topMach = Math.max(this.topMach, this.speed / MACH)
 
-    // ── steering ──
-    const yawMax = THREE.MathUtils.lerp(H.yawLow, H.yawHigh, THREE.MathUtils.clamp((m - 1) / 5, 0, 1)) * (this.airborne ? 0.6 : 1)
-    const want = -c.steer * yawMax * (1 + 0.25 * this.brake)
-    this.yawRate += (want - this.yawRate) * (1 - Math.exp(-H.yawResponse * dt))
+    // ── steering: slip angle, a grip curve, yaw momentum ──
+    // The nose and the direction of travel are two different things. Grip pulls the travel toward the
+    // nose up to a peak slip angle and falls away past it: hold too much steer at speed, trail the
+    // brake into a turn, or land crooked, and the craft slides; keep sliding and it spins; spin at
+    // speed and it flips. Countersteer catches it. A held, controlled slide charges a drift boost.
+    const A = this.assist
+    const ab0 = Math.abs(Math.atan2(this.lateral, Math.max(this.speed, 1)))
+    const hs0 = Math.hypot(this.speed, this.lateral)
+    const peak = H.slipPeak
+    const curveOf = (ab: number) => (ab < peak ? 0.35 + (0.65 * ab) / peak : Math.max(H.slideFloor, 1 - (ab - peak) * 0.9))
+    let curve = curveOf(ab0)
+    if (this.spin > 0) curve = Math.min(curve, 0.3)
+    const beta0 = Math.atan2(this.lateral, Math.max(this.speed, 1))
+    let steer = this.spin > 0 ? 0 : c.steer
+    // Assist: a little automatic countersteer once past the peak (none at OFF).
+    if (A > 0 && ab0 > peak) steer = THREE.MathUtils.clamp(steer + Math.sign(beta0) * Math.min(1, (ab0 - peak) * 3) * A, -1, 1)
+    const auth = H.steerTorque * (this.airborne ? 0.4 : 1) * THREE.MathUtils.lerp(1, 0.92, THREE.MathUtils.clamp((m - 1) / 5, 0, 1))
+    // Weathervane: with grip, the nose is pulled back toward the travel.
+    const align = this.airborne ? 0 : -H.alignK * (1 + A * 1.5) * Math.sin(beta0) * curve * Math.min(1, hs0 / 250)
+    const damp = this.spin > 0 ? 0.9 : H.yawDamp
+    this.yawRate += (-steer * auth - damp * this.yawRate + align) * dt
     this.heading += this.yawRate * dt
     // Turning keeps the velocity: re-split it against the new heading (the slide is real).
     const lat0 = this.lateral + this.side
@@ -214,20 +254,61 @@ export class Player {
     this.setHorizontal(hvx, hvz)
 
     this.dodgeCool -= dt
-    if (this.dodgeCool <= 0 && (c.dodgeL || c.dodgeR)) {
+    if (this.dodgeCool <= 0 && (c.dodgeL || c.dodgeR) && this.spin <= 0) {
       this.side += (c.dodgeR ? 1 : -1) * H.dodge
       this.dodgeCool = 0.25
     }
-    this.side += c.strafe * H.strafe * (this.airborne ? 0.5 : 1) * dt
+    this.side += (this.spin > 0 ? 0 : c.strafe) * H.strafe * (this.airborne ? 0.5 : 1) * dt
     this.side *= Math.exp(-3.2 * dt)
-    // Grip turns the slide back into the heading: most of it becomes forward speed again (a carve),
-    // so turning drifts a little and bleeds a little — far less in the air.
-    const gl = this.lateral * (1 - Math.exp(-H.grip * (this.airborne ? 0.15 : 1) * dt))
-    // (Energy: the slide joins the forward speed as a vector — √(s² + 0.8·g²) — never added to it,
-    // which made every turn a speed boost: Mach 7.4.)
-    this.lateral -= gl
-    this.speed = Math.sqrt(this.speed * this.speed + gl * gl * 0.8)
+
+    // Grip: lateral acceleration capped by the curve (and halved-ish under the brake: a trail-brake
+    // breaks traction — that is how a drift is started on purpose).
+    const beta = Math.atan2(this.lateral, Math.max(this.speed, 1))
+    const ab = Math.abs(beta)
+    curve = this.spin > 0 ? Math.min(curveOf(ab), 0.3) : curveOf(ab)
+    const brakeGrip = c.brake && !this.airborne ? H.driftBrakeGrip : 1
+    const gripAcc = this.airborne ? 0 : (H.gripK * (1 + A * 0.35) * hs0 + H.gripLow) * curve * brakeGrip
+    const dl = Math.sign(this.lateral) * Math.min(Math.abs(this.lateral), gripAcc * dt)
+    this.lateral -= dl
+    // (Energy: the slide joins the forward speed as a vector, never added to it. A carve keeps most
+    // of it; a slide scrubs.)
+    this.speed = Math.sqrt(this.speed * this.speed + dl * dl * (ab < peak * 1.4 ? 0.85 : 0.3))
+    if (ab > peak && !this.airborne) this.speed *= 1 - Math.min(0.4, (ab - peak) * 0.28) * dt
     this.speed = Math.min(this.speed, 6.6 * MACH)
+    this.slip = beta
+
+    // Spin-out: past the spin angle at speed, control is gone for a moment. Fast enough: it flips.
+    if (!this.airborne && this.spin <= 0 && ab > H.spinSlip + A * 0.35 && hs0 > 300) this.startSpin(hs0 > 1150 && ab > H.spinSlip + 0.2)
+    if (this.spin > 0) {
+      this.spin -= dt
+      this.speed *= Math.exp(-0.9 * dt)
+      this.lateral *= Math.exp(-1.4 * dt)
+      if (this.spin <= 0 || (this.spin < 0.7 && ab < 0.25 && Math.abs(this.yawRate) < 0.5)) {
+        // Back in control: the nose settles onto the travel.
+        this.spin = 0
+        const vx = this.fwd.x * this.speed + this.right.x * this.lateral
+        const vz = this.fwd.z * this.speed + this.right.z * this.lateral
+        let dh = Math.atan2(vx, vz) - this.heading
+        dh = Math.atan2(Math.sin(dh), Math.cos(dh))
+        this.heading += dh * 0.8
+        this.yawRate *= 0.2
+        this.updateAxes()
+        this.setHorizontal(vx, vz)
+      }
+    }
+    if (this.tumble > 0) this.tumble = Math.max(0, this.tumble - dt / 1.25)
+
+    // Drift boost: charge while sliding under control; straighten out to release it.
+    const drifting = !this.airborne && this.spin <= 0 && ab > 0.17 && ab < H.spinSlip && hs0 > 400
+    this.drifting = drifting
+    if (drifting) this.drift = Math.min(2.6, this.drift + dt * (0.7 + ab * 2))
+    else if (this.drift > 0) {
+      if (ab < 0.1) {
+        const lvl = this.drift >= 2 ? 2 : this.drift >= 0.9 ? 1 : 0
+        if (lvl) { this.speed += (lvl === 2 ? 1.1 : 0.6) * MACH; this.onDriftBoost?.(lvl) }
+        this.drift = 0
+      } else this.drift = Math.max(0, this.drift - dt * 0.6)
+    }
 
     // ── ground effect / flight ──
     const g0 = groundH(this.pos.x, this.pos.z)
@@ -260,7 +341,7 @@ export class Player {
     }
     if (this.airborne) {
       this.airTime += dt
-      this.vy -= (GRAVITY + (c.brake ? 55 : 0)) * dt
+      this.vy -= (GRAVITY + (c.brake && this.tumble <= 0 ? 55 : 0)) * dt
       this.pos.y += this.vy * dt
       if (this.pos.y <= ride) {
         const terrainVy = slope * hs
@@ -274,6 +355,12 @@ export class Player {
         // Soft by design: you landed it. A little speed for a hard one; hull only past brutal.
         if (impact > 30) this.speed *= 1 - Math.min(0.06, (impact - 30) / 2000)
         if (this.airTime > 0.15) this.onLand?.(impact, this.airTime)
+        // Landed crooked (the nose turned away from the travel in the air): it bites and spins.
+        const lb = Math.abs(Math.atan2(this.lateral, Math.max(this.speed, 1)))
+        if (this.spin <= 0 && this.tumble <= 0 && this.airTime > 0.3) {
+          if (lb > 1.0 + this.assist * 0.3 && hs > 700) this.startSpin(true)
+          else if (lb > 0.5 + this.assist * 0.3) this.startSpin(false)
+        }
       }
     }
     this.squash = Math.max(0, this.squash - dt * 3.5)
@@ -285,8 +372,10 @@ export class Player {
     this.pos.z += this.vel.z * dt
 
     // ── visual attitude ──
-    const bankT = THREE.MathUtils.clamp(this.yawRate * 0.5 + ((this.lateral + this.side) / 400) * 0.3, -0.55, 0.55)
-    this.bank += (bankT - this.bank) * Math.min(1, dt * 8)
+    // Floaty: bank and pitch are under-damped springs (they lean, overshoot a touch, settle).
+    const bankT = THREE.MathUtils.clamp(this.yawRate * 0.42 + Math.sin(this.slip) * 0.3 + (this.side / 400) * 0.3, -0.6, 0.6)
+    this.bankV += ((bankT - this.bank) * 55 - this.bankV * 6.5) * dt
+    this.bank += this.bankV * dt
     let pitchT: number
     if (this.airborne) {
       // Nose on the flight path; levelling toward the ground's slope as it comes up.
@@ -296,14 +385,36 @@ export class Player {
     } else {
       pitchT = -Math.atan(slope) - THREE.MathUtils.clamp(this.accel / 600, -0.08, 0.1)
     }
-    this.pitch += (pitchT - this.pitch) * Math.min(1, dt * 6)
+    this.pitchV += ((pitchT - this.pitch) * 40 - this.pitchV * 6) * dt
+    this.pitch += this.pitchV * dt
 
     this.collide(world)
   }
 
+  private startSpin(flip: boolean): void {
+    this.spin = flip ? 1.6 : 1.2
+    this.drift = 0
+    // Keep turning the way it was going: the spin carries the yaw it had.
+    if (Math.abs(this.yawRate) < 1.5) this.yawRate = (this.yawRate >= 0 ? 1 : -1) * 2.4
+    if (flip) {
+      this.tumble = 1
+      this.tumbleDir = this.slip > 0 ? 1 : -1
+      this.airborne = true
+      this.airTime = 0
+      this.vy = 22
+      this.speed *= 0.62
+      this.hull -= 22
+      this.sinceHurt = 0
+    }
+    this.onSpin?.(flip)
+  }
+
   /** Rock: push out along the true surface normal; keep the tangential speed (a glancing hit scrapes,
    *  a head-on one stops you hard); turn the nose part-way along the wall. */
+  /** Tools: no rock collisions (handling tests on open ground). */
+  noCollide = false
   private collide(world: World): void {
+    if (this.noCollide) return
     const n = world.near(this.pos.x, this.pos.z, this.pos.y, 40, this.obs)
     for (let i = 0; i < n; i++) {
       const o = this.obs[i]

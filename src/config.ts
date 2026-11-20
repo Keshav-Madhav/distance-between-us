@@ -30,20 +30,30 @@ export const CFG = {
     turnBleed: 0.05,
   },
   handling: {
-    /** Max yaw rate at Mach 1 and Mach 6 (rad/s). */
+    /** Max yaw rate at Mach 1 and Mach 6 (rad/s) — the AI's planning numbers. */
     yawLow: 1.35,
     yawHigh: 0.78,
-    /** How fast the yaw rate follows the stick (1/s): twitchy. */
-    yawResponse: 9,
-    /** Lateral grip (1/s): lower = more drift. */
-    grip: 5,
+    /** Yaw torque at full stick (rad/s²) and yaw damping (1/s): full stick settles at ~torque/damp. */
+    steerTorque: 5.2,
+    yawDamp: 4.7,
+    /** Weathervane torque pulling the nose back to the travel (needs grip). */
+    alignK: 2.2,
+    /** Grip: lateral acceleration = gripK·speed + gripLow, shaped by the slip curve. */
+    gripK: 0.6,
+    gripLow: 320,
+    /** Slip angle of peak grip (rad); grip left when fully sliding; slip that spins you out. */
+    slipPeak: 0.16,
+    slideFloor: 0.42,
+    spinSlip: 1.15,
+    /** Grip multiplier under the air brake (a trail-brake starts a drift). */
+    driftBrakeGrip: 0.5,
     /** Side-thruster strafe acceleration (m/s²). */
     strafe: 340,
     /** Lateral m/s added by a strafe tap (the dodge). */
     dodge: 170,
     hover: 3.1,
     /** Hover spring natural frequency (rad/s). */
-    hoverW: 22,
+    hoverW: 11,
   },
   camera: {
     fovBase: 68,

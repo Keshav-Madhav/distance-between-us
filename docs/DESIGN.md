@@ -29,11 +29,32 @@ something you feel, not a number on the HUD.
 - Position, lap, time, penalties, live standings with gaps, wrong-way and off-course warnings, and a
   results table at the end.
 
+## Handling: slip, drift, losing it
+The nose and the direction of travel are separate. Grip pulls the travel back toward the nose. It
+rises to a peak at a 9° slip angle and falls to 42% once you're sliding, and the craft's yaw has
+momentum.
+- **Full steer at low speed** carves safely, at about 7° of slip.
+- **Full steer held at Mach 5+** exceeds what grip can hold. The slip creeps up and the craft starts
+  sliding on its own, so you have to countersteer to catch it.
+- **Brake + steer** is a trail-brake: grip halves and the speed mostly stays. That's how you start a
+  drift on purpose.
+- **A controlled slide (10°–65°) charges a drift boost.** Straighten out to release it: +Mach 0.6 at
+  level 1, +Mach 1.1 at level 2 (orange). Hold the slide too long and you lose the charge, then spin.
+- **Past 66° of slip at speed you spin out** and lose control for about 1.2 s with heavy scrub. Spin
+  above 1,150 m/s and you **flip**: two rolls, a hop, −22 hull, −38% speed.
+- **In the air there's no grip.** Steering turns the nose but not the travel, so you have to land
+  straight: more than 29° off spins you out, and more than 57° at speed flips you. An in-air readout
+  shows how far off the nose is.
+- **Steering assist** (Esc): Off, Low (default) or High. Assist adds grip and self-align, plus a
+  little automatic countersteer. The AI drives on High.
+- **Floatier feel:** soft hover suspension with a slow bob, under-damped bank and pitch, and gravity
+  of 34 m/s².
+
 ## Flight
 Ground effect holds the craft over dunes. A crest that would strip more than 45 m/s of climb within
 40 m launches you; that's speed-dependent, so the same mound launches at Mach 3 and is just ridden
 over at Mach 1.5. In the air:
-- Gravity is 44 m/s².
+- Gravity is 34 m/s².
 - Yaw keeps 60% authority, and brake turns into a dive.
 - The nose follows the flight path and levels itself for the landing.
 

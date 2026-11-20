@@ -71,6 +71,7 @@ export class Race {
     ROSTER.forEach(([name, color], i) => {
       const p = new Player()
       p.announce = false
+      p.assist = 0.85
       this.racers.push(this.make(name, color, p, true, 0.78 + i * 0.045))
     })
   }
@@ -271,7 +272,8 @@ export class Race {
     const want = Math.atan2(gx - p.pos.x, gz - p.pos.z)
     let err = want - p.heading
     err = Math.atan2(Math.sin(err), Math.cos(err))
-    ctl.steer = THREE.MathUtils.clamp(-err * 3.2 + p.yawRate * 0.25, -1, 1)
+    // (Yaw has momentum now: damp it, or the AI over-rotates into its own spin.)
+    ctl.steer = THREE.MathUtils.clamp(-err * 2.6 + p.yawRate * 0.85, -1, 1)
     // Bends ahead: how much the line turns over the next ~2.5 s.
     // The sharpest the line turns, per km, over the next ~3 s: what speed it can be taken at.
     let bend = 0
