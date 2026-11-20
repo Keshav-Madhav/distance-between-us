@@ -38,9 +38,10 @@ export const CFG = {
     yawDamp: 4.7,
     /** Weathervane torque pulling the nose back to the travel (needs grip). */
     alignK: 2.2,
-    /** Grip: lateral acceleration = gripK·speed + gripLow, shaped by the slip curve. */
-    gripK: 0.6,
-    gripLow: 320,
+    /** Grip: lateral acceleration = (gripK + gripQ·v)·v + gripLow, shaped by the slip curve. */
+    gripK: 0.8,
+    gripQ: 0.00034,
+    gripLow: 60,
     /** Slip angle of peak grip (rad); grip left when fully sliding; slip that spins you out. */
     slipPeak: 0.16,
     slideFloor: 0.42,

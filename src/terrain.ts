@@ -14,12 +14,13 @@ const P = 12000
 const TAU = Math.PI * 2
 /** kx, kz, amplitude, phase */
 const WAVES: readonly [number, number, number, number][] = [
-  [5, 2, 10, 0.3],
-  [3, -7, 7, 1.7],
-  [11, 4, 4, 2.9],
-  [-6, 13, 3.2, 0.8],
-  [17, -9, 2, 4.1],
-  [-23, 14, 1.2, 5.5],
+  // (Halved, 2026-11-20: at Mach speeds the full-height dunes read as a washboard.)
+  [5, 2, 5.5, 0.3],
+  [3, -7, 4, 1.7],
+  [11, 4, 2.2, 2.9],
+  [-6, 13, 1.6, 0.8],
+  [17, -9, 0.9, 4.1],
+  [-23, 14, 0.5, 5.5],
 ]
 
 function smooth(e0: number, e1: number, x: number): number {
@@ -68,8 +69,8 @@ export function groundH(x: number, z: number): number {
   }
   // (Smooth crests: a kinked crest launched the craft at Mach speeds on every ridge.)
   const c = Math.cos((TAU * (8 * x - 3 * z)) / P + 1.1)
-  h += 6 * c * c * c * c
-  h -= 9 * riverAt(x, z)
+  h += 3 * c * c * c * c
+  h -= 5 * riverAt(x, z)
   return h
 }
 
@@ -101,8 +102,8 @@ float groundH(vec2 p) {
   }
   ${glslWaves}
   float c = cos(TAU * (8.0 * p.x - 3.0 * p.y) / PER + 1.1);
-  h += 6.0 * c * c * c * c;
-  h -= 9.0 * riverAt(p);
+  h += 3.0 * c * c * c * c;
+  h -= 5.0 * riverAt(p);
   return h;
 }
 `

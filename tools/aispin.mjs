@@ -5,7 +5,7 @@ const page = await (await browser.newContext({ viewport: { width: 960, height: 5
 await page.goto('http://localhost:4417/?fixed&q=low'); await page.waitForFunction('window.__g && window.__g.ready')
 await page.evaluate(() => {
   const g = window.__g; window.__spins = {}
-  for (const r of g.race.racers) { const prev = r.p.onSpin; r.p.onSpin = (f) => { window.__spins[r.name] = (window.__spins[r.name] || '') + (f ? 'F' : 's'); prev && prev(f) } }
+  for (const r of g.race.racers) { const prev = r.p.onSpin; r.p.onSpin = (f) => { window.__spins[r.name] = (window.__spins[r.name] || '') + (f ? 'F' : 's') + (r.p.airTime > 0 && !r.p.airborne ? 'L' : '') + ' '; prev && prev(f) } }
   g.start(); g.autopilot(true)
 })
 for (let t = 0; t < 9; t++) {

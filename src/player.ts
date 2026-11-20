@@ -81,7 +81,7 @@ export class Player {
   drift = 0
   drifting = false
   /** Steering assist 0 … 1 (more grip, more self-align, automatic countersteer). */
-  assist = 0.3
+  assist = 0.45
   bankV = 0
   pitchV = 0
   onSpin: ((flip: boolean) => void) | null = null
@@ -240,9 +240,9 @@ export class Player {
     let steer = this.spin > 0 ? 0 : c.steer
     // Assist: a little automatic countersteer once past the peak (none at OFF).
     if (A > 0 && ab0 > peak) steer = THREE.MathUtils.clamp(steer + Math.sign(beta0) * Math.min(1, (ab0 - peak) * 3) * A, -1, 1)
-    const auth = H.steerTorque * (this.airborne ? 0.4 : 1) * THREE.MathUtils.lerp(1, 0.92, THREE.MathUtils.clamp((m - 1) / 5, 0, 1))
+    const auth = H.steerTorque * (this.airborne ? 0.3 : 1) * THREE.MathUtils.lerp(1, 0.92, THREE.MathUtils.clamp((m - 1) / 5, 0, 1))
     // Weathervane: with grip, the nose is pulled back toward the travel.
-    const align = this.airborne ? 0 : -H.alignK * (1 + A * 1.5) * Math.sin(beta0) * curve * Math.min(1, hs0 / 250)
+    const align = this.airborne ? 0 : -H.alignK * (1 + A * 1.5) * (1 + hs0 / 1400) * Math.sin(beta0) * curve * Math.min(1, hs0 / 250)
     const damp = this.spin > 0 ? 0.9 : H.yawDamp
     this.yawRate += (-steer * auth - damp * this.yawRate + align) * dt
     this.heading += this.yawRate * dt
@@ -267,7 +267,9 @@ export class Player {
     const ab = Math.abs(beta)
     curve = this.spin > 0 ? Math.min(curveOf(ab), 0.3) : curveOf(ab)
     const brakeGrip = c.brake && !this.airborne ? H.driftBrakeGrip : 1
-    const gripAcc = this.airborne ? 0 : (H.gripK * (1 + A * 0.35) * hs0 + H.gripLow) * curve * brakeGrip
+    // Ground effect grows with speed like downforce: the turn rate grip can hold is gripK + gripQ·v,
+    // so a slow start is loose and twitchy, and flat-out is planted.
+    const gripAcc = this.airborne ? 0 : ((H.gripK * (1 + A * 0.35) + H.gripQ * hs0) * hs0 + H.gripLow) * curve * brakeGrip
     const dl = Math.sign(this.lateral) * Math.min(Math.abs(this.lateral), gripAcc * dt)
     this.lateral -= dl
     // (Energy: the slide joins the forward speed as a vector, never added to it. A carve keeps most
@@ -358,8 +360,8 @@ export class Player {
         // Landed crooked (the nose turned away from the travel in the air): it bites and spins.
         const lb = Math.abs(Math.atan2(this.lateral, Math.max(this.speed, 1)))
         if (this.spin <= 0 && this.tumble <= 0 && this.airTime > 0.3) {
-          if (lb > 1.0 + this.assist * 0.3 && hs > 700) this.startSpin(true)
-          else if (lb > 0.5 + this.assist * 0.3) this.startSpin(false)
+          if (lb > 1.15 + this.assist * 0.3 && hs > 700) this.startSpin(true)
+          else if (lb > 0.62 + this.assist * 0.3) this.startSpin(false)
         }
       }
     }

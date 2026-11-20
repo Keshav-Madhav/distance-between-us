@@ -20,6 +20,13 @@
   #bar i { width: 46px; height: 6px; background: rgba(255,255,255,0.14); transform: skewX(-20deg); transition: background 0.1s; }
   #bar i.on { background: var(--hot); box-shadow: 0 0 10px var(--hot); }
   #bar i.on.white { background: #fff; box-shadow: 0 0 14px #fff; }
+  .tag { position: absolute; left: 0; top: 0; transform: translate(-50%, -100%); font-size: 11px; font-weight: 700; letter-spacing: 0.18em; text-align: center; white-space: nowrap; pointer-events: none; text-shadow: 0 1px 6px rgba(0,0,0,0.7); display: none; }
+  .tag i { display: block; width: 0; height: 0; margin: 3px auto 0; border-left: 7px solid transparent; border-right: 7px solid transparent; border-top: 9px solid var(--c); filter: drop-shadow(0 0 4px var(--c)); }
+  .tag span { color: var(--c); }
+  #gmark { position: absolute; left: 0; top: 0; width: 26px; height: 26px; margin: -13px 0 0 -13px; display: none; }
+  #gmark .d { position: absolute; inset: 0; border: 2.5px solid #5fe6ff; transform: rotate(45deg); box-shadow: 0 0 12px #5fe6ff; }
+  #gmark.fin .d { border-color: #ff7a1a; box-shadow: 0 0 12px #ff7a1a; }
+  #gmark .t { position: absolute; top: 32px; left: 50%; transform: translateX(-50%); font-size: 11px; letter-spacing: 0.25em; font-weight: 700; white-space: nowrap; color: #bff4ff; text-shadow: 0 1px 6px rgba(0,0,0,0.7); }
   #align { position: absolute; left: 50%; top: 60%; transform: translateX(-50%); font-size: 13px; letter-spacing: 0.3em; font-weight: 700; display: none; text-shadow: 0 0 10px rgba(0,0,0,0.6); }
   #align.bad { color: #ff4a3a; } #align.ok { color: #7dff9a; }
   #drift { width: 300px; height: 5px; margin: 7px auto 0; background: rgba(255,255,255,0.1); transform: skewX(-20deg); opacity: 0; transition: opacity 0.2s; position: relative; }
@@ -115,6 +122,8 @@
   <div id="stand"></div>
   <div id="count"></div>
   <div id="align"></div>
+  <div id="gmark"><div class="d"></div><div class="t"></div></div>
+  <div id="tags"></div>
   <canvas id="mini" width="400" height="400"></canvas>
   <div id="score"><div class="lab">SCORE</div><div class="num">0</div><div class="sub">0 DOWN · 0:00</div></div>
   <div id="pops"></div>
@@ -141,7 +150,7 @@
   <label>MASTER <input id="vm" type="range" min="0" max="1" step="0.05" value="0.8" /></label>
   <label>MUSIC <input id="vmu" type="range" min="0" max="1" step="0.05" value="0.7" /></label>
   <label>EFFECTS <input id="vs" type="range" min="0" max="1" step="0.05" value="1" /></label>
-  <label>STEERING ASSIST <select id="as"><option value="0">OFF</option><option value="0.3" selected>LOW</option><option value="0.7">HIGH</option></select></label>
+  <label>STEERING ASSIST <select id="as"><option value="0">OFF</option><option value="0.45" selected>LOW</option><option value="0.7">HIGH</option></select></label>
   <label>FIELD OF VIEW <input id="fov" type="range" min="80" max="120" step="1" value="98" /></label>
   <label>REDUCE SHAKE <input id="rs" type="checkbox" /></label>
   <div class="go">ESC TO RESUME</div>

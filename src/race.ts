@@ -26,6 +26,7 @@ export interface Racer {
   bestLap: number
   penalty: number
   place: number
+  prog: number
   // AI
   skill: number
   lane: number
@@ -64,6 +65,7 @@ export class Race {
   private lastCount = 4
   private boostHeldSince = -1
   readonly K: number
+  private readonly order: Racer[] = []
 
   constructor(readonly course: Course, readonly player: Player, private readonly ev: RaceEvents) {
     this.K = course.cps.length
@@ -79,7 +81,7 @@ export class Race {
   private make(name: string, color: number, p: Player, ai: boolean, skill: number): Racer {
     return {
       name, color, p, ai, idx: 0, passed: 0, next: 0, finished: false, finishTime: 0, lapStart: 0, lastLap: 0, bestLap: 0,
-      penalty: 0, place: 0, skill, lane: 0, laneT: 0, stuck: 0,
+      penalty: 0, place: 0, prog: 0, skill, lane: 0, laneT: 0, stuck: 0,
       controls: { steer: 0, boost: false, brake: false, strafe: 0, dodgeL: false, dodgeR: false }, padCool: 0, respawnT: 0,
     }
   }
@@ -169,9 +171,11 @@ export class Race {
     for (let i = 0; i < this.racers.length; i++)
       for (let j = i + 1; j < this.racers.length; j++)
         bump(this.racers[i].p, this.racers[j].p, (a, b, sev, x, y, z) => this.ev.bumped(this.find(a), this.find(b), sev, x, y, z))
-    // Places.
-    const sorted = [...this.racers].sort((a, b) => this.progress(b) - this.progress(a))
-    sorted.forEach((r, i) => (r.place = i + 1))
+    // Places (a reused array: no garbage at 60 Hz).
+    this.order.length = 0
+    for (const r of this.racers) { r.prog = this.progress(r); this.order.push(r) }
+    this.order.sort((a, b) => b.prog - a.prog)
+    for (let i = 0; i < this.order.length; i++) this.order[i].place = i + 1
     if (this.racers[0].finished && this.state === 'racing') this.state = 'done'
   }
 
@@ -286,8 +290,9 @@ export class Race {
     const safe = (CFG.handling.yawHigh * 1000) / Math.max(bend, 1e-3) / MACH
     // Rubber band toward the player (mild): ahead → a lower ceiling, behind → a higher one.
     const gap = this.progress(r) - this.progress(this.racers[0])
-    const band = THREE.MathUtils.clamp(-gap / 2500, -0.6, 0.35)
-    p.maxMach = THREE.MathUtils.clamp(4.6 + r.skill * 1.4 + band, 3.5, 6.2)
+    // (Eased, 2026-11-20: the field was too quick. Ahead of you they lift a lot; behind, a little push.)
+    const band = THREE.MathUtils.clamp(-gap / 2000, -1.1, 0.3)
+    p.maxMach = THREE.MathUtils.clamp(4.0 + r.skill * 1.0 + band, 3.0, 5.8)
     const corner = p.mach > safe * 0.92
     ctl.boost = !corner && Math.abs(err) < 0.5
     ctl.brake = p.mach > safe * 1.08

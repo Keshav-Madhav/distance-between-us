@@ -45,7 +45,7 @@ const scene = new THREE.Scene()
 const camera = new THREE.PerspectiveCamera(CFG.camera.fovBase, innerWidth / innerHeight, 0.3, 60000)
 
 const course = new Course()
-const world = new World((x, z, r) => course.distance(x, z) > 520 + r, (x, z, r) => course.distance(x, z) < 300 + r)
+const world = new World((x, z, r) => course.distance(x, z) > 850 + r, (x, z, r) => course.distance(x, z) < 460 + r)
 scene.add(world.group)
 scene.add(course.group)
 const env = world.makeEnv(renderer)
@@ -149,8 +149,8 @@ race.racers.forEach((r, i) => {
   const trail: Trail[] = []
   const nT = r.ai ? 1 : 3
   for (let k = 0; k < nT; k++) {
-    const t = new Trail(r.ai ? 40 : 56, new THREE.Color(1.6, 0.5, 0.12), true, 0.9)
-    t.width = r.ai ? 0.6 : 0.42
+    const t = new Trail(r.ai ? 48 : 56, r.ai ? new THREE.Color(r.color).multiplyScalar(1.4) : new THREE.Color(1.6, 0.5, 0.12), true, r.ai ? 1.3 : 0.9)
+    t.width = r.ai ? 0.9 : 0.42
     trail.push(t)
     scene.add(t.mesh)
   }
@@ -168,6 +168,17 @@ race.racers.forEach((r, i) => {
   }
 })
 const myCraft = visuals.get(player)!.craft
+const rivalCols = new Map(race.racers.map((r) => [r.p, new THREE.Color(r.color)]))
+const rivalColor = (p: Player) => rivalCols.get(p)!
+// Name tags over the rivals.
+const tagEls = race.racers.filter((r) => r.ai).map((r) => {
+  const d = document.createElement('div')
+  d.className = 'tag'
+  d.style.setProperty('--c', '#' + new THREE.Color(r.color).getHexString())
+  d.innerHTML = `<span>${r.name}</span><i></i>`
+  $('#tags').appendChild(d)
+  return { r, d }
+})
 
 // Blob shadows under the rivals (the player's is drawn by the ground shader itself).
 const shadowMesh = new THREE.InstancedMesh(
@@ -472,7 +483,7 @@ type Tier = 'low' | 'medium' | 'high' | 'ultra'
 const TIERS: Record<Tier, { pr: number; samples: number; bloom: boolean; density: number }> = {
   low: { pr: 0.75, samples: 0, bloom: false, density: 0.5 },
   medium: { pr: 1, samples: 2, bloom: true, density: 0.75 },
-  high: { pr: 1.5, samples: 4, bloom: true, density: 1 },
+  high: { pr: 1.3, samples: 4, bloom: true, density: 1 },
   ultra: { pr: 2, samples: 4, bloom: true, density: 1 },
 }
 let tierName = ((params.get('q') as Tier | null) ?? 'auto') as Tier | 'auto'
@@ -498,18 +509,27 @@ function resize(): void {
 addEventListener('resize', resize)
 applyTier()
 
-let govAcc = 0, govN = 0
+let govAcc = 0, govN = 0, govBad = 0, govGood = 0, govLast = 0
+/**
+ * Dynamic resolution, with hysteresis: every resize reallocates the render targets (a hitch), so it
+ * steps down only after two slow half-seconds, up only after 4 s of clear headroom, and changes at
+ * most once every 3 s — an oscillating governor was itself a source of choppiness.
+ */
 function governor(frameMs: number): void {
   if (tierName !== 'auto' || params.has('fixed')) return
   govAcc += frameMs; govN++
-  if (govAcc < 1000) return
+  if (govAcc < 500) return
   const avg = govAcc / govN
   govAcc = 0; govN = 0
+  govBad = avg > 17.6 ? govBad + 1 : 0
+  govGood = avg < 12 ? govGood + 1 : 0
+  const now = performance.now()
+  if (now - govLast < 3000) return
   const old = renderScale
-  if (avg > 18.5) renderScale = Math.max(0.5, renderScale - 0.1)
-  else if (avg < 13 && renderScale < 1) renderScale = Math.min(1, renderScale + 0.05)
-  if (renderScale !== old) resize()
-  if (avg > 24 && renderScale <= 0.5 && tier !== 'low') { tier = tier === 'ultra' ? 'high' : tier === 'high' ? 'medium' : 'low'; renderScale = 0.8; applyTier() }
+  if (govBad >= 2) renderScale = Math.max(0.5, renderScale - 0.12)
+  else if (govGood >= 8 && renderScale < 1) renderScale = Math.min(1, renderScale + 0.08)
+  if (renderScale !== old) { resize(); govLast = now; govBad = govGood = 0 }
+  if (avg > 24 && renderScale <= 0.5 && tier !== 'low') { tier = tier === 'ultra' ? 'high' : tier === 'high' ? 'medium' : 'low'; renderScale = 0.8; applyTier(); govLast = now }
 }
 
 const qSel = $<HTMLSelectElement>('#q')
@@ -627,7 +647,7 @@ function drawRacer(p: Player, alpha: number, dt: number, isMe: boolean): void {
   for (let i = 0; i < v.trail.length; i++) {
     nozzleW.copy(craft.nozzles[v.trail.length === 1 ? 1 : i]).applyMatrix4(craft.body.matrixWorld)
     v.trail[i].push(nozzleW, dt)
-    v.trail[i].strength = 0.2 + p.boost * 0.8
+    v.trail[i].strength = isMe ? 0.2 + p.boost * 0.8 : 0.3 + p.boost * 0.3
   }
   if (isMe) {
     const vap = THREE.MathUtils.clamp((p.mach - 1.5) / 3, 0, 1) * (0.25 + Math.min(1, Math.abs(p.yawRate) * 1.4))
@@ -651,6 +671,21 @@ function drawRacer(p: Player, alpha: number, dt: number, isMe: boolean): void {
       e.life = 0.9 + Math.random() * 1.1; e.size0 = 1.5; e.size1 = 9 + p.boost * 8
       e.r = 0.8; e.g = 0.42; e.b = 0.21; e.a = 0.3 * (1 - p.agl / 8); e.drag = 2.4; e.grav = 6
       fx.smoke.emit(e)
+    }
+  }
+  // Rivals far away: a hot engine glow sized to stay a few pixels wide at any range.
+  if (!isMe) {
+    const d = Math.sqrt(camera.position.distanceToSquared(tmp))
+    if (d > 120) {
+      nozzleW.copy(craft.nozzles[1]).applyMatrix4(craft.body.matrixWorld)
+      const e = resetE()
+      e.x = nozzleW.x; e.y = nozzleW.y; e.z = nozzleW.z
+      e.vx = p.vel.x; e.vy = p.vel.y; e.vz = p.vel.z
+      const sz = Math.min(60, d * 0.012)
+      e.life = 0.04; e.size0 = sz; e.size1 = sz
+      const col = rivalColor(p)
+      e.r = col.r * 3; e.g = col.g * 3; e.b = col.b * 3; e.a = 1
+      fx.glow.emit(e)
     }
   }
   // Drifting: sand sprayed out sideways from under the hull, and glow sparks showing the charge.
@@ -789,7 +824,7 @@ function frame(now: number): void {
   if (mode === 'hunt') combat.render(alpha, realDt, time)
   combat.group.visible = mode === 'hunt'
   fx.update(dt)
-  for (const v of visuals.values()) for (const t of [...v.trail, ...v.vapour]) t.build(camera.position)
+  for (const v of visuals.values()) { for (const t of v.trail) t.build(camera.position); for (const t of v.vapour) t.build(camera.position) }
   sound.scrape(mode === 'title' ? 0 : Math.max(player.scrape, player.drifting || player.spin > 0 ? 0.25 + Math.abs(player.slip) * 0.35 : 0))
 
   world.update(camera.position, time)
@@ -888,11 +923,35 @@ function updateHud(dt: number, slow: boolean): void {
     const off = Math.hypot(player.pos.x - course.px[me.idx], player.pos.z - course.pz[me.idx])
     offT = off > 2600 && race.state === 'racing' ? offT + dt : 0
     if (offT > 1 && warnT < 0.5) warn('OFF COURSE', 'R TO RETURN TO THE LAST GATE')
+    // Rival tags.
+    for (const { r, d } of tagEls) {
+      const dist = r.p.pos.distanceTo(camera.position)
+      proj.set(r.p.pos.x, r.p.pos.y + 4, r.p.pos.z).project(camera)
+      const on = !r.p.dead && proj.z < 1 && Math.abs(proj.x) < 1 && Math.abs(proj.y) < 1 && dist > 25 && dist < 8000
+      d.style.display = on ? 'block' : 'none'
+      if (on) {
+        d.style.left = `${(proj.x * 0.5 + 0.5) * innerWidth}px`
+        d.style.top = `${(-proj.y * 0.5 + 0.5) * innerHeight}px`
+        d.style.opacity = String(THREE.MathUtils.clamp(1.2 - dist / 8000, 0.45, 1))
+      }
+    }
     const c = course.cps[me.next]
-    proj.set(c.x, groundH(c.x, c.z) + 40, c.z).project(camera)
-    arrowTo(proj, me.finished ? '' : `${me.next === 0 ? 'FINISH' : 'GATE ' + me.next} · ${(Math.hypot(c.x - player.pos.x, c.z - player.pos.z) / 1000).toFixed(1)} KM`)
+    // The next gate: a diamond on it when on screen (with distance), the edge arrow when not.
+    proj.set(c.x, groundH(c.x, c.z) + 70, c.z).project(camera)
+    const gm = $('#gmark')
+    const gd = Math.hypot(c.x - player.pos.x, c.z - player.pos.z)
+    const gon = !me.finished && proj.z < 1 && Math.abs(proj.x) < 0.95 && Math.abs(proj.y) < 0.95 && gd > 150
+    gm.style.display = gon ? 'block' : 'none'
+    if (gon) {
+      gm.style.transform = `translate(${(proj.x * 0.5 + 0.5) * innerWidth}px, ${(-proj.y * 0.5 + 0.5) * innerHeight}px)`
+      gm.classList.toggle('fin', me.next === 0)
+      ;(gm.querySelector('.t') as HTMLElement).textContent = `${me.next === 0 ? (me.passed === 0 ? 'START' : 'FINISH') : 'GATE ' + me.next} · ${gd < 1000 ? Math.round(gd) + ' M' : (gd / 1000).toFixed(1) + ' KM'}`
+    }
+    arrowTo(proj, me.finished ? '' : `${me.next === 0 ? (me.passed === 0 ? 'START' : 'FINISH') : 'GATE ' + me.next} · ${(Math.hypot(c.x - player.pos.x, c.z - player.pos.z) / 1000).toFixed(1)} KM`)
     lockEl.style.display = 'none'
   } else if (mode === 'hunt') {
+    for (const { d } of tagEls) d.style.display = 'none'
+    $('#gmark').style.display = 'none'
     scoreNum.textContent = String(score)
     scoreSub.textContent = `${combat.kills} DOWN · ${fmtTime(runTime)}`
     const t = combat.lockTarget

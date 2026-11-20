@@ -188,10 +188,20 @@ function terrainMaterial(shared: GroundUniforms, snap: { value: THREE.Vector2 },
       uniform vec2 uSnap;
       uniform float uDrop;
       varying vec3 vW;
+      varying vec3 vN;
+      varying float vH;
+      varying float vRiver;
       void main() {
         vec2 xz = position.xz + uSnap;
         float d = length(xz - cameraPosition.xz);
-        vec3 w = vec3(xz.x, groundH(xz) - uDrop * smoothstep(0.0, 400.0, d), xz.y);
+        float h = groundH(xz);
+        // (Normals per vertex, not per pixel: three height samples per pixel, each looping the
+        // mounds, were most of the frame on a laptop GPU.)
+        float e = 3.0 + d * 0.004;
+        vN = normalize(vec3(h - groundH(xz + vec2(e, 0.0)), e, h - groundH(xz + vec2(0.0, e))));
+        vH = h;
+        vRiver = riverAt(xz);
+        vec3 w = vec3(xz.x, h - uDrop * smoothstep(0.0, 400.0, d), xz.y);
         vW = w;
         gl_Position = projectionMatrix * viewMatrix * vec4(w, 1.0);
       }`,
@@ -209,13 +219,14 @@ function terrainMaterial(shared: GroundUniforms, snap: { value: THREE.Vector2 },
       uniform sampler2D tClay;
       uniform sampler2D tGravel;
       varying vec3 vW;
+      varying vec3 vN;
+      varying float vH;
+      varying float vRiver;
       void main() {
         vec2 p = vW.xz;
-        float dist = length(vW - cameraPosition);
-        float e = 1.5 + dist * 0.004;
-        float h0 = groundH(p);
-        vec3 n = normalize(vec3(h0 - groundH(p + vec2(e, 0.0)), e, h0 - groundH(p + vec2(0.0, e))));
-        float river = riverAt(p);
+        vec3 n = normalize(vN);
+        float h0 = vH;
+        float river = vRiver;
 
         // (At Mach speeds fine texture detail sweeps past faster than the frame rate and strobes —
         // the "flashing". The mip level is pushed up with speed: the ground blurs like the motion does.)
@@ -231,7 +242,7 @@ function terrainMaterial(shared: GroundUniforms, snap: { value: THREE.Vector2 },
         alb = mix(alb, clayT * vec3(1.0, 0.92, 0.85), river);
         float big = vnoise(p * 0.0011) * 0.6 + vnoise(p * 0.004) * 0.4;
         alb *= mix(vec3(1.0), vec3(0.78, 0.55, 0.5), smoothstep(0.45, 0.75, big) * 0.7);
-        alb *= mix(vec3(1.0), vec3(1.12, 1.1, 1.05), smoothstep(6.0, 22.0, h0) * 0.6);
+        alb *= mix(vec3(1.0), vec3(1.12, 1.1, 1.05), smoothstep(3.0, 12.0, h0) * 0.6);
         alb *= 0.9 + 0.2 * vnoise(p * 0.03);
 
         alb *= 0.72;
@@ -489,9 +500,9 @@ export class World {
     patchStandard(mesaMat, { strata: true })
     const r = rng(1234)
     const kinds: [Kind, number, number][] = [
-      ['mesa', 210, 900],
-      ['butte', 80, 600],
-      ['spire', 70, 300],
+      ['mesa', 170, 1300],
+      ['butte', 60, 900],
+      ['spire', 50, 600],
     ]
     const all: Placed[] = []
     for (const [kind, count, spacing] of kinds) {
