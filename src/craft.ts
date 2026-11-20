@@ -1,8 +1,87 @@
 // The craft: a low, sleek hover-racer built in code. Forward is local +Z.
-// Pearl-white clearcoat body, carbon underside, orange accents, a cyan hover strip,
-// three rear thrusters whose flames grow, whiten and grow shock diamonds on boost.
+//
+// Detailed model, merged per material (paint, trim, carbon, metal, glass, glow, hot) so a full ship
+// is ~10 draws: a stepped three-layer hull, side intakes, a framed canopy, panel seams, strakes, canted
+// fins with racing numbers, nacelles with petal rings, a rear diffuser, hover emitters, wingtip side
+// thrusters. A low-detail version (hull, nacelles, fin) is shown past LOD_DIST.
+// Flames: one draw for the three outer plumes, one for the cores; length and width set in the shader.
 import * as THREE from 'three'
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
 import { patchStandard } from './shaders'
+
+const LOD_DIST = 260
+const NOZZLE_Z = -4.3
+const NOZZLES: [number, number][] = [[-1.08, 0.36], [0, 0.6], [1.08, 0.36]]
+
+export interface Paint { body: number; trim: number; number: string }
+
+const _m = new THREE.Matrix4()
+const _q = new THREE.Quaternion()
+const _e = new THREE.Euler()
+const _s = new THREE.Vector3()
+const _p = new THREE.Vector3()
+
+class Builder {
+  private readonly parts = new Map<string, THREE.BufferGeometry[]>()
+  add(key: string, g: THREE.BufferGeometry, x = 0, y = 0, z = 0, rx = 0, ry = 0, rz = 0, sx = 1, sy = 1, sz = 1): void {
+    const geo = g.index ? g.toNonIndexed() : g.clone()
+    for (const name of Object.keys(geo.attributes)) if (name !== 'position' && name !== 'normal') geo.deleteAttribute(name)
+    _m.compose(_p.set(x, y, z), _q.setFromEuler(_e.set(rx, ry, rz)), _s.set(sx, sy, sz))
+    geo.applyMatrix4(_m)
+    if (!this.parts.has(key)) this.parts.set(key, [])
+    this.parts.get(key)!.push(geo)
+  }
+  /** Also mirrored across x = 0. */
+  addSym(key: string, g: THREE.BufferGeometry, x: number, y: number, z: number, rx = 0, ry = 0, rz = 0, sx = 1, sy = 1, sz = 1): void {
+    this.add(key, g, x, y, z, rx, ry, rz, sx, sy, sz)
+    this.add(key, g, -x, y, z, rx, -ry, -rz, sx, sy, sz)
+  }
+  build(mats: Record<string, THREE.Material>, into: THREE.Object3D): void {
+    for (const [key, list] of this.parts) {
+      const g = mergeGeometries(list)
+      into.add(new THREE.Mesh(g, mats[key]))
+    }
+  }
+}
+
+function hullShape(k: number): THREE.Shape {
+  const s = new THREE.Shape()
+  s.moveTo(0, 5.6 * k)
+  s.bezierCurveTo(0.45 * k, 4.6 * k, 1.0 * k, 2.4 * k, 2.2 * k, -0.6 * k)
+  s.bezierCurveTo(2.7 * k, -1.6 * k, 3.1 * k, -2.2 * k, 3.15 * k, -2.75 * k)
+  s.lineTo(2.0 * k, -3.45 * k)
+  s.lineTo(1.5 * k, -4.15 * k)
+  s.lineTo(-1.5 * k, -4.15 * k)
+  s.lineTo(-2.0 * k, -3.45 * k)
+  s.lineTo(-3.15 * k, -2.75 * k)
+  s.bezierCurveTo(-3.1 * k, -2.2 * k, -2.7 * k, -1.6 * k, -2.2 * k, -0.6 * k)
+  s.bezierCurveTo(-1.0 * k, 2.4 * k, -0.45 * k, 4.6 * k, 0, 5.6 * k)
+  return s
+}
+
+function slab(shape: THREE.Shape, depth: number, bevel: number, segs = 4): THREE.BufferGeometry {
+  const g = new THREE.ExtrudeGeometry(shape, { depth, bevelEnabled: true, bevelThickness: bevel, bevelSize: bevel * 0.9, bevelSegments: segs, curveSegments: 28 })
+  // rotateX(+90°): shape-y → +z (nose forward), extrusion → −y; lifted so it sits on y = 0.
+  g.rotateX(Math.PI / 2)
+  g.translate(0, depth, 0)
+  g.computeVertexNormals()
+  return g
+}
+
+function numberTexture(text: string, color: string): THREE.Texture {
+  const c = document.createElement('canvas')
+  c.width = 128; c.height = 128
+  const x = c.getContext('2d')!
+  x.font = 'bold 92px "Chakra Petch", system-ui, sans-serif'
+  x.textAlign = 'center'
+  x.textBaseline = 'middle'
+  x.fillStyle = color
+  x.fillText(text, 64, 70)
+  const t = new THREE.CanvasTexture(c)
+  t.colorSpace = THREE.SRGBColorSpace
+  t.anisotropy = 4
+  return t
+}
 
 function flameMaterial(core: THREE.Color, edge: THREE.Color): THREE.ShaderMaterial {
   return new THREE.ShaderMaterial({
@@ -11,171 +90,175 @@ function flameMaterial(core: THREE.Color, edge: THREE.Color): THREE.ShaderMateri
     blending: THREE.AdditiveBlending,
     side: THREE.DoubleSide,
     uniforms: {
-      uThrottle: { value: 0 },
-      uBoost: { value: 0 },
-      uTime: { value: 0 },
-      uCore: { value: core },
-      uEdge: { value: edge },
+      uThrottle: { value: 0 }, uBoost: { value: 0 }, uTime: { value: 0 },
+      uLen: { value: 1 }, uWid: { value: 1 },
+      uCore: { value: core }, uEdge: { value: edge },
     },
     vertexShader: /* glsl */ `
+      attribute vec2 aCenter;
+      uniform float uLen;
+      uniform float uWid;
       varying vec2 vUv;
       varying vec3 vN;
       varying vec3 vV;
       void main() {
         vUv = uv;
-        vec4 mv = modelViewMatrix * vec4(position, 1.0);
+        vec3 p = position;
+        // Length along −z from the nozzle plane; width around each nozzle's own centre.
+        p.z = ${NOZZLE_Z.toFixed(2)} + (p.z - ${NOZZLE_Z.toFixed(2)}) * uLen;
+        p.xy = aCenter + (p.xy - aCenter) * uWid;
+        vec4 mv = modelViewMatrix * vec4(p, 1.0);
         vN = normalize(normalMatrix * normal);
         vV = normalize(-mv.xyz);
         gl_Position = projectionMatrix * mv;
       }`,
     fragmentShader: /* glsl */ `
-      uniform float uThrottle;
-      uniform float uBoost;
-      uniform float uTime;
-      uniform vec3 uCore;
-      uniform vec3 uEdge;
+      uniform float uThrottle, uBoost, uTime;
+      uniform vec3 uCore, uEdge;
       varying vec2 vUv;
       varying vec3 vN;
       varying vec3 vV;
-      float h(float x) { return fract(sin(x * 91.3) * 437.5); }
       void main() {
-        // uv.y: 0 at the nozzle (the cone's base), 1 at the tip.
         float t = vUv.y;
         float facing = abs(dot(vN, vV));
         float body = pow(facing, 1.5);
         float fade = pow(1.0 - t, 1.6);
-        float flick = 0.85 + 0.15 * h(floor(uTime * 60.0) + vUv.x * 7.0);
-        // Shock diamonds: bright bands along the plume on boost.
-        float diamonds = uBoost * smoothstep(0.55, 1.0, sin(t * 26.0 - uTime * 4.0)) * (1.0 - t) * 1.6;
+        // A smooth flicker (a per-frame random strobed).
+        float flick = 0.9 + 0.1 * sin(uTime * 53.0 + vUv.x * 6.28) * sin(uTime * 31.0);
+        float diamonds = uBoost * smoothstep(0.55, 1.0, sin(t * 26.0 - uTime * 4.0)) * (1.0 - t);
         vec3 c = mix(uEdge, uCore, body * (1.0 - t * 0.7)) * (fade * body * 0.9 + diamonds * 0.5);
         gl_FragColor = vec4(c * flick * (0.3 + 0.7 * uThrottle), 1.0);
       }`,
   })
 }
 
+function flameGeometry(radius: number): THREE.BufferGeometry {
+  const list: THREE.BufferGeometry[] = []
+  for (const [x, y] of NOZZLES) {
+    const g = new THREE.ConeGeometry(radius, 1, 20, 1, true)
+    g.translate(0, 0.5, 0)
+    g.rotateX(-Math.PI / 2) // base at z = 0, tip at z = −1
+    g.translate(x, y, NOZZLE_Z)
+    const n = g.attributes.position.count
+    const c = new Float32Array(n * 2)
+    for (let i = 0; i < n; i++) { c[i * 2] = x; c[i * 2 + 1] = y }
+    g.setAttribute('aCenter', new THREE.BufferAttribute(c, 2))
+    list.push(g)
+  }
+  return mergeGeometries(list)
+}
+
 export class Craft {
   readonly root = new THREE.Group()
   /** Banks and pitches; root carries position + heading. */
   readonly body = new THREE.Group()
-  readonly flames: THREE.Mesh[] = []
-  readonly nozzles: THREE.Vector3[] = []
-  readonly wingtips: THREE.Vector3[] = [new THREE.Vector3(-3.1, 0.15, -2.2), new THREE.Vector3(3.1, 0.15, -2.2)]
-  readonly sidePuffs: THREE.Vector3[] = [new THREE.Vector3(-2.9, 0.1, 0.2), new THREE.Vector3(2.9, 0.1, 0.2)]
+  private readonly hi = new THREE.Group()
+  private readonly lo = new THREE.Group()
+  readonly nozzles: THREE.Vector3[] = NOZZLES.map(([x, y]) => new THREE.Vector3(x, y, NOZZLE_Z - 0.1))
+  readonly wingtips: THREE.Vector3[] = [new THREE.Vector3(-3.15, 0.2, -2.6), new THREE.Vector3(3.15, 0.2, -2.6)]
+  readonly sidePuffs: THREE.Vector3[] = [new THREE.Vector3(-3.0, 0.2, -1.4), new THREE.Vector3(3.0, 0.2, -1.4)]
   private readonly flameMat: THREE.ShaderMaterial
   private readonly innerMat: THREE.ShaderMaterial
   private readonly glow: THREE.MeshBasicMaterial
   readonly cone: THREE.Mesh
   private readonly coneMat: THREE.ShaderMaterial
 
-  constructor(env: THREE.Texture) {
+  constructor(env: THREE.Texture, paint: Paint = { body: 0xeef1f4, trim: 0xff5a14, number: '07' }) {
     this.root.add(this.body)
-    const white = new THREE.MeshPhysicalMaterial({ color: 0xeef1f4, roughness: 0.28, metalness: 0.15, clearcoat: 1, clearcoatRoughness: 0.08, envMap: env, envMapIntensity: 1.1 })
-    const carbon = new THREE.MeshStandardMaterial({ color: 0x15171b, roughness: 0.5, metalness: 0.6, envMap: env, flatShading: true })
-    const orange = new THREE.MeshStandardMaterial({ color: 0xff5a14, roughness: 0.35, metalness: 0.2, emissive: 0xff3a00, emissiveIntensity: 0.35, envMap: env })
-    const glass = new THREE.MeshPhysicalMaterial({ color: 0x0b1420, roughness: 0.04, metalness: 0.5, clearcoat: 1, envMap: env, envMapIntensity: 1.6 })
+    this.body.add(this.hi, this.lo)
+    const mats: Record<string, THREE.Material> = {
+      paint: new THREE.MeshPhysicalMaterial({ color: paint.body, roughness: 0.3, metalness: 0.15, clearcoat: 1, clearcoatRoughness: 0.14, envMap: env, envMapIntensity: 1.1 }),
+      trim: new THREE.MeshStandardMaterial({ color: paint.trim, roughness: 0.35, metalness: 0.25, emissive: paint.trim, emissiveIntensity: 0.18, envMap: env }),
+      carbon: new THREE.MeshStandardMaterial({ color: 0x15171b, roughness: 0.45, metalness: 0.65, envMap: env }),
+      metal: new THREE.MeshStandardMaterial({ color: 0x8a8f98, roughness: 0.25, metalness: 1, envMap: env }),
+      glass: new THREE.MeshPhysicalMaterial({ color: 0x0b1420, roughness: 0.05, metalness: 0.5, clearcoat: 1, envMap: env, envMapIntensity: 1.6 }),
+    }
+    for (const m of Object.values(mats)) patchStandard(m as THREE.MeshStandardMaterial)
     this.glow = new THREE.MeshBasicMaterial({ color: new THREE.Color(0.3, 1.6, 3.2) })
-    const hot = new THREE.MeshBasicMaterial({ color: new THREE.Color(2.6, 1.3, 0.55) })
-    for (const m of [white, carbon, orange, glass]) patchStandard(m as THREE.MeshStandardMaterial)
+    mats.glow = this.glow
+    mats.hot = new THREE.MeshBasicMaterial({ color: new THREE.Color(1.5, 0.42, 0.1) })
 
-    // Hull: a delta outline (top view) extruded thin with a generous bevel.
-    const s = new THREE.Shape()
-    s.moveTo(0, 5.4)
-    s.bezierCurveTo(0.55, 4.2, 1.2, 1.8, 2.8, -1.6)
-    s.lineTo(3.05, -2.7)
-    s.lineTo(1.9, -3.4)
-    s.lineTo(1.3, -4.1)
-    s.lineTo(-1.3, -4.1)
-    s.lineTo(-1.9, -3.4)
-    s.lineTo(-3.05, -2.7)
-    s.lineTo(-2.8, -1.6)
-    s.bezierCurveTo(-1.2, 1.8, -0.55, 4.2, 0, 5.4)
-    const hullGeo = new THREE.ExtrudeGeometry(s, { depth: 0.32, bevelEnabled: true, bevelThickness: 0.24, bevelSize: 0.22, bevelSegments: 3, curveSegments: 14 })
-    hullGeo.rotateX(Math.PI / 2)
-    // (rotateX(+90°) maps shape-y to +z, so the nose is +Z; the extrusion goes to −y.)
-    hullGeo.translate(0, 0.32, 0)
-    hullGeo.computeVertexNormals()
-    const hull = new THREE.Mesh(hullGeo, white)
-    this.body.add(hull)
-    // Belly: carbon, a little smaller, under the hull.
-    const belly = new THREE.Mesh(hullGeo, carbon)
-    belly.scale.set(0.9, 0.7, 0.94)
-    belly.position.y = -0.28
-    this.body.add(belly)
-
-    // Spine + canopy.
-    const spine = new THREE.Mesh(new THREE.CapsuleGeometry(0.62, 4.2, 6, 14), white)
-    spine.rotation.x = Math.PI / 2
-    spine.scale.set(1.1, 1, 0.55)
-    spine.position.set(0, 0.62, -0.6)
-    this.body.add(spine)
-    const canopy = new THREE.Mesh(new THREE.SphereGeometry(0.7, 24, 14), glass)
-    canopy.scale.set(0.85, 0.55, 2.1)
-    canopy.position.set(0, 0.86, 1.5)
-    this.body.add(canopy)
-
-    // Accent stripes.
-    for (const x of [-0.95, 0.95]) {
-      const st = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.06, 5.2), orange)
-      st.position.set(x, 0.72, -0.1)
-      st.rotation.y = x > 0 ? -0.12 : 0.12
-      this.body.add(st)
+    const B = new Builder()
+    // ── hull: three stepped slabs, each smaller and higher ──
+    B.add('paint', slab(hullShape(1), 0.3, 0.24, 5))
+    B.add('carbon', slab(hullShape(0.93), 0.2, 0.12), 0, -0.3, -0.05)
+    B.add('paint', slab(hullShape(0.7), 0.22, 0.16, 4), 0, 0.42, -0.35)
+    // Spine + canopy with a frame.
+    B.add('paint', new THREE.CapsuleGeometry(0.62, 4.0, 8, 18), 0, 0.66, -0.7, Math.PI / 2, 0, 0, 1.15, 1, 0.55)
+    B.add('glass', new THREE.SphereGeometry(0.72, 28, 16), 0, 0.92, 1.45, 0, 0, 0, 0.86, 0.56, 2.15)
+    B.add('carbon', new THREE.BoxGeometry(0.07, 0.08, 2.9), 0, 1.31, 1.4)
+    // Nose: a sensor strip and a splitter.
+    B.add('glow', new THREE.BoxGeometry(1.1, 0.05, 0.1), 0, 0.42, 4.55)
+    B.add('carbon', new THREE.BoxGeometry(1.6, 0.06, 1.4), 0, -0.25, 4.3, 0.05, 0, 0)
+    // Side intakes (dark mouths behind the cockpit).
+    B.addSym('carbon', new THREE.BoxGeometry(0.55, 0.42, 1.7), 1.05, 0.62, 0.2, 0, -0.18, 0)
+    B.addSym('metal', new THREE.BoxGeometry(0.5, 0.06, 1.2), 1.07, 0.62, 0.35, 0, -0.18, 0)
+    // Strakes and panel seams.
+    B.addSym('trim', new THREE.BoxGeometry(0.14, 0.07, 5.0), 0.95, 0.8, -0.2, 0, -0.12, 0)
+    B.addSym('carbon', new THREE.BoxGeometry(0.04, 0.04, 2.6), 1.75, 0.57, -1.4, 0, -0.55, 0)
+    B.addSym('carbon', new THREE.BoxGeometry(1.6, 0.04, 0.04), 1.6, 0.57, -2.4)
+    B.addSym('trim', new THREE.BoxGeometry(1.4, 0.05, 0.22), 2.3, 0.35, -1.2, 0, -0.62, 0)
+    // Canted fins with tips.
+    const fin = new THREE.BoxGeometry(0.1, 1.2, 1.8)
+    fin.translate(0, 0.6, 0)
+    B.addSym('paint', fin, 1.55, 0.6, -3.25, -0.25, 0, -0.35)
+    B.addSym('trim', new THREE.BoxGeometry(0.12, 0.26, 0.7), 1.97, 1.66, -3.6, -0.25, 0, -0.35)
+    // Wingtip pods (side thrusters) with glowing ports.
+    B.addSym('carbon', new THREE.CylinderGeometry(0.22, 0.3, 1.7, 12), 3.0, 0.22, -2.1, Math.PI / 2, 0, 0)
+    B.addSym('glow', new THREE.CylinderGeometry(0.12, 0.12, 0.08, 10), 3.0, 0.22, -1.22, Math.PI / 2, 0, 0)
+    // Hover emitters underneath.
+    B.addSym('glow', new THREE.BoxGeometry(0.22, 0.05, 3.4), 2.0, -0.33, -0.6, 0, -0.5, 0)
+    B.add('glow', new THREE.BoxGeometry(0.9, 0.05, 0.2), 0, -0.33, 3.0)
+    // Rear diffuser.
+    for (const x of [-1.4, -0.7, 0, 0.7, 1.4]) B.add('carbon', new THREE.BoxGeometry(0.06, 0.4, 1.1), x, -0.25, -3.75)
+    // Nacelles, petal rings, hot cores.
+    for (const [x, y] of NOZZLES) {
+      B.add('carbon', new THREE.CylinderGeometry(0.52, 0.6, 2.0, 22, 1, true), x, y, NOZZLE_Z + 0.95, Math.PI / 2, 0, 0)
+      B.add('metal', new THREE.TorusGeometry(0.54, 0.07, 8, 24), x, y, NOZZLE_Z + 0.05)
+      B.add('metal', new THREE.TorusGeometry(0.58, 0.04, 6, 24), x, y, NOZZLE_Z + 1.6)
+      for (let p = 0; p < 10; p++) {
+        const a = (p / 10) * Math.PI * 2
+        B.add('carbon', new THREE.BoxGeometry(0.2, 0.04, 0.45), x + Math.cos(a) * 0.55, y + Math.sin(a) * 0.55, NOZZLE_Z - 0.1, 0, 0, a + Math.PI / 2)
+      }
+      B.add('hot', new THREE.CircleGeometry(0.34, 20), x, y, NOZZLE_Z + 0.25, 0, Math.PI, 0)
+      B.add('carbon', new THREE.CylinderGeometry(0.47, 0.36, 0.3, 20, 1, true), x, y, NOZZLE_Z + 0.1, Math.PI / 2, 0, 0)
     }
-    // Canted fins.
-    for (const x of [-1.55, 1.55]) {
-      const fin = new THREE.Mesh(new THREE.BoxGeometry(0.1, 1.15, 1.7), white)
-      fin.geometry.translate(0, 0.55, 0)
-      fin.position.set(x, 0.55, -3.2)
-      fin.rotation.z = x > 0 ? -0.35 : 0.35
-      fin.rotation.x = -0.25
-      this.body.add(fin)
-      const tip = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.25, 0.6), orange)
-      tip.position.set(x * 1.24, 1.55, -3.55)
-      tip.rotation.z = fin.rotation.z
-      this.body.add(tip)
-    }
-    // Hover strips (cyan, under the wings) and the wingtip side thrusters.
-    for (const x of [-2.1, 2.1]) {
-      const strip = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.06, 3.4), this.glow)
-      strip.position.set(x, -0.08, -0.6)
-      strip.rotation.y = x > 0 ? -0.5 : 0.5
-      this.body.add(strip)
-      const pod = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.28, 1.6, 10), carbon)
-      pod.rotation.x = Math.PI / 2
-      pod.position.set(x * 1.38, 0.18, -2.0)
-      this.body.add(pod)
+    B.add('carbon', new THREE.CylinderGeometry(0.02, 0.03, 0.9, 5), -0.5, 1.2, -1.6, -0.3, 0, 0)
+    B.build(mats, this.hi)
+
+    // Racing numbers on the fins' outer faces.
+    const num = new THREE.MeshBasicMaterial({ map: numberTexture(paint.number, '#' + new THREE.Color(paint.trim).getHexString()), transparent: true, depthWrite: false })
+    for (const sgn of [-1, 1]) {
+      const plane = new THREE.Mesh(new THREE.PlaneGeometry(0.9, 0.9), num)
+      // Fin at x = ±1.55 canted outward 0.35 rad: sit the plate just off its outer face.
+      plane.position.set(sgn * 1.83, 1.18, -3.3)
+      plane.rotation.set(0, sgn * Math.PI / 2, 0, 'YXZ')
+      plane.rotateX(-sgn * 0.35)
+      this.hi.add(plane)
     }
 
-    // Three thrusters: carbon nacelles, hot cores, and flames.
+    // Low detail.
+    const L = new Builder()
+    L.add('paint', slab(hullShape(1), 0.45, 0.2, 1))
+    L.add('paint', new THREE.CapsuleGeometry(0.6, 4.0, 2, 8), 0, 0.66, -0.7, Math.PI / 2, 0, 0, 1.1, 1, 0.55)
+    for (const [x, y] of NOZZLES) {
+      L.add('carbon', new THREE.CylinderGeometry(0.52, 0.6, 2.0, 8, 1, true), x, y, NOZZLE_Z + 0.95, Math.PI / 2, 0, 0)
+      L.add('hot', new THREE.CircleGeometry(0.44, 8), x, y, NOZZLE_Z + 0.1, 0, Math.PI, 0)
+    }
+    L.addSym('trim', new THREE.BoxGeometry(0.14, 1.2, 1.8), 1.55, 1.2, -3.25, -0.25, 0, -0.35)
+    L.build(mats, this.lo)
+    this.lo.visible = false
+
+    // Flames: two draws for all three nozzles.
     this.flameMat = flameMaterial(new THREE.Color(3.2, 2.3, 1.4), new THREE.Color(2.2, 0.55, 0.1))
     this.innerMat = flameMaterial(new THREE.Color(3.6, 3.4, 3.4), new THREE.Color(1.4, 1.2, 1.8))
-    const flameGeo = new THREE.ConeGeometry(0.48, 1, 20, 1, true)
-    flameGeo.translate(0, 0.5, 0)
-    flameGeo.rotateX(-Math.PI / 2) // base at the nozzle, tip toward -Z
-    const nacGeo = new THREE.CylinderGeometry(0.52, 0.6, 1.9, 18, 1, true)
-    nacGeo.rotateX(Math.PI / 2)
-    const coreGeo = new THREE.CircleGeometry(0.44, 18)
-    coreGeo.rotateY(Math.PI)
-    const pos: [number, number, number][] = [[-1.05, 0.34, -4.0], [0, 0.55, -4.15], [1.05, 0.34, -4.0]]
-    for (const [x, y, z] of pos) {
-      const nac = new THREE.Mesh(nacGeo, carbon)
-      nac.position.set(x, y, z + 0.6)
-      this.body.add(nac)
-      const core = new THREE.Mesh(coreGeo, hot)
-      core.position.set(x, y, z - 0.25)
-      this.body.add(core)
-      const f = new THREE.Mesh(flameGeo, this.flameMat)
-      f.position.set(x, y, z - 0.3)
+    for (const f of [new THREE.Mesh(flameGeometry(0.48), this.flameMat), new THREE.Mesh(flameGeometry(0.26), this.innerMat)]) {
+      f.frustumCulled = false
+      f.renderOrder = 5
       this.body.add(f)
-      this.flames.push(f)
-      const fi = new THREE.Mesh(flameGeo, this.innerMat)
-      fi.position.set(x, y, z - 0.3)
-      fi.scale.setScalar(0.5)
-      f.userData.inner = fi
-      this.body.add(fi)
-      this.nozzles.push(new THREE.Vector3(x, y, z - 0.4))
     }
 
-    // The vapour cone: a pale shell around the craft, flashed as each Mach number breaks.
+    // The vapour cone: a pale shell, flashed as each Mach number breaks.
     this.coneMat = new THREE.ShaderMaterial({
       transparent: true,
       depthWrite: false,
@@ -190,7 +273,7 @@ export class Craft {
           float rim = 1.0 - abs(dot(vN, vV));
           float wisp = 0.6 + 0.4 * sin(vUv.x * 40.0 + uTime * 30.0) * sin(vUv.y * 9.0 - uTime * 20.0);
           float a = uA * rim * rim * wisp * smoothstep(0.0, 0.3, vUv.y) * (1.0 - smoothstep(0.75, 1.0, vUv.y));
-          gl_FragColor = vec4(vec3(1.4, 1.45, 1.5), a * 0.75);
+          gl_FragColor = vec4(vec3(1.4, 1.45, 1.5), a * 0.6);
         }`,
     })
     const coneGeo = new THREE.ConeGeometry(4.6, 7, 40, 1, true)
@@ -201,21 +284,23 @@ export class Craft {
     this.body.add(this.cone)
   }
 
-  /** Flames by throttle (0 idle … 1 cruise) and boost (0 … 1). */
-  setFlames(throttle: number, boost: number, time: number, flicker: number): void {
+  /** Detail by distance from the camera. */
+  lod(cam: THREE.Vector3): void {
+    const far = this.root.position.distanceToSquared(cam) > LOD_DIST * LOD_DIST
+    this.hi.visible = !far
+    this.lo.visible = far
+  }
+
+  setFlames(throttle: number, boost: number, time: number): void {
     const len = 1.2 + throttle * 1.8 + boost * 5.5
     const wid = 0.85 + boost * 0.35
-    for (let i = 0; i < this.flames.length; i++) {
-      const f = this.flames[i]
-      const j = 1 + flicker * (Math.sin(time * 71 + i * 2.1) * 0.08 + Math.sin(time * 37 + i) * 0.06)
-      f.scale.set(wid, wid, len * j)
-      const fi = f.userData.inner as THREE.Mesh
-      fi.scale.set(wid * 0.55, wid * 0.55, len * 0.55 * j)
-    }
-    for (const m of [this.flameMat, this.innerMat]) {
+    const j = 1 + Math.sin(time * 41) * 0.05 + Math.sin(time * 23) * 0.04
+    for (const [m, k] of [[this.flameMat, 1], [this.innerMat, 0.55]] as const) {
       m.uniforms.uThrottle.value = throttle
       m.uniforms.uBoost.value = boost
       m.uniforms.uTime.value = time
+      m.uniforms.uLen.value = len * k * j
+      m.uniforms.uWid.value = wid
     }
     this.glow.color.setRGB(0.3 + boost * 0.4, 1.6, 3.2)
   }

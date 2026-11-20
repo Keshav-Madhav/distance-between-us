@@ -77,3 +77,11 @@ export function patchStandard(mat: THREE.MeshStandardMaterial, opts: PatchOpts =
 
 /** Ground + sky GLSL bundle, for custom ShaderMaterials. */
 export const WORLD_GLSL = `${TERRAIN_GLSL}\n${SKY_GLSL}\n${NOISE_GLSL}`
+
+/** Just the fog amount (for additive effects that must fade, not tint, with distance). */
+export const SKY_FOG_ONLY = /* glsl */ `
+float fogAmount(vec3 wpos) {
+  float k = length(wpos - cameraPosition) * 0.000062;
+  return clamp(1.0 - exp(-k * k), 0.0, 1.0);
+}
+`

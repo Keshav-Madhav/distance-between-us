@@ -1,11 +1,12 @@
-// The desert: sky dome, three terrain rings (fine near, coarse far, each snapped to its own grid so
-// nothing swims), shader-wrapped pebbles, CPU-wrapped boulders and mesas (both collide), the env map.
+// The desert: sky dome (with fbm cumulus), two rings of far mountains, three terrain rings (fine near,
+// coarse far, each snapped to its own grid so nothing swims), shader-wrapped pebbles, CPU-wrapped
+// boulders and mesas (both collide, against their true lumpy profile), the env map.
 import * as THREE from 'three'
 import { REBASE } from './config'
-import { groundH, riverAt, SUN_DIR } from './terrain'
+import { groundH, MOUND_U, SUN_DIR } from './terrain'
 import { patchStandard, WORLD_GLSL } from './shaders'
 
-function rng(seed: number): () => number {
+export function rng(seed: number): () => number {
   let a = seed >>> 0
   return () => {
     a = (a + 0x6d2b79f5) >>> 0
@@ -26,7 +27,7 @@ function skyMaterial(ground: boolean): THREE.ShaderMaterial {
   return new THREE.ShaderMaterial({
     side: THREE.BackSide,
     depthWrite: false,
-    uniforms: {},
+    uniforms: { uTime: { value: 0 }, uCloudOff: { value: new THREE.Vector2() }, ...MOUND_U },
     vertexShader: /* glsl */ `
       varying vec3 vDir;
       void main() {
@@ -36,20 +37,105 @@ function skyMaterial(ground: boolean): THREE.ShaderMaterial {
       }`,
     fragmentShader: /* glsl */ `
       ${WORLD_GLSL}
+      uniform float uTime;
+      uniform vec2 uCloudOff;
       varying vec3 vDir;
+      float fbm(vec2 p) {
+        float a = 0.5, s = 0.0;
+        for (int i = 0; i < 5; i++) { s += a * vnoise(p); p = p * 2.03 + 17.1; a *= 0.5; }
+        return s;
+      }
       void main() {
         vec3 d = normalize(vDir);
         vec3 c = skyColor(d);
         float s = max(dot(d, SUN_DIR), 0.0);
         ${ground ? 'c = mix(c, vec3(0.62, 0.3, 0.13), 1.0 - smoothstep(-0.08, 0.0, d.y));' : ''}
-        // The sun: a hot disk (well past bloom's threshold) and a wide glare.
-        c += vec3(1.0, 0.9, 0.75) * (smoothstep(0.99955, 0.9998, s) * 60.0 + pow(s, 900.0) * 6.0 + pow(s, 30.0) * 0.5 + pow(s, 4.0) * 0.12);
-        // A few high streaks of cirrus.
-        float cl = vnoise(d.xz / max(d.y, 0.04) * vec2(1.6, 6.0) + 3.0) * vnoise(d.xz / max(d.y, 0.04) * 4.0);
-        c = mix(c, vec3(1.9, 1.85, 1.8), smoothstep(0.35, 0.75, cl) * smoothstep(0.02, 0.25, d.y) * 0.35);
+        // Fair-weather cumulus on a plane 2.6 km up: fbm coverage, lit tops, grey-blue bases,
+        // thinned toward the horizon where they would alias.
+        if (d.y > 0.015) {
+          vec2 cp = d.xz / d.y * 2600.0 + uCloudOff;
+          float base = fbm(cp * 0.00032);
+          float cov = smoothstep(0.52, 0.78, base);
+          float detail = fbm(cp * 0.0016 + 3.0);
+          cov *= smoothstep(0.25, 0.55, detail + cov * 0.4);
+          float lit = clamp(fbm(cp * 0.00032 + SUN_DIR.xz * 0.06) - base + 0.55, 0.0, 1.0);
+          vec3 cc = mix(vec3(0.62, 0.68, 0.8), vec3(1.9, 1.8, 1.65), lit);
+          cc += vec3(1.0, 0.8, 0.55) * pow(s, 6.0) * 0.6;
+          float fade = smoothstep(0.015, 0.16, d.y);
+          c = mix(c, cc, cov * fade * 0.92);
+        }
+        // The sun: a hot disk (past bloom's threshold) and a wide glare.
+        c += vec3(1.0, 0.9, 0.75) * (smoothstep(0.99955, 0.9998, s) * 40.0 + pow(s, 900.0) * 4.0 + pow(s, 30.0) * 0.4 + pow(s, 4.0) * 0.1);
         gl_FragColor = vec4(c, 1.0);
       }`,
   })
+}
+
+/** A ring of far mountains around the camera: a silhouette band in the haze, two layers deep. */
+function mountains(): THREE.Mesh {
+  const seg = 720
+  const layers = [
+    { r: 21000, base: 0.7, amp: 1.0, seed: 1.7, tint: 0 },
+    { r: 28000, base: 1.0, amp: 1.6, seed: 4.2, tint: 1 },
+  ]
+  const pos: number[] = []
+  const tint: number[] = []
+  const idx: number[] = []
+  const n1 = (x: number, s: number) => Math.sin(x * 3 + s) * 0.5 + Math.sin(x * 7.3 + s * 2) * 0.25 + Math.sin(x * 17.1 + s * 3) * 0.14 + Math.sin(x * 41 + s) * 0.06
+  for (const L of layers) {
+    const start = pos.length / 3
+    for (let i = 0; i <= seg; i++) {
+      const a = (i / seg) * Math.PI * 2
+      const ridge = Math.max(0, L.base * 0.35 + n1(a, L.seed) * 0.6 + Math.abs(n1(a * 2.1, L.seed + 9)) * 0.5)
+      const h = 120 + ridge * 950 * L.amp
+      const x = Math.cos(a) * L.r, z = Math.sin(a) * L.r
+      pos.push(x, -400, z, x, h, z)
+      tint.push(L.tint, 0, L.tint, 1)
+    }
+    for (let i = 0; i < seg; i++) {
+      const a = start + i * 2
+      idx.push(a, a + 2, a + 1, a + 1, a + 2, a + 3)
+    }
+  }
+  const g = new THREE.BufferGeometry()
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3))
+  g.setAttribute('aT', new THREE.Float32BufferAttribute(tint, 2))
+  g.setIndex(idx)
+  const mat = new THREE.ShaderMaterial({
+    side: THREE.DoubleSide,
+    depthWrite: false,
+    uniforms: { ...MOUND_U },
+    vertexShader: /* glsl */ `
+      attribute vec2 aT;
+      varying vec2 vT;
+      varying vec3 vDir;
+      void main() {
+        vT = aT;
+        vDir = position;
+        vec4 p = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        gl_Position = p.xyww;
+      }`,
+    fragmentShader: /* glsl */ `
+      ${WORLD_GLSL}
+      varying vec2 vT;
+      varying vec3 vDir;
+      void main() {
+        vec3 d = normalize(vDir);
+        vec3 sky = skyColor(vec3(d.x, max(d.y, 0.0) * 0.4, d.z));
+        // Near range: warm, rusty, more solid; far: blue, nearly sky. Bases fade into the dust.
+        vec3 rock = mix(vec3(0.42, 0.2, 0.14), vec3(0.34, 0.42, 0.6), vT.x);
+        float sunSide = max(dot(normalize(vec3(d.x, 0.0, d.z)), normalize(vec3(SUN_DIR.x, 0.0, SUN_DIR.z))), 0.0);
+        rock *= 0.8 + 0.5 * sunSide;
+        float haze = mix(0.32, 0.6, vT.x);
+        vec3 c = mix(rock, sky, haze);
+        c = mix(sky, c, smoothstep(0.0, 0.5, vT.y));
+        gl_FragColor = vec4(c, 1.0);
+      }`,
+  })
+  const m = new THREE.Mesh(g, mat)
+  m.frustumCulled = false
+  m.renderOrder = -9
+  return m
 }
 
 // ───────────────────────────── terrain ─────────────────────────────
@@ -83,6 +169,7 @@ function ringGeometry(spacing: number, cells: number, hole: number): THREE.Buffe
 export interface GroundUniforms {
   uCraft: { value: THREE.Vector3 }
   uShadow: { value: THREE.Vector2 }
+  uShadowK: { value: number }
   uFwd: { value: THREE.Vector2 }
   uBoost: { value: number }
   uSpeed: { value: number }
@@ -95,7 +182,7 @@ export interface GroundUniforms {
 
 function terrainMaterial(shared: GroundUniforms, snap: { value: THREE.Vector2 }, drop: number): THREE.ShaderMaterial {
   return new THREE.ShaderMaterial({
-    uniforms: { ...shared, uSnap: snap, uDrop: { value: drop } },
+    uniforms: { ...shared, ...MOUND_U, uSnap: snap, uDrop: { value: drop } },
     vertexShader: /* glsl */ `
       ${WORLD_GLSL}
       uniform vec2 uSnap;
@@ -112,6 +199,7 @@ function terrainMaterial(shared: GroundUniforms, snap: { value: THREE.Vector2 },
       ${WORLD_GLSL}
       uniform vec3 uCraft;
       uniform vec2 uShadow;
+      uniform float uShadowK;
       uniform vec2 uFwd;
       uniform float uBoost;
       uniform float uSpeed;
@@ -129,47 +217,41 @@ function terrainMaterial(shared: GroundUniforms, snap: { value: THREE.Vector2 },
         vec3 n = normalize(vec3(h0 - groundH(p + vec2(e, 0.0)), e, h0 - groundH(p + vec2(0.0, e))));
         float river = riverAt(p);
 
-        // A faint extra ripple in the normal (the texture carries the real ripples, baked).
-        float near = 1.0 - smoothstep(25.0, 240.0, dist);
-        vec2 q = p + 7.0 * vec2(vnoise(p * 0.03), vnoise(p * 0.03 + 7.3));
-        float ph = dot(q, vec2(0.83, 0.55)) * 3.4;
-        n = normalize(n + vec3(0.83, 0.0, 0.55) * cos(ph) * 0.1 * near * (1.0 - river) * (1.0 - 0.6 * uSpeed));
-
-        // Generated textures (docs/ART_STYLE.md): sand at two scales, rotated against each other so
-        // the repeat never lines up; gravel in patches; cracked clay in the riverbeds.
+        // (At Mach speeds fine texture detail sweeps past faster than the frame rate and strobes —
+        // the "flashing". The mip level is pushed up with speed: the ground blurs like the motion does.)
+        float bias = uSpeed * 2.2;
         mat2 rot = mat2(0.8, -0.6, 0.6, 0.8);
-        vec3 s1 = texture2D(tSand, p / 26.0).rgb;
-        vec3 s2 = texture2D(tSand, rot * p / 170.0 + 0.37).rgb;
+        vec3 s1 = texture2D(tSand, p / 26.0, bias).rgb;
+        vec3 s2 = texture2D(tSand, rot * p / 170.0 + 0.37, bias * 0.5).rgb;
         vec3 sandT = mix(s1, s2, 0.45);
         float gm = smoothstep(0.58, 0.72, vnoise(p * 0.0045 + 11.0) * 0.7 + vnoise(p * 0.03) * 0.3);
-        vec3 grav = texture2D(tGravel, rot * p / 9.0).rgb;
-        vec3 clayT = texture2D(tClay, p / 13.0).rgb;
+        vec3 grav = texture2D(tGravel, rot * p / 9.0, bias).rgb;
+        vec3 clayT = texture2D(tClay, p / 13.0, bias).rgb;
         vec3 alb = mix(sandT, grav, gm * 0.85);
         alb = mix(alb, clayT * vec3(1.0, 0.92, 0.85), river);
-        // Macro variation: red patches, pale crests (shapes the far land reads as).
         float big = vnoise(p * 0.0011) * 0.6 + vnoise(p * 0.004) * 0.4;
         alb *= mix(vec3(1.0), vec3(0.78, 0.55, 0.5), smoothstep(0.45, 0.75, big) * 0.7);
         alb *= mix(vec3(1.0), vec3(1.12, 1.1, 1.05), smoothstep(6.0, 22.0, h0) * 0.6);
         alb *= 0.9 + 0.2 * vnoise(p * 0.03);
 
-        // Light: sun + sky from the normal's direction + a warm bounce.
-        float sun = max(dot(n, SUN_DIR), 0.0);
         alb *= 0.72;
+        float sun = max(dot(n, SUN_DIR), 0.0);
         vec3 col = alb * (vec3(1.0, 0.9, 0.78) * 2.4 * sun + skyColor(n) * 0.36 + vec3(0.5, 0.22, 0.1) * 0.2);
 
-        // The craft's shadow, cast along the sun; its cyan hover glow below; thrust glow behind.
+        // The craft's shadow, cast along the sun (fainter and wider the higher it flies).
         vec2 side = vec2(uFwd.y, -uFwd.x);
         vec2 ds = p - uShadow;
-        float ell = pow(dot(ds, uFwd) / 5.2, 2.0) + pow(dot(ds, side) / 2.9, 2.0);
-        col *= 1.0 - 0.6 * (1.0 - smoothstep(0.55, 1.25, ell));
+        float spread = 1.0 + uShadowK * 0.04;
+        float ell = pow(dot(ds, uFwd) / (5.2 * spread), 2.0) + pow(dot(ds, side) / (2.9 * spread), 2.0);
+        col *= 1.0 - (0.6 / (spread * spread)) * (1.0 - smoothstep(0.55, 1.25, ell));
         vec2 dc = p - uCraft.xz;
-        float hov = exp(-dot(dc, dc) / 22.0);
+        float near = exp(-uShadowK * 0.25);
+        float hov = exp(-dot(dc, dc) / 22.0) * near;
         col += vec3(0.1, 0.5, 1.0) * hov * 0.5;
         float ba = dot(dc, uFwd);
-        float behind = exp(-pow(dot(dc, side) / 3.5, 2.0)) * (1.0 - smoothstep(-4.0, 0.0, ba)) * exp(ba / 26.0);
+        float behind = exp(-pow(dot(dc, side) / 3.5, 2.0)) * (1.0 - smoothstep(-4.0, 0.0, ba)) * exp(ba / 26.0) * near;
         col += vec3(1.4, 0.55, 0.18) * behind * (0.1 + 0.6 * uBoost);
 
-        // The walker's shadow (a vast soft blot).
         if (uWalker.w > 0.0) {
           vec2 dw = p - uWalker.xy;
           col *= 1.0 - 0.45 * uWalker.w * exp(-dot(dw, dw) / (uWalker.z * uWalker.z));
@@ -187,7 +269,7 @@ function pebbles(count: number, tile: number): THREE.InstancedMesh {
   const r = rng(77)
   for (let i = 0; i < p.count; i++) p.setXYZ(i, p.getX(i) * (0.8 + r() * 0.5), p.getY(i) * (0.55 + r() * 0.3), p.getZ(i) * (0.8 + r() * 0.5))
   const mat = new THREE.ShaderMaterial({
-    uniforms: { uTile: { value: tile } },
+    uniforms: { uTile: { value: tile }, ...MOUND_U },
     vertexShader: /* glsl */ `
       ${WORLD_GLSL}
       uniform float uTile;
@@ -198,8 +280,10 @@ function pebbles(count: number, tile: number): THREE.InstancedMesh {
         o.xz += uTile * floor((cameraPosition.xz - o.xz) / uTile + 0.5);
         mat3 m = mat3(instanceMatrix);
         float s = length(m[0]);
-        o.y = groundH(o.xz) - 0.2 * s;
-        vec3 w = o + m * position;
+        // Shrink into the sand with distance: sub-pixel rocks only shimmer.
+        float k = 1.0 - smoothstep(220.0, 520.0, length(o.xz - cameraPosition.xz));
+        o.y = groundH(o.xz) - 0.2 * s - (1.0 - k) * s;
+        vec3 w = o + m * position * max(k, 0.001);
         vW = w;
         vTint = hash12(instanceMatrix[3].xz);
         gl_Position = projectionMatrix * viewMatrix * vec4(w, 1.0);
@@ -214,7 +298,7 @@ function pebbles(count: number, tile: number): THREE.InstancedMesh {
         if (n.y < 0.0) n = -n;
         vec3 alb = mix(vec3(0.3, 0.07, 0.03), vec3(0.55, 0.28, 0.14), vTint);
         float sun = max(dot(n, SUN_DIR), 0.0);
-        vec3 col = alb * (vec3(1.0, 0.9, 0.76) * 3.0 * sun + skyColor(n) * 0.35);
+        vec3 col = alb * (vec3(1.0, 0.9, 0.76) * 2.4 * sun + skyColor(n) * 0.35);
         gl_FragColor = vec4(applyFog(col, vW), 1.0);
       }`,
   })
@@ -238,8 +322,9 @@ function pebbles(count: number, tile: number): THREE.InstancedMesh {
 // ───────────────────────────── mesas + boulders (CPU-wrapped) ─────────────────────────────
 
 type Kind = 'mesa' | 'butte' | 'spire'
+type Profile = (th: number, t: number) => number
 
-function mesaGeometry(kind: Kind, seed: number): { geo: THREE.BufferGeometry; baseR: number } {
+function mesaGeometry(kind: Kind, seed: number): { geo: THREE.BufferGeometry; prof: Profile } {
   const r = rng(seed)
   const radial = kind === 'spire' ? 16 : 26
   const g = new THREE.CylinderGeometry(1, 1, 1.08, radial, kind === 'spire' ? 12 : 16, false)
@@ -247,7 +332,7 @@ function mesaGeometry(kind: Kind, seed: number): { geo: THREE.BufferGeometry; ba
   const harm: [number, number][] = []
   for (let i = 2; i <= 8; i++) harm.push([((0.16 / i) * (0.4 + r())) * (kind === 'mesa' ? 1.3 : 1), r() * 6.28])
   const ledge = 0.45 + r() * 0.3
-  const f = (th: number, t: number) => {
+  const f: Profile = (th, t) => {
     let k = 1
     for (let i = 0; i < harm.length; i++) k += harm[i][0] * Math.sin((i + 2) * th + harm[i][1])
     k *= 1 + 0.04 * Math.sin(17 * th + 3 * t)
@@ -266,18 +351,13 @@ function mesaGeometry(kind: Kind, seed: number): { geo: THREE.BufferGeometry; ba
   for (let i = 0; i < p.count; i++) {
     const x = p.getX(i)
     const z = p.getZ(i)
-    const rr = Math.hypot(x, z)
-    if (rr < 1e-4) continue
-    const y = Math.max(0, p.getY(i))
-    const th = Math.atan2(z, x)
-    const k = f(th, y)
+    if (Math.hypot(x, z) < 1e-4) continue
+    const k = f(Math.atan2(z, x), Math.max(0, p.getY(i)))
     p.setXYZ(i, x * k, p.getY(i), z * k)
   }
   const geo = g.toNonIndexed()
   geo.computeVertexNormals()
-  let sum = 0
-  for (let i = 0; i < 64; i++) sum += f((i / 64) * 6.283, 0.03)
-  return { geo, baseR: sum / 64 }
+  return { geo, prof: f }
 }
 
 interface Placed {
@@ -286,16 +366,19 @@ interface Placed {
   r: number
   h: number
   yaw: number
-  /** The wrapped world centre this frame. */
+  /** The wrapped world centre this frame, its base height, and how grown (0 sunk … 1). */
   x: number
   z: number
-  /** Collision radius at hover height. */
-  cr: number
-  top: number
+  by: number
+  grow: number
+  /** Where the veto was last asked, and its answer (boulders off the race line). */
+  vx?: number
+  vz?: number
+  vetoed?: boolean
 }
 
 class Wrapped {
-  readonly mesh: THREE.InstancedMesh
+  mesh: THREE.InstancedMesh
   readonly items: Placed[] = []
   constructor(
     geo: THREE.BufferGeometry,
@@ -303,13 +386,15 @@ class Wrapped {
     readonly tile: number,
     readonly sinkFrom: number,
     readonly bury: number,
+    readonly prof: Profile,
+    readonly big: boolean,
+    readonly veto: ((x: number, z: number, r: number) => boolean) | null = null,
   ) {
     this.mesh = new THREE.InstancedMesh(geo, mat, 1)
-    this.mesh.frustumCulled = false
   }
   finish(): void {
     const old = this.mesh
-    ;(this as { mesh: THREE.InstancedMesh }).mesh = new THREE.InstancedMesh(old.geometry, old.material, Math.max(1, this.items.length))
+    this.mesh = new THREE.InstancedMesh(old.geometry, old.material, Math.max(1, this.items.length))
     this.mesh.frustumCulled = false
     this.mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage)
     this.mesh.count = this.items.length
@@ -325,16 +410,19 @@ class Wrapped {
       it.z = z
       const cheb = Math.max(Math.abs(x - cx), Math.abs(z - cz))
       const grow = 1 - smooth(this.sinkFrom, T / 2, cheb)
+      if (this.veto && (it.vx !== x || it.vz !== z)) { it.vx = x; it.vz = z; it.vetoed = this.veto(x, z, it.r) }
+      it.grow = it.vetoed ? 0 : grow
       // (Fully sunk: not drawn at all — a flattened disc pokes through the coarse far terrain.)
-      const sy = grow < 0.03 ? 0 : it.h * grow
-      const sr = grow < 0.03 ? 0 : it.r
+      const sy = it.grow < 0.03 ? 0 : it.h * it.grow
+      const sr = it.grow < 0.03 ? 0 : it.r
       const c = Math.cos(it.yaw)
       const s = Math.sin(it.yaw)
+      it.by = groundH(x, z) - this.bury * it.h - 3
       const k = i * 16
       a[k] = c * sr; a[k + 1] = 0; a[k + 2] = -s * sr; a[k + 3] = 0
       a[k + 4] = 0; a[k + 5] = sy; a[k + 6] = 0; a[k + 7] = 0
       a[k + 8] = s * sr; a[k + 9] = 0; a[k + 10] = c * sr; a[k + 11] = 0
-      a[k + 12] = x; a[k + 13] = groundH(x, z) - this.bury * it.h - 3; a[k + 14] = z; a[k + 15] = 1
+      a[k + 12] = x; a[k + 13] = it.by; a[k + 14] = z; a[k + 15] = 1
     }
     this.mesh.instanceMatrix.needsUpdate = true
   }
@@ -343,17 +431,19 @@ class Wrapped {
 export interface Obstacle {
   x: number
   z: number
+  /** True surface radius toward the query point, at the query height. */
   cr: number
-  top: number
   big: boolean
 }
 
 export class World {
   readonly group = new THREE.Group()
   readonly sky: THREE.Mesh
+  readonly hills: THREE.Mesh
   readonly ground: GroundUniforms = {
     uCraft: { value: new THREE.Vector3() },
     uShadow: { value: new THREE.Vector2() },
+    uShadowK: { value: 0 },
     uFwd: { value: new THREE.Vector2(0, 1) },
     uBoost: { value: 0 },
     uSpeed: { value: 0 },
@@ -368,13 +458,18 @@ export class World {
   readonly sunLight: THREE.DirectionalLight
   envTexture: THREE.Texture | null = null
 
-  constructor() {
+  /**
+   * clear(x, z, r): false where a mesa of radius r must not stand (the race course corridor).
+   * keepOff(x, z, r): true where a boulder must not be (the racing line itself).
+   */
+  constructor(clear: (x: number, z: number, r: number) => boolean = () => true, keepOff: ((x: number, z: number, r: number) => boolean) | null = null) {
     this.sky = new THREE.Mesh(new THREE.SphereGeometry(1000, 48, 24), skyMaterial(false))
     this.sky.renderOrder = -10
     this.sky.frustumCulled = false
     this.group.add(this.sky)
+    this.hills = mountains()
+    this.group.add(this.hills)
 
-    // Terrain rings: 12.5 m near, 60 m mid, 400 m to the horizon.
     const specs: [number, number, number, number][] = [
       [12.5, 256, 0, 0],
       [60, 400, 1500, 1.2],
@@ -390,31 +485,29 @@ export class World {
 
     this.group.add(pebbles(1800, 1500))
 
-    // Mesas, buttes, spires, and the boulders between them.
     const mesaMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.92, metalness: 0, flatShading: true })
     patchStandard(mesaMat, { strata: true })
     const r = rng(1234)
     const kinds: [Kind, number, number][] = [
       ['mesa', 210, 900],
       ['butte', 80, 600],
-      ['spire', 60, 300],
+      ['spire', 70, 300],
     ]
     const all: Placed[] = []
     for (const [kind, count, spacing] of kinds) {
-      const { geo, baseR } = mesaGeometry(kind, kind.length * 31 + 7)
-      const w = new Wrapped(geo, mesaMat, REBASE, REBASE / 2 - 2200, 0.06)
+      const { geo, prof } = mesaGeometry(kind, kind.length * 31 + 7)
+      const w = new Wrapped(geo, mesaMat, REBASE, REBASE / 2 - 2200, 0.06, prof, true)
       let tries = 0
-      while (w.items.length < count && tries++ < count * 60) {
+      while (w.items.length < count && tries++ < count * 80) {
         const ox = r() * REBASE
         const oz = r() * REBASE
-        // A clear run straight out of the start (the first seconds are for speed, not dodging).
         const sx = ((ox + REBASE / 2) % REBASE) - REBASE / 2
         const sz = ((oz + REBASE / 2) % REBASE) - REBASE / 2
-        if (Math.abs(sx) < 1600 && sz > -1500 && sz < 9000) continue
         let rad: number, h: number
         if (kind === 'mesa') { rad = 160 + r() * 520; h = 110 + r() * 260 }
         else if (kind === 'butte') { rad = 90 + r() * 160; h = 160 + r() * 140 }
         else { rad = 35 + r() * 50; h = 140 + r() * 170 }
+        if (!clear(sx, sz, rad * 1.6)) continue
         let ok = true
         for (const o of all) {
           let dx = Math.abs(o.ox - ox); dx = Math.min(dx, REBASE - dx)
@@ -422,7 +515,7 @@ export class World {
           if (Math.hypot(dx, dz) < spacing + (o.r + rad) * 1.2) { ok = false; break }
         }
         if (!ok) continue
-        const it: Placed = { ox, oz, r: rad, h, yaw: r() * 6.28, x: 0, z: 0, cr: rad * baseR * 0.93, top: h * 0.95 }
+        const it: Placed = { ox, oz, r: rad, h, yaw: r() * 6.28, x: 0, z: 0, by: 0, grow: 1 }
         w.items.push(it)
         all.push(it)
       }
@@ -431,7 +524,7 @@ export class World {
       this.group.add(w.mesh)
     }
 
-    // Boulders: knee-to-roof high, never in a riverbed (the beds are the clean lines).
+    // Boulders: knee-to-roof high.
     const bGeo = new THREE.IcosahedronGeometry(1, 1)
     {
       const p = bGeo.attributes.position as THREE.BufferAttribute
@@ -444,16 +537,13 @@ export class World {
     bg.computeVertexNormals()
     const bMat = new THREE.MeshStandardMaterial({ color: 0x8a3a1c, roughness: 0.95, flatShading: true })
     patchStandard(bMat, { strata: true })
-    const bw = new Wrapped(bg, bMat, 6000, 2400, 0.12)
+    const bw = new Wrapped(bg, bMat, 6000, 2400, 0.12, () => 0.92, false, keepOff)
     let bt = 0
-    while (bw.items.length < 95 && bt++ < 4000) {
+    while (bw.items.length < 80 && bt++ < 4000) {
       const ox = r() * 6000
       const oz = r() * 6000
-      if (riverAt(ox, oz) > 0.01) continue
-      const sx = ((ox + 3000) % 6000) - 3000
-      if (Math.abs(sx) < 120) continue
       const rad = 3 + Math.pow(r(), 2) * 9
-      bw.items.push({ ox, oz, r: rad, h: rad, yaw: r() * 6.28, x: 0, z: 0, cr: rad * 0.85, top: rad * 0.65 })
+      bw.items.push({ ox, oz, r: rad, h: rad, yaw: r() * 6.28, x: 0, z: 0, by: 0, grow: 1 })
     }
     bw.finish()
     this.wrapped.push(bw)
@@ -471,7 +561,6 @@ export class World {
     this.ground.tGravel.value = t.gravel
   }
 
-  /** Sky-and-sand environment for the craft's reflections. */
   makeEnv(renderer: THREE.WebGLRenderer): THREE.Texture {
     const pm = new THREE.PMREMGenerator(renderer)
     const s = new THREE.Scene()
@@ -484,25 +573,41 @@ export class World {
 
   update(cam: THREE.Vector3, time: number): void {
     this.sky.position.copy(cam)
+    this.hills.position.set(cam.x, 0, cam.z)
+    const sm = this.sky.material as THREE.ShaderMaterial
+    sm.uniforms.uTime.value = time
+    sm.uniforms.uCloudOff.value.set(time * 14, time * 5)
     for (const r of this.rings) r.snap.value.set(Math.round(cam.x / r.step) * r.step, Math.round(cam.z / r.step) * r.step)
     for (const w of this.wrapped) w.update(cam.x, cam.z)
     this.ground.uTime.value = time
   }
 
-  /** Every obstacle within `range` of (x, z), into `out` (reused; no allocation). */
-  near(x: number, z: number, range: number, out: Obstacle[]): number {
+  /**
+   * Every obstacle within `range` of (x, z), into `out` (reused). Each one's radius is its true
+   * surface toward (x, z) at height y — the lumpy profile, not a cylinder, so no clipping into rock
+   * and no bouncing off air.
+   */
+  near(x: number, z: number, y: number, range: number, out: Obstacle[]): number {
     let n = 0
     for (let wi = 0; wi < this.wrapped.length; wi++) {
       const w = this.wrapped[wi]
-      const big = w.tile === REBASE
       for (const it of w.items) {
-        const dx = it.x - x
-        const dz = it.z - z
-        const rr = range + it.cr
-        if (dx * dx + dz * dz > rr * rr) continue
+        if (it.grow < 0.5) continue
+        const dx = x - it.x
+        const dz = z - it.z
+        const reach = range + it.r * 2.3
+        if (dx * dx + dz * dz > reach * reach) continue
+        const hh = it.h * it.grow
+        const t = (y - it.by) / hh
+        if (t > (w.big ? 0.98 : 0.8)) continue
+        // Into the instance's own frame (rotation about Y by yaw).
+        const c = Math.cos(it.yaw), s = Math.sin(it.yaw)
+        const lx = dx * c - dz * s
+        const lz = dx * s + dz * c
+        const cr = it.r * w.prof(Math.atan2(lz, lx), Math.max(0, t)) * 0.97
         let o = out[n]
-        if (!o) out[n] = o = { x: 0, z: 0, cr: 0, top: 0, big: false }
-        o.x = it.x; o.z = it.z; o.cr = it.cr; o.top = it.top; o.big = big
+        if (!o) out[n] = o = { x: 0, z: 0, cr: 0, big: false }
+        o.x = it.x; o.z = it.z; o.cr = cr; o.big = w.big
         n++
       }
     }

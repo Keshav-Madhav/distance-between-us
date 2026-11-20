@@ -534,6 +534,92 @@ export class Sound {
     this.lowpass.frequency.setTargetAtTime(20000 - amount * 19300, this.ctx.currentTime, 0.08)
   }
 
+  /** Countdown: three low, one high. */
+  beep(high: boolean): void {
+    if (!this.ctx) return
+    const t = this.ctx.currentTime
+    const o = this.ctx.createOscillator(); o.type = 'square'; o.frequency.value = high ? 1320 : 660
+    const f = this.ctx.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = 3000
+    const g = this.ctx.createGain(); this.env(g, t, 0.16, 0.004, high ? 0.7 : 0.28)
+    o.connect(f).connect(g).connect(this.sfx); o.start(t); o.stop(t + 0.8)
+  }
+
+  /** Through a gate: a bright two-note chime (a third note on a new lap). */
+  gate(lap: boolean): void {
+    if (!this.ctx) return
+    const t = this.ctx.currentTime
+    const notes = lap ? [880, 1108.7, 1318.5] : [1046.5, 1568]
+    notes.forEach((hz, i) => {
+      const o = this.ctx!.createOscillator(); o.type = 'triangle'; o.frequency.value = hz
+      const g = this.ctx!.createGain(); this.env(g, t + i * 0.07, 0.1, 0.003, 0.35)
+      o.connect(g).connect(this.sfx); o.start(t + i * 0.07); o.stop(t + i * 0.07 + 0.45)
+    })
+  }
+
+  missed(): void {
+    if (!this.ctx) return
+    const t = this.ctx.currentTime
+    const o = this.ctx.createOscillator(); o.type = 'sawtooth'
+    o.frequency.setValueAtTime(320, t); o.frequency.exponentialRampToValueAtTime(140, t + 0.4)
+    const g = this.ctx.createGain(); this.env(g, t, 0.12, 0.005, 0.4)
+    o.connect(g).connect(this.sfx); o.start(t); o.stop(t + 0.5)
+  }
+
+  /** A boost pad: a rising zap and a shove. */
+  pad(): void {
+    if (!this.ctx) return
+    const t = this.ctx.currentTime
+    const o = this.ctx.createOscillator(); o.type = 'sawtooth'
+    o.frequency.setValueAtTime(220, t); o.frequency.exponentialRampToValueAtTime(1800, t + 0.25)
+    const f = this.ctx.createBiquadFilter(); f.type = 'bandpass'; f.frequency.value = 1400; f.Q.value = 1.2
+    const g = this.ctx.createGain(); this.env(g, t, 0.22, 0.01, 0.35)
+    o.connect(f).connect(g).connect(this.sfx); o.start(t); o.stop(t + 0.45)
+    this.thump(t, 90, 40, 0.35, 0.6)
+  }
+
+  launch(v: number): void {
+    if (!this.ctx) return
+    const t = this.ctx.currentTime
+    this.burst(t, 0.8, 'bandpass', 600, 2400, 0.25 + v * 0.3, 0.8)
+  }
+
+  land(impact: number): void {
+    if (!this.ctx) return
+    const t = this.ctx.currentTime
+    const v = Math.min(1.2, impact / 60)
+    this.thump(t, 120, 35, 0.4 + v * 0.3, 0.5 + v * 0.6)
+    this.burst(t, 0.5 + v * 0.4, 'lowpass', 2500, 150, 0.3 + v * 0.5)
+  }
+
+  /** Racer on racer. */
+  clang(v: number): void {
+    if (!this.ctx) return
+    const t = this.ctx.currentTime
+    this.burst(t, 0.3, 'bandpass', 2200, 700, 0.5 * v + 0.2, 2.5)
+    const o = this.ctx.createOscillator(); o.type = 'triangle'; o.frequency.value = 410
+    const o2 = this.ctx.createOscillator(); o2.type = 'sine'; o2.frequency.value = 647
+    const g = this.ctx.createGain(); this.env(g, t, 0.14 * v + 0.05, 0.001, 0.4)
+    o.connect(g); o2.connect(g); g.connect(this.sfx)
+    o.start(t); o2.start(t); o.stop(t + 0.5); o2.stop(t + 0.5)
+  }
+
+  private scrapeG: GainNode | null = null
+  /** A continuous grind while rubbing rock (0 … 1). */
+  scrape(level: number): void {
+    if (!this.ctx) return
+    if (!this.scrapeG) {
+      const f = this.ctx.createBiquadFilter(); f.type = 'bandpass'; f.frequency.value = 1700; f.Q.value = 3
+      const am = this.ctx.createGain(); am.gain.value = 0.6
+      const lfo = this.ctx.createOscillator(); lfo.type = 'sawtooth'; lfo.frequency.value = 37
+      const lg = this.ctx.createGain(); lg.gain.value = 0.4
+      lfo.connect(lg).connect(am.gain); lfo.start()
+      this.scrapeG = this.ctx.createGain(); this.scrapeG.gain.value = 0
+      const n = this.ctx.createBufferSource(); n.buffer = this.noise; n.loop = true; n.start()
+      n.connect(f).connect(am).connect(this.scrapeG).connect(this.sfx)
+    }
+    this.scrapeG.gain.setTargetAtTime(Math.min(1, level) * 0.5, this.ctx.currentTime, 0.03)
+  }
+
   death(): void {
     if (!this.ctx) return
     const t = this.ctx.currentTime

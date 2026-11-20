@@ -1,3 +1,4 @@
+import { Vector4 } from 'three'
 // The ground, as one formula run in two places: here in JS (the craft hovers on it, rocks and mesas
 // sit on it) and in GLSL (the terrain mesh is displaced by it). The two must stay identical.
 //
@@ -32,14 +33,42 @@ export function riverAt(x: number, z: number): number {
   return 1 - smooth(0.03, 0.13, Math.abs(c))
 }
 
+/**
+ * Mounds: Gaussian humps (x, z, height, radius) — the course's jumps. Flattened into MOUNDS (JS) and
+ * mirrored into the uMounds uniform (GLSL) by setMounds(); hit at speed, their crests launch you.
+ */
+export const MAX_MOUNDS = 32
+export const MOUNDS: number[] = []
+export const MOUND_U = {
+  uMounds: { value: Array.from({ length: MAX_MOUNDS }, () => new Vector4()) },
+  uMoundCount: { value: 0 },
+}
+export function setMounds(list: number[]): void {
+  MOUNDS.length = 0
+  MOUNDS.push(...list.slice(0, MAX_MOUNDS * 4))
+  const n = MOUNDS.length / 4
+  for (let i = 0; i < MAX_MOUNDS; i++) {
+    const u = MOUND_U.uMounds.value[i]
+    if (i < n) { u.x = MOUNDS[i * 4]; u.y = MOUNDS[i * 4 + 1]; u.z = MOUNDS[i * 4 + 2]; u.w = MOUNDS[i * 4 + 3] }
+    else { u.x = u.y = u.z = 0; u.w = 0 }
+  }
+  MOUND_U.uMoundCount.value = n
+}
+
 export function groundH(x: number, z: number): number {
   let h = 0
+  for (let i = 0; i < MOUNDS.length; i += 4) {
+    const dx = x - MOUNDS[i], dz = z - MOUNDS[i + 1], r = MOUNDS[i + 3]
+    const q = (dx * dx + dz * dz) / (r * r)
+    if (q < 9) h += MOUNDS[i + 2] * Math.exp(-q)
+  }
   for (let i = 0; i < WAVES.length; i++) {
     const w = WAVES[i]
     h += w[2] * Math.sin((TAU * (w[0] * x + w[1] * z)) / P + w[3])
   }
-  const r = 1 - Math.abs(Math.sin((TAU * (8 * x - 3 * z)) / P + 1.1))
-  h += 6 * r * r
+  // (Smooth crests: a kinked crest launched the craft at Mach speeds on every ridge.)
+  const c = Math.cos((TAU * (8 * x - 3 * z)) / P + 1.1)
+  h += 6 * c * c * c * c
   h -= 9 * riverAt(x, z)
   return h
 }
@@ -58,11 +87,21 @@ float riverAt(vec2 p) {
   float c = sin(TAU * (1.0 * p.x + 3.0 * p.y) / PER + 0.4 + 0.9 * sin(TAU * (4.0 * p.x - 1.0 * p.y) / PER + 2.0));
   return 1.0 - smoothstep(0.03, 0.13, abs(c));
 }
+#define MAX_MOUNDS ${MAX_MOUNDS}
+uniform vec4 uMounds[MAX_MOUNDS];
+uniform int uMoundCount;
 float groundH(vec2 p) {
   float h = 0.0;
+  for (int i = 0; i < MAX_MOUNDS; i++) {
+    if (i >= uMoundCount) break;
+    vec4 m = uMounds[i];
+    vec2 d = p - m.xy;
+    float q = dot(d, d) / max(m.w * m.w, 1.0);
+    if (q < 9.0) h += m.z * exp(-q);
+  }
   ${glslWaves}
-  float r = 1.0 - abs(sin(TAU * (8.0 * p.x - 3.0 * p.y) / PER + 1.1));
-  h += 6.0 * r * r;
+  float c = cos(TAU * (8.0 * p.x - 3.0 * p.y) / PER + 1.1);
+  h += 6.0 * c * c * c * c;
   h -= 9.0 * riverAt(p);
   return h;
 }

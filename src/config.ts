@@ -32,11 +32,11 @@ export const CFG = {
   handling: {
     /** Max yaw rate at Mach 1 and Mach 6 (rad/s). */
     yawLow: 1.35,
-    yawHigh: 0.62,
+    yawHigh: 0.78,
     /** How fast the yaw rate follows the stick (1/s): twitchy. */
     yawResponse: 9,
     /** Lateral grip (1/s): lower = more drift. */
-    grip: 2.6,
+    grip: 5,
     /** Side-thruster strafe acceleration (m/s²). */
     strafe: 340,
     /** Lateral m/s added by a strafe tap (the dodge). */
@@ -46,17 +46,18 @@ export const CFG = {
     hoverW: 22,
   },
   camera: {
-    fovBase: 64,
-    fovMax: 100,
+    fovBase: 68,
+    /** Settings slider. */
+    fovMax: 98,
     distBase: 10.5,
     distBoost: 2.5,
     height: 3.0,
     /** Heading lag (1/s): the whip on turns. */
     yawFollow: 6.5,
-    rollFollow: 0.42,
+    rollFollow: 0.22,
     shakeMax: 0.055,
     /** Constant rumble trauma at Mach 6. */
-    speedTrauma: 0.28,
+    speedTrauma: 0.2,
     reduceShake: false,
   },
   post: {
