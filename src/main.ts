@@ -16,7 +16,7 @@ import { Input } from './input'
 import { Post } from './post'
 import { groundH, SUN_DIR } from './terrain'
 import { loadTextures } from './textures'
-import { Course, LAPS } from './course'
+import { Course, JUMPS, LAPS } from './course'
 import { Race } from './race'
 import { ChaseCam } from './camera'
 
@@ -45,13 +45,25 @@ const scene = new THREE.Scene()
 const camera = new THREE.PerspectiveCamera(CFG.camera.fovBase, innerWidth / innerHeight, 0.3, 60000)
 
 const course = new Course()
-const world = new World((x, z, r) => course.distance(x, z) > 850 + r, (x, z, r) => course.distance(x, z) < 460 + r)
+// Mesas clear of the course corridor — tested at every wrapped copy near it, since the 84 km course
+// reaches within 1.5 km of the world's 36 km wrap.
+const clearAt = (x: number, z: number, r: number) => {
+  for (const dx of [0, -REBASE, REBASE]) for (const dz of [0, -REBASE, REBASE]) if (course.distance(x + dx, z + dz) < 850 + r) return false
+  return true
+}
+const world = new World(clearAt, (x, z, r) => course.distance(x, z) < 460 + r)
+world.addFixed(course.rocks)
 scene.add(world.group)
 scene.add(course.group)
 const env = world.makeEnv(renderer)
 loadBar.style.width = '30%'
 const tex = await loadTextures(renderer)
 world.applyTextures(tex)
+{
+  const w = course.wearTexture()
+  world.ground.tTrack.value = w.tex
+  world.ground.uTrackBox.value.copy(w.box)
+}
 loadBar.style.width = '50%'
 const fx = new Fx()
 scene.add(fx.group)
@@ -140,6 +152,10 @@ const PAINTS: Paint[] = [
   { body: 0x2a2018, trim: 0xffc21a, number: '04' },
   { body: 0x16324a, trim: 0x29d3ff, number: '88' },
   { body: 0xd8dde2, trim: 0xff3b30, number: '31' },
+  { body: 0x1e1630, trim: 0xa96bff, number: '19' },
+  { body: 0xe9e2d6, trim: 0xff8a3d, number: '52' },
+  { body: 0x102a26, trim: 0x3dffc5, number: '66' },
+  { body: 0x2b2d33, trim: 0xd8d8e8, number: '00' },
 ]
 interface Visual { craft: Craft; trail: Trail[]; vapour: Trail[]; lastDust: THREE.Vector3; heading: number; wasDead: boolean; wasHidden: boolean }
 const visuals = new Map<Player, Visual>()
@@ -239,9 +255,9 @@ player.onBarrier = (ph) => {
   sound.barrier(ph)
   if (ph === 'boom') {
     flash('MACH 6')
-    shake(0.8)
-    coneA = 1.2
-    cam.punch += 6
+    shake(0.6)
+    coneA = 0.8
+    cam.punch += 4
     input.rumble(1, 1, 500)
     fx.dust(player.pos.x, groundH(player.pos.x, player.pos.z), player.pos.z, player.vel.x * 0.4, player.vel.z * 0.4, 30, 22, 50)
   }
@@ -633,7 +649,10 @@ function drawRacer(p: Player, alpha: number, dt: number, isMe: boolean): void {
   // A flip: two full rolls (eased) on top of the bank.
   const tu = 1 - p.tumble
   const roll = p.tumble > 0 ? p.tumbleDir * Math.PI * 4 * (1 - (1 - tu) * (1 - tu)) : 0
-  craft.body.rotation.set(THREE.MathUtils.lerp(p.prevPitch, p.pitch, alpha), 0, -THREE.MathUtils.lerp(p.prevBank, p.bank, alpha) + roll)
+  // A spin-out is messy: the hull shudders and rocks while it whirls.
+  const mess = p.spin > 0 ? Math.min(1, p.spin) : 0
+  const wob = mess * (Math.sin(time * 23 + p.pos.x) * 0.1 + Math.sin(time * 37) * 0.06)
+  craft.body.rotation.set(THREE.MathUtils.lerp(p.prevPitch, p.pitch, alpha) + wob * 0.6, 0, -THREE.MathUtils.lerp(p.prevBank, p.bank, alpha) + roll + wob)
   // Suspension squash on landing; a slow float bob on the ground effect.
   const bob = p.airborne ? 0 : Math.sin(time * 1.9 + p.pos.x * 0.001) * 0.16 + Math.sin(time * 3.1) * 0.05
   craft.body.position.y = -p.squash * 0.55 + bob
@@ -647,7 +666,7 @@ function drawRacer(p: Player, alpha: number, dt: number, isMe: boolean): void {
   for (let i = 0; i < v.trail.length; i++) {
     nozzleW.copy(craft.nozzles[v.trail.length === 1 ? 1 : i]).applyMatrix4(craft.body.matrixWorld)
     v.trail[i].push(nozzleW, dt)
-    v.trail[i].strength = isMe ? 0.2 + p.boost * 0.8 : 0.3 + p.boost * 0.3
+    v.trail[i].strength = isMe ? 0.2 + p.boost * 0.8 : 0.16 + p.boost * 0.18
   }
   if (isMe) {
     const vap = THREE.MathUtils.clamp((p.mach - 1.5) / 3, 0, 1) * (0.25 + Math.min(1, Math.abs(p.yawRate) * 1.4))
@@ -820,6 +839,7 @@ function frame(now: number): void {
   const me = race.racers[0]
   course.update(mode === 'race' ? me.next : -1, time, race.lapOf(me) === LAPS && me.passed > 0)
   course.group.visible = mode !== 'hunt'
+  world.ground.uTrackOn.value = mode === 'hunt' ? 0 : 1
 
   if (mode === 'hunt') combat.render(alpha, realDt, time)
   combat.group.visible = mode === 'hunt'
@@ -844,14 +864,14 @@ function frame(now: number): void {
   const play = mode !== 'title'
   damageFlash = Math.max(0, damageFlash - realDt * 1.8)
   impactPulse = Math.max(0, impactPulse - realDt * 3)
-  if (player.barrier === 'silence') white = Math.min(1, white + realDt * 2.4)
+  if (player.barrier === 'silence') white = Math.min(1, white + realDt * 1.6)
   else white = Math.max(0, white - realDt * (player.barrier === 'boom' ? 1.6 : 4))
   P.uSpeed.value = play ? s : 0
   P.uBlur.value = play ? CFG.post.radialBlur * (s * s * 1.2 + player.boost * 0.4 + white * 0.6 + impactPulse * 0.8) : 0
   P.uAberr.value = play ? CFG.post.aberration * (s + player.boost * 0.5 + damageFlash + impactPulse * 2.5) : 0
   P.uStreak.value = play ? CFG.post.streaks * THREE.MathUtils.clamp((player.mach - 0.8) / 4, 0, 1) : 0
   P.uStreakT.value += realDt * (0.4 + player.mach * 0.45)
-  P.uWhite.value = white * 0.95
+  P.uWhite.value = white * 0.45
   P.uDamage.value = damageFlash
   P.uTime.value = time
   P.uGrain.value = CFG.post.grain
@@ -886,6 +906,13 @@ function updateHud(dt: number, slow: boolean): void {
     al.textContent = deg < 6 ? 'ALIGNED' : `NOSE ${deg.toFixed(0)}° OFF · ${player.slip > 0 ? 'STEER RIGHT' : 'STEER LEFT'}`
     al.className = deg > 26 ? 'bad' : 'ok'
   } else al.style.display = 'none'
+  // Grip gauge: how much of the grip you are using; past the line you are sliding, red is a spin.
+  const gg = $('#grip')
+  const load = player.gripLoad
+  gg.style.opacity = mode === 'race' || mode === 'hunt' ? (player.airborne ? '0.35' : '1') : '0'
+  ;(gg.querySelector('i') as HTMLElement).style.width = `${Math.min(100, (load / 1.6) * 100)}%`
+  gg.className = player.spin > 0 || player.recover > 0 ? 'spin' : player.spinRisk > 0.55 ? 'danger' : load > 1 ? 'slide' : load > 0.8 ? 'edge' : ''
+  ;(gg.querySelector('span') as HTMLElement).textContent = player.spin > 0 ? 'SPIN' : player.spinRisk > 0.55 ? 'CATCH IT' : load > 1 ? 'SLIDING' : 'GRIP'
   const dm = $('#drift')
   dm.style.opacity = player.drift > 0.02 ? '1' : '0'
   ;(dm.firstElementChild as HTMLElement).style.width = `${(player.drift / 2.6) * 100}%`
@@ -942,6 +969,13 @@ function updateHud(dt: number, slow: boolean): void {
     const gd = Math.hypot(c.x - player.pos.x, c.z - player.pos.z)
     const gon = !me.finished && proj.z < 1 && Math.abs(proj.x) < 0.95 && Math.abs(proj.y) < 0.95 && gd > 150
     gm.style.display = gon ? 'block' : 'none'
+    // …and the gate after it, smaller and fainter: where the next turn goes.
+    const c2 = course.cps[(me.next + 1) % course.cps.length]
+    proj.set(c2.x, groundH(c2.x, c2.z) + 70, c2.z).project(camera)
+    const g2 = $('#gmark2')
+    const g2on = !me.finished && proj.z < 1 && Math.abs(proj.x) < 0.95 && Math.abs(proj.y) < 0.95
+    g2.style.display = g2on ? 'block' : 'none'
+    if (g2on) g2.style.transform = `translate(${(proj.x * 0.5 + 0.5) * innerWidth}px, ${(-proj.y * 0.5 + 0.5) * innerHeight}px)`
     if (gon) {
       gm.style.transform = `translate(${(proj.x * 0.5 + 0.5) * innerWidth}px, ${(-proj.y * 0.5 + 0.5) * innerHeight}px)`
       gm.classList.toggle('fin', me.next === 0)
@@ -952,6 +986,7 @@ function updateHud(dt: number, slow: boolean): void {
   } else if (mode === 'hunt') {
     for (const { d } of tagEls) d.style.display = 'none'
     $('#gmark').style.display = 'none'
+    $('#gmark2').style.display = 'none'
     scoreNum.textContent = String(score)
     scoreSub.textContent = `${combat.kills} DOWN · ${fmtTime(runTime)}`
     const t = combat.lockTarget
@@ -995,41 +1030,55 @@ function arrowTo(p: THREE.Vector3, label: string): void {
   ;(arrowEl.querySelector('.t') as HTMLElement).textContent = label
 }
 
-// Minimap: the whole course, north up, racers as dots, you as an arrow.
+// Minimap: a clean panel fitted to the track's shape. North up; the track as a glowing line, gates
+// as ticks (next: a cyan ring, the one after: a faint ring), rivals as outlined dots, you as an arrow.
 const miniCtx = mini.getContext('2d')!
+const MW = mini.width, MH = mini.height
 const bounds = (() => {
   let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity
   for (let i = 0; i < course.n; i++) { x0 = Math.min(x0, course.px[i]); x1 = Math.max(x1, course.px[i]); z0 = Math.min(z0, course.pz[i]); z1 = Math.max(z1, course.pz[i]) }
-  const span = Math.max(x1 - x0, z1 - z0) * 1.12
-  return { cx: (x0 + x1) / 2, cz: (z0 + z1) / 2, k: 400 / span }
+  const k = Math.min((MW - 60) / (x1 - x0), (MH - 50) / (z1 - z0))
+  return { cx: (x0 + x1) / 2, cz: (z0 + z1) / 2, k }
 })()
-const toMini = (x: number, z: number): [number, number] => [200 - (x - bounds.cx) * bounds.k, 200 - (z - bounds.cz) * bounds.k]
+// (Mirrored in x so that the map turns the way you do: the camera looks along +z with +x on the left.)
+const toMini = (x: number, z: number): [number, number] => [MW / 2 - (x - bounds.cx) * bounds.k, MH / 2 - (z - bounds.cz) * bounds.k]
+const trackPath = new Path2D()
+for (let i = 0; i <= course.n; i += 2) { const [x, y] = toMini(course.px[i % course.n], course.pz[i % course.n]); if (i === 0) trackPath.moveTo(x, y); else trackPath.lineTo(x, y) }
+trackPath.closePath()
 function drawMini(): void {
   const g = miniCtx
-  g.clearRect(0, 0, 400, 400)
-  g.fillStyle = 'rgba(10,6,4,0.35)'
-  g.beginPath(); g.arc(200, 200, 198, 0, Math.PI * 2); g.fill()
-  g.lineWidth = 7
-  g.strokeStyle = 'rgba(255,255,255,0.55)'
-  g.beginPath()
-  for (let i = 0; i <= course.n; i += 4) { const [x, y] = toMini(course.px[i % course.n], course.pz[i % course.n]); if (i === 0) g.moveTo(x, y); else g.lineTo(x, y) }
-  g.closePath(); g.stroke()
+  g.clearRect(0, 0, MW, MH)
+  g.fillStyle = 'rgba(12,7,5,0.42)'
+  g.beginPath(); g.roundRect(2, 2, MW - 4, MH - 4, 18); g.fill()
+  g.strokeStyle = 'rgba(255,255,255,0.12)'; g.lineWidth = 2; g.stroke()
+  g.lineJoin = 'round'
+  g.strokeStyle = 'rgba(0,0,0,0.5)'; g.lineWidth = 14; g.stroke(trackPath)
+  g.strokeStyle = 'rgba(255,170,110,0.25)'; g.lineWidth = 9; g.stroke(trackPath)
+  g.strokeStyle = 'rgba(255,244,232,0.9)'; g.lineWidth = 3; g.stroke(trackPath)
   const me = race.racers[0]
+  const K = course.cps.length
   course.cps.forEach((c, k) => {
     const [x, y] = toMini(c.x, c.z)
-    g.fillStyle = k === me.next ? '#5fe6ff' : k === 0 ? '#ff6a1a' : 'rgba(255,255,255,0.6)'
-    g.beginPath(); g.arc(x, y, k === me.next ? 11 : 6, 0, Math.PI * 2); g.fill()
+    // Across the track on the map: the screen tangent is (−tx, −tz); its perpendicular (tz, −tx).
+    const nx = c.tz, nz = -c.tx
+    g.strokeStyle = k === 0 ? '#ff7a1a' : 'rgba(255,255,255,0.55)'
+    g.lineWidth = k === 0 ? 4 : 2
+    g.beginPath(); g.moveTo(x - nx * 10, y - nz * 10); g.lineTo(x + nx * 10, y + nz * 10); g.stroke()
+    if (k === me.next) { g.strokeStyle = '#5fe6ff'; g.lineWidth = 4; g.shadowColor = '#5fe6ff'; g.shadowBlur = 12; g.beginPath(); g.arc(x, y, 12, 0, Math.PI * 2); g.stroke(); g.shadowBlur = 0 }
+    else if (k === (me.next + 1) % K) { g.strokeStyle = 'rgba(95,230,255,0.45)'; g.lineWidth = 2; g.beginPath(); g.arc(x, y, 9, 0, Math.PI * 2); g.stroke() }
   })
   for (const r of race.racers) {
-    if (!r.ai) continue
+    if (!r.ai || r.p.dead) continue
     const [x, y] = toMini(r.p.pos.x, r.p.pos.z)
     g.fillStyle = '#' + new THREE.Color(r.color).getHexString()
-    g.beginPath(); g.arc(x, y, 9, 0, Math.PI * 2); g.fill()
+    g.strokeStyle = 'rgba(0,0,0,0.7)'; g.lineWidth = 2.5
+    g.beginPath(); g.arc(x, y, 6.5, 0, Math.PI * 2); g.fill(); g.stroke()
   }
   const [x, y] = toMini(player.pos.x, player.pos.z)
-  g.save(); g.translate(x, y); g.rotate(-player.heading + Math.PI)
-  g.fillStyle = '#ff6a1a'; g.strokeStyle = '#fff'; g.lineWidth = 3
-  g.beginPath(); g.moveTo(0, -18); g.lineTo(11, 12); g.lineTo(-11, 12); g.closePath(); g.fill(); g.stroke()
+  g.save(); g.translate(x, y); g.rotate(Math.PI - player.heading)
+  g.shadowColor = '#ff6a1a'; g.shadowBlur = 14
+  g.fillStyle = '#ff6a1a'; g.strokeStyle = '#fff'; g.lineWidth = 2.5
+  g.beginPath(); g.moveTo(0, 15); g.lineTo(9, -10); g.lineTo(0, -5); g.lineTo(-9, -10); g.closePath(); g.fill(); g.stroke()
   g.restore()
 }
 
@@ -1075,7 +1124,7 @@ canvas.addEventListener('webglcontextrestored', () => { paused = false; last = p
 
 // ───────────────────────── boot ─────────────────────────
 race.reset()
-player.reset(0, -40, Math.atan2(course.cps[0].tx, course.cps[0].tz), 0)
+player.reset(course.cps[0].x - course.cps[0].tx * 60, course.cps[0].z - course.cps[0].tz * 60, Math.atan2(course.cps[0].tx, course.cps[0].tz), 0)
 renderPos.copy(player.pos)
 camera.position.set(player.pos.x + 10, player.pos.y + 2, player.pos.z + 10)
 camera.lookAt(player.pos)
@@ -1103,7 +1152,7 @@ const g = {
   force: (c: import('./player').Controls | null) => { forced = c },
   /** Put the player just before jump k, at Mach m. */
   toJump: (k: number, m = 3) => {
-    const f = [0.075, 0.17, 0.3, 0.41, 0.55, 0.64, 0.77, 0.88, 0.95][k] // on the line: k % 3 === 0
+    const f = JUMPS[k] // on the line: k % 3 === 0
     const i = Math.round(f * course.n) - 25
     const [tx, tz] = course.tangent(i)
     player.reset(course.px[i], course.pz[i], Math.atan2(tx, tz), m)

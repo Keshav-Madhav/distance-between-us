@@ -67,7 +67,8 @@ export class ChaseCam {
     let travel = hv > 30 ? Math.atan2(p.vel.x, p.vel.z) : heading
     let dt0 = travel - heading
     dt0 = Math.atan2(Math.sin(dt0), Math.cos(dt0))
-    travel = heading + dt0 * 0.45
+    // (In a spin-out the camera holds the travel: you watch the craft whirl, not the world.)
+    travel = p.spin > 0 || p.recover > 0 ? travel : heading + dt0 * 0.45
     if (!this.yawInit) this.snap(travel)
     // Unwrap toward the spring's current value.
     let dy = travel - this.yaw.x

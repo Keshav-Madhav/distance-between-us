@@ -113,7 +113,7 @@ export const SKY = {
   zenith: [0.06, 0.24, 0.72],
   horizon: [0.42, 0.64, 0.92],
   haze: [0.98, 0.82, 0.62],
-  sunDir: [0.42, 0.52, -0.74],
+  sunDir: [0.36, 0.78, -0.52],
   /** Fog density: 1 - exp(-(d·k)²). */
   fogK: 0.000062,
 }

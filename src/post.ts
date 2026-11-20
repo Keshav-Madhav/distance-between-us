@@ -84,7 +84,8 @@ const FINAL = {
 
       c *= uExposure;
       // White-hot: the barrier. Floods from the centre outward.
-      c = mix(c, vec3(9.0, 8.4, 7.6), uWhite * (1.0 - smoothstep(0.0, 1.2, r * (1.4 - uWhite))));
+      // (Edges only, the middle kept: a full-screen white-out was a flash-bang.)
+      c = mix(c, c * 1.6 + vec3(1.2, 1.1, 1.0), uWhite * smoothstep(0.12, 0.85, r));
       c = aces(c);
       // Grade: punchy, saturated, warm highlights, a cool lift in the shadows.
       float l = dot(c, vec3(0.2126, 0.7152, 0.0722));

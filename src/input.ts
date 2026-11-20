@@ -1,6 +1,8 @@
 // Keyboard + gamepad, read at the top of every sim step (no extra latency).
 import type { Controls } from './player'
 
+const THREE_clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v))
+
 export class Input {
   private readonly down = new Set<string>()
   private readonly pressed = new Set<string>()
@@ -44,8 +46,10 @@ export class Input {
         this.lastTap[code] = now
       }
     }
-    // Keyboard steering eases in over ~60 ms (a twitch, not a snap).
-    this.steerS += (steer - this.steerS) * Math.min(1, dt * 16)
+    // Keyboard steering ramps in over ~0.4 s (a tap is part-lock, a hold is full lock) and lets go
+    // fast — so steering can be modulated against the grip gauge.
+    const rate = steer === 0 || Math.sign(steer) !== Math.sign(this.steerS) ? 9 : 2.6
+    this.steerS += THREE_clamp(steer - this.steerS, -rate * dt, rate * dt)
     steer = this.steerS
 
     const pads = navigator.getGamepads ? navigator.getGamepads() : []

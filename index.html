@@ -27,6 +27,18 @@
   #gmark .d { position: absolute; inset: 0; border: 2.5px solid #5fe6ff; transform: rotate(45deg); box-shadow: 0 0 12px #5fe6ff; }
   #gmark.fin .d { border-color: #ff7a1a; box-shadow: 0 0 12px #ff7a1a; }
   #gmark .t { position: absolute; top: 32px; left: 50%; transform: translateX(-50%); font-size: 11px; letter-spacing: 0.25em; font-weight: 700; white-space: nowrap; color: #bff4ff; text-shadow: 0 1px 6px rgba(0,0,0,0.7); }
+  #gmark2 { position: absolute; left: 0; top: 0; width: 14px; height: 14px; margin: -7px 0 0 -7px; display: none; opacity: 0.55; }
+  #gmark2 .d { position: absolute; inset: 0; border: 2px solid #5fe6ff; transform: rotate(45deg); }
+  #grip { width: 300px; height: 8px; margin: 0 auto 8px; background: rgba(255,255,255,0.1); transform: skewX(-20deg); position: relative; transition: opacity 0.3s; }
+  #grip i { position: absolute; left: 0; top: 0; bottom: 0; width: 0; background: #59f08c; box-shadow: 0 0 8px #59f08c; transition: background 0.1s; }
+  #grip b { position: absolute; left: 62.5%; top: -4px; bottom: -4px; width: 2px; background: #fff; }
+  #grip span { position: absolute; right: 100%; margin-right: 12px; top: -4px; font-size: 10px; letter-spacing: 0.3em; transform: skewX(20deg); white-space: nowrap; }
+  #grip.edge i { background: #ffd84a; box-shadow: 0 0 8px #ffd84a; }
+  #grip.slide i { background: #ff9a2a; box-shadow: 0 0 10px #ff9a2a; }
+  #grip.danger i, #grip.spin i { background: #ff3b30; box-shadow: 0 0 12px #ff3b30; }
+  #grip.danger, #grip.spin { animation: gblink 0.18s infinite; }
+  #grip.danger span, #grip.spin span { color: #ff5a4a; }
+  @keyframes gblink { 50% { opacity: 0.4; } }
   #align { position: absolute; left: 50%; top: 60%; transform: translateX(-50%); font-size: 13px; letter-spacing: 0.3em; font-weight: 700; display: none; text-shadow: 0 0 10px rgba(0,0,0,0.6); }
   #align.bad { color: #ff4a3a; } #align.ok { color: #7dff9a; }
   #drift { width: 300px; height: 5px; margin: 7px auto 0; background: rgba(255,255,255,0.1); transform: skewX(-20deg); opacity: 0; transition: opacity 0.2s; position: relative; }
@@ -89,11 +101,11 @@
   #race .pen { font-size: 12px; color: #ffb15c; letter-spacing: 0.2em; min-height: 14px; }
   #stand { position: absolute; right: 3vw; top: 4vh; font-size: 13px; letter-spacing: 0.12em; display: none; min-width: 210px; }
   #stand.on { display: block; }
-  #stand div { display: flex; justify-content: space-between; gap: 14px; padding: 3px 8px; margin-bottom: 2px; background: rgba(10,6,4,0.28); border-left: 3px solid var(--c, #fff); transition: transform 0.25s; }
+  #stand div { display: flex; justify-content: space-between; gap: 14px; padding: 2px 8px; margin-bottom: 1px; font-size: 12px; background: rgba(10,6,4,0.28); border-left: 3px solid var(--c, #fff); transition: transform 0.25s; }
   #stand div.me { background: rgba(255,106,26,0.32); font-weight: 700; }
   #stand span.g { opacity: 0.7; font-variant-numeric: tabular-nums; }
   #count { position: absolute; left: 50%; top: 38%; transform: translate(-50%, -50%); font-size: 140px; font-weight: 700; opacity: 0; text-shadow: 0 0 40px rgba(255,120,40,0.8); }
-  #mini { position: absolute; right: 2.5vw; bottom: 4vh; width: 200px; height: 200px; display: none; opacity: 0.92; }
+  #mini { position: absolute; right: 2.5vw; bottom: 4vh; width: 340px; height: 140px; display: none; }
   #mini.on { display: block; }
   #res { margin-top: 24px; font-size: 16px; letter-spacing: 0.14em; border-collapse: collapse; }
   #res td { padding: 5px 16px; text-align: left; }
@@ -110,10 +122,11 @@
   <div id="lock"><div class="d"></div><div class="t">LOCK</div></div>
   <div id="arrow"><div class="t">WALKER</div></div>
   <div id="hints">
-    <div><b>W / SHIFT</b>BOOST</div>
+    <div><b>W / SHIFT</b>THROTTLE (OFF IT, YOU COAST)</div>
     <div><b>A D</b>STEER</div>
     <div><b>Q E</b>STRAFE · TAP TWICE: DODGE</div>
     <div><b>S + STEER</b>BREAK TRACTION: DRIFT · STRAIGHTEN TO BOOST</div>
+    <div><b>GRIP GAUGE</b>PAST THE LINE YOU SLIDE · RED: COUNTERSTEER</div>
     <div><b>COUNTERSTEER</b>CATCH A SLIDE · LAND STRAIGHT</div>
     <div><b>S IN THE AIR</b>DIVE</div>
     <div><b>R</b>BACK TO THE LAST GATE</div>
@@ -123,14 +136,15 @@
   <div id="count"></div>
   <div id="align"></div>
   <div id="gmark"><div class="d"></div><div class="t"></div></div>
+  <div id="gmark2"><div class="d"></div></div>
   <div id="tags"></div>
-  <canvas id="mini" width="400" height="400"></canvas>
+  <canvas id="mini" width="680" height="280"></canvas>
   <div id="score"><div class="lab">SCORE</div><div class="num">0</div><div class="sub">0 DOWN · 0:00</div></div>
   <div id="pops"></div>
   <div id="flash"></div>
   <div id="warn"><div class="big">WALKER</div><div class="small">ON THE HORIZON · HIT ITS FOUR CORES</div></div>
   <div id="hull"><div class="lab">HULL</div><div class="track"><div class="fill"></div></div></div>
-  <div id="mach"><div class="lab">MACH</div><div class="num">0.00</div><div id="bar"><i></i><i></i><i></i><i></i><i></i><i></i></div><div id="drift"><i></i><b style="left:34.6%"></b><b style="left:76.9%"></b></div></div>
+  <div id="mach"><div id="grip"><i></i><b></b><span>GRIP</span></div><div class="lab">MACH</div><div class="num">0.00</div><div id="bar"><i></i><i></i><i></i><i></i><i></i><i></i></div><div id="drift"><i></i><b style="left:34.6%"></b><b style="left:76.9%"></b></div></div>
 </div>
 <div id="title" class="screen hide">
   <h1>THE DISTANCE<br/>BETWEEN <span>US</span></h1>

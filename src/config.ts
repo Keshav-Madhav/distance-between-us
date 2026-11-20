@@ -12,16 +12,18 @@ export const REBASE = 36000
 
 export const CFG = {
   speed: {
-    /** Where the craft settles with no input. There are no brakes to zero. */
+    /** (Unused since W became the throttle; Hunt's tools set it.) */
     cruiseMach: 1.7,
+    /** Coasting drag off the throttle (1/s toward a stop). */
+    coastK: 0.11,
     /** Afterburner target. The barrier sits at 6.0. */
     boostMach: 6.3,
-    /** Air brake target (it can never drop below this). */
-    brakeMach: 0.9,
+    /** Air brake target. */
+    brakeMach: 0.12,
     /** Approach rate toward the target, 1/s. Exponential, so the first second kicks hardest. */
     boostK: 0.62,
     cruiseK: 0.35,
-    brakeK: 1.5,
+    brakeK: 2.4,
     /** Instant m/s shove on pressing boost. */
     boostKick: 95,
     /** Start of a run. */
@@ -35,6 +37,8 @@ export const CFG = {
     yawHigh: 0.78,
     /** Yaw torque at full stick (rad/s²) and yaw damping (1/s): full stick settles at ~torque/damp. */
     steerTorque: 5.2,
+    /** Extra steering authority at speed (×(1 + gain) by Mach 5). */
+    steerGain: 0.75,
     yawDamp: 4.7,
     /** Weathervane torque pulling the nose back to the travel (needs grip). */
     alignK: 2.2,

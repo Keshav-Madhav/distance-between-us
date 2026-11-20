@@ -7,7 +7,10 @@ You aren't driving. You're falling forward at an impossible speed and barely hol
 something you feel, not a number on the HUD.
 
 ## Modes
-- **Race (the main game).** Six racers, three laps of a 40 km desert loop with 14 gates. AI rivals,
+- **Race (the main game).** Ten racers, three laps of an 82 km stadium figure-8 with 16 gates: two
+  dead-straight 23 km runs that cross in the middle, joined by 5 km-radius sweepers (one right-hand
+  loop, one left-hand loop). 33 rock spires stand along the line to weave through at speed. The
+  racing line is worn into the sand: packed, darker, with scorched lanes. AI rivals,
   jumps, boost pads, and racing contact. Racing comes first; nobody is shooting.
 - **Hunt.** The original combat sandbox: lock-on missiles against drones, then a 360 m walker.
 
@@ -30,6 +33,18 @@ something you feel, not a number on the HUD.
   gate (R does this on demand) and pass through others as ghosts for 2.5 s.
 - Position, lap, time, penalties, live standings with gaps, wrong-way and off-course warnings, and a
   results table at the end.
+
+## Throttle, brake, steering
+- **W is the throttle.** Off it, you coast down; there's no cruise control. **S brakes hard.** S with
+  steer is a trail-brake drift that still scrubs speed. In the air, S dives at +120 m/s².
+- **Adaptive steering:** authority grows ×1.75 by Mach 5, faster than grip does. Sharp turns are
+  available at speed, but full lock held there slides (12–14° at Mach 5) and half lock is safe.
+- **Grip gauge** (above the Mach readout): green within grip, yellow near the limit, orange once
+  you're past the line and sliding, flashing red with CATCH IT when a spin is close. Keyboard
+  steering ramps in over about 0.4 s, so taps give part-lock you can modulate against it.
+- **Spin-outs** are visible: the hull whirls about 1¼ turns, decaying, with a messy shudder, while the
+  travel carries on and scrubs. The camera holds your direction of travel, so you watch the ship
+  spin, and then the nose eases back into line.
 
 ## Handling: slip, drift, losing it
 The nose and the direction of travel are separate. Grip pulls the travel back toward the nose. It

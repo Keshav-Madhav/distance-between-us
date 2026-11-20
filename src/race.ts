@@ -45,6 +45,10 @@ const ROSTER: [string, number][] = [
   ['NOMAD', 0xffc21a],
   ['ION', 0x29d3ff],
   ['RUSH', 0xff3b30],
+  ['ORBIT', 0xa96bff],
+  ['FLINT', 0xff8a3d],
+  ['ZEPHYR', 0x3dffc5],
+  ['SABLE', 0xd8d8e8],
 ]
 
 export interface RaceEvents {
@@ -74,7 +78,7 @@ export class Race {
       const p = new Player()
       p.announce = false
       p.assist = 0.85
-      this.racers.push(this.make(name, color, p, true, 0.78 + i * 0.045))
+      this.racers.push(this.make(name, color, p, true, 0.72 + i * 0.05))
     })
   }
 
@@ -91,10 +95,10 @@ export class Race {
     const c = this.course
     const start = c.cps[0]
     const heading = Math.atan2(start.tx, start.tz)
-    // Shuffle the AI order a little; the player starts mid-pack (4th).
-    const order = [1, 2, 3, 0, 4, 5]
+    // The player starts mid-pack (6th of 10); the rivals fill the other slots.
+    const slots = [5, 0, 1, 2, 3, 4, 6, 7, 8, 9]
     this.racers.forEach((r, k) => {
-      const slot = order[k]
+      const slot = slots[k] ?? k
       const row = Math.floor(slot / 2), col = slot % 2
       const back = 60 + row * 45
       const side = (col === 0 ? -1 : 1) * 32
@@ -266,7 +270,15 @@ export class Race {
       const side = dx * p.right.x + dz * p.right.z
       if (ahead > 0 && ahead < 220 && Math.abs(side) < 22) lane += side > 0 ? -55 : 55
     }
-    lane = THREE.MathUtils.clamp(lane, -190, 190)
+    // The course's spires ahead in the lane: step round them.
+    const horizon = r.idx + Math.round((p.speed * 2.2 + 300) / 40)
+    for (const rk of this.course.rocks) {
+      let di = rk.i - r.idx
+      if (di < 0) di += n
+      if (di <= 0 || r.idx + di > horizon) continue
+      if (Math.abs(lane - rk.lat) < rk.r + 45) lane = rk.lat + (lane >= rk.lat ? 1 : -1) * (rk.r + 70)
+    }
+    lane = THREE.MathUtils.clamp(lane, -220, 220)
     const la = Math.min(1300, 220 + p.speed * 0.6)
     const k = (r.idx + Math.round(la / 40)) % n
     const [tx, tz] = c.tangent(k)
@@ -277,7 +289,8 @@ export class Race {
     let err = want - p.heading
     err = Math.atan2(Math.sin(err), Math.cos(err))
     // (Yaw has momentum now: damp it, or the AI over-rotates into its own spin.)
-    ctl.steer = THREE.MathUtils.clamp(-err * 2.6 + p.yawRate * 0.85, -1, 1)
+    const lim = p.mach > 3 ? 0.7 : 1
+    ctl.steer = THREE.MathUtils.clamp(-err * 2.6 + p.yawRate * 0.85, -lim, lim)
     // Bends ahead: how much the line turns over the next ~2.5 s.
     // The sharpest the line turns, per km, over the next ~3 s: what speed it can be taken at.
     let bend = 0

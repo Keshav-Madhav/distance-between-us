@@ -11,6 +11,8 @@ import { patchStandard, SKY_FOG_ONLY } from './shaders'
 const STEP = 40
 export const GATE_HALF = 260
 export const LAPS = 3
+/** Where the jumps are, as fractions of a lap (the test hooks use these too). */
+export const JUMPS = [0.075, 0.17, 0.3, 0.41, 0.55, 0.64, 0.77, 0.88, 0.95]
 
 export interface Checkpoint {
   x: number; z: number
@@ -29,6 +31,8 @@ export class Course {
   readonly length: number
   readonly cps: Checkpoint[] = []
   readonly pads: Pad[] = []
+  /** Spires standing on the straights (collide; the AI steers round them). lat: offset to the right. */
+  readonly rocks: { x: number; z: number; r: number; h: number; i: number; lat: number }[] = []
   readonly group = new THREE.Group()
   private readonly beamMesh: THREE.InstancedMesh
   private readonly towerLights: THREE.InstancedMesh
@@ -38,22 +42,39 @@ export class Course {
   /** Two light pillars into the sky over the next gate: visible from kilometres away. */
   private readonly pillars: THREE.Mesh[] = []
   private readonly pillarMat: THREE.ShaderMaterial
+  private readonly pillarMat2: THREE.ShaderMaterial
   private readonly col = new THREE.Color()
 
   constructor() {
     // Dense sample of the curve, then resample to even arc length.
-    const a = 6200, b = 7600
-    const cx = -a
-    const M = 6000
+    // A stadium figure-8, 84 km a lap: two loops of R = 5 km around (±C, 0), joined by two dead-straight
+    // 23 km runs that cross at the origin (51° apart). The straights are the race — flat out, small
+    // corrections, weaving through rock — and the loops are long sweepers, one right-hand, one left.
+    // (A tighter 40 km figure-8 had turns too sharp for Mach 5: user, 2026-11-20.)
+    const C = 11500, R = 5000
+    const phi = Math.asin(R / C)
+    const L = Math.sqrt(C * C - R * R)
     const raw: [number, number][] = []
-    for (let i = 0; i < M; i++) {
-      const t = (i / M) * Math.PI * 2
-      const f = 1 + 0.085 * Math.sin(3 * t) + 0.045 * Math.sin(5 * t + 0.6) - 0.045 * Math.sin(0.6)
-      raw.push([cx + a * Math.cos(t) * f, b * Math.sin(t) * f])
+    const line = (x0: number, z0: number, x1: number, z1: number) => {
+      const n = Math.ceil(Math.hypot(x1 - x0, z1 - z0) / 5)
+      for (let i = 0; i < n; i++) raw.push([x0 + ((x1 - x0) * i) / n, z0 + ((z1 - z0) * i) / n])
     }
-    // Shift so the start is exactly at the origin.
-    const [sx0, sz0] = raw[0]
-    for (const p of raw) { p[0] -= sx0; p[1] -= sz0 }
+    const arc = (cx: number, a0: number, a1: number) => {
+      const n = Math.ceil((Math.abs(a1 - a0) * R) / 5)
+      for (let i = 0; i < n; i++) { const a = a0 + ((a1 - a0) * i) / n; raw.push([cx + Math.cos(a) * R, Math.sin(a) * R]) }
+    }
+    const cf = Math.cos(phi), sf = Math.sin(phi)
+    const thR = Math.atan2(L * sf, L * cf - C) // the right loop's top tangent point, about its centre
+    const thL = Math.atan2(L * sf, -L * cf + C)
+    line(0, 0, L * cf, L * sf) // out along the first straight
+    arc(C, thR, -thR) // round the right loop, far side
+    line(L * cf, -L * sf, -L * cf, L * sf) // back across the crossing
+    arc(-C, thL, 2 * Math.PI - thL) // round the left loop
+    line(-L * cf, -L * sf, 0, 0) // home to the crossing
+    // Start on the first straight, 4.5 km clear of the crossing.
+    const s0 = raw.findIndex(([x, z]) => Math.hypot(x, z) > 4500)
+    raw.push(...raw.splice(0, s0))
+    const M = raw.length
     let total = 0
     const seg: number[] = []
     for (let i = 0; i < M; i++) {
@@ -77,27 +98,31 @@ export class Course {
       this.pz[k] = p[1] + (q[1] - p[1]) * u
     }
 
-    // Checkpoints.
-    const K = 14
+    // Checkpoints (nudged off the crossing, where the other straight would run through them).
+    const K = 16
     for (let k = 0; k < K; k++) {
-      const i = Math.round((k / K) * n) % n
+      let i = Math.round((k / K) * n) % n
+      for (let g = 0; g < 120 && Math.hypot(this.px[i], this.pz[i]) < 2000; g++) i = (i + 1) % n
       const [tx, tz] = this.tangent(i)
       this.cps.push({ x: this.px[i], z: this.pz[i], tx, tz, i })
     }
 
     // Jumps: big mounds on the line, a few beside it (a choice of line).
     const mounds: number[] = []
-    const onLine = [0.075, 0.17, 0.3, 0.41, 0.55, 0.64, 0.77, 0.88, 0.95]
+    const onLine = JUMPS
+    const clearOfCrossing = (i: number) => Math.hypot(this.px[i % n], this.pz[i % n]) > 1600
     onLine.forEach((f, k) => {
       const i = Math.round(f * n)
+      if (!clearOfCrossing(i)) return
       const [tx, tz] = this.tangent(i)
       const off = k % 3 === 1 ? 110 : k % 3 === 2 ? -110 : 0
       mounds.push(this.px[i] + tz * off, this.pz[i] - tx * off, 26 + (k % 4) * 4, 125 + (k % 3) * 20)
     })
     // Rolling humps in a few runs (whoops), smaller.
-    for (const f of [0.22, 0.47, 0.7]) {
+    for (const f of [0.22, 0.7]) {
       for (let w = 0; w < 4; w++) {
         const i = Math.round(f * n) + w * 8
+        if (!clearOfCrossing(i)) continue
         mounds.push(this.px[i % n], this.pz[i % n], 7, 90)
       }
     }
@@ -106,8 +131,33 @@ export class Course {
     // Boost pads.
     for (const [f, off] of [[0.035, 0], [0.12, 70], [0.26, -70], [0.36, 0], [0.5, 60], [0.6, -60], [0.72, 0], [0.83, 70], [0.92, -40]] as const) {
       const i = Math.round(f * n)
+      if (!clearOfCrossing(i)) continue
       const [tx, tz] = this.tangent(i)
       this.pads.push({ x: this.px[i] + tz * off, z: this.pz[i] - tx * off, tx, tz })
+    }
+
+    // Rock spires along the course (mostly the straights — that is most of it): on and beside the line,
+    // to weave through at speed. Never at a
+    // gate, a pad, a jump or the crossing, nor in the first 4 km.
+    {
+      let seed = 99
+      const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647)
+      let i = Math.round(4000 / STEP)
+      while (i < n - 20) {
+        i += Math.round((800 + rnd() * 1200) / STEP)
+        if (i >= n - 20) break
+        const lat = (rnd() * 2 - 1) * 170
+        const [tx, tz] = this.tangent(i)
+        const x = this.px[i] - tz * lat, z = this.pz[i] + tx * lat
+        const r = 18 + rnd() * 22
+        if (Math.hypot(x, z) < 2200) continue
+        if (this.cps.some((c) => Math.hypot(c.x - x, c.z - z) < 500)) continue
+        if (this.pads.some((p) => Math.hypot(p.x - x, p.z - z) < 400)) continue
+        let nearMound = false
+        for (let m = 0; m < mounds.length; m += 4) if (Math.hypot(mounds[m] - x, mounds[m + 1] - z) < mounds[m + 3] * 1.6 + 80) nearMound = true
+        if (nearMound) continue
+        this.rocks.push({ x, z, r, h: 70 + rnd() * 110, i, lat })
+      }
     }
 
     // ── gates ──
@@ -189,8 +239,12 @@ export class Course {
     })
     const pillarGeo = new THREE.CylinderGeometry(7, 7, 2400, 16, 1, true)
     pillarGeo.translate(0, 1200, 0)
-    for (let j = 0; j < 2; j++) {
-      const p = new THREE.Mesh(pillarGeo, this.pillarMat)
+    // The gate after next: thinner, fainter pillars (you see the next turn coming).
+    this.pillarMat2 = this.pillarMat.clone()
+    this.pillarMat2.uniforms.uColor.value = new THREE.Color(0.05, 0.35, 0.5)
+    for (let j = 0; j < 4; j++) {
+      const p = new THREE.Mesh(pillarGeo, j < 2 ? this.pillarMat : this.pillarMat2)
+      if (j >= 2) p.scale.set(0.55, 0.75, 0.55)
       p.frustumCulled = false
       p.renderOrder = 6
       this.pillars.push(p)
@@ -246,6 +300,59 @@ export class Course {
     for (const p of this.pads) this.group.add(this.padMesh(p))
   }
 
+  /**
+   * Where races have worn the ground: R = packed, darker sand along the line (soft falloff over
+   * ~250 m), G = scorch lanes (broken streaks from a thousand exhausts). Box = (minX, minZ, w, h).
+   */
+  wearTexture(): { tex: THREE.Texture; box: THREE.Vector4 } {
+    let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity
+    for (let i = 0; i < this.n; i++) { x0 = Math.min(x0, this.px[i]); x1 = Math.max(x1, this.px[i]); z0 = Math.min(z0, this.pz[i]); z1 = Math.max(z1, this.pz[i]) }
+    const m = 700
+    x0 -= m; x1 += m; z0 -= m; z1 += m
+    const W = 2048, H = Math.min(2048, Math.ceil(((z1 - z0) / (x1 - x0)) * W / 4) * 4)
+    const kx = W / (x1 - x0), kz = H / (z1 - z0)
+    const cv = document.createElement('canvas')
+    cv.width = W; cv.height = H
+    const g = cv.getContext('2d')!
+    g.fillStyle = '#000'
+    g.fillRect(0, 0, W, H)
+    g.globalCompositeOperation = 'lighter'
+    g.lineJoin = 'round'
+    g.lineCap = 'round'
+    const path = (off: number) => {
+      g.beginPath()
+      for (let i = 0; i <= this.n; i++) {
+        const k = i % this.n
+        const [tx, tz] = this.tangent(k)
+        const x = this.px[k] - tz * off, z = this.pz[k] + tx * off
+        if (i === 0) g.moveTo((x - x0) * kx, (z - z0) * kz); else g.lineTo((x - x0) * kx, (z - z0) * kz)
+      }
+    }
+    for (const [w, a] of [[560, 0.12], [440, 0.14], [330, 0.16], [230, 0.18], [140, 0.2], [70, 0.16]] as const) {
+      g.strokeStyle = `rgba(255,0,0,${a})`
+      g.lineWidth = w * kx
+      path(0)
+      g.stroke()
+    }
+    let seed = 7
+    const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647)
+    for (let l = 0; l < 46; l++) {
+      const off = (rnd() + rnd() + rnd() - 1.5) * 150
+      g.strokeStyle = `rgba(0,255,0,${0.12 + rnd() * 0.3})`
+      g.lineWidth = Math.max(1, (2 + rnd() * 5) * kx)
+      g.setLineDash([(200 + rnd() * 1800) * kx, (100 + rnd() * 900) * kx])
+      g.lineDashOffset = rnd() * 3000
+      path(off)
+      g.stroke()
+    }
+    g.setLineDash([])
+    const tex = new THREE.CanvasTexture(cv)
+    tex.flipY = false
+    tex.colorSpace = THREE.NoColorSpace
+    tex.anisotropy = 4
+    return { tex, box: new THREE.Vector4(x0, z0, x1 - x0, z1 - z0) }
+  }
+
   /** A strip 60 × 140 m draped on the terrain. */
   private padMesh(p: Pad): THREE.Mesh {
     const g = new THREE.PlaneGeometry(60, 140, 6, 14)
@@ -293,12 +400,29 @@ export class Course {
     return best
   }
 
-  /** How far (m) the course is from (x, z) — for clearing mesas off it. */
+  private grid: Map<number, number[]> | null = null
+  /** How far (m) the course is from (x, z), up to ~3 km (beyond that: Infinity). A 1 km grid of the
+   *  line's points keeps the tens of thousands of startup queries (mesa placement) cheap. */
   distance(x: number, z: number): number {
+    const G = 1000
+    if (!this.grid) {
+      this.grid = new Map()
+      for (let i = 0; i < this.n; i += 2) {
+        const key = Math.floor(this.px[i] / G) * 100003 + Math.floor(this.pz[i] / G)
+        let a = this.grid.get(key)
+        if (!a) this.grid.set(key, (a = []))
+        a.push(i)
+      }
+    }
+    const cx = Math.floor(x / G), cz = Math.floor(z / G)
     let bd = Infinity
-    for (let i = 0; i < this.n; i += 3) {
-      const d = (this.px[i] - x) ** 2 + (this.pz[i] - z) ** 2
-      if (d < bd) bd = d
+    for (let ix = -3; ix <= 3; ix++) for (let iz = -3; iz <= 3; iz++) {
+      const a = this.grid.get((cx + ix) * 100003 + cz + iz)
+      if (!a) continue
+      for (const i of a) {
+        const d = (this.px[i] - x) ** 2 + (this.pz[i] - z) ** 2
+        if (d < bd) bd = d
+      }
     }
     return Math.sqrt(bd)
   }
@@ -308,9 +432,11 @@ export class Course {
     const K = this.cps.length
     for (let k = 0; k < K; k++) {
       const isNext = k === next
+      const isAfter = next >= 0 && k === (next + 1) % K
       const pulse = 0.75 + 0.25 * Math.sin(time * 6)
-      if (k === 0) this.col.setRGB(5, 1.6, 0.3).multiplyScalar(isNext ? pulse * 1.4 : 0.7)
+      if (k === 0) this.col.setRGB(5, 1.6, 0.3).multiplyScalar(isNext ? pulse * 1.4 : isAfter ? 1 : 0.7)
       else if (isNext) this.col.setRGB(0.6, 3.2, 5).multiplyScalar(pulse)
+      else if (isAfter) this.col.setRGB(0.4, 1.6, 2.4).multiplyScalar(0.6)
       else this.col.setRGB(1.6, 1.2, 0.9).multiplyScalar(0.55)
       this.beamMesh.setColorAt(k, this.col)
       for (let j = 0; j < 4; j++) this.towerLights.setColorAt(k * 4 + j, this.col)
@@ -331,8 +457,15 @@ export class Course {
       this.curtainMat.uniforms.uA.value = next === 0 && finalLap ? 1.6 : 1
       this.pillarMat.uniforms.uColor.value.copy(this.curtainMat.uniforms.uColor.value)
     }
-    for (const p of this.pillars) p.visible = !!c
+    const c2 = next >= 0 ? this.cps[(next + 1) % K] : undefined
+    if (c2) for (let j = 0; j < 2; j++) {
+      const sd = j === 0 ? 1 : -1
+      const x = c2.x + c2.tz * GATE_HALF * sd, z = c2.z - c2.tx * GATE_HALF * sd
+      this.pillars[2 + j].position.set(x, groundH(x, z), z)
+    }
+    for (let j = 0; j < 4; j++) this.pillars[j].visible = j < 2 ? !!c : !!c2
     this.pillarMat.uniforms.uTime.value = time
+    this.pillarMat2.uniforms.uTime.value = time
     this.curtainMat.uniforms.uTime.value = time
     this.padMat.uniforms.uTime.value = time
   }

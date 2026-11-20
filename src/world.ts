@@ -178,6 +178,9 @@ export interface GroundUniforms {
   tSand: { value: THREE.Texture | null }
   tClay: { value: THREE.Texture | null }
   tGravel: { value: THREE.Texture | null }
+  tTrack: { value: THREE.Texture | null }
+  uTrackBox: { value: THREE.Vector4 }
+  uTrackOn: { value: number }
 }
 
 function terrainMaterial(shared: GroundUniforms, snap: { value: THREE.Vector2 }, drop: number): THREE.ShaderMaterial {
@@ -218,6 +221,9 @@ function terrainMaterial(shared: GroundUniforms, snap: { value: THREE.Vector2 },
       uniform sampler2D tSand;
       uniform sampler2D tClay;
       uniform sampler2D tGravel;
+      uniform sampler2D tTrack;
+      uniform vec4 uTrackBox;
+      uniform float uTrackOn;
       varying vec3 vW;
       varying vec3 vN;
       varying float vH;
@@ -245,6 +251,16 @@ function terrainMaterial(shared: GroundUniforms, snap: { value: THREE.Vector2 },
         alb *= mix(vec3(1.0), vec3(1.12, 1.1, 1.05), smoothstep(3.0, 12.0, h0) * 0.6);
         alb *= 0.9 + 0.2 * vnoise(p * 0.03);
 
+        // The racing line, worn: packed and darker, the ripples gone, scorched lanes down it.
+        vec2 tuv = (p - uTrackBox.xy) / uTrackBox.zw;
+        if (uTrackOn > 0.5 && tuv.x > 0.0 && tuv.y > 0.0 && tuv.x < 1.0 && tuv.y < 1.0) {
+          vec2 wr = texture2D(tTrack, tuv).rg;
+          float pack = smoothstep(0.05, 0.8, wr.r);
+          alb = mix(alb, mix(s2, vec3(dot(s2, vec3(0.33))), 0.25) * vec3(0.86, 0.74, 0.68), pack * 0.7);
+          float streak = wr.g * (0.75 + 0.25 * vnoise(p * 0.05));
+          alb *= 1.0 - 0.55 * smoothstep(0.05, 0.6, streak);
+          alb = mix(alb, vec3(0.16, 0.08, 0.05), smoothstep(0.45, 0.9, streak) * 0.35);
+        }
         alb *= 0.72;
         float sun = max(dot(n, SUN_DIR), 0.0);
         vec3 col = alb * (vec3(1.0, 0.9, 0.78) * 2.4 * sun + skyColor(n) * 0.36 + vec3(0.5, 0.22, 0.1) * 0.2);
@@ -252,9 +268,14 @@ function terrainMaterial(shared: GroundUniforms, snap: { value: THREE.Vector2 },
         // The craft's shadow, cast along the sun (fainter and wider the higher it flies).
         vec2 side = vec2(uFwd.y, -uFwd.x);
         vec2 ds = p - uShadow;
-        float spread = 1.0 + uShadowK * 0.04;
-        float ell = pow(dot(ds, uFwd) / (5.2 * spread), 2.0) + pow(dot(ds, side) / (2.9 * spread), 2.0);
-        col *= 1.0 - (0.6 / (spread * spread)) * (1.0 - smoothstep(0.55, 1.25, ell));
+        // A delta-shaped soft shadow (nose +5.6 m, tail −4.2 m, 3.1 m half-span at the tail),
+        // blurring and fading as the craft climbs.
+        float spread = 1.0 + uShadowK * 0.05;
+        float sa = dot(ds, uFwd) / spread, ss = abs(dot(ds, side)) / spread;
+        float halfw = 3.1 * clamp((5.6 - sa) / 9.8, 0.0, 1.0);
+        float soft = 0.9 + uShadowK * 0.08;
+        float inside = (1.0 - smoothstep(halfw - soft, halfw + soft, ss)) * smoothstep(-4.2 - soft, -4.2 + soft, sa) * (1.0 - smoothstep(5.6 - soft, 5.6 + soft, sa));
+        col *= 1.0 - (0.42 / (spread * spread)) * inside;
         vec2 dc = p - uCraft.xz;
         float near = exp(-uShadowK * 0.25);
         float hov = exp(-dot(dc, dc) / 22.0) * near;
@@ -463,9 +484,17 @@ export class World {
     tSand: { value: null },
     tClay: { value: null },
     tGravel: { value: null },
+    tTrack: { value: null },
+    uTrackBox: { value: new THREE.Vector4(0, 0, 1, 1) },
+    uTrackOn: { value: 0 },
   }
   private readonly rings: { mesh: THREE.Mesh; snap: { value: THREE.Vector2 }; step: number }[] = []
   private readonly wrapped: Wrapped[] = []
+  /** Fixed rocks (the course's spires): not wrapped, always there. */
+  private readonly fixed: { x: number; z: number; r: number; h: number; yaw: number; by: number }[] = []
+  private fixedProf: Profile = () => 1
+  private spireGeo: THREE.BufferGeometry | null = null
+  private mesaMat: THREE.Material | null = null
   readonly sunLight: THREE.DirectionalLight
   envTexture: THREE.Texture | null = null
 
@@ -505,8 +534,10 @@ export class World {
       ['spire', 50, 600],
     ]
     const all: Placed[] = []
+    this.mesaMat = mesaMat
     for (const [kind, count, spacing] of kinds) {
       const { geo, prof } = mesaGeometry(kind, kind.length * 31 + 7)
+      if (kind === 'spire') { this.spireGeo = geo; this.fixedProf = prof }
       const w = new Wrapped(geo, mesaMat, REBASE, REBASE / 2 - 2200, 0.06, prof, true)
       let tries = 0
       while (w.items.length < count && tries++ < count * 80) {
@@ -566,6 +597,21 @@ export class World {
     this.group.add(this.sunLight.target)
   }
 
+  /** Rocks that stand where they are put (the course's spires). */
+  addFixed(list: { x: number; z: number; r: number; h: number }[]): void {
+    const mesh = new THREE.InstancedMesh(this.spireGeo!, this.mesaMat!, Math.max(1, list.length))
+    const m = new THREE.Matrix4(), q = new THREE.Quaternion(), v = new THREE.Vector3(), sc = new THREE.Vector3()
+    list.forEach((o, i) => {
+      const yaw = (i * 2.399) % 6.283
+      const by = groundH(o.x, o.z) - 0.06 * o.h - 3
+      this.fixed.push({ ...o, yaw, by })
+      mesh.setMatrixAt(i, m.compose(v.set(o.x, by, o.z), q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), yaw), sc.set(o.r, o.h, o.r)))
+    })
+    mesh.count = list.length
+    mesh.frustumCulled = false
+    this.group.add(mesh)
+  }
+
   applyTextures(t: { sand: THREE.Texture; clay: THREE.Texture; gravel: THREE.Texture }): void {
     this.ground.tSand.value = t.sand
     this.ground.tClay.value = t.clay
@@ -621,6 +667,19 @@ export class World {
         o.x = it.x; o.z = it.z; o.cr = cr; o.big = w.big
         n++
       }
+    }
+    for (const it of this.fixed) {
+      const dx = x - it.x, dz = z - it.z
+      const reach = range + it.r * 2.3
+      if (dx * dx + dz * dz > reach * reach) continue
+      const t = (y - it.by) / it.h
+      if (t > 0.98) continue
+      const c = Math.cos(it.yaw), s = Math.sin(it.yaw)
+      const cr = it.r * this.fixedProf(Math.atan2(dx * s + dz * c, dx * c - dz * s), Math.max(0, t)) * 0.97
+      let o = out[n]
+      if (!o) out[n] = o = { x: 0, z: 0, cr: 0, big: false }
+      o.x = it.x; o.z = it.z; o.cr = cr; o.big = true
+      n++
     }
     return n
   }
