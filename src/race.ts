@@ -6,7 +6,7 @@
 // player so the race stays a race. They drive the same Player physics: the same jumps, pads, walls.
 import * as THREE from 'three'
 import { CFG, MACH } from './config'
-import { Course, GATE_HALF, LAPS } from './course'
+import { Course, GATE_HALF } from './course'
 import { bump, Player, type Controls } from './player'
 import type { World } from './world'
 
@@ -127,7 +127,9 @@ export class Race {
     this.boostHeldSince = -1
   }
 
-  lapOf(r: Racer): number { return Math.min(LAPS, Math.max(1, Math.floor((r.passed - 1) / this.K) + 1)) }
+  lapOf(_r: Racer): number { return 1 }
+  /** Metres of line left to the finish. */
+  toGo(r: Racer): number { return Math.max(0, (this.course.finishI - r.idx) * 40) }
 
   /** Rough distance (m) around the course, for ordering and gaps. */
   progress(r: Racer): number {
@@ -189,7 +191,8 @@ export class Race {
     if (r.finished) return
     const p = r.p
     for (const ahead of [0, 1]) {
-      const k = (r.next + ahead) % this.K
+      const k = r.next + ahead
+      if (k >= this.K) continue
       const c = this.course.cps[k]
       const s0 = (p.prev.x - c.x) * c.tx + (p.prev.z - c.z) * c.tz
       const s1 = (p.pos.x - c.x) * c.tx + (p.pos.z - c.z) * c.tz
@@ -202,19 +205,13 @@ export class Race {
       const count = ahead + 1
       for (let q = 0; q < count; q++) {
         r.passed++
-        r.next = (r.next + 1) % this.K
-        const lapDone = r.next === 1 && r.passed > 1
-        if (lapDone) {
-          const t = this.clock + r.penalty
-          r.lastLap = t - r.lapStart
-          r.bestLap = r.bestLap ? Math.min(r.bestLap, r.lastLap) : r.lastLap
-          r.lapStart = t
-        }
+        r.next = r.next + 1
         if (r.passed === 1) r.lapStart = this.clock + r.penalty
-        this.ev.gate(r, lapDone, missed && q === 0)
-        if (r.passed >= LAPS * this.K + 1) {
+        this.ev.gate(r, false, missed && q === 0)
+        if (r.passed >= this.K) {
           r.finished = true
           r.finishTime = this.clock + r.penalty
+          r.lastLap = r.bestLap = r.finishTime
           this.ev.finish(r)
           return
         }
@@ -242,8 +239,7 @@ export class Race {
 
   /** Back on the line at the last gate passed (crashed out, or the R key). */
   respawn(r: Racer): void {
-    const k = (r.next - 1 + this.K) % this.K
-    const c = this.course.cps[k]
+    const c = this.course.cps[Math.max(0, Math.min(this.K - 1, r.next - 1))]
     const heading = Math.atan2(c.tx, c.tz)
     const off = r.ai ? (Math.random() - 0.5) * 80 : 0
     r.p.reset(c.x + c.tx * 40 + c.tz * off, c.z + c.tz * 40 - c.tx * off, heading, 1.4)
@@ -274,17 +270,18 @@ export class Race {
     const horizon = r.idx + Math.round((p.speed * 2.2 + 300) / 40)
     for (const rk of this.course.rocks) {
       let di = rk.i - r.idx
-      if (di < 0) di += n
       if (di <= 0 || r.idx + di > horizon) continue
       if (Math.abs(lane - rk.lat) < rk.r + 45) lane = rk.lat + (lane >= rk.lat ? 1 : -1) * (rk.r + 70)
     }
     lane = THREE.MathUtils.clamp(lane, -220, 220)
     const la = Math.min(1300, 220 + p.speed * 0.6)
-    const k = (r.idx + Math.round(la / 40)) % n
+    const want_k = r.idx + Math.round(la / 40)
+    const k = Math.min(n - 1, want_k)
     const [tx, tz] = c.tangent(k)
-    // Lane offset to the craft's right: right = (−tz, tx).
-    const gx = c.px[k] - tz * lane
-    const gz = c.pz[k] + tx * lane
+    // Lane offset to the craft's right: right = (−tz, tx). Past the end of the line: straight on.
+    const over = (want_k - k) * 40
+    const gx = c.px[k] - tz * lane + tx * over
+    const gz = c.pz[k] + tx * lane + tz * over
     const want = Math.atan2(gx - p.pos.x, gz - p.pos.z)
     let err = want - p.heading
     err = Math.atan2(Math.sin(err), Math.cos(err))
@@ -296,7 +293,7 @@ export class Race {
     let bend = 0
     const [ax, az] = c.tangent(r.idx)
     for (let s = 10; s <= Math.round((p.speed * 3) / 40) + 10; s += 10) {
-      const [bx, bz] = c.tangent((r.idx + s) % n)
+      const [bx, bz] = c.tangent(Math.min(n - 1, r.idx + s))
       bend = Math.max(bend, Math.acos(THREE.MathUtils.clamp(ax * bx + az * bz, -1, 1)) / (s * 0.04))
     }
     // Turn radius at speed v is v / yawMax; the line's radius is 1 / bend (km⁻¹ → m).

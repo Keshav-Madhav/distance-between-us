@@ -30,6 +30,12 @@ export interface Ctx {
   shake(t: number): void
   /** Other lock targets (the walker's cores). */
   extraTargets(): readonly Target[]
+  waveStart?(wave: number): void
+  waveCleared?(wave: number): void
+  runner?(): void
+  escaped?(): void
+  /** Steer side (−1 … 1) to clear rock ahead of (x, z) moving along (dx, dz) at v; 0 when clear. */
+  avoid?(x: number, z: number, dx: number, dz: number, v: number): number
 }
 
 const _v = new THREE.Vector3()
@@ -78,7 +84,10 @@ class Drone implements Target {
   wreck = false
   radius = 10
   kind = 'drone' as const
-  mode: 'hold' | 'pass' = 'hold'
+  mode: 'hold' | 'pass' | 'run' = 'hold'
+  /** Runner: the heading it flees along, and its own speed. */
+  runH = 0
+  runV = 0
   ox = 0; oz = 0; oy = 0
   phase = 0
   t = 0
@@ -134,8 +143,18 @@ export class Combat {
   private passT = 14
   enabled = false
   kills = 0
-  /** How many hold-drones to keep up (the walker fight lowers it). */
+  /** How many hold-drones to keep up at once. */
   pressure = 3
+  wave = 0
+  readonly queue = { hold: 0, pass: 0, run: 0 }
+  private breather = 0
+  private runT = 0
+  /** Waves wait while the walker is up. */
+  paused = false
+  queueEmpty(): boolean { return this.queue.hold + this.queue.pass + this.queue.run === 0 }
+  aliveCount(): number { return this.drones.reduce((n, d) => n + (d.alive ? 1 : 0), 0) }
+  /** Left in this wave: queued + alive. */
+  left(): number { return this.queue.hold + this.queue.pass + this.queue.run + this.aliveCount() }
   private readonly targets: Target[] = []
 
   constructor(private readonly ctx: Ctx) {
@@ -205,6 +224,10 @@ export class Combat {
     this.spawnT = 5
     this.passT = 16
     this.pressure = 3
+    this.wave = 0
+    this.queue.hold = this.queue.pass = this.queue.run = 0
+    this.breather = 0
+    this.paused = false
   }
 
   shift(dx: number, dz: number): void {
@@ -213,7 +236,7 @@ export class Combat {
     for (const s of this.shots) { s.pos.x += dx; s.pos.z += dz; s.prev.x += dx; s.prev.z += dz }
   }
 
-  private spawn(mode: 'hold' | 'pass', lane: number): void {
+  private spawn(mode: 'hold' | 'pass' | 'run', lane: number): void {
     const d = this.drones.find((q) => !q.alive && !q.wreck)
     if (!d) return
     const p = this.ctx.player
@@ -234,6 +257,15 @@ export class Combat {
       _v.y = groundH(_v.x, _v.z) + d.oy + 30
       d.pos.copy(_v)
       d.vel.copy(p.vel).addScaledVector(p.fwd, 500)
+    } else if (mode === 'run') {
+      // A runner: well ahead, already fleeing, a little faster than you. Chase it down.
+      d.runH = p.heading + (Math.random() - 0.5) * 0.5
+      d.runV = Math.max(p.speed * 1.06, 3.2 * MACH)
+      _v.copy(p.pos).addScaledVector(p.fwd, 2200 + Math.random() * 1200).addScaledVector(p.right, (Math.random() - 0.5) * 1200)
+      _v.y = groundH(_v.x, _v.z) + 18
+      d.pos.copy(_v)
+      d.vel.set(Math.sin(d.runH) * d.runV, 0, Math.cos(d.runH) * d.runV)
+      d.hp = 2
     } else {
       // Head-on, a few hundred metres to one side: a pass you can lock and hit, or dodge.
       const off = (lane - 1) * 70 + (Math.random() - 0.5) * 60
@@ -255,8 +287,9 @@ export class Combat {
     const dist = d.pos.distanceTo(p.pos)
     this.ctx.audio.explosion(dist, 1)
     this.ctx.shake(Math.max(0.15, 0.55 - dist / 3000))
-    const pts = Math.round(100 * Math.max(1, p.mach))
-    this.ctx.scored(pts, `DRONE DOWN  ×${p.mach.toFixed(1)}`)
+    const run = d.mode === 'run'
+    const pts = Math.round((run ? 300 : 100) * Math.max(1, p.mach))
+    this.ctx.scored(pts, `${run ? 'RUNNER' : 'DRONE'} DOWN  ×${p.mach.toFixed(1)}`)
     if (this.lockTarget === d) { this.lockTarget = null; this.locked = false; this.lockProgress = 0 }
   }
 
@@ -314,21 +347,49 @@ export class Combat {
     const p = this.ctx.player
     this.fireCool -= dt
 
-    // ── director ──
-    if (this.enabled && !p.dead) {
-      this.spawnT -= dt
-      const holding = this.drones.reduce((n, d) => n + (d.alive && d.mode === 'hold' ? 1 : 0), 0)
-      if (this.spawnT <= 0 && holding < this.pressure) {
-        const n = Math.min(this.pressure - holding, 2 + (Math.random() < 0.4 ? 1 : 0))
-        for (let i = 0; i < n; i++) this.spawn('hold', i)
-        this.spawnT = 5 + Math.random() * 4
-        this.ctx.audio.flyby(0.7)
-      }
-      this.passT -= dt
-      if (this.passT <= 0 && p.mach > 1.5) {
-        const n = 2 + Math.floor(Math.random() * 2)
-        for (let i = 0; i < n; i++) this.spawn('pass', i)
-        this.passT = 11 + Math.random() * 7
+    // ── director: waves ──
+    // Each wave queues drones that hold ahead and shoot, head-on passers, and runners (flee, never
+    // shoot, worth triple — chase them). A wave is cleared when its queue is empty and nothing is
+    // left in the air; a breather, then the next, bigger one.
+    if (this.enabled && !p.dead && !this.paused) {
+      if (this.wave === 0 || (this.queueEmpty() && this.aliveCount() === 0)) {
+        if (this.wave > 0 && this.breather <= 0) { this.breather = 3.5; this.ctx.waveCleared?.(this.wave) }
+        this.breather -= dt
+        if (this.breather <= 0 || this.wave === 0) {
+          this.wave++
+          this.queue.hold = 2 + this.wave
+          this.queue.pass = this.wave >= 2 ? this.wave : 0
+          this.queue.run = 1 + Math.floor(this.wave / 2)
+          this.breather = 0
+          this.spawnT = 1.5
+          this.passT = 6
+          this.runT = 3
+          this.ctx.waveStart?.(this.wave)
+        }
+      } else {
+        this.spawnT -= dt
+        const holding = this.drones.reduce((n, d) => n + (d.alive && d.mode === 'hold' ? 1 : 0), 0)
+        if (this.queue.hold > 0 && this.spawnT <= 0 && holding < this.pressure) {
+          const n = Math.min(this.queue.hold, this.pressure - holding, 2)
+          for (let i = 0; i < n; i++) this.spawn('hold', i)
+          this.queue.hold -= n
+          this.spawnT = 4 + Math.random() * 3
+          this.ctx.audio.flyby(0.7)
+        }
+        this.passT -= dt
+        if (this.queue.pass > 0 && this.passT <= 0 && p.mach > 1.2) {
+          const n = Math.min(this.queue.pass, 2)
+          for (let i = 0; i < n; i++) this.spawn('pass', i)
+          this.queue.pass -= n
+          this.passT = 9 + Math.random() * 5
+        }
+        this.runT -= dt
+        if (this.queue.run > 0 && this.runT <= 0) {
+          this.spawn('run', 0)
+          this.queue.run--
+          this.runT = 8 + Math.random() * 4
+          this.ctx.runner?.()
+        }
       }
     }
 
@@ -351,7 +412,21 @@ export class Combat {
         }
         continue
       }
-      if (d.mode === 'hold') {
+      if (d.mode === 'run') {
+        // Fleeing: weaves, swerves round rock, speeds up when you close in; gone past 12 km.
+        _v.subVectors(d.pos, p.pos)
+        const dist = _v.length()
+        const panic = dist < 900 ? 1.12 : dist < 2000 ? 1.05 : 1
+        const target = Math.min(5.6 * MACH, Math.max(3.2 * MACH, p.speed * 1.04)) * panic
+        d.runV += (target - d.runV) * Math.min(1, dt * 0.8)
+        const dodge = this.ctx.avoid ? this.ctx.avoid(d.pos.x, d.pos.z, Math.sin(d.runH), Math.cos(d.runH), d.runV) : 0
+        d.runH += (Math.sin(d.t * 0.7 + d.phase) * 0.18 + dodge * 0.9) * dt
+        d.vel.set(Math.sin(d.runH) * d.runV, 0, Math.cos(d.runH) * d.runV)
+        const g = groundH(d.pos.x, d.pos.z)
+        d.vel.y = (g + 18 + Math.sin(d.t * 1.7) * 6 - d.pos.y) * 3
+        d.bank = -dodge * 0.6 + Math.sin(d.t * 0.7 + d.phase) * 0.25
+        if (dist > 12000) { d.alive = false; this.ctx.escaped?.() }
+      } else if (d.mode === 'hold') {
         // Where it wants to be, in the player's frame.
         const wx = d.ox + Math.sin(d.t * 0.8 + d.phase) * 160
         const wy = d.oy + Math.sin(d.t * 1.3 + d.phase * 2) * 14

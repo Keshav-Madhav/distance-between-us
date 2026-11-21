@@ -8,7 +8,7 @@ export const MACH = 343
  * so when the craft strays REBASE/2 from the origin everything is shifted back by REBASE and nothing
  * on screen changes. Keeps float32 precise forever at 2 km/s.
  */
-export const REBASE = 36000
+export const REBASE = 72000
 
 export const CFG = {
   speed: {
@@ -52,6 +52,8 @@ export const CFG = {
     spinSlip: 1.15,
     /** Grip multiplier under the air brake (a trail-brake starts a drift). */
     driftBrakeGrip: 0.5,
+    /** In the air: the share of grip and self-align the fins give (steering bends the path). */
+    airControl: 0.4,
     /** Side-thruster strafe acceleration (m/s²). */
     strafe: 340,
     /** Lateral m/s added by a strafe tap (the dodge). */

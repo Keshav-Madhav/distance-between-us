@@ -16,7 +16,7 @@ import { Input } from './input'
 import { Post } from './post'
 import { groundH, SUN_DIR } from './terrain'
 import { loadTextures } from './textures'
-import { Course, JUMPS, LAPS } from './course'
+import { Course, JUMPS, LAPS, SPRINT_KM } from './course'
 import { Race } from './race'
 import { ChaseCam } from './camera'
 
@@ -45,10 +45,13 @@ const scene = new THREE.Scene()
 const camera = new THREE.PerspectiveCamera(CFG.camera.fovBase, innerWidth / innerHeight, 0.3, 60000)
 
 const course = new Course()
-// Mesas clear of the course corridor — tested at every wrapped copy near it, since the 84 km course
-// reaches within 1.5 km of the world's 36 km wrap.
+// Mesas clear of the course corridor — tested at every wrapped copy of each one that falls along the
+// 140 km line (the world repeats every 72 km).
 const clearAt = (x: number, z: number, r: number) => {
-  for (const dx of [0, -REBASE, REBASE]) for (const dz of [0, -REBASE, REBASE]) if (course.distance(x + dx, z + dz) < 850 + r) return false
+  const B = course.box, m = 3000
+  for (let ix = Math.ceil((B.x0 - m - x) / REBASE); ix <= Math.floor((B.x1 + m - x) / REBASE); ix++)
+    for (let iz = Math.ceil((B.z0 - m - z) / REBASE); iz <= Math.floor((B.z1 + m - z) / REBASE); iz++)
+      if (course.distance(x + ix * REBASE, z + iz * REBASE) < 850 + r) return false
   return true
 }
 const world = new World(clearAt, (x, z, r) => course.distance(x, z) < 460 + r)
@@ -94,17 +97,15 @@ let offT = 0
 let fovMax = CFG.camera.fovMax
 
 const shake = (t: number) => { cam.trauma = Math.min(1, cam.trauma + t) }
+const huntObs: import('./world').Obstacle[] = []
 
 const race = new Race(course, player, {
   gate(r, lapDone, missed) {
     if (r.p !== player) return
     if (missed) { warn('MISSED GATE', '+2.0 S'); sound.missed() }
-    sound.gate(lapDone)
-    if (lapDone) {
-      const lap = race.lapOf(r)
-      flash(lap === LAPS ? 'FINAL LAP' : `LAP ${lap}`)
-      pop(`LAP ${fmtLap(r.lastLap)}${r.lastLap === r.bestLap ? '  BEST' : ''}`)
-    }
+    sound.gate(lapDone || r.passed === race.K - 1)
+    if (r.passed > 1) pop(`GATE ${r.passed - 1}/${race.K - 2}  ·  P${r.place}  ·  ${fmtLap(race.clock + r.penalty)}`)
+    if (r.passed === race.K - 1) flash('FINAL GATE')
   },
   finish(r) {
     if (r.p === player) {
@@ -187,6 +188,13 @@ const myCraft = visuals.get(player)!.craft
 const rivalCols = new Map(race.racers.map((r) => [r.p, new THREE.Color(r.color)]))
 const rivalColor = (p: Player) => rivalCols.get(p)!
 // Name tags over the rivals.
+const enemyEls = Array.from({ length: 14 }, () => {
+  const d = document.createElement('div')
+  d.className = 'etag'
+  d.innerHTML = '<span></span><i></i>'
+  $('#tags').appendChild(d)
+  return d
+})
 const tagEls = race.racers.filter((r) => r.ai).map((r) => {
   const d = document.createElement('div')
   d.className = 'tag'
@@ -234,13 +242,40 @@ const combat = new Combat({
   scored(points, label) { score += points; pop(`+${points}  ${label}`); hitstop = 0.05 },
   shake,
   extraTargets: () => walker.cores as readonly Target[],
+  waveStart(w) {
+    flash(`WAVE ${w}`)
+    sound.beep(true)
+    // After three waves, the walker; the waves wait until it is down.
+    if (w === 4 && !walkerDone) {
+      combat.paused = true
+      walker.spawn()
+      warn('WALKER', 'ON THE HORIZON · HIT ITS FOUR CORES')
+      warnT = 4
+    }
+  },
+  waveCleared(w) { flash(`WAVE ${w} CLEARED`); score += 250 * w; pop(`+${250 * w}  WAVE BONUS`) },
+  runner() { warn('RUNNER', 'CHASE IT DOWN · WORTH TRIPLE'); warnT = 2 },
+  escaped() { pop('RUNNER ESCAPED') },
+  avoid(x, z, dx, dz, v) {
+    const look = Math.max(500, v * 1.2)
+    const n = world.near(x + dx * look * 0.5, z + dz * look * 0.5, 30, look * 0.6, huntObs)
+    let steer = 0
+    for (let i = 0; i < n; i++) {
+      const o = huntObs[i]
+      const ox = o.x - x, oz = o.z - z
+      const ahead = ox * dx + oz * dz
+      const side = ox * -dz + oz * dx // + = to the left
+      if (ahead > 0 && ahead < look && Math.abs(side) < o.cr + 120) steer += side > 0 ? -1 : 1
+    }
+    return Math.max(-1, Math.min(1, steer))
+  },
 })
 scene.add(combat.group)
 const walker = new Walker(player, fx, sound, combat, shake)
 scene.add(walker.root, walker.ring)
 walker.onCoreLost = (left) => { score += 500; pop(left > 0 ? `+500  CORE · ${left} LEFT` : '+500  LAST CORE'); flash(left > 0 ? `${left} CORES LEFT` : "IT'S GOING DOWN") }
 walker.onFall = () => { slowmoT = 2.6; sound.slowmo(1) }
-walker.onDown = () => { walkerDone = true; score += 5000; pop('+5000  WALKER DOWN'); flash('WALKER DOWN'); combat.pressure = 4 }
+walker.onDown = () => { walkerDone = true; score += 5000; pop('+5000  WALKER DOWN'); flash('WALKER DOWN'); combat.pressure = 4; combat.paused = false }
 
 // ───────────────────────── player feedback ─────────────────────────
 player.onMach = (m) => {
@@ -415,8 +450,8 @@ function showResults(): void {
   overlay = true
   const rows = [...race.racers].sort((a, b) => a.place - b.place)
   $('#over-h').textContent = `${ord(race.racers[0].place)} PLACE`
-  $('#over-stats').innerHTML = `BEST LAP ${fmtLap(race.racers[0].bestLap)} · TOP SPEED MACH ${player.topMach.toFixed(2)}`
-  $('#res').innerHTML = rows.map((r) => `<tr class="${r.ai ? '' : 'me'}"><td>${r.place}</td><td>${r.name}</td><td>${r.finished ? fmtLap(r.finishTime) : 'RACING'}</td><td>${r.bestLap ? fmtLap(r.bestLap) : ''}</td></tr>`).join('')
+  $('#over-stats').innerHTML = `${SPRINT_KM} KM IN ${fmtLap(race.racers[0].finishTime)} · TOP SPEED MACH ${player.topMach.toFixed(2)}`
+  $('#res').innerHTML = rows.map((r) => `<tr class="${r.ai ? '' : 'me'}"><td>${r.place}</td><td>${r.name}</td><td>${r.finished ? fmtLap(r.finishTime) : (race.toGo(r) / 1000).toFixed(1) + ' KM TO GO'}</td></tr>`).join('')
   $('#over .go').textContent = 'R TO RACE AGAIN · H FOR HUNT · ESC TO KEEP FLYING'
   $('#over').classList.remove('hide')
 }
@@ -599,12 +634,7 @@ function simStep(): void {
     walker.step(STEP)
     rebase()
     if (!player.dead) runTime += STEP
-    if (walker.state === 'off' && !walkerDone && !player.dead && (combat.kills >= CFG.combat.walkerAfterKills || runTime > CFG.combat.walkerAfterSeconds)) {
-      walker.spawn()
-      warn('WALKER', 'ON THE HORIZON · HIT ITS FOUR CORES')
-      warnT = 4
-      combat.pressure = 2
-    }
+
   }
 }
 
@@ -632,7 +662,7 @@ function huntAutopilot(): void {
   c.steer = THREE.MathUtils.clamp(steer, -1, 1)
   input.fire = combat.locked
 }
-const huntObs: import('./world').Obstacle[] = []
+
 
 /** Draw one racer's craft, flames, trails and dust. */
 function drawRacer(p: Player, alpha: number, dt: number, isMe: boolean): void {
@@ -837,7 +867,7 @@ function frame(now: number): void {
   }
 
   const me = race.racers[0]
-  course.update(mode === 'race' ? me.next : -1, time, race.lapOf(me) === LAPS && me.passed > 0)
+  course.update(mode === 'race' ? me.next : -1, time, false)
   course.group.visible = mode !== 'hunt'
   world.ground.uTrackOn.value = mode === 'hunt' ? 0 : 1
 
@@ -851,7 +881,10 @@ function frame(now: number): void {
   const G = world.ground
   G.uCraft.value.copy(renderPos)
   const agl = Math.max(0, renderPos.y - groundH(renderPos.x, renderPos.z))
-  G.uShadow.value.set(renderPos.x - (SUN_DIR[0] / SUN_DIR[1]) * agl, renderPos.z - (SUN_DIR[2] / SUN_DIR[1]) * agl)
+  // (On the ground the shadow sits right under the hull: cast along the sun it poked out ahead of the
+  // nose — the "black thing in front", user 2026-11-20. It slides off with the sun only as you climb.)
+  const cast = THREE.MathUtils.smoothstep(agl, 6, 30) * agl
+  G.uShadow.value.set(renderPos.x - (SUN_DIR[0] / SUN_DIR[1]) * cast, renderPos.z - (SUN_DIR[2] / SUN_DIR[1]) * cast)
   G.uShadowK.value = agl
   G.uFwd.value.set(Math.sin(heading), Math.cos(heading))
   G.uBoost.value = myCraft.root.visible ? player.boost : 0
@@ -880,7 +913,7 @@ function frame(now: number): void {
   post.bloom.threshold = CFG.post.bloomThreshold
   const onGrid = mode === 'race' && race.state === 'grid'
   const engineMach = mode === 'title' ? 0.2 : onGrid ? 0.3 + player.boost * 0.9 : player.mach
-  const heat = mode === 'race' ? Math.min(1, Math.max(0, me.passed - 1) / (course.cps.length * LAPS) * 1.5) : walker.state === 'fight' || walker.state === 'coming' ? 1 : 0
+  const heat = mode === 'race' ? Math.min(1, (Math.max(0, me.passed - 1) / course.cps.length) * 1.5 * LAPS) : walker.state === 'fight' || walker.state === 'coming' ? 1 : 0
   sound.update(realDt, engineMach, player.boost, player.brake, mode === 'hunt' ? combat.lockProgress : 0, mode === 'hunt' && combat.locked, play && !player.dead, heat)
 
   post.render(realDt)
@@ -900,7 +933,7 @@ function updateHud(dt: number, slow: boolean): void {
   }
   // In the air: how far the nose is from the travel — land straight or it spins.
   const al = $('#align')
-  if (player.airborne && player.tumble <= 0 && player.airTime > 0.25) {
+  if (player.airborne && player.tumble <= 0 && player.airTime > 0.25 && Math.abs(player.slip * 57.3) > 8) {
     const deg = Math.abs(player.slip * 57.3)
     al.style.display = 'block'
     al.textContent = deg < 6 ? 'ALIGNED' : `NOSE ${deg.toFixed(0)}° OFF · ${player.slip > 0 ? 'STEER RIGHT' : 'STEER LEFT'}`
@@ -932,7 +965,7 @@ function updateHud(dt: number, slow: boolean): void {
     const me = race.racers[0]
     if (slow) {
       $('#r-pos').innerHTML = `${me.place}<small>/${race.racers.length}</small>`
-      $('#r-lap').innerHTML = `${race.state === 'grid' ? 1 : race.lapOf(me)}<small>/${LAPS}</small>`
+      $('#r-lap').innerHTML = `${(race.toGo(me) / 1000).toFixed(1)}<small> KM</small>`
       $('#r-pen').textContent = me.penalty ? `+${me.penalty.toFixed(0)} S PENALTY` : ''
       const rows = [...race.racers].sort((a, b) => a.place - b.place)
       const lead = race.progress(rows[0])
@@ -950,6 +983,7 @@ function updateHud(dt: number, slow: boolean): void {
     const off = Math.hypot(player.pos.x - course.px[me.idx], player.pos.z - course.pz[me.idx])
     offT = off > 2600 && race.state === 'racing' ? offT + dt : 0
     if (offT > 1 && warnT < 0.5) warn('OFF COURSE', 'R TO RETURN TO THE LAST GATE')
+    for (const el of enemyEls) el.style.display = 'none'
     // Rival tags.
     for (const { r, d } of tagEls) {
       const dist = r.p.pos.distanceTo(camera.position)
@@ -970,25 +1004,43 @@ function updateHud(dt: number, slow: boolean): void {
     const gon = !me.finished && proj.z < 1 && Math.abs(proj.x) < 0.95 && Math.abs(proj.y) < 0.95 && gd > 150
     gm.style.display = gon ? 'block' : 'none'
     // …and the gate after it, smaller and fainter: where the next turn goes.
-    const c2 = course.cps[(me.next + 1) % course.cps.length]
+    const c2 = course.cps[Math.min(me.next + 1, course.cps.length - 1)]
     proj.set(c2.x, groundH(c2.x, c2.z) + 70, c2.z).project(camera)
     const g2 = $('#gmark2')
-    const g2on = !me.finished && proj.z < 1 && Math.abs(proj.x) < 0.95 && Math.abs(proj.y) < 0.95
+    const g2on = !me.finished && me.next + 1 < course.cps.length && proj.z < 1 && Math.abs(proj.x) < 0.95 && Math.abs(proj.y) < 0.95
     g2.style.display = g2on ? 'block' : 'none'
     if (g2on) g2.style.transform = `translate(${(proj.x * 0.5 + 0.5) * innerWidth}px, ${(-proj.y * 0.5 + 0.5) * innerHeight}px)`
     if (gon) {
       gm.style.transform = `translate(${(proj.x * 0.5 + 0.5) * innerWidth}px, ${(-proj.y * 0.5 + 0.5) * innerHeight}px)`
-      gm.classList.toggle('fin', me.next === 0)
-      ;(gm.querySelector('.t') as HTMLElement).textContent = `${me.next === 0 ? (me.passed === 0 ? 'START' : 'FINISH') : 'GATE ' + me.next} · ${gd < 1000 ? Math.round(gd) + ' M' : (gd / 1000).toFixed(1) + ' KM'}`
+      gm.classList.toggle('fin', me.next === 0 || me.next === race.K - 1)
+      ;(gm.querySelector('.t') as HTMLElement).textContent = `${me.next === 0 ? 'START' : me.next === race.K - 1 ? 'FINISH' : 'GATE ' + me.next} · ${gd < 1000 ? Math.round(gd) + ' M' : (gd / 1000).toFixed(1) + ' KM'}`
     }
-    arrowTo(proj, me.finished ? '' : `${me.next === 0 ? (me.passed === 0 ? 'START' : 'FINISH') : 'GATE ' + me.next} · ${(Math.hypot(c.x - player.pos.x, c.z - player.pos.z) / 1000).toFixed(1)} KM`)
+    arrowTo(proj, me.finished ? '' : `${me.next === 0 ? 'START' : me.next === race.K - 1 ? 'FINISH' : 'GATE ' + me.next} · ${(Math.hypot(c.x - player.pos.x, c.z - player.pos.z) / 1000).toFixed(1)} KM`)
     lockEl.style.display = 'none'
   } else if (mode === 'hunt') {
     for (const { d } of tagEls) d.style.display = 'none'
     $('#gmark').style.display = 'none'
     $('#gmark2').style.display = 'none'
     scoreNum.textContent = String(score)
-    scoreSub.textContent = `${combat.kills} DOWN · ${fmtTime(runTime)}`
+    scoreSub.textContent = combat.paused ? `WALKER · ${combat.kills} DOWN` : `WAVE ${combat.wave} · ${combat.left()} LEFT · ${fmtTime(runTime)}`
+    // Enemy markers: a chevron over each on screen (gold for runners), the nearest runner off screen.
+    let ei = 0
+    let nearRun: THREE.Vector3 | null = null
+    let nearD = Infinity
+    for (const d of combat.drones) {
+      if (!d.alive) continue
+      const dist = d.pos.distanceTo(player.pos)
+      if (d.mode === 'run' && dist < nearD) { nearD = dist; nearRun = d.pos }
+      proj.copy(d.pos).project(camera)
+      if (proj.z >= 1 || Math.abs(proj.x) > 1 || Math.abs(proj.y) > 1 || ei >= enemyEls.length) continue
+      const el = enemyEls[ei++]
+      el.style.display = 'block'
+      el.style.left = `${(proj.x * 0.5 + 0.5) * innerWidth}px`
+      el.style.top = `${(-proj.y * 0.5 + 0.5) * innerHeight - 8}px`
+      el.classList.toggle('run', d.mode === 'run')
+      el.firstElementChild!.textContent = `${d.mode === 'run' ? 'RUNNER ' : ''}${dist < 1000 ? Math.round(dist) + ' M' : (dist / 1000).toFixed(1) + ' KM'}`
+    }
+    for (; ei < enemyEls.length; ei++) enemyEls[ei].style.display = 'none'
     const t = combat.lockTarget
     if (t && !player.dead) {
       proj.copy(t.pos).project(camera)
@@ -1006,6 +1058,9 @@ function updateHud(dt: number, slow: boolean): void {
     if ((walker.state === 'fight' || walker.state === 'coming') && !player.dead) {
       proj.copy(walker.hullPos).project(camera)
       arrowTo(proj, `WALKER ${(walker.hullPos.distanceTo(player.pos) / 1000).toFixed(1)} KM`)
+    } else if (nearRun && !player.dead) {
+      proj.copy(nearRun).project(camera)
+      arrowTo(proj, `RUNNER ${(nearD / 1000).toFixed(1)} KM`)
     } else arrowEl.style.display = 'none'
   }
   if (debugEl.style.display === 'block' && slow) {
@@ -1030,56 +1085,73 @@ function arrowTo(p: THREE.Vector3, label: string): void {
   ;(arrowEl.querySelector('.t') as HTMLElement).textContent = label
 }
 
-// Minimap: a clean panel fitted to the track's shape. North up; the track as a glowing line, gates
-// as ticks (next: a cyan ring, the one after: a faint ring), rivals as outlined dots, you as an arrow.
+// Minimap for a sprint: a scrolling window of the line (8 km behind you to 22 km ahead, running left
+// to right), gates as ticks (next: a cyan ring, the one after: a faint ring), rivals as outlined dots,
+// you as an arrow — and along the bottom, the whole 130 km as a strip with everyone on it.
 const miniCtx = mini.getContext('2d')!
 const MW = mini.width, MH = mini.height
-const bounds = (() => {
-  let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity
-  for (let i = 0; i < course.n; i++) { x0 = Math.min(x0, course.px[i]); x1 = Math.max(x1, course.px[i]); z0 = Math.min(z0, course.pz[i]); z1 = Math.max(z1, course.pz[i]) }
-  const k = Math.min((MW - 60) / (x1 - x0), (MH - 50) / (z1 - z0))
-  return { cx: (x0 + x1) / 2, cz: (z0 + z1) / 2, k }
-})()
-// (Mirrored in x so that the map turns the way you do: the camera looks along +z with +x on the left.)
-const toMini = (x: number, z: number): [number, number] => [MW / 2 - (x - bounds.cx) * bounds.k, MH / 2 - (z - bounds.cz) * bounds.k]
-const trackPath = new Path2D()
-for (let i = 0; i <= course.n; i += 2) { const [x, y] = toMini(course.px[i % course.n], course.pz[i % course.n]); if (i === 0) trackPath.moveTo(x, y); else trackPath.lineTo(x, y) }
-trackPath.closePath()
+const WIN_BACK = 8000, WIN_AHEAD = 22000
+const mk = (MW - 40) / (WIN_BACK + WIN_AHEAD)
 function drawMini(): void {
   const g = miniCtx
   g.clearRect(0, 0, MW, MH)
   g.fillStyle = 'rgba(12,7,5,0.42)'
   g.beginPath(); g.roundRect(2, 2, MW - 4, MH - 4, 18); g.fill()
   g.strokeStyle = 'rgba(255,255,255,0.12)'; g.lineWidth = 2; g.stroke()
-  g.lineJoin = 'round'
-  g.strokeStyle = 'rgba(0,0,0,0.5)'; g.lineWidth = 14; g.stroke(trackPath)
-  g.strokeStyle = 'rgba(255,170,110,0.25)'; g.lineWidth = 9; g.stroke(trackPath)
-  g.strokeStyle = 'rgba(255,244,232,0.9)'; g.lineWidth = 3; g.stroke(trackPath)
   const me = race.racers[0]
-  const K = course.cps.length
+  // Window: centred laterally on the line at the player's point.
+  const ci = me.idx
+  const cz = player.pos.z, cx = course.px[ci]
+  const mapH = MH - 54
+  const to = (x: number, z: number): [number, number] => [20 + (z - (cz - WIN_BACK)) * mk, 14 + mapH / 2 - (x - cx) * mk]
+  const i0 = Math.max(0, ci - Math.round(WIN_BACK / 40) - 5), i1 = Math.min(course.n - 1, ci + Math.round(WIN_AHEAD / 40) + 5)
+  g.save()
+  g.beginPath(); g.rect(10, 8, MW - 20, mapH + 12); g.clip()
+  const path = new Path2D()
+  for (let i = i0; i <= i1; i += 3) { const [x, y] = to(course.px[i], course.pz[i]); if (i === i0) path.moveTo(x, y); else path.lineTo(x, y) }
+  g.lineJoin = 'round'
+  g.strokeStyle = 'rgba(0,0,0,0.5)'; g.lineWidth = 14; g.stroke(path)
+  g.strokeStyle = 'rgba(255,170,110,0.25)'; g.lineWidth = 9; g.stroke(path)
+  g.strokeStyle = 'rgba(255,244,232,0.9)'; g.lineWidth = 3; g.stroke(path)
+  for (const rk of course.rocks) {
+    if (rk.i < i0 || rk.i > i1) continue
+    const [x, y] = to(rk.x, rk.z)
+    g.fillStyle = 'rgba(40,20,14,0.9)'; g.beginPath(); g.arc(x, y, 3, 0, Math.PI * 2); g.fill()
+  }
   course.cps.forEach((c, k) => {
-    const [x, y] = toMini(c.x, c.z)
-    // Across the track on the map: the screen tangent is (−tx, −tz); its perpendicular (tz, −tx).
-    const nx = c.tz, nz = -c.tx
-    g.strokeStyle = k === 0 ? '#ff7a1a' : 'rgba(255,255,255,0.55)'
-    g.lineWidth = k === 0 ? 4 : 2
-    g.beginPath(); g.moveTo(x - nx * 10, y - nz * 10); g.lineTo(x + nx * 10, y + nz * 10); g.stroke()
-    if (k === me.next) { g.strokeStyle = '#5fe6ff'; g.lineWidth = 4; g.shadowColor = '#5fe6ff'; g.shadowBlur = 12; g.beginPath(); g.arc(x, y, 12, 0, Math.PI * 2); g.stroke(); g.shadowBlur = 0 }
-    else if (k === (me.next + 1) % K) { g.strokeStyle = 'rgba(95,230,255,0.45)'; g.lineWidth = 2; g.beginPath(); g.arc(x, y, 9, 0, Math.PI * 2); g.stroke() }
+    if (c.i < i0 || c.i > i1) return
+    const [x, y] = to(c.x, c.z)
+    const fin = k === 0 || k === course.cps.length - 1
+    g.strokeStyle = fin ? '#ff7a1a' : 'rgba(255,255,255,0.6)'
+    g.lineWidth = fin ? 4 : 2
+    g.beginPath(); g.moveTo(x, y - 11); g.lineTo(x, y + 11); g.stroke()
+    if (k === me.next) { g.strokeStyle = '#5fe6ff'; g.lineWidth = 4; g.shadowColor = '#5fe6ff'; g.shadowBlur = 12; g.beginPath(); g.arc(x, y, 13, 0, Math.PI * 2); g.stroke(); g.shadowBlur = 0 }
+    else if (k === me.next + 1) { g.strokeStyle = 'rgba(95,230,255,0.45)'; g.lineWidth = 2; g.beginPath(); g.arc(x, y, 9, 0, Math.PI * 2); g.stroke() }
   })
   for (const r of race.racers) {
     if (!r.ai || r.p.dead) continue
-    const [x, y] = toMini(r.p.pos.x, r.p.pos.z)
+    const [x, y] = to(r.p.pos.x, r.p.pos.z)
     g.fillStyle = '#' + new THREE.Color(r.color).getHexString()
     g.strokeStyle = 'rgba(0,0,0,0.7)'; g.lineWidth = 2.5
-    g.beginPath(); g.arc(x, y, 6.5, 0, Math.PI * 2); g.fill(); g.stroke()
+    g.beginPath(); g.arc(x, y, 6, 0, Math.PI * 2); g.fill(); g.stroke()
   }
-  const [x, y] = toMini(player.pos.x, player.pos.z)
-  g.save(); g.translate(x, y); g.rotate(Math.PI - player.heading)
+  const [px, py] = to(player.pos.x, player.pos.z)
+  g.translate(px, py); g.rotate(-player.heading - Math.PI / 2)
   g.shadowColor = '#ff6a1a'; g.shadowBlur = 14
   g.fillStyle = '#ff6a1a'; g.strokeStyle = '#fff'; g.lineWidth = 2.5
   g.beginPath(); g.moveTo(0, 15); g.lineTo(9, -10); g.lineTo(0, -5); g.lineTo(-9, -10); g.closePath(); g.fill(); g.stroke()
   g.restore()
+  // The whole sprint: a strip, start to finish, with everyone on it.
+  const sy = MH - 22, sx0 = 24, sx1 = MW - 24
+  const span = course.finishI - course.startI
+  const xAt = (i: number) => sx0 + ((Math.max(course.startI, Math.min(course.finishI, i)) - course.startI) / span) * (sx1 - sx0)
+  g.strokeStyle = 'rgba(255,255,255,0.25)'; g.lineWidth = 4; g.beginPath(); g.moveTo(sx0, sy); g.lineTo(sx1, sy); g.stroke()
+  g.strokeStyle = '#ff7a1a'; g.lineWidth = 4; g.beginPath(); g.moveTo(sx0, sy); g.lineTo(xAt(me.idx), sy); g.stroke()
+  for (const c of course.cps) { g.fillStyle = 'rgba(255,255,255,0.5)'; g.fillRect(xAt(c.i) - 1, sy - 5, 2, 10) }
+  for (const r of race.racers) {
+    g.fillStyle = r.ai ? '#' + new THREE.Color(r.color).getHexString() : '#ffffff'
+    g.beginPath(); g.arc(xAt(r.idx), sy, r.ai ? 4 : 6, 0, Math.PI * 2); g.fill()
+  }
 }
 
 // ───────────────────────── keys ─────────────────────────
@@ -1153,7 +1225,7 @@ const g = {
   /** Put the player just before jump k, at Mach m. */
   toJump: (k: number, m = 3) => {
     const f = JUMPS[k] // on the line: k % 3 === 0
-    const i = Math.round(f * course.n) - 25
+    const i = course.startI + Math.round(f * (course.finishI - course.startI)) - 25
     const [tx, tz] = course.tangent(i)
     player.reset(course.px[i], course.pz[i], Math.atan2(tx, tz), m)
     race.racers[0].idx = i
@@ -1169,6 +1241,6 @@ const g = {
     tier, scale: renderScale, hull: Math.round(player.hull), air: player.airborne, agl: +player.agl.toFixed(1),
     place: race.racers[0].place, slip: +(player.slip * 57.3).toFixed(1), spin: +player.spin.toFixed(2), drift: +player.drift.toFixed(2), yaw: +player.yawRate.toFixed(2), lap: race.lapOf(race.racers[0]), passed: race.racers[0].passed, race: race.state, particles: fx.glow.count + fx.smoke.count,
   }),
-  player, race, course, combat, walker, CFG, world,
+  player, race, course, combat, walker, CFG, world, scene, camera,
 }
 ;(window as unknown as { __g: typeof g }).__g = g

@@ -275,7 +275,7 @@ function terrainMaterial(shared: GroundUniforms, snap: { value: THREE.Vector2 },
         float halfw = 3.1 * clamp((5.6 - sa) / 9.8, 0.0, 1.0);
         float soft = 0.9 + uShadowK * 0.08;
         float inside = (1.0 - smoothstep(halfw - soft, halfw + soft, ss)) * smoothstep(-4.2 - soft, -4.2 + soft, sa) * (1.0 - smoothstep(5.6 - soft, 5.6 + soft, sa));
-        col *= 1.0 - (0.42 / (spread * spread)) * inside;
+        col *= 1.0 - (0.3 / (spread * spread)) * inside;
         vec2 dc = p - uCraft.xz;
         float near = exp(-uShadowK * 0.25);
         float hov = exp(-dot(dc, dc) / 22.0) * near;
@@ -421,6 +421,8 @@ class Wrapped {
     readonly prof: Profile,
     readonly big: boolean,
     readonly veto: ((x: number, z: number, r: number) => boolean) | null = null,
+    /** Fully sunk (and not drawn) past this distance. */
+    readonly sinkTo = tile / 2,
   ) {
     this.mesh = new THREE.InstancedMesh(geo, mat, 1)
   }
@@ -434,6 +436,8 @@ class Wrapped {
   update(cx: number, cz: number): void {
     const a = this.mesh.instanceMatrix.array as Float32Array
     const T = this.tile
+    // Only the ones near enough to see are written (compacted): the rest cost no vertex work at all.
+    let k = 0
     for (let i = 0; i < this.items.length; i++) {
       const it = this.items[i]
       const x = it.ox + T * Math.floor((cx - it.ox) / T + 0.5)
@@ -441,21 +445,24 @@ class Wrapped {
       it.x = x
       it.z = z
       const cheb = Math.max(Math.abs(x - cx), Math.abs(z - cz))
-      const grow = 1 - smooth(this.sinkFrom, T / 2, cheb)
+      const grow = 1 - smooth(this.sinkFrom, this.sinkTo, cheb)
       if (this.veto && (it.vx !== x || it.vz !== z)) { it.vx = x; it.vz = z; it.vetoed = this.veto(x, z, it.r) }
       it.grow = it.vetoed ? 0 : grow
-      // (Fully sunk: not drawn at all — a flattened disc pokes through the coarse far terrain.)
-      const sy = it.grow < 0.03 ? 0 : it.h * it.grow
-      const sr = it.grow < 0.03 ? 0 : it.r
+      if (it.grow < 0.03) continue
+      const sy = it.h * it.grow
       const c = Math.cos(it.yaw)
       const s = Math.sin(it.yaw)
       it.by = groundH(x, z) - this.bury * it.h - 3
-      const k = i * 16
-      a[k] = c * sr; a[k + 1] = 0; a[k + 2] = -s * sr; a[k + 3] = 0
-      a[k + 4] = 0; a[k + 5] = sy; a[k + 6] = 0; a[k + 7] = 0
-      a[k + 8] = s * sr; a[k + 9] = 0; a[k + 10] = c * sr; a[k + 11] = 0
-      a[k + 12] = x; a[k + 13] = it.by; a[k + 14] = z; a[k + 15] = 1
+      const o = k * 16
+      a[o] = c * it.r; a[o + 1] = 0; a[o + 2] = -s * it.r; a[o + 3] = 0
+      a[o + 4] = 0; a[o + 5] = sy; a[o + 6] = 0; a[o + 7] = 0
+      a[o + 8] = s * it.r; a[o + 9] = 0; a[o + 10] = c * it.r; a[o + 11] = 0
+      a[o + 12] = x; a[o + 13] = it.by; a[o + 14] = z; a[o + 15] = 1
+      k++
     }
+    this.mesh.count = k
+    this.mesh.instanceMatrix.clearUpdateRanges()
+    this.mesh.instanceMatrix.addUpdateRange(0, k * 16)
     this.mesh.instanceMatrix.needsUpdate = true
   }
 }
@@ -529,16 +536,17 @@ export class World {
     patchStandard(mesaMat, { strata: true })
     const r = rng(1234)
     const kinds: [Kind, number, number][] = [
-      ['mesa', 170, 1300],
-      ['butte', 60, 900],
-      ['spire', 50, 600],
+      // (×4: the world now wraps every 72 km, so the 130 km sprint overlaps itself less.)
+      ['mesa', 680, 1300],
+      ['butte', 240, 900],
+      ['spire', 200, 600],
     ]
     const all: Placed[] = []
     this.mesaMat = mesaMat
     for (const [kind, count, spacing] of kinds) {
       const { geo, prof } = mesaGeometry(kind, kind.length * 31 + 7)
       if (kind === 'spire') { this.spireGeo = geo; this.fixedProf = prof }
-      const w = new Wrapped(geo, mesaMat, REBASE, REBASE / 2 - 2200, 0.06, prof, true)
+      const w = new Wrapped(geo, mesaMat, REBASE, 16500, 0.06, prof, true, null, 20000)
       let tries = 0
       while (w.items.length < count && tries++ < count * 80) {
         const ox = r() * REBASE
@@ -579,7 +587,7 @@ export class World {
     bg.computeVertexNormals()
     const bMat = new THREE.MeshStandardMaterial({ color: 0x8a3a1c, roughness: 0.95, flatShading: true })
     patchStandard(bMat, { strata: true })
-    const bw = new Wrapped(bg, bMat, 6000, 2400, 0.12, () => 0.92, false, keepOff)
+    const bw = new Wrapped(bg, bMat, 6000, 2400, 0.12, () => 0.92, false, keepOff, 3000)
     let bt = 0
     while (bw.items.length < 80 && bt++ < 4000) {
       const ox = r() * 6000

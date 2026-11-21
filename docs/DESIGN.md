@@ -12,7 +12,11 @@ something you feel, not a number on the HUD.
   loop, one left-hand loop). 33 rock spires stand along the line to weave through at speed. The
   racing line is worn into the sand: packed, darker, with scorched lanes. AI rivals,
   jumps, boost pads, and racing contact. Racing comes first; nobody is shooting.
-- **Hunt.** The original combat sandbox: lock-on missiles against drones, then a 360 m walker.
+- **Hunt.** Waves of drones in the open desert. Each wave mixes holders (they sit ahead and shoot
+  back), head-on passers and **runners**: gold-tagged drones that flee faster than you and never
+  shoot. Runners are worth triple, and you have to chase them down before they get 12 km away.
+  Clearing a wave pays a bonus. After wave 3 the 360 m walker arrives and the waves wait for it.
+  Enemies show chevrons with distances, and an edge arrow points to the nearest runner.
 
 ## The race
 - **Grid and countdown:** 3-2-1-GO. Hold boost in the last half second for a perfect start (Mach 1.8
@@ -59,8 +63,8 @@ momentum.
   level 1, +Mach 1.1 at level 2 (orange). Hold the slide too long and you lose the charge, then spin.
 - **Past 66° of slip at speed you spin out** and lose control for about 1.2 s with heavy scrub. Spin
   above 1,150 m/s and you **flip**: two rolls, a hop, −22 hull, −38% speed.
-- **In the air there's no grip.** Steering turns the nose but not the travel, so you have to land
-  straight: more than about 43° off spins you out (Low assist), and more than about 74° at speed flips you. An in-air readout
+- **Air control:** in the air the fins give 40% of ground grip and self-align, so steering bends your
+  path as well as the nose. You still have to land roughly straight: more than about 43° off spins you out (Low assist), and more than about 74° at speed flips you. An in-air readout
   shows how far off the nose is.
 - **Steering assist** (Esc): Off, Low (default, 0.45) or High. Assist adds grip and self-align, plus a
   little automatic countersteer. The AI drives on High.

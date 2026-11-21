@@ -1,6 +1,6 @@
-// The race course: a 40 km loop through the desert. A perturbed ellipse, resampled to an even 40 m
-// polyline (the racing line the AI follows and the minimap draws), with:
-//   gates      — 14 checkpoints: two 90 m towers and a glowing banner, the next one lit
+// The race course: a 130 km sprint across the desert, resampled to an even 40 m polyline (the
+// racing line the AI follows and the minimap draws), with:
+//   gates      — every ~5 km: two 140 m towers and a glowing banner, the next one lit
 //   pylons     — knee-high markers down both edges every 320 m (they read speed as much as track)
 //   boost pads — glowing chevron strips on the line: run over one for a shove
 //   mounds     — jumps on and beside the line (terrain.ts): their crests launch you
@@ -10,7 +10,9 @@ import { patchStandard, SKY_FOG_ONLY } from './shaders'
 
 const STEP = 40
 export const GATE_HALF = 260
-export const LAPS = 3
+export const LAPS = 1
+/** The sprint's length (km). */
+export const SPRINT_KM = 130
 /** Where the jumps are, as fractions of a lap (the test hooks use these too). */
 export const JUMPS = [0.075, 0.17, 0.3, 0.41, 0.55, 0.64, 0.77, 0.88, 0.95]
 
@@ -24,7 +26,7 @@ export interface Checkpoint {
 export interface Pad { x: number; z: number; tx: number; tz: number }
 
 export class Course {
-  /** Polyline x, z (closed: the last point joins the first). */
+  /** Polyline x, z (open: a run-up, the race, a run-off). */
   readonly px: Float64Array
   readonly pz: Float64Array
   readonly n: number
@@ -34,6 +36,10 @@ export class Course {
   /** Spires standing on the straights (collide; the AI steers round them). lat: offset to the right. */
   readonly rocks: { x: number; z: number; r: number; h: number; i: number; lat: number }[] = []
   readonly group = new THREE.Group()
+  /** Polyline indices of the start and finish lines (the line runs on past both). */
+  readonly startI: number
+  readonly finishI: number
+  readonly box: { x0: number; x1: number; z0: number; z1: number }
   private readonly beamMesh: THREE.InstancedMesh
   private readonly towerLights: THREE.InstancedMesh
   private readonly curtain: THREE.Mesh
@@ -46,40 +52,22 @@ export class Course {
   private readonly col = new THREE.Color()
 
   constructor() {
-    // Dense sample of the curve, then resample to even arc length.
-    // A stadium figure-8, 84 km a lap: two loops of R = 5 km around (±C, 0), joined by two dead-straight
-    // 23 km runs that cross at the origin (51° apart). The straights are the race — flat out, small
-    // corrections, weaving through rock — and the loops are long sweepers, one right-hand, one left.
-    // (A tighter 40 km figure-8 had turns too sharp for Mach 5: user, 2026-11-20.)
-    const C = 11500, R = 5000
-    const phi = Math.asin(R / C)
-    const L = Math.sqrt(C * C - R * R)
+    // A sprint, not a loop: 130 km across the desert, nearly straight. Two slow sine bends (62 km and
+    // 23.5 km wavelengths, radius never under ~6 km) ease in after the first 8 km. A 3 km run-up holds
+    // the grid; a 6 km run-off past the finish. (A looping course kept turning — "why make it a loop,
+    // can make it much much more straight": user, 2026-11-20.)
+    const RUNUP = 3000, RACE = SPRINT_KM * 1000, RUNOFF = 6000
+    const xAt = (z: number) => {
+      const ramp = z <= 0 ? 0 : z >= 8000 ? 1 : (z / 8000) ** 2 * (3 - (2 * z) / 8000)
+      return ramp * (4200 * Math.sin((2 * Math.PI * z) / 62000) + 1800 * Math.sin((2 * Math.PI * z) / 23500 + 1.2) - 1800 * Math.sin(1.2))
+    }
     const raw: [number, number][] = []
-    const line = (x0: number, z0: number, x1: number, z1: number) => {
-      const n = Math.ceil(Math.hypot(x1 - x0, z1 - z0) / 5)
-      for (let i = 0; i < n; i++) raw.push([x0 + ((x1 - x0) * i) / n, z0 + ((z1 - z0) * i) / n])
-    }
-    const arc = (cx: number, a0: number, a1: number) => {
-      const n = Math.ceil((Math.abs(a1 - a0) * R) / 5)
-      for (let i = 0; i < n; i++) { const a = a0 + ((a1 - a0) * i) / n; raw.push([cx + Math.cos(a) * R, Math.sin(a) * R]) }
-    }
-    const cf = Math.cos(phi), sf = Math.sin(phi)
-    const thR = Math.atan2(L * sf, L * cf - C) // the right loop's top tangent point, about its centre
-    const thL = Math.atan2(L * sf, -L * cf + C)
-    line(0, 0, L * cf, L * sf) // out along the first straight
-    arc(C, thR, -thR) // round the right loop, far side
-    line(L * cf, -L * sf, -L * cf, L * sf) // back across the crossing
-    arc(-C, thL, 2 * Math.PI - thL) // round the left loop
-    line(-L * cf, -L * sf, 0, 0) // home to the crossing
-    // Start on the first straight, 4.5 km clear of the crossing.
-    const s0 = raw.findIndex(([x, z]) => Math.hypot(x, z) > 4500)
-    raw.push(...raw.splice(0, s0))
+    for (let z = -RUNUP; z <= RACE + RUNOFF; z += 5) raw.push([xAt(z), z])
     const M = raw.length
     let total = 0
     const seg: number[] = []
-    for (let i = 0; i < M; i++) {
-      const p = raw[i], q = raw[(i + 1) % M]
-      const d = Math.hypot(q[0] - p[0], q[1] - p[1])
+    for (let i = 0; i < M - 1; i++) {
+      const d = Math.hypot(raw[i + 1][0] - raw[i][0], raw[i + 1][1] - raw[i][1])
       seg.push(d)
       total += d
     }
@@ -90,67 +78,70 @@ export class Course {
     this.pz = new Float64Array(n)
     let acc = 0, j = 0
     for (let k = 0; k < n; k++) {
-      const target = (k / n) * total
-      while (acc + seg[j] < target) { acc += seg[j]; j = (j + 1) % M }
-      const u = (target - acc) / seg[j]
-      const p = raw[j], q = raw[(j + 1) % M]
+      const target = k * STEP
+      while (j < M - 2 && acc + seg[j] < target) { acc += seg[j]; j++ }
+      const u = Math.min(1, (target - acc) / seg[j])
+      const p = raw[j], q = raw[j + 1]
       this.px[k] = p[0] + (q[0] - p[0]) * u
       this.pz[k] = p[1] + (q[1] - p[1]) * u
     }
+    // Arc-length index of a distance (m) from the start line.
+    let startI = 0
+    while (startI < n - 1 && this.pz[startI] < 0) startI++
+    this.startI = startI
+    const at = (m: number) => Math.min(n - 1, startI + Math.round(m / STEP))
+    // The race distance along the line (not z): find the finish by walking the arc.
+    const finishI = Math.min(n - 1, startI + Math.round((RACE * 1.02) / STEP))
+    this.finishI = finishI
+    const raceLen = (finishI - startI) * STEP
 
-    // Checkpoints (nudged off the crossing, where the other straight would run through them).
-    const K = 16
+    // Gates: the start, one every ~5 km, the finish.
+    const K = Math.round(raceLen / 5000) + 1
     for (let k = 0; k < K; k++) {
-      let i = Math.round((k / K) * n) % n
-      for (let g = 0; g < 120 && Math.hypot(this.px[i], this.pz[i]) < 2000; g++) i = (i + 1) % n
+      const i = k === K - 1 ? finishI : startI + Math.round((k * raceLen) / (K - 1) / STEP)
       const [tx, tz] = this.tangent(i)
       this.cps.push({ x: this.px[i], z: this.pz[i], tx, tz, i })
     }
 
-    // Jumps: big mounds on the line, a few beside it (a choice of line).
+    // Jumps: big mounds on the line, a few beside it (a choice of line); a few runs of whoops.
     const mounds: number[] = []
-    const onLine = JUMPS
-    const clearOfCrossing = (i: number) => Math.hypot(this.px[i % n], this.pz[i % n]) > 1600
-    onLine.forEach((f, k) => {
-      const i = Math.round(f * n)
-      if (!clearOfCrossing(i)) return
+    const clear = (i: number) => i > startI + 75 && i < finishI - 50
+    JUMPS.forEach((f, k) => {
+      const i = at(f * raceLen)
+      if (!clear(i)) return
       const [tx, tz] = this.tangent(i)
       const off = k % 3 === 1 ? 110 : k % 3 === 2 ? -110 : 0
       mounds.push(this.px[i] + tz * off, this.pz[i] - tx * off, 26 + (k % 4) * 4, 125 + (k % 3) * 20)
     })
-    // Rolling humps in a few runs (whoops), smaller.
-    for (const f of [0.22, 0.7]) {
+    for (const f of [0.22, 0.52, 0.81]) {
       for (let w = 0; w < 4; w++) {
-        const i = Math.round(f * n) + w * 8
-        if (!clearOfCrossing(i)) continue
-        mounds.push(this.px[i % n], this.pz[i % n], 7, 90)
+        const i = at(f * raceLen) + w * 8
+        if (clear(i)) mounds.push(this.px[i], this.pz[i], 7, 90)
       }
     }
     setMounds(mounds)
 
-    // Boost pads.
-    for (const [f, off] of [[0.035, 0], [0.12, 70], [0.26, -70], [0.36, 0], [0.5, 60], [0.6, -60], [0.72, 0], [0.83, 70], [0.92, -40]] as const) {
-      const i = Math.round(f * n)
-      if (!clearOfCrossing(i)) continue
+    // Boost pads, every ~9 km, alternating sides.
+    for (let k = 0, m = 4000; m < raceLen - 3000; k++, m += 8000 + ((k * 2711) % 2000)) {
+      const i = at(m)
+      const off = k % 3 === 0 ? 0 : k % 3 === 1 ? 70 : -70
       const [tx, tz] = this.tangent(i)
       this.pads.push({ x: this.px[i] + tz * off, z: this.pz[i] - tx * off, tx, tz })
     }
 
-    // Rock spires along the course (mostly the straights — that is most of it): on and beside the line,
-    // to weave through at speed. Never at a
-    // gate, a pad, a jump or the crossing, nor in the first 4 km.
+    // Rock spires: on and beside the line, every 0.8–2 km, to weave through at speed. Never at a gate,
+    // a pad or a jump, nor in the first 4 km.
     {
       let seed = 99
       const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647)
-      let i = Math.round(4000 / STEP)
-      while (i < n - 20) {
+      let i = startI + Math.round(4000 / STEP)
+      while (i < finishI - 40) {
         i += Math.round((800 + rnd() * 1200) / STEP)
-        if (i >= n - 20) break
+        if (i >= finishI - 40) break
         const lat = (rnd() * 2 - 1) * 170
         const [tx, tz] = this.tangent(i)
         const x = this.px[i] - tz * lat, z = this.pz[i] + tx * lat
         const r = 18 + rnd() * 22
-        if (Math.hypot(x, z) < 2200) continue
         if (this.cps.some((c) => Math.hypot(c.x - x, c.z - z) < 500)) continue
         if (this.pads.some((p) => Math.hypot(p.x - x, p.z - z) < 400)) continue
         let nearMound = false
@@ -159,6 +150,9 @@ export class Course {
         this.rocks.push({ x, z, r, h: 70 + rnd() * 110, i, lat })
       }
     }
+    let x0 = Infinity, x1 = -Infinity
+    for (let i = 0; i < n; i++) { x0 = Math.min(x0, this.px[i]); x1 = Math.max(x1, this.px[i]) }
+    this.box = { x0, x1, z0: this.pz[0], z1: this.pz[n - 1] }
 
     // ── gates ──
     const dark = new THREE.MeshStandardMaterial({ color: 0x24262b, roughness: 0.45, metalness: 0.8 })
@@ -309,7 +303,7 @@ export class Course {
     for (let i = 0; i < this.n; i++) { x0 = Math.min(x0, this.px[i]); x1 = Math.max(x1, this.px[i]); z0 = Math.min(z0, this.pz[i]); z1 = Math.max(z1, this.pz[i]) }
     const m = 700
     x0 -= m; x1 += m; z0 -= m; z1 += m
-    const W = 2048, H = Math.min(2048, Math.ceil(((z1 - z0) / (x1 - x0)) * W / 4) * 4)
+    const H = 8192, W = Math.max(64, Math.ceil(((x1 - x0) / (z1 - z0)) * H / 4) * 4)
     const kx = W / (x1 - x0), kz = H / (z1 - z0)
     const cv = document.createElement('canvas')
     cv.width = W; cv.height = H
@@ -321,8 +315,8 @@ export class Course {
     g.lineCap = 'round'
     const path = (off: number) => {
       g.beginPath()
-      for (let i = 0; i <= this.n; i++) {
-        const k = i % this.n
+      for (let i = 0; i < this.n; i++) {
+        const k = i
         const [tx, tz] = this.tangent(k)
         const x = this.px[k] - tz * off, z = this.pz[k] + tx * off
         if (i === 0) g.moveTo((x - x0) * kx, (z - z0) * kz); else g.lineTo((x - x0) * kx, (z - z0) * kz)
@@ -375,7 +369,7 @@ export class Course {
 
   tangent(i: number): [number, number] {
     const n = this.n
-    const a = ((i - 2) % n + n) % n, b = (i + 2) % n
+    const a = Math.max(0, Math.min(n - 1, i - 2)), b = Math.max(0, Math.min(n - 1, i + 2))
     const dx = this.px[b] - this.px[a], dz = this.pz[b] - this.pz[a]
     const l = Math.hypot(dx, dz) || 1
     return [dx / l, dz / l]
@@ -393,7 +387,8 @@ export class Course {
       return best
     }
     for (let k = -30; k <= 60; k++) {
-      const i = ((hint + k) % n + n) % n
+      const i = hint + k
+      if (i < 0 || i >= n) continue
       const d = (this.px[i] - x) ** 2 + (this.pz[i] - z) ** 2
       if (d < bd) { bd = d; best = i }
     }
@@ -432,9 +427,9 @@ export class Course {
     const K = this.cps.length
     for (let k = 0; k < K; k++) {
       const isNext = k === next
-      const isAfter = next >= 0 && k === (next + 1) % K
+      const isAfter = next >= 0 && k === next + 1
       const pulse = 0.75 + 0.25 * Math.sin(time * 6)
-      if (k === 0) this.col.setRGB(5, 1.6, 0.3).multiplyScalar(isNext ? pulse * 1.4 : isAfter ? 1 : 0.7)
+      if (k === 0 || k === K - 1) this.col.setRGB(5, 1.6, 0.3).multiplyScalar(isNext ? pulse * 1.4 : isAfter ? 1 : 0.7)
       else if (isNext) this.col.setRGB(0.6, 3.2, 5).multiplyScalar(pulse)
       else if (isAfter) this.col.setRGB(0.4, 1.6, 2.4).multiplyScalar(0.6)
       else this.col.setRGB(1.6, 1.2, 0.9).multiplyScalar(0.55)
@@ -453,11 +448,11 @@ export class Course {
         this.pillars[j].position.set(x, groundH(x, z), z)
       }
       this.curtain.rotation.set(0, Math.atan2(c.tx, c.tz), 0)
-      this.curtainMat.uniforms.uColor.value.setRGB(...((next === 0 ? [2.4, 0.9, 0.2] : [0.2, 1.4, 2.0]) as [number, number, number]))
-      this.curtainMat.uniforms.uA.value = next === 0 && finalLap ? 1.6 : 1
+      this.curtainMat.uniforms.uColor.value.setRGB(...((next === 0 || next === K - 1 ? [2.4, 0.9, 0.2] : [0.2, 1.4, 2.0]) as [number, number, number]))
+      this.curtainMat.uniforms.uA.value = next === K - 1 || finalLap ? 1.6 : 1
       this.pillarMat.uniforms.uColor.value.copy(this.curtainMat.uniforms.uColor.value)
     }
-    const c2 = next >= 0 ? this.cps[(next + 1) % K] : undefined
+    const c2 = next >= 0 ? this.cps[next + 1] : undefined
     if (c2) for (let j = 0; j < 2; j++) {
       const sd = j === 0 ? 1 : -1
       const x = c2.x + c2.tz * GATE_HALF * sd, z = c2.z - c2.tx * GATE_HALF * sd

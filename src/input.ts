@@ -48,7 +48,7 @@ export class Input {
     }
     // Keyboard steering ramps in over ~0.4 s (a tap is part-lock, a hold is full lock) and lets go
     // fast — so steering can be modulated against the grip gauge.
-    const rate = steer === 0 || Math.sign(steer) !== Math.sign(this.steerS) ? 9 : 2.6
+    const rate = steer === 0 || Math.sign(steer) !== Math.sign(this.steerS) ? 9 : 3.6
     this.steerS += THREE_clamp(steer - this.steerS, -rate * dt, rate * dt)
     steer = this.steerS
 

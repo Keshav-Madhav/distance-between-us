@@ -11,8 +11,8 @@ npm run build && npm run preview   # http://localhost:4417
 node tools/shot.mjs  # screenshots + frame times into shots/ (needs the preview running)
 ```
 
-**Modes:** Race (Enter): three laps, 14 gates, five AI rivals, jumps and boost pads. Hunt (H): the
-combat sandbox with drones and the walker.
+**Modes:** Race (Enter): a 130 km sprint against nine AI rivals, with gates, rock spires, jumps and
+boost pads. Hunt (H): waves of drones, runners to chase down, and the walker after wave 3.
 
 **Controls:** W/Shift boost (hold it as the lights go for a perfect start) · A/D steer · Q/E strafe
 (double-tap to dodge) · S air brake, or dive in the air · R back to the last gate · Space fire (Hunt)

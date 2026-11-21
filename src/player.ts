@@ -85,7 +85,7 @@ export class Player {
   drift = 0
   drifting = false
   /** Steering assist 0 … 1 (more grip, more self-align, automatic countersteer). */
-  assist = 0.45
+  assist = 0.6
   bankV = 0
   pitchV = 0
   onSpin: ((flip: boolean) => void) | null = null
@@ -252,9 +252,9 @@ export class Player {
       // Adaptive: authority grows with speed faster than grip does — at Mach 5 full lock asks for more
       // than the ground effect can hold (sharp, and a slide if held); half lock is safe. The grip gauge
       // shows where the limit is.
-      const auth = H.steerTorque * (this.airborne ? 0.3 : 1) * (1 + H.steerGain * THREE.MathUtils.clamp((m - 0.8) / 4.2, 0, 1))
+      const auth = H.steerTorque * (this.airborne ? 0.7 : 1) * (1 + H.steerGain * THREE.MathUtils.clamp((m - 0.8) / 4.2, 0, 1))
       // Weathervane: with grip, the nose is pulled back toward the travel.
-      const align = this.airborne ? 0 : -H.alignK * (1 + A * 1.5) * (1 + hs0 / 1400) * Math.sin(beta0) * curve * Math.min(1, hs0 / 250)
+      const align = (this.airborne ? H.airControl : 1) * -H.alignK * (1 + A * 1.5) * (1 + hs0 / 1400) * Math.sin(beta0) * curve * Math.min(1, hs0 / 250)
       const damp = this.spin > 0 ? 0.9 : H.yawDamp
       this.yawRate += (-steer * auth - damp * this.yawRate + align) * dt
       this.heading += this.yawRate * dt
@@ -281,7 +281,7 @@ export class Player {
       const brakeGrip = c.brake && !this.airborne ? H.driftBrakeGrip : 1
       // Ground effect grows with speed like downforce: the turn rate grip can hold is gripK + gripQ·v,
       // so a slow start is loose and twitchy, and flat-out is planted.
-      const gripAcc = this.airborne ? 0 : ((H.gripK * (1 + A * 0.35) + H.gripQ * hs0) * hs0 + H.gripLow) * curve * brakeGrip
+      const gripAcc = (this.airborne ? H.airControl : 1) * ((H.gripK * (1 + A * 0.35) + H.gripQ * hs0) * hs0 + H.gripLow) * curve * brakeGrip
       const dl = Math.sign(this.lateral) * Math.min(Math.abs(this.lateral), gripAcc * dt)
       this.lateral -= dl
       // (Energy: the slide joins the forward speed as a vector, never added to it. A carve keeps most
