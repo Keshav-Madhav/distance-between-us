@@ -776,7 +776,7 @@ function showCourse(): void {
     // (Blurbs are written as tags in capitals: shown as a sentence.)
     const words = d.blurb.split(' · ').map((t) => t.toLowerCase())
     const line = words.join(', ').replace(/^./, (c) => c.toUpperCase()) + '.'
-    const laps = d.laps && d.laps > 1 ? `, ${d.laps} laps` : ''
+    const laps = d.laps && d.laps > 1 ? ` · ${d.laps} laps` : ''
     el.innerHTML = `<b>${d.name}</b><span class="best">${b !== null ? 'best ' + fmtLap(b) : d.km + ' km' + laps}</span><small>${line}</small>`
   })
   // Paint swatches (built once; the picked ones ringed).
@@ -805,8 +805,8 @@ function showCourse(): void {
     $('#tp-name').textContent = 'HUNT'
     $('#tp-blurb').textContent = 'Waves of drones over open ground. Kills score more the faster you fly.'
     const cell = (v: string, l: string) => `<div><b>${v}</b><small>${l}</small></div>`
-    $('#tp-stats').innerHTML = cell('Space', 'Fire missiles') + cell('Lock', 'Hold on a target') + cell('× Mach', 'Score multiplier') + cell('Hull', 'Heals when unhurt') + cell(BIOME === 'desert' ? 'RED MESA' : BIOME === 'ice' ? 'POLAR' : 'CINDER', 'World') + cell('Endless', 'Until wrecked')
-    $('#tp-info').textContent = ''
+    $('#tp-stats').innerHTML = cell(BIOME === 'desert' ? 'Red Mesa' : BIOME === 'ice' ? 'Polar Shelf' : 'Cinder', 'World') + cell('× Mach', 'Score multiplier') + cell('Endless', 'Until wrecked')
+    $('#tp-info').innerHTML = '<span class="kc">Space</span> fire missiles <span class="kc">hold aim</span> lock on <span class="kc">Shift</span> afterburner'
   } else drawTrackPreview(COURSES[pickedCourse])
 }
 /** The whole course, start at the bottom, finish at the top; across exaggerated so bends read. */
@@ -825,7 +825,7 @@ function drawTrackPreview(d: (typeof COURSES)[number]): void {
   // Compact (the menu's flight-plan tile): thinner strokes, no labels; a tall course turned on its
   // side to fill a wide tile.
   const compact = H < 300 * dpr
-  const M = (compact ? 9 : 26) * dpr, u = dpr * (compact ? 0.6 : 1)
+  const M = (compact ? 7 : 26) * dpr, u = dpr * (compact ? 0.85 : 1)
   // The line, and the distance along it.
   const { xs, zs } = centerline(d)
   const N = xs.length, arc = [0]
@@ -840,7 +840,7 @@ function drawTrackPreview(d: (typeof COURSES)[number]): void {
   const bg = g.createRadialGradient(W / 2, H / 2, 0, W / 2, H / 2, Math.max(W, H) * 0.7)
   // (FROSTLINE's map: snow-blue ground, not the desert's sand.)
   if (biomeOf(d.id) === 'ice') { bg.addColorStop(0, '#3a4a62'); bg.addColorStop(1, '#141c2a') } else if (biomeOf(d.id) === 'lava') { bg.addColorStop(0, '#2a1e1c'); bg.addColorStop(1, '#0e0a0a') } else { bg.addColorStop(0, '#5a3a24'); bg.addColorStop(1, '#2a1a10') }
-  g.fillStyle = bg; g.fillRect(0, 0, W, H)
+  g.fillStyle = compact ? '#17110f' : bg; g.fillRect(0, 0, W, H)
   g.setTransform(1, 0, 0, 1, 0, 0)
   if (rot) { g.translate(W / 2, H / 2); g.rotate(-Math.PI / 2); g.translate(-W / 2, -H / 2) }
   const gx0 = Math.floor(((x0 + x1) / 2 - W / 2 / k) / 1000) * 1000, gz0 = Math.floor(((z0 + z1) / 2 - H / 2 / k) / 1000) * 1000
@@ -885,6 +885,12 @@ function drawTrackPreview(d: (typeof COURSES)[number]): void {
   for (let s = d.gateEvery; s < L - 100; s += d.gateEvery) { const [px, py] = at(s); g.fillStyle = '#5fe6ff'; g.beginPath(); g.arc(px, py, 3.6 * u, 0, Math.PI * 2); g.fill(); g.strokeStyle = 'rgba(0,0,0,0.6)'; g.lineWidth = 1.2 * u; g.stroke() }
   g.fillStyle = '#ff8a3d'
   for (const f of d.jumps) { const [px, py] = at(f * L); g.beginPath(); g.moveTo(px + 8 * u, py); g.lineTo(px + 17 * u, py - 5 * u); g.lineTo(px + 17 * u, py + 5 * u); g.fill() }
+  if (compact) {
+    // The start line: a bright bar across the track.
+    const [sx, sy, an] = at(0)
+    g.strokeStyle = '#ff6a1a'; g.lineWidth = 3 * dpr; g.beginPath()
+    g.moveTo(sx + Math.sin(an) * 7 * dpr, sy - Math.cos(an) * 7 * dpr); g.lineTo(sx - Math.sin(an) * 7 * dpr, sy + Math.cos(an) * 7 * dpr); g.stroke()
+  }
   if (!compact) {
   // Km marks beside the line.
   g.font = `600 ${Math.round(9 * dpr)}px "Chakra Petch", system-ui, sans-serif`; g.textBaseline = 'middle'; g.fillStyle = 'rgba(255,240,225,0.55)'
@@ -921,9 +927,11 @@ function drawTrackPreview(d: (typeof COURSES)[number]): void {
   // (Gates for the whole race, as the race screen counts them: the loaded course knows exactly.)
   const gates = d === course.def ? course.cps.length : Math.round((d.km * 1000 * (d.laps ?? 1)) / d.gateEvery) + 1
   $('#tp-stats').innerHTML = cell(`${d.km} km`, d.loop ? ((d.laps ?? 1) > 1 ? `Loop, ${d.laps} laps` : 'Loop') : 'Sprint') + cell(String(gates), 'Gates') + cell(String(d.racers ?? 10), 'Racers') +
-    cell(`${Math.round((turning / L) * 100)}%`, 'Turning') + cell(rmin > 20000 ? '—' : `${(rmin / 1000).toFixed(1)} km`, 'Tightest bend') + cell(d.jumps.length ? String(d.jumps.length) : spires ? `~${spires}` : '0', d.jumps.length ? 'Jumps' : 'Spires')
+    cell(`${Math.round((turning / L) * 100)}%`, 'Turning') + cell(rmin > 20000 ? '—' : `${(rmin / 1000).toFixed(1)} km`, 'Tightest bend') +
+    (d.jumps.length ? cell(String(d.jumps.length), 'Jumps') : spires ? cell(`~${spires}`, 'Spires') : '') + cell(bestOf(d.id) !== null ? fmtLap(bestOf(d.id)!) : '—', 'Your best')
   const best = bestOf(d.id)
-  $('#tp-info').innerHTML = best !== null ? `Your best: ${fmtLap(best)}` : 'No time set yet.'
+  $('#tp-info').innerHTML = ''
+  void best
   animTrackPreview(performance.now())
 }
 /** The live layer: a dot lapping the course with a fading tail. */
@@ -995,6 +1003,8 @@ function toTitle(): void {
 for (const b of $('#title').querySelectorAll<HTMLButtonElement>('.tabs button')) b.onclick = () => { menuMode = b.dataset.mode as 'race' | 'hunt'; showCourse() }
 $('#ship-prev').onclick = () => pickShip(-1)
 $('#ship-next').onclick = () => pickShip(1)
+for (const ev of ['mouseenter', 'focus'] as const) $('#start').addEventListener(ev, () => { titleRev = true })
+for (const ev of ['mouseleave', 'blur'] as const) $('#start').addEventListener(ev, () => { titleRev = false })
 $('#paint-btn').onclick = () => {
   const d = $('#paint-drawer'), open = !d.classList.contains('open')
   d.classList.toggle('open', open)
@@ -1349,10 +1359,13 @@ function titleStep(): void {
   race.drive(me, STEP)
   player.noCollide = true
   player.announce = false
-  player.maxMach = 4.2
+  // Hovering START spools the ship: afterburner lit, pulling away (the world says: ready).
+  player.maxMach = titleRev ? 5.2 : 4.2
+  titleCtl.burner = titleRev
   titleCtl.steer = me.controls.steer
   player.step(STEP, titleCtl, world)
 }
+let titleRev = false
 const titleCtl = { steer: 0, boost: true, burner: false, brake: false, strafe: 0, dodgeL: false, dodgeR: false }
 function simStep(): void {
   if (mode === 'title') { titleStep(); return }

@@ -292,6 +292,45 @@
   #pause.from-title #p-close:hover { border-color: var(--hot); }
   #pause.from-title label, #pause.from-title .sub { width: auto; }
   #pause.from-title label { font-size: 12px; letter-spacing: 0.16em; padding: 3px 0; }
+  /* Round 2 critique fixes. */
+  #title { background:
+    linear-gradient(180deg, rgba(8,5,4,0.6) 0, rgba(8,5,4,0) 120px),
+    linear-gradient(90deg, rgba(8,5,4,0.84) 0%, rgba(8,5,4,0.5) 26%, rgba(8,5,4,0) 36%),
+    linear-gradient(0deg, rgba(8,5,4,0.9) 0, rgba(8,5,4,0.5) 170px, rgba(8,5,4,0) 280px); }
+  #title .tabs, #open-settings { background: rgba(8,5,4,0.72); backdrop-filter: blur(8px); }
+  #title .topbar h1 { text-shadow: 0 1px 10px rgba(0,0,0,0.7); }
+  #title .shipbar { bottom: 188px; gap: 14px; }
+  #title .shipbar .sn { min-width: 0; padding: 6px 22px; background: radial-gradient(ellipse at center, rgba(8,5,4,0.6), rgba(8,5,4,0) 72%); }
+  #title .shipbar .sn small { opacity: 0.9; }
+  #title .plan { padding: 16px; }
+  #title .plan #start { align-self: stretch; height: auto; }
+  #title .plan #tp-info { font-size: 12px; opacity: 0.8; }
+  #title .kc { display: inline-block; padding: 1px 6px; margin: 0 4px 0 10px; border: 1px solid rgba(255,255,255,0.35); border-radius: 3px; font-size: 10px; letter-spacing: 0.08em; line-height: 1.5; }
+  #title .kc:first-child { margin-left: 0; }
+  #title .keys { opacity: 0.72; }
+  #worlds .w.on b { bottom: auto; top: 12px; }
+  #worlds .w.on small { bottom: auto; top: 36px; }
+  #worlds .w:not(.on) .sun { opacity: 0.35; }
+  #title .paints { right: auto; top: auto; left: calc(404px + (100% - 436px) / 2 - 150px); bottom: 248px; transform: translateY(16px); }
+  #title .paints.open { transform: none; }
+  #title .paints i { width: 26px; height: 26px; }
+  #title .paints span { gap: 10px; }
+  #title .paints { width: 336px; }
+  #pause.from-title { background: rgba(8,5,4,0.98); }
+  #pause.from-title #p-close { border-color: rgba(255,255,255,0.25); }
+  #pause.from-title #p-close:hover { border-color: var(--hot); background: rgba(255,106,26,0.15); }
+  #pause.from-title select { width: 160px; }
+  #pause input[type=checkbox] { width: 16px; height: 16px; }
+  #title .plan #tp-stats { grid-template-columns: none; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); }
+  #title .paints { width: 356px; }
+  @media (max-height: 800px) {
+    #title .shipbar { bottom: 164px; } #title .paints { bottom: 216px; }
+    #title .plan { height: 132px; padding: 12px; }
+    #title .plan .ph span { font-size: 12px; }
+    #title .plan .info { gap: 5px; }
+    #title .plan #tp-stats b { font-size: 14px; }
+    #title:not(.hunt) .plan #tp-info { display: none; }
+  }
 </style>
 </head>
 <body>
@@ -331,28 +370,28 @@
   <header class="topbar">
     <h1>THE DISTANCE BETWEEN <span>US</span></h1>
     <div class="tabs" role="tablist"><button data-mode="race" class="on">RACE</button><button data-mode="hunt">HUNT</button></div>
-    <button id="open-settings" aria-label="Settings">Settings</button>
+    <button id="open-settings" aria-label="Settings">SETTINGS</button>
   </header>
   <div class="menu">
     <div class="sec race-only">World</div>
     <div id="worlds" class="race-only"></div>
     <div class="sec race-only">Course</div>
     <div id="courses" class="race-only"></div>
-    <div class="hunt-only huntinfo"><b>How it plays</b><p>Drones come at you in waves across the open ground. Shoot them down at speed: every kill scores more the faster you fly.</p><p class="soon">A full rework is planned: real flight off the ground, new weapons and enemies.</p></div>
+    <div class="hunt-only huntinfo"><b>HOW IT PLAYS</b><p>Drones come at you in waves across the open ground. Shoot them down at speed: every kill scores more the faster you fly.</p><p class="soon">A full rework is planned: real flight off the ground, new weapons and enemies.</p></div>
   </div>
   <div class="shipbar">
     <button id="ship-prev" aria-label="previous ship">◀</button>
     <div class="sn"><b id="ship-name"></b><small id="ship-desc"></small></div>
     <button id="ship-next" aria-label="next ship">▶</button>
-    <button id="paint-btn" aria-expanded="false">Paint</button>
+    <button id="paint-btn" aria-expanded="false">PAINT</button>
   </div>
-  <aside class="paints" id="paint-drawer"><b>Paint</b><div><small>Body</small><span id="sw-body"></span></div><div><small>Trim</small><span id="sw-trim"></span></div></aside>
+  <aside class="paints" id="paint-drawer"><b>PAINT</b><div><small>Body</small><span id="sw-body"></span></div><div><small>Trim</small><span id="sw-trim"></span></div></aside>
   <footer class="plan">
     <canvas id="track" class="race-only" width="460" height="280"></canvas>
     <div class="info"><div class="ph"><b id="tp-name"></b><span id="tp-blurb"></span></div><div id="tp-stats"></div><div id="tp-info"></div></div>
     <button id="start" class="big">START</button>
   </footer>
-  <div class="keys">Enter starts · drag or arrows turn the view · W throttle · Shift afterburner · A/D steer · Q/E strafe · S brake · R last gate · Esc pause</div>
+  <div class="keys"><span class="kc">Enter</span> start <span class="kc">Esc</span> pause <span class="kc">drag</span> look around <span class="kc">W</span> throttle <span class="kc">Shift</span> burner <span class="kc">A D</span> steer</div>
 </div>
 <div id="over" class="screen hide">
   <h2 id="over-h">SIGNAL LOST</h2>
