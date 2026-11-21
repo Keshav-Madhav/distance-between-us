@@ -919,9 +919,9 @@ export class World {
     }
   }
 
-  /** How far the mesas are drawn (m): they rise from the haze between 82% and 100% of it. */
+  /** How far the mesas are drawn (m): they rise from the haze between 62% and 100% of it (a narrow band read as one ring of props). */
   setDrawDistance(d: number): void {
-    for (const w of this.wrapped) if (w.big) { w.sinkTo = d; w.sinkFrom = d * 0.82 }
+    for (const w of this.wrapped) if (w.big) { w.sinkTo = d; w.sinkFrom = d * 0.62 }
   }
 
   applyTextures(t: { sand: THREE.Texture; clay: THREE.Texture; gravel: THREE.Texture }): void {
