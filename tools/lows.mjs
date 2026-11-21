@@ -6,7 +6,7 @@ const q = process.argv[2] ?? 'high', secs = +(process.argv[3] ?? 25), off = (pro
 const vsync = !!process.env.VSYNC
 const browser = await chromium.launch({ channel: 'chrome', headless: true, args: ['--mute-audio', '--use-gl=angle', '--ignore-gpu-blocklist', ...(vsync ? [] : ['--disable-gpu-vsync', '--disable-frame-rate-limit'])] })
 const page = await (await browser.newContext({ viewport: { width: 1512, height: 945 }, deviceScaleFactor: 2 })).newPage()
-await page.goto(`http://localhost:4417/?fixed&q=${q}`); await page.waitForFunction('window.__g && window.__g.ready')
+await page.goto(`http://localhost:4417/?fixed&q=${q}${process.env.COURSE ? "&course=" + process.env.COURSE : ""}`); await page.waitForFunction('window.__g && window.__g.ready')
 await page.evaluate((off) => {
   const g = window.__g
   // Ablation: g-map g-bloom g-cloud g-grain (checkboxes off), g-part (particles to the lowest).
