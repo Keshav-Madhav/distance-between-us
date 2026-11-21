@@ -744,6 +744,27 @@ try {
   $<HTMLInputElement>('#fov').addEventListener('change', () => { try { localStorage.setItem('dbu-fov', String(fovMax)) } catch { /* private mode */ } })
 } catch { /* storage blocked */ }
 
+// Every setting is remembered (quality, volumes, assist, FOV, shake, graphics): saved on any change,
+// restored at boot by setting each control and firing its own handlers. A ?q= in the URL still wins.
+{
+  const ctrls = [...document.querySelectorAll<HTMLInputElement | HTMLSelectElement>('#pause input, #pause select')].filter((e) => e.id)
+  const save = () => {
+    const o: Record<string, string | boolean> = {}
+    for (const e of ctrls) o[e.id] = e instanceof HTMLInputElement && e.type === 'checkbox' ? e.checked : e.value
+    try { localStorage.setItem('dbu-settings', JSON.stringify(o)) } catch { /* storage blocked */ }
+  }
+  try {
+    const saved = JSON.parse(localStorage.getItem('dbu-settings') || 'null') as Record<string, string | boolean> | null
+    if (saved) for (const e of ctrls) {
+      if (!(e.id in saved) || (e.id === 'q' && params.has('q'))) continue
+      if (e instanceof HTMLInputElement && e.type === 'checkbox') e.checked = !!saved[e.id]
+      else e.value = String(saved[e.id])
+      e.dispatchEvent(new Event('input')); e.dispatchEvent(new Event('change'))
+    }
+  } catch { /* fresh */ }
+  for (const e of ctrls) { e.addEventListener('change', save); e.addEventListener('input', save) }
+}
+
 // ───────────────────────── loop ─────────────────────────
 let acc = 0
 let last = performance.now()
@@ -1298,7 +1319,12 @@ function updateHud(dt: number, slow: boolean): void {
       if (on) {
         d.style.left = `${(proj.x * 0.5 + 0.5) * innerWidth}px`
         d.style.top = `${(-proj.y * 0.5 + 0.5) * innerHeight}px`
-        d.style.opacity = String(THREE.MathUtils.clamp(1.2 - dist / 8000, 0.45, 1))
+        // Far ahead (you, well behind): just a small faint chevron — a row of names across the middle of
+        // the view hid the spires you were about to meet. Near the centre of the screen, fainter still.
+        const far = dist > 1200
+        if (d.classList.contains('far') !== far) d.classList.toggle('far', far)
+        const centre = Math.hypot(proj.x, proj.y * 1.6)
+        d.style.opacity = String(THREE.MathUtils.clamp(1.2 - dist / 8000, 0.45, 1) * (far ? 0.6 : 1) * THREE.MathUtils.lerp(0.45, 1, THREE.MathUtils.smoothstep(centre, 0.08, 0.3)))
       }
     }
     const c = course.cps[Math.min(me.next, course.cps.length - 1)]
@@ -1397,11 +1423,11 @@ const miniCtx = mini.getContext('2d')!
 const MW = mini.width, MH = mini.height
 const MAP_H = MH - 56
 const WIN_BACK = 1500, WIN_AHEAD = 7000
-const mk = (MW - 24) / (WIN_BACK + WIN_AHEAD)
+const mk = (MAP_H - 24) / (WIN_BACK + WIN_AHEAD)
 const mapView = { cx: 0, cz: 0, kk: mk }
 const mapCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 1, 30000)
-mapCam.up.set(1, 0, 0) // screen up = +x, screen right = +z (the course runs left to right)
-const mapRT = new THREE.WebGLRenderTarget(MW >> 1, (MAP_H + 4) >> 1, { type: THREE.HalfFloatType })
+mapCam.up.set(0, 0, 1) // screen up = +z (the way the course runs), screen right = −x (your right)
+const mapRT = new THREE.WebGLRenderTarget((MW - 16) >> 1, MAP_H >> 1, { type: THREE.HalfFloatType })
 // The map camera sees layer 1 only: terrain, mesas, rocks, the course's solid parts and the sun —
 // no sky, particles, ships, trails or additive glow (a cheap render, not a second frame).
 mapCam.layers.set(1)
@@ -1445,10 +1471,10 @@ function renderMap(): void {
   if ((mapFrame++ & 1) !== 0) { blitMap(); return }
   const kk = mapView.kk
   // World extents of the panel's map area (canvas px → metres), matching the overlay's mapping.
-  const z0 = mapView.cz - WIN_BACK + (8 - 12) / kk, z1 = mapView.cz - WIN_BACK + (MW - 8 - 12) / kk
-  const halfX = (MAP_H / 2 + 2) / kk
-  mapCam.left = -(z1 - z0) / 2; mapCam.right = (z1 - z0) / 2
-  mapCam.top = halfX; mapCam.bottom = -halfX
+  const z0 = mapView.cz - WIN_BACK - 12 / kk, z1 = mapView.cz - WIN_BACK + (MAP_H - 12) / kk
+  const halfX = (MW / 2 - 8) / kk
+  mapCam.left = -halfX; mapCam.right = halfX
+  mapCam.top = (z1 - z0) / 2; mapCam.bottom = -(z1 - z0) / 2
   mapCam.position.set(mapView.cx, 4000, (z0 + z1) / 2)
   mapCam.lookAt(mapView.cx, 0, (z0 + z1) / 2)
   mapCam.updateProjectionMatrix()
@@ -1461,7 +1487,7 @@ function renderMap(): void {
 function blitMap(): void {
   const r = mini.getBoundingClientRect()
   const sx = r.width / MW
-  const x = r.left + 8 * sx, w = (MW - 16) * sx, top = r.top + 8 * sx, h = (MAP_H + 4) * sx
+  const x = r.left + 8 * sx, w = (MW - 16) * sx, top = r.top + 8 * sx, h = MAP_H * sx
   const y = innerHeight - top - h
   const auto = renderer.autoClear
   renderer.autoClear = false
@@ -1492,23 +1518,21 @@ function drawMini(): void {
   xlo = Math.min(xlo, player.pos.x); xhi = Math.max(xhi, player.pos.x)
   const cx = (xlo + xhi) / 2
   // Zoom out if the stretch spreads wider across than the panel is tall (an S-bend on a diagonal).
-  const kk = Math.min(mk, (MAP_H - 36) / Math.max(1, xhi - xlo))
-  // True top-down (the course runs along +z, so +z is to the right; your right-hand side is down).
-  const tx = (z: number) => 12 + (z - (cz - WIN_BACK)) * kk, ty = (x: number) => 8 + MAP_H / 2 - (x - cx) * kk
+  const kk = Math.min(mk, (MW - 40) / Math.max(1, xhi - xlo))
+  // True top-down, upright: the course runs up the panel (+z is up), your right-hand side (−x) is right.
+  // tx/ty map a world z / x to canvas y / x.
+  const tx = (z: number) => 8 + MAP_H - 12 - (z - (cz - WIN_BACK)) * kk, ty = (x: number) => MW / 2 - (x - cx) * kk
   const i0 = Math.max(0, me.idx - Math.round(WIN_BACK / 40) - 4), i1 = Math.min(course.n - 1, me.idx + Math.round((WIN_AHEAD * mk / kk) / 40) + 4)
   g.save()
   g.beginPath(); g.roundRect(8, 8, MW - 16, MAP_H, 14); g.clip()
-  // Kilometre ticks.
-  g.strokeStyle = 'rgba(255,255,255,0.0)'; g.lineWidth = 1.5
-  for (let km = Math.ceil((cz - WIN_BACK) / 1000); km * 1000 < cz + WIN_AHEAD * (mk / kk); km++) { const x = 12 + (km * 1000 - (cz - WIN_BACK)) * kk; g.beginPath(); g.moveTo(x, 8); g.lineTo(x, 8 + MAP_H); g.stroke() }
   g.beginPath()
-  for (let i = i0; i <= i1; i++) { const x = tx(course.pz[i]), y = ty(course.px[i]); if (i === i0) g.moveTo(x, y); else g.lineTo(x, y) }
+  for (let i = i0; i <= i1; i++) { const y = tx(course.pz[i]), x = ty(course.px[i]); if (i === i0) g.moveTo(x, y); else g.lineTo(x, y) }
   g.lineJoin = 'round'; g.lineCap = 'round'
   g.strokeStyle = 'rgba(255,240,225,0.35)'; g.lineWidth = 2; g.setLineDash(DASH); g.stroke(); g.setLineDash(NODASH)
   // Spires: a thin ring round each (the render shows the rock; the ring makes it pop at this size).
   for (const rk of course.rocks) {
     if (rk.i < i0 || rk.i > i1) continue
-    const x = tx(rk.z), y = ty(rk.x)
+    const y = tx(rk.z), x = ty(rk.x)
     g.strokeStyle = 'rgba(255,110,60,0.9)'; g.lineWidth = 2
     g.beginPath(); g.arc(x, y, Math.max(6, rk.r * 1.8 * kk) + 2, 0, Math.PI * 2); g.stroke()
   }
@@ -1516,8 +1540,8 @@ function drawMini(): void {
   for (let k = 0; k < course.cps.length; k++) {
     const c = course.cps[k]
     if (c.i < i0 || c.i > i1) continue
-    const ax = tx(c.z - c.tx * GATE_HALF), ay = ty(c.x + c.tz * GATE_HALF)
-    const bx = tx(c.z + c.tx * GATE_HALF), by = ty(c.x - c.tz * GATE_HALF)
+    const ay = tx(c.z - c.tx * GATE_HALF), ax = ty(c.x + c.tz * GATE_HALF)
+    const by = tx(c.z + c.tx * GATE_HALF), bx = ty(c.x - c.tz * GATE_HALF)
     const fin = k === 0 || k === course.cps.length - 1
     g.strokeStyle = k === me.next ? '#5fe6ff' : k === me.next + 1 ? 'rgba(95,230,255,0.45)' : fin ? '#ff7a1a' : 'rgba(255,255,255,0.35)'
     g.lineWidth = k === me.next ? 5 : 3
@@ -1527,13 +1551,13 @@ function drawMini(): void {
   }
   for (const r of race.racers) {
     if (!r.ai || r.p.dead) continue
-    const x = tx(r.p.pos.z), y = ty(r.p.pos.x)
+    const y = tx(r.p.pos.z), x = ty(r.p.pos.x)
     g.fillStyle = hex(r.color)
     g.strokeStyle = 'rgba(0,0,0,0.75)'; g.lineWidth = 2.5
     g.beginPath(); g.arc(x, y, 7, 0, Math.PI * 2); g.fill(); g.stroke()
   }
-  const px = tx(player.pos.z), py = ty(player.pos.x)
-  g.translate(px, py); g.rotate(-player.heading - Math.PI / 2)
+  const py = tx(player.pos.z), px = ty(player.pos.x)
+  g.translate(px, py); g.rotate(Math.PI - player.heading)
   g.shadowColor = '#ff6a1a'; g.shadowBlur = 14
   g.fillStyle = '#ff6a1a'; g.strokeStyle = '#fff'; g.lineWidth = 2.5
   g.beginPath(); g.moveTo(0, 15); g.lineTo(9, -10); g.lineTo(0, -5); g.lineTo(-9, -10); g.closePath(); g.fill(); g.stroke()

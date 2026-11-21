@@ -286,20 +286,22 @@ export class Player {
       const ab0 = Math.abs(Math.atan2(this.lateral, Math.max(this.speed, 1)))
       const hs0 = Math.hypot(this.speed, this.lateral)
       const peak = H.slipPeak
-      const curveOf = (ab: number) => (ab < peak ? 0.35 + (0.65 * ab) / peak : Math.max(H.slideFloor, 1 - (ab - peak) * 0.9))
+      const curveOf = (ab: number) => (ab < peak ? 0.35 + (0.65 * ab) / peak : Math.max(H.slideFloor, 1 - (ab - peak) * 1.3))
       let curve = curveOf(ab0)
       if (this.spin > 0) curve = Math.min(curve, 0.3)
       const beta0 = Math.atan2(this.lateral, Math.max(this.speed, 1))
       let steer = this.spin > 0 ? 0 : c.steer
-      // Assist: a little automatic countersteer once past the peak (none at OFF).
-      if (A > 0 && ab0 > peak) steer = THREE.MathUtils.clamp(steer + Math.sign(beta0) * Math.min(1, (ab0 - peak) * 3) * A, -1, 1)
+      // Assist: automatic countersteer once past the peak — but only when you are not steering into the
+      // turn yourself (neutral, or already countering). It catches the slide you let go of; it never
+      // fights a turn you are asking for (it used to cancel your lock exactly when you pushed).
+      if (A > 0 && ab0 > peak && steer * Math.sign(beta0) >= -0.15) steer = THREE.MathUtils.clamp(steer + Math.sign(beta0) * Math.min(1, (ab0 - peak) * 3) * A, -1, 1)
       // Adaptive: authority grows with speed faster than grip does — at Mach 5 full lock asks for more
       // than the ground effect can hold (sharp, and a slide if held); half lock is safe. The grip gauge
       // shows where the limit is.
       // The brake sharpens the turn (weight forward, more bite): authority up while it is on.
       const auth = H.steerTorque * (this.airborne ? 0.7 : 1) * (1 + H.steerGain * THREE.MathUtils.clamp((m - 0.8) / 4.2, 0, 1)) * (1 + 0.5 * this.brake)
       // Weathervane: with grip, the nose is pulled back toward the travel.
-      const align = (this.airborne ? H.airControl : 1) * -H.alignK * (1 + A * 1.5) * (1 + hs0 / 1400) * Math.sin(beta0) * curve * Math.min(1, hs0 / 250)
+      const align = (this.airborne ? H.airControl : 1) * -H.alignK * (1 + A * 0.5) * (1 + hs0 / 1400) * Math.sin(beta0) * curve * Math.min(1, hs0 / 250)
       // Afterburner lit: the stick barely moves the nose, and the yaw is damped hard — the burn holds
       // you on the line you lit it on.
       const damp = this.spin > 0 ? 0.9 : H.yawDamp * (this.burning ? 2.2 : 1)
@@ -337,7 +339,7 @@ export class Player {
       const brakeGrip = c.brake && !this.airborne ? H.driftBrakeGrip : 1
       // Ground effect grows with speed like downforce: the turn rate grip can hold is gripK + gripQ·v,
       // so a slow start is loose and twitchy, and flat-out is planted.
-      const gripAcc = (this.airborne ? H.airControl : 1) * ((H.gripK * (1 + A * 0.35) + H.gripQ * hs0) * hs0 + H.gripLow) * curve * brakeGrip
+      const gripAcc = (this.airborne ? H.airControl : 1) * ((H.gripK * (1 + A * 0.2) + H.gripQ * hs0) * hs0 + H.gripLow) * curve * brakeGrip
       const dl = Math.sign(this.lateral) * Math.min(Math.abs(this.lateral), gripAcc * dt)
       this.lateral -= dl
       // (Energy: the slide joins the forward speed as a vector, never added to it. A carve keeps most
@@ -347,7 +349,7 @@ export class Player {
       this.speed = Math.min(this.speed, S.burnCap * MACH)
       this.slip = beta
       // Grip load for the gauge: 1 = at the limit (the peak slip angle, or the turn rate grip can hold).
-      const omegaMax = H.gripK * (1 + A * 0.35) + H.gripQ * hs0 + H.gripLow / Math.max(hs0, 50)
+      const omegaMax = H.gripK * (1 + A * 0.2) + H.gripQ * hs0 + H.gripLow / Math.max(hs0, 50)
       this.gripLoad = this.airborne ? 0 : Math.max(ab / peak, Math.abs(this.yawRate) / omegaMax * brakeGrip ** -1)
       this.spinRisk = this.airborne ? 0 : THREE.MathUtils.clamp((ab - peak) / (H.spinSlip + A * 0.35 - peak), 0, 1)
 

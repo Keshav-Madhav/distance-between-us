@@ -322,6 +322,12 @@ export class Race {
     // The course's spires ahead: the first one in the lane decides the line — aim at the gap beside
     // it (the side clear of every spire standing there, rock gates included), not at a point
     // kilometres on, which cut diagonally through it.
+    // Near a gate, the lane is squeezed inside its towers (a miss now costs most of your speed). The
+    // gap search below works inside the same limit — clamping after it pushed racers into spires.
+    const nextGate = this.course.cps[Math.min(r.next, this.K - 1)]
+    const toGate = (nextGate.i - r.idx) * 40
+    const laneLim = toGate > 0 && toGate < p.speed * 2 + 600 ? 175 : 220
+    lane = THREE.MathUtils.clamp(lane, -laneLim, laneLim)
     const horizon = r.idx + Math.round((p.speed * 3.5 + 400) / 40)
     // Where it actually is across the line (right = +).
     const [t0x, t0z] = c.tangent(r.idx)
@@ -345,8 +351,8 @@ export class Race {
         BLK0[j] = b0; BLK1[j] = b1
         if (nb >= BLK0.length - 1) break
       }
-      BLK0[nb] = 235; BLK1[nb] = 235; nb++
-      let best = NaN, bestD = Infinity, lo = -235
+      BLK0[nb] = laneLim; BLK1[nb] = laneLim; nb++
+      let best = NaN, bestD = Infinity, lo = -laneLim
       for (let q = 0; q < nb; q++) {
         const b0 = BLK0[q], b1 = BLK1[q]
         if (b0 - lo > 16) {
@@ -361,10 +367,6 @@ export class Race {
       // (The nearest conflict decides; a farther spire overwriting the lane put it back into this one.)
       break
     }
-    // Near a gate, the lane is squeezed inside its towers (a miss now costs most of your speed).
-    const nextGate = this.course.cps[Math.min(r.next, this.K - 1)]
-    const toGate = (nextGate.i - r.idx) * 40
-    const laneLim = toGate > 0 && toGate < p.speed * 2 + 600 ? 175 : 220
     lane = THREE.MathUtils.clamp(lane, -laneLim, laneLim)
     r.aimLane = lane
     // Stanley-style steering: the line's heading a little ahead, plus a correction that closes the

@@ -41,7 +41,7 @@ export const CFG = {
     /** Yaw torque at full stick (rad/s²) and yaw damping (1/s): full stick settles at ~torque/damp. */
     steerTorque: 4.5,
     /** Extra steering authority at speed (×(1 + gain) by Mach 5). */
-    steerGain: 0.55,
+    steerGain: 1.0,
     yawDamp: 4.7,
     /** Weathervane torque pulling the nose back to the travel (needs grip). */
     alignK: 2.7,
@@ -59,7 +59,7 @@ export const CFG = {
     gust: 55,
     gustYaw: 0.35,
     /** Steering authority left while the afterburner burns. */
-    burnSteer: 0.18,
+    burnSteer: 0.2,
     /** In the air: the share of grip and self-align the fins give (steering bends the path). */
     airControl: 0.4,
     /** Side-thruster strafe acceleration (m/s²). */
