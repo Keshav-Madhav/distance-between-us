@@ -1,6 +1,5 @@
 // Combat at Mach 5: enemy drones flown in the player's own frame (they keep pace, weave, overtake,
-// fire back), head-on passers, homing missiles that corkscrew, red tracer bolts, the walker's plasma
-// orbs, and the soft lock. Fixed-step sim with prev/pos for interpolation; instanced draws.
+// fire back), head-on passers, homing missiles that corkscrew, red tracer bolts, and the soft lock. Fixed-step sim with prev/pos for interpolation; instanced draws.
 import * as THREE from 'three'
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
 import { CFG, MACH } from './config'
@@ -28,8 +27,8 @@ export interface Ctx {
   hurt(dmg: number, x: number, y: number, z: number, kind: 'bolt' | 'orb'): void
   scored(points: number, label: string): void
   shake(t: number): void
-  /** Other lock targets (the walker's cores). */
-  extraTargets(): readonly Target[]
+  /** Other lock targets, if any. */
+  extraTargets?(): readonly Target[]
   waveStart?(wave: number): void
   waveCleared?(wave: number): void
   runner?(): void
@@ -149,7 +148,7 @@ export class Combat {
   readonly queue = { hold: 0, pass: 0, run: 0 }
   private breather = 0
   private runT = 0
-  /** Waves wait while the walker is up. */
+  /** Waves wait while this is set. */
   paused = false
   queueEmpty(): boolean { return this.queue.hold + this.queue.pass + this.queue.run === 0 }
   aliveCount(): number { return this.drones.reduce((n, d) => n + (d.alive ? 1 : 0), 0) }
@@ -312,17 +311,7 @@ export class Combat {
     this.ctx.audio.missile()
   }
 
-  /** Walker cannon: a heavy, slow plasma orb. */
-  fireOrb(from: THREE.Vector3, vel: THREE.Vector3): void {
-    const s = this.shots.find((q) => !q.on)
-    if (!s) return
-    s.on = true
-    s.orb = true
-    s.life = 9
-    s.pos.copy(from)
-    s.prev.copy(from)
-    s.vel.copy(vel)
-  }
+
 
   private fireBolt(d: Drone): void {
     const s = this.shots.find((q) => !q.on)
@@ -473,7 +462,7 @@ export class Combat {
     // ── lock ──
     this.targets.length = 0
     for (const d of this.drones) if (d.alive) this.targets.push(d)
-    for (const t of this.ctx.extraTargets()) if (t.alive) this.targets.push(t)
+    for (const t of this.ctx.extraTargets?.() ?? []) if (t.alive) this.targets.push(t)
     let best: Target | null = null
     let bestA = CFG.combat.lockCone
     for (const t of this.targets) {

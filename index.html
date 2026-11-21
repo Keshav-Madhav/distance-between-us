@@ -331,6 +331,11 @@
     #title .plan #tp-stats b { font-size: 14px; }
     #title:not(.hunt) .plan #tp-info { display: none; }
   }
+  /* HUNT flight: where you aim (a ring), where you are actually going (a small cross). */
+  #aimring { position: absolute; left: 0; top: 0; width: 34px; height: 34px; margin: -17px 0 0 -17px; border: 1.5px solid rgba(255,255,255,0.75); border-radius: 50%; display: none; pointer-events: none; box-shadow: 0 0 8px rgba(0,0,0,0.4); }
+  #velmark { position: absolute; left: 0; top: 0; width: 14px; height: 14px; margin: -7px 0 0 -7px; display: none; pointer-events: none; }
+  #velmark::before, #velmark::after { content: ''; position: absolute; background: #7dff9a; }
+  #velmark::before { left: 6px; top: 0; width: 2px; height: 14px; } #velmark::after { top: 6px; left: 0; height: 2px; width: 14px; }
 </style>
 </head>
 <body>
@@ -356,6 +361,7 @@
   <div id="align"></div>
   <div id="burn"></div>
   <div id="gmark"><div class="d"></div><div class="t"></div></div>
+  <div id="aimring"></div><div id="velmark"></div>
   <div id="gmark2"><div class="d"></div></div>
   <div id="tags"></div>
   <canvas id="mini" width="440" height="700"></canvas>

@@ -106,7 +106,5 @@ export const CFG = {
     missileRelSpeed: 1150,
     missileTurn: 9,
     fireCooldown: 0.28,
-    walkerAfterKills: 6,
-    walkerAfterSeconds: 70,
   },
 }

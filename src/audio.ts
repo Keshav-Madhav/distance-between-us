@@ -1025,14 +1025,6 @@ export class Sound {
     }
   }
 
-  footfall(dist: number): void {
-    if (!this.ctx) return
-    const t = this.late(dist)
-    const v = 1 / (1 + dist / 2500)
-    this.thump(t, 55, 22, 1.1, 1.1 * v)
-    this.burst(t, 0.9, 'lowpass', 600, 80, 0.5 * v)
-  }
-
   charge(dist: number): void {
     if (!this.ctx) return
     const t = this.ctx.currentTime

@@ -10,8 +10,9 @@ import { Craft, MODELS, type Paint } from './craft'
 import { Fx, resetE } from './particles'
 import { Trail } from './trails'
 import { Player } from './player'
-import { Combat, type Target } from './combat'
-import { Walker } from './walker'
+import { Combat } from './combat'
+import { FlightCam, FlightCraft, type FlightControls } from './flight'
+import { Rings } from './rings'
 import { Sound } from './audio'
 import { Input } from './input'
 import { Post } from './post'
@@ -282,7 +283,6 @@ let white = 0
 let coneA = 0
 let slowmoT = 0
 let hitstop = 0
-let walkerDone = false
 let autopilot = params.has('auto')
 /** Tools: scripted controls override the keyboard. */
 let forced: import('./player').Controls | null = null
@@ -512,17 +512,9 @@ const combat = new Combat({
   },
   scored(points, label) { score += points; pop(`+${points}  ${label}`); hitstop = 0.05 },
   shake,
-  extraTargets: () => walker.cores as readonly Target[],
   waveStart(w) {
     flash(`WAVE ${w}`)
     sound.beep(true)
-    // After three waves, the walker; the waves wait until it is down.
-    if (w === 4 && !walkerDone) {
-      combat.paused = true
-      walker.spawn()
-      warn('WALKER', 'ON THE HORIZON · HIT ITS FOUR CORES')
-      warnT = 4
-    }
   },
   waveCleared(w) { flash(`WAVE ${w} CLEARED`); score += 250 * w; pop(`+${250 * w}  WAVE BONUS`) },
   runner() { warn('RUNNER', 'CHASE IT DOWN · WORTH TRIPLE'); warnT = 2 },
@@ -542,11 +534,18 @@ const combat = new Combat({
   },
 })
 scene.add(combat.group)
-const walker = new Walker(player, fx, sound, combat, shake)
-scene.add(walker.root, walker.ring)
-walker.onCoreLost = (left) => { score += 500; pop(left > 0 ? `+500  CORE · ${left} LEFT` : '+500  LAST CORE'); flash(left > 0 ? `${left} CORES LEFT` : "IT'S GOING DOWN") }
-walker.onFall = () => { slowmoT = 2.6; sound.slowmo(1) }
-walker.onDown = () => { walkerDone = true; score += 5000; pop('+5000  WALKER DOWN'); flash('WALKER DOWN'); combat.pressure = 4; combat.paused = false }
+// HUNT's flight (docs/HUNT-FLIGHT-PLAN.md): the craft, its camera, the controls.
+// The sandbox course: rings through the sky.
+const rings = new Rings()
+scene.add(rings.mesh)
+rings.onPass = (_r, i) => { sound.gate(i === 9); pop(`RING ${i + 1}/10`); score += Math.round(100 * Math.max(1, flight.mach)) }
+rings.onMiss = (_r, i) => { sound.missed(); pop(`MISSED RING ${i + 1}`) }
+rings.onSet = () => { flash(`SET ${rings.sets} · ${rings.passed} RINGS`); sound.fanfare(true) }
+const flight = new FlightCraft()
+const flightQ = new THREE.Quaternion()
+const fcam = new FlightCam(camera)
+const fc: FlightControls = { pitch: 0, turn: 0, roll: 0, throttle: false, brake: false, burner: false, aim: null }
+flight.onHit = (dmg, kind) => { damageFlash = Math.min(1, damageFlash + dmg / 40); shake(Math.min(1, dmg / 30)); sound.bounce(Math.min(1, dmg / 30)); if (dmg >= 30) flash(kind === 'ground' ? 'GROUND' : 'ROCK') }
 
 // ───────────────────────── player feedback ─────────────────────────
 player.onMach = (m) => {
@@ -709,6 +708,8 @@ const arrowEl = $('#arrow')
 const flashEl = $('#flash')
 const warnEl = $('#warn')
 const hintsEl = $('#hints')
+const RACE_HINTS = hintsEl.innerHTML
+const FLY_HINTS = ['<b>MOUSE</b>AIM (CLICK TO CAPTURE · ESC RELEASES)', '<b>ARROWS · A D</b>PITCH · TURN (THE CRAFT BANKS ITSELF)', '<b>Q E</b>ROLL', '<b>W</b>THROTTLE', '<b>S</b>AIR BRAKE · TIGHTER TURNS', '<b>SHIFT</b>AFTERBURNER · SPENDS ENERGY', '<b>RINGS</b>FLY THROUGH THE GLOWING ONE'].map((h) => `<div>${h}</div>`).join('')
 const debugEl = $('#debug')
 const raceEl = $('#race')
 const standEl = $('#stand')
@@ -972,6 +973,8 @@ function menuStart(): void {
 }
 function setPaused(on: boolean): void {
   paused = on
+  if (on && document.pointerLockElement) document.exitPointerLock()
+  else if (!on && mode === 'hunt') { try { void renderer.domElement.requestPointerLock() } catch { /* no gesture */ } }
   $('#pause').classList.toggle('hide', !on)
   $('#pause').classList.remove('from-title')
   sound.suspend(on)
@@ -984,9 +987,11 @@ function toTitle(): void {
   spectate = false
   $('#over').classList.add('hide')
   mode = 'title'
+  rings.hide()
+  for (const id of ['#aimring', '#velmark', '#gmark']) $(id).style.display = 'none'
+  if (document.pointerLockElement) document.exitPointerLock()
   combat.enabled = false
   combat.reset()
-  walker.hide()
   race.reset()
   player.reset(course.cps[0].x - course.cps[0].tx * 60, course.cps[0].z - course.cps[0].tz * 60, Math.atan2(course.cps[0].tx, course.cps[0].tz), 0)
   renderPos.copy(player.pos)
@@ -1058,7 +1063,7 @@ function showResults(): void {
 function showHuntOver(): void {
   if (mode !== 'hunt') return
   overlay = true
-  $('#over-h').textContent = walkerDone && !player.dead ? 'WALKER DOWN' : 'SIGNAL LOST'
+  $('#over-h').textContent = 'SIGNAL LOST'
   $('#over-stats').innerHTML = `SCORE ${score}<br/>TOP SPEED MACH ${Math.max(runTop, player.topMach).toFixed(2)}<br/>DRONES DOWN ${combat.kills}<br/>TIME ${fmtTime(runTime)}`
   $('#res').innerHTML = ''
   $('#over .go').textContent = 'R TO RUN IT AGAIN · ENTER FOR A RACE'
@@ -1075,6 +1080,8 @@ let runTop = 0
 let driftLvl = 0
 let secK = 0, pinUntil = 0
 function startRace(): void {
+  rings.hide()
+  for (const id of ['#aimring', '#velmark']) $(id).style.display = 'none'
   applyPending()
   runTop = 0; secK = 0; pinUntil = 0
   player.noCollide = false
@@ -1087,7 +1094,6 @@ function startRace(): void {
   overlay = false
   combat.enabled = false
   combat.reset()
-  walker.hide()
   race.reset()
   resetVisuals()
   for (const r of race.racers) visuals.get(r.p)!.lastDust.copy(r.p.pos)
@@ -1105,6 +1111,7 @@ function startRace(): void {
   mini.classList.add('on')
   scoreEl.style.display = 'none'
   reticle.style.display = 'none'
+  hintsEl.innerHTML = RACE_HINTS
   hintsEl.style.opacity = '0.85'
   setTimeout(() => (hintsEl.style.opacity = '0'), 9000)
 }
@@ -1123,9 +1130,17 @@ function startHunt(): void {
   overlay = false
   player.reset()
   combat.reset()
-  combat.enabled = true
-  walker.hide()
-  walkerDone = false
+  // Phase 1 of the flight rework: free flight through rings; the drones come back as phase 2.
+  combat.enabled = false
+  flight.reset(player.pos.x, player.pos.z, player.heading, 40, 2)
+  flight.syncTo(player)
+  fcam.snap()
+  rings.layout(flight.pos.x, flight.pos.z, player.heading, 1)
+  rings.passed = 0; rings.missed = 0; rings.sets = 0
+  try { void renderer.domElement.requestPointerLock() } catch { /* not allowed here */ }
+  hintsEl.innerHTML = FLY_HINTS
+  hintsEl.style.opacity = '0.85'
+  setTimeout(() => (hintsEl.style.opacity = '0'), 10000)
   resetVisuals()
   for (const r of race.racers) if (r.ai) visuals.get(r.p)!.craft.root.visible = false
   visuals.get(player)!.lastDust.copy(player.pos)
@@ -1338,7 +1353,7 @@ function rebase(): void {
   if (!dx && !dz) return
   player.shift(dx, dz)
   combat.shift(dx, dz)
-  walker.shift(dx, dz)
+  flight.shift(dx, dz)
   fx.shift(dx, dz)
   wreckage.shift(dx, dz)
   shock.shift(dx, dz)
@@ -1376,53 +1391,74 @@ function simStep(): void {
     race.step(STEP, forced ?? (auto ? me.controls : input.c), world)
     if (race.state !== 'grid') runTime += STEP
   } else if (mode === 'hunt') {
+    // Flight: the controls (mouse aim, keys, stick), the craft, mirrored into the Player.
+    if (!flyForced) readFlight()
     if (autopilot) huntAutopilot()
-    player.step(STEP, forced ?? input.c, world)
-    runTop = Math.max(runTop, player.topMach)
-    if (player.recovered) {
-      player.recovered = false
-      if (player.dead) die()
-      else {
-        // Upright again, pointing where it slid, rolling slowly.
-        const hull = player.hull
-        player.reset(player.pos.x, player.pos.z, Math.atan2(player.vel.x, player.vel.z) || player.heading, 0.8)
-        player.hull = hull
-        player.ghost = 1.5
-        cam.snap(player.heading)
-      }
-    }
-    combat.step(STEP, input.fire)
-    walker.step(STEP)
+    flight.step(STEP, fc, world)
+    flight.syncTo(player)
+    runTop = Math.max(runTop, flight.topMach)
+    rings.step(player)
+    if (flight.hull <= 0 && !player.dead) die()
     rebase()
     if (!player.dead) runTime += STEP
 
   }
 }
 
-function huntAutopilot(): void {
-  const c = input.c
-  c.boost = true; c.brake = false; c.strafe = 0; c.dodgeL = c.dodgeR = false
-  let steer = 0
-  if (walker.state === 'fight' || walker.state === 'coming') {
-    tmp.subVectors(walker.hullPos, player.pos)
-    const d = Math.hypot(tmp.x, tmp.z)
-    let dh = Math.atan2(tmp.x, tmp.z) + (d < 3500 ? 1.1 : 0) - player.heading
-    dh = Math.atan2(Math.sin(dh), Math.cos(dh))
-    steer = THREE.MathUtils.clamp(-dh * 2, -1, 1)
+/** HUNT's controls into the flight: keys and stick (turn with auto-bank, pitch, roll), or the mouse
+ *  (pointer locked: it moves an aim direction in the world, kept within 50° of the nose). */
+const mouseAim = new THREE.Vector3(0, 0, 1)
+let fTurn = 0, fPitch = 0
+function readFlight(): void {
+  const k = (c: string) => input.isDown(c)
+  fc.throttle = k('KeyW'); fc.brake = k('KeyS'); fc.burner = k('ShiftLeft') || k('ShiftRight')
+  fc.roll = (k('KeyE') ? 1 : 0) - (k('KeyQ') ? 1 : 0)
+  let turn = (k('KeyD') || k('ArrowRight') ? 1 : 0) - (k('KeyA') || k('ArrowLeft') ? 1 : 0)
+  let pitch = (k('ArrowUp') ? 1 : 0) - (k('ArrowDown') ? 1 : 0)
+  const pads = navigator.getGamepads ? navigator.getGamepads() : []
+  for (const p of pads) {
+    if (!p) continue
+    const dz = (v: number) => (Math.abs(v) < 0.12 ? 0 : (v - Math.sign(v) * 0.12) / 0.88)
+    const ax = dz(p.axes[0] ?? 0), ay = dz(p.axes[1] ?? 0)
+    if (ax) turn = ax
+    if (ay) pitch = -ay
+    if ((p.buttons[7]?.value ?? 0) > 0.3) fc.throttle = true
+    if ((p.buttons[6]?.value ?? 0) > 0.3) fc.brake = true
+    if (p.buttons[2]?.pressed) fc.burner = true
+    const rx = dz(p.axes[2] ?? 0)
+    if (rx) fc.roll = rx
   }
-  // Rocks ahead: steer around them.
-  const look = Math.max(600, player.speed * 1.4)
-  const n = world.near(player.pos.x + player.fwd.x * look * 0.5, player.pos.z + player.fwd.z * look * 0.5, player.pos.y, look * 0.6, huntObs)
-  for (let i = 0; i < n; i++) {
-    const o = huntObs[i]
-    tmp.set(o.x - player.pos.x, 0, o.z - player.pos.z)
-    const ahead = tmp.dot(player.fwd)
-    const side = tmp.dot(player.right)
-    if (ahead > 0 && ahead < look && Math.abs(side) < o.cr + (o.big ? 160 : 30)) steer += side > 0 ? -1.2 : 1.2
-  }
-  c.steer = THREE.MathUtils.clamp(steer, -1, 1)
-  input.fire = combat.locked
+  // Keys ramp in (a tap is a nudge, a hold a full turn).
+  fTurn += THREE.MathUtils.clamp(turn - fTurn, -STEP * 6, STEP * 6)
+  fPitch += THREE.MathUtils.clamp(pitch - fPitch, -STEP * 6, STEP * 6)
+  fc.turn = fTurn; fc.pitch = fPitch
+  // The mouse: used while locked and moved in the last 2 s, and no keys are steering.
+  const mouseLive = !!document.pointerLockElement && performance.now() / 1000 - input.mouseAt < 2 && turn === 0 && pitch === 0
+  if (mouseLive) {
+    const sens = 0.0022
+    mouseAim.applyAxisAngle(UP_W, -input.mouseDX * sens)
+    const side = tmp2.crossVectors(mouseAim, UP_W).normalize()
+    if (side.lengthSq() > 0.5) mouseAim.applyAxisAngle(side, -input.mouseDY * sens)
+    mouseAim.normalize()
+    const ang = mouseAim.angleTo(flight.fwd)
+    if (ang > 0.87) mouseAim.lerp(flight.fwd, 1 - 0.87 / ang).normalize()
+    fc.aim = mouseAim
+  } else { mouseAim.copy(flight.fwd); fc.aim = null }
+  input.mouseDX = 0; input.mouseDY = 0
 }
+const UP_W = new THREE.Vector3(0, 1, 0)
+const tmp2 = new THREE.Vector3()
+/** HUNT autopilot (tests): fly at the next ring, throttle on. */
+function huntAutopilot(): void {
+  const r = rings.items[rings.next]
+  fc.throttle = true; fc.brake = false; fc.burner = false; fc.roll = 0; fc.pitch = 0; fc.turn = 0
+  if (!r) { fc.aim = null; return }
+  autoAim.set(r.x - flight.pos.x, r.y - flight.pos.y, r.z - flight.pos.z).normalize()
+  fc.aim = autoAim
+}
+const autoAim = new THREE.Vector3()
+/** Tests drive the flight controls directly (tools/flight.mjs). */
+let flyForced = false
 
 
 /** Draw one racer's craft, flames, trails and dust. */
@@ -1437,6 +1473,8 @@ function drawRacer(p: Player, alpha: number, dt: number, isMe: boolean): void {
   v.heading = heading
   craft.root.position.copy(tmp)
   craft.root.rotation.set(0, heading, 0)
+  // Flying (HUNT): the craft's whole orientation, interpolated — loops and rolls included.
+  if (mode === 'hunt' && isMe) craft.root.quaternion.slerpQuaternions(flight.prevQuat, flight.quat, alpha)
   // A flip: two full rolls (eased) on top of the bank.
   const tu = 1 - p.tumble
   const roll = p.tumble > 0 ? p.tumbleDir * Math.PI * 4 * (1 - (1 - tu) * (1 - tu)) : 0
@@ -1734,6 +1772,9 @@ function frame(now: number): void {
     camera.updateProjectionMatrix()
   } else if (mode === 'race' && spectate && race.racers[0].finished) {
     cam.cinematic(realDt, time, player, renderPos, heading)
+  } else if (mode === 'hunt' && !player.dead) {
+    flightQ.slerpQuaternions(flight.prevQuat, flight.quat, alpha)
+    fcam.update(realDt, renderPos, flightQ, flight.vel, flight.mach, fovMax)
   } else {
     cam.update(realDt, time, player, renderPos, heading, world, fovMax)
   }
@@ -1764,7 +1805,6 @@ function frame(now: number): void {
   G.uFwd.value.set(Math.sin(heading), Math.cos(heading))
   G.uBoost.value = myCraft.root.visible ? player.boost : 0
   G.uSpeed.value = Math.min(1, player.mach / 6)
-  walker.shadow(G.uWalker.value)
 
   // Post.
   const s = Math.min(1, player.mach / 6)
@@ -1814,7 +1854,7 @@ function frame(now: number): void {
   post.bloom.threshold = CFG.post.bloomThreshold
   const onGrid = mode === 'race' && race.state === 'grid'
   const engineMach = mode === 'title' ? 2.5 : onGrid ? 0.3 + player.boost * 0.9 : player.mach
-  const heat = mode === 'race' ? Math.min(1, (Math.max(0, me.passed - 1) / course.cps.length) * 1.5 * LAPS) : walker.state === 'fight' || walker.state === 'coming' ? 1 : 0
+  const heat = mode === 'race' ? Math.min(1, (Math.max(0, me.passed - 1) / course.cps.length) * 1.5 * LAPS) : 0
   // Rivals' engines: the three nearest, with their closing speed (Doppler) and side (pan).
   rivalVoices.length = 0
   if (mode === 'race') {
@@ -1876,7 +1916,7 @@ function frame(now: number): void {
     else if (player.crashing || (crashBreak > 0 && (crashBreak -= realDt) > 0)) sound.setSection('break')
     else sound.setSection(race.toGo(me) < 25000 ? 'final' : 'drop')
     if (player.crashing) crashBreak = 2
-  } else if (mode === 'hunt') sound.setSection(walker.state === 'fight' || walker.state === 'coming' ? 'final' : player.crashing ? 'break' : 'drop')
+  } else if (mode === 'hunt') sound.setSection(player.crashing ? 'break' : 'drop')
   else sound.setSection('title')
   sound.update(realDt, engineMach, player.boost, player.brake, mode === 'hunt' ? combat.lockProgress : 0, mode === 'hunt' && combat.locked, play && !player.dead && !player.crashing, heat, player.burning, rivalVoices)
 
@@ -1912,7 +1952,7 @@ function updateHud(dt: number, slow: boolean): void {
   // Grip gauge: how much of the grip you are using; past the line you are sliding, red is a spin.
   const gg = $('#grip')
   const load = player.gripLoad
-  gg.style.opacity = mode === 'race' || mode === 'hunt' ? (player.airborne ? '0.35' : '1') : '0'
+  gg.style.opacity = mode === 'race' ? (player.airborne ? '0.35' : '1') : '0'
   ;(gg.querySelector('i') as HTMLElement).style.width = `${Math.min(100, (load / 1.6) * 100)}%`
   gg.className = player.spin > 0 || player.recover > 0 ? 'spin' : player.spinRisk > 0.55 ? 'danger' : load > 1 ? 'slide' : load > 0.8 ? 'edge' : ''
   ;(gg.querySelector('span') as HTMLElement).textContent = player.spin > 0 ? 'SPIN' : player.spinRisk > 0.55 ? 'CATCH IT' : load > 1 ? 'SLIDING' : 'GRIP'
@@ -2036,7 +2076,26 @@ function updateHud(dt: number, slow: boolean): void {
     $('#gmark').style.display = 'none'
     $('#gmark2').style.display = 'none'
     scoreNum.textContent = String(score)
-    scoreSub.textContent = combat.paused ? `WALKER · ${combat.kills} DOWN` : `WAVE ${combat.wave} · ${combat.left()} LEFT · ${fmtTime(runTime)}`
+    scoreSub.textContent = `ALT ${Math.round(flight.agl)} M · ENERGY ${Math.round(flight.energy)} · RINGS ${rings.passed}${rings.missed ? ` (${rings.missed} MISSED)` : ''} · ${fmtTime(runTime)}`
+    rings.draw(time)
+    // Flight marks: the aim ring, the velocity cross, the next ring.
+    const place = (el: HTMLElement, v: THREE.Vector3) => {
+      proj.copy(v).project(camera)
+      const on = proj.z < 1 && Math.abs(proj.x) < 1 && Math.abs(proj.y) < 1 && !player.dead
+      el.style.display = on ? 'block' : 'none'
+      if (on) { el.style.left = `${(proj.x * 0.5 + 0.5) * innerWidth}px`; el.style.top = `${(-proj.y * 0.5 + 0.5) * innerHeight}px` }
+      return on
+    }
+    place($('#aimring'), tmp2.copy(flight.pos).addScaledVector(flight.aim, 600))
+    if (flight.vel.lengthSq() > 1) place($('#velmark'), tmp2.copy(flight.vel).normalize().multiplyScalar(600).add(flight.pos))
+    const nr = rings.items[rings.next]
+    const gmEl = $('#gmark')
+    if (nr) {
+      tmp2.set(nr.x, nr.y, nr.z)
+      const dist = tmp2.distanceTo(flight.pos)
+      if (place(gmEl, tmp2)) { (gmEl.querySelector('.t') as HTMLElement).textContent = `RING ${rings.next + 1} · ${(dist / 1000).toFixed(1)} KM`; arrowEl.style.display = 'none' }
+      else { proj.copy(tmp2).project(camera); arrowTo(proj, `RING ${rings.next + 1} · ${(dist / 1000).toFixed(1)} KM`) }
+    } else gmEl.style.display = 'none'
     // Enemy markers: a chevron over each on screen (gold for runners), the nearest runner off screen.
     let ei = 0
     let nearRun: THREE.Vector3 | null = null
@@ -2069,13 +2128,10 @@ function updateHud(dt: number, slow: boolean): void {
         ;(lockEl.querySelector('.t') as HTMLElement).textContent = combat.locked ? (t.kind === 'core' ? 'CORE · LOCKED' : 'LOCKED') : `${(t.pos.distanceTo(player.pos) / 1000).toFixed(1)} KM`
       } else lockEl.style.display = 'none'
     } else lockEl.style.display = 'none'
-    if ((walker.state === 'fight' || walker.state === 'coming') && !player.dead) {
-      proj.copy(walker.hullPos).project(camera)
-      arrowTo(proj, `WALKER ${(walker.hullPos.distanceTo(player.pos) / 1000).toFixed(1)} KM`)
-    } else if (nearRun && !player.dead) {
+    if (nearRun && !player.dead) {
       proj.copy(nearRun).project(camera)
       arrowTo(proj, `RUNNER ${(nearD / 1000).toFixed(1)} KM`)
-    } else arrowEl.style.display = 'none'
+    } else if (!rings.items.length) arrowEl.style.display = 'none'
   }
   if (debugEl.style.display === 'block' && slow) {
     const i = renderer.info
@@ -2299,6 +2355,8 @@ addEventListener('keydown', (e) => {
   }
 })
 addEventListener('mousedown', () => sound.start())
+// HUNT: a click on the view captures the mouse for aiming (Esc releases it).
+renderer.domElement.addEventListener('click', () => { if (mode === 'hunt' && !paused && !document.pointerLockElement) { try { void renderer.domElement.requestPointerLock() } catch { /* refused */ } } })
 document.addEventListener('visibilitychange', () => { sound.suspend(document.hidden); last = performance.now() })
 canvas.addEventListener('webglcontextlost', (e) => { e.preventDefault(); paused = true })
 canvas.addEventListener('webglcontextrestored', () => { paused = false; last = performance.now() })
@@ -2314,7 +2372,7 @@ world.update(camera.position, 0)
 loadBar.style.width = '75%'
 // Warm-up: nothing may compile or upload for the first time mid-race (a 30–100 ms hitch exactly
 // at your first crash, Mach break or burner). Everything hidden — shock rings, flames, the vapour
-// cone, wreckage, the walker, combat — is shown for one compile + one real frame (frustum culling
+// cone, wreckage, combat — is shown for one compile + one real frame (frustum culling
 // off, so every texture and buffer uploads too), the map pipeline included, then restored.
 const hidden: THREE.Object3D[] = [], culled: THREE.Object3D[] = []
 scene.traverse((o) => {
@@ -2354,6 +2412,8 @@ const g = {
   start: () => startRace(),
   startHunt: () => startHunt(),
   autopilot: (on: boolean) => { autopilot = on },
+  flyForce: (on: boolean) => { flyForced = on },
+  rings,
   setMach: (m: number) => { player.speed = m * MACH },
   skipCountdown: () => { race.countdown = 0.01 },
   force: (c: import('./player').Controls | null) => { forced = c },
@@ -2368,9 +2428,6 @@ const g = {
     race.racers[0].idx = i
     cam.snap(player.heading)
   },
-  spawnWalker: () => { walker.spawn(); warnT = 4 },
-  walkerNear: (d = 2200) => { walker.spawn(d, 500); walker.state = 'fight' },
-  killCores: () => { for (const c of walker.cores) { c.hp = 1; c.hit(1) } },
   boom: (x: number) => fx.explosion(player.pos.x + player.fwd.x * x, player.pos.y + 20, player.pos.z + player.fwd.z * x, player.vel.x, 0, player.vel.z, 1.5),
   debug: (on: boolean) => { debugEl.style.display = on ? 'block' : 'none' },
   stats: () => ({
@@ -2378,6 +2435,6 @@ const g = {
     tier, scale: renderScale, hull: Math.round(player.hull), air: player.airborne, agl: +player.agl.toFixed(1),
     place: race.racers[0].place, crashing: player.crashing, burning: player.burning, slip: +(player.slip * 57.3).toFixed(1), spin: +player.spin.toFixed(2), drift: +player.drift.toFixed(2), yaw: +player.yawRate.toFixed(2), lap: race.lapOf(race.racers[0]), passed: race.racers[0].passed, race: race.state, particles: fx.glow.count + fx.smoke.count,
   }),
-  player, race, course, combat, walker, CFG, world, scene, camera, post, fx, input, wreckage,
+  player, race, course, combat, flight, fc, CFG, world, scene, camera, post, fx, input, wreckage,
 }
 ;(window as unknown as { __g: typeof g }).__g = g

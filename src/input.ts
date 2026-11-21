@@ -12,6 +12,10 @@ export class Input {
   /** Double-tap Q/E (or a quick tap of a shoulder) dodges. */
   private lastTap: Record<string, number> = {}
   usingPad = false
+  /** Mouse movement while the pointer is locked (HUNT's aim), summed until read. */
+  mouseDX = 0
+  mouseDY = 0
+  mouseAt = -99
 
   constructor() {
     addEventListener('keydown', (e) => {
@@ -24,6 +28,10 @@ export class Input {
     addEventListener('blur', () => this.down.clear())
     addEventListener('mousedown', (e) => { if (e.button === 0) this.down.add('Mouse0') })
     addEventListener('mouseup', (e) => { if (e.button === 0) this.down.delete('Mouse0') })
+    addEventListener('mousemove', (e) => {
+      if (!document.pointerLockElement) return
+      this.mouseDX += e.movementX; this.mouseDY += e.movementY; this.mouseAt = performance.now() / 1000
+    })
   }
 
   /** Was this key pressed since the last call to consume()? */

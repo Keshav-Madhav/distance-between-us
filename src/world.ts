@@ -221,7 +221,6 @@ export interface GroundUniforms {
   uFwd: { value: THREE.Vector2 }
   uBoost: { value: number }
   uSpeed: { value: number }
-  uWalker: { value: THREE.Vector4 }
   uTime: { value: number }
   tSand: { value: THREE.Texture | null }
   tClay: { value: THREE.Texture | null }
@@ -268,7 +267,6 @@ function terrainMaterial(shared: GroundUniforms, snap: { value: THREE.Vector2 },
       uniform vec2 uFwd;
       uniform float uBoost;
       uniform float uSpeed;
-      uniform vec4 uWalker;
       uniform float uTime;
       uniform sampler2D tSand;
       uniform sampler2D tClay;
@@ -452,10 +450,6 @@ function terrainMaterial(shared: GroundUniforms, snap: { value: THREE.Vector2 },
         float behind = exp(-sd * sd) * (1.0 - smoothstep(-4.0, 0.0, ba)) * exp(ba / 26.0) * near;
         col += vec3(1.4, 0.55, 0.18) * behind * (0.1 + 0.6 * uBoost);
 
-        if (uWalker.w > 0.0) {
-          vec2 dw = p - uWalker.xy;
-          col *= 1.0 - 0.45 * uWalker.w * exp(-dot(dw, dw) / (uWalker.z * uWalker.z));
-        }
         gl_FragColor = vec4(applyFog(col, vW), 1.0);
       }`,
   })
@@ -715,7 +709,6 @@ export class World {
     uFwd: { value: new THREE.Vector2(0, 1) },
     uBoost: { value: 0 },
     uSpeed: { value: 0 },
-    uWalker: { value: new THREE.Vector4(0, 0, 60, 0) },
     uTime: { value: 0 },
     tSand: { value: null },
     tClay: { value: null },
