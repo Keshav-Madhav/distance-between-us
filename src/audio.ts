@@ -441,6 +441,13 @@ export class Sound {
     this.sfx.gain.value = sfx
   }
 
+  /** Everything down to silence over s seconds (an instance handing over to the next). */
+  fadeOut(s: number): void {
+    if (!this.ctx) return
+    const g = this.master.gain, t = this.ctx.currentTime
+    g.cancelScheduledValues(t); g.setValueAtTime(g.value, t); g.linearRampToValueAtTime(0, t + s)
+  }
+
   suspend(on: boolean): void {
     if (!this.ctx) return
     if (on) void this.ctx.suspend(); else void this.ctx.resume()

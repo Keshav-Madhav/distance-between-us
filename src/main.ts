@@ -30,6 +30,71 @@ function hex(c: number): string { let h = hexOf.get(c); if (!h) { h = '#' + new 
 
 const STEP = 1 / 60
 const params = new URLSearchParams(location.search)
+
+// ───────────────────────── seamless world / course swaps ─────────────────────────
+// A world is compiled in at load (sky, light, ground, landforms), so a new one is a new instance of
+// the game. Not a reload: the top window boots the next instance in a hidden frame over this one —
+// this one keeps flying, menu up — and when it is ready it fades in and the old one retires (its
+// loop stops, its music fades, its GPU memory freed). The top window hosts every later swap.
+let retired = false
+let swapPending: string | null = null
+function swapTo(id: string, go: boolean): void {
+  if (swapPending) return
+  try { localStorage.setItem('dbu-course', id) } catch { /* blocked */ }
+  swapPending = COURSES.find((c) => c.id === id)?.name ?? id
+  showCourse()
+  const msg = { type: 'dbu-swap', id, go }
+  if (window.parent !== window) window.parent.postMessage(msg, location.origin)
+  else hostSwap(id, go)
+}
+let hosting: { frame: HTMLIFrameElement | null; busy: boolean } = { frame: null, busy: false }
+function hostSwap(id: string, go: boolean): void {
+  if (hosting.busy) return
+  hosting.busy = true
+  const u = new URL(location.href)
+  u.searchParams.set('course', id); u.searchParams.set('embed', '1')
+  if (go) u.searchParams.set('go', '1'); else u.searchParams.delete('go')
+  const f = document.createElement('iframe')
+  f.src = u.toString()
+  f.allow = 'autoplay; fullscreen; gamepad'
+  f.style.cssText = 'position:fixed;inset:0;width:100%;height:100%;border:0;opacity:0;transition:opacity 0.7s ease;z-index:1000;pointer-events:none;background:#0b0605'
+  document.body.appendChild(f)
+  const prev = hosting.frame
+  const onMsg = (e: MessageEvent) => {
+    if (e.source !== f.contentWindow || e.origin !== location.origin || e.data?.type !== 'dbu-ready') return
+    removeEventListener('message', onMsg)
+    f.style.opacity = '1'
+    // The one being replaced fades its sound out under the fade.
+    if (prev) prev.contentWindow?.postMessage({ type: 'dbu-retire' }, location.origin)
+    else retire()
+    setTimeout(() => {
+      prev?.remove()
+      f.style.pointerEvents = 'auto'
+      f.contentWindow?.focus()
+      hosting = { frame: f, busy: false }
+      const top = new URL(location.href); top.searchParams.set('course', id); top.searchParams.delete('embed'); top.searchParams.delete('go')
+      history.replaceState(null, '', top.toString())
+    }, 750)
+  }
+  addEventListener('message', onMsg)
+}
+/** Stop this instance: music faded, loop stopped, GPU memory released, its screen hidden. */
+function retire(): void {
+  if (retired) return
+  sound.fadeOut(0.6)
+  setTimeout(() => {
+    retired = true
+    sound.suspend(true)
+    renderer.dispose()
+    renderer.forceContextLoss()
+    if (window.parent === window) for (const el of Array.from(document.body.children)) if (el.tagName !== 'IFRAME' && el.tagName !== 'SCRIPT') (el as HTMLElement).style.display = 'none'
+  }, 700)
+}
+addEventListener('message', (e) => {
+  if (e.origin !== location.origin) return
+  if (e.data?.type === 'dbu-swap' && window.parent === window) hostSwap(e.data.id, e.data.go)
+  if (e.data?.type === 'dbu-retire') retire()
+})
 const $ = <T extends HTMLElement = HTMLElement>(s: string) => document.querySelector(s) as T
 const loadBar = $('#loading .b i')
 loadBar.style.width = '10%'
@@ -681,10 +746,10 @@ function showCourse(): void {
       try { last = localStorage.getItem('dbu-course-' + w.id) } catch { /* blocked */ }
       const i = COURSES.findIndex((c) => c.id === last && biomeOf(c.id) === w.id)
       pickedCourse = i >= 0 ? i : COURSES.findIndex((c) => biomeOf(c.id) === w.id)
-      // A world is built at page load (its sky, ground and ice compile in): reload into it, so the
-      // menu behind you is the world you picked.
-      try { localStorage.setItem('dbu-course', COURSES[pickedCourse].id) } catch { /* blocked */ }
-      const u = new URL(location.href); u.searchParams.delete('course'); location.href = u.toString()
+      // A world is built at load (its sky, ground and landforms compile in): the next one boots
+      // behind this menu and cross-fades in (swapTo).
+      showCourse()
+      swapTo(COURSES[pickedCourse].id, false)
       return
     }
     const n = COURSES.filter((c) => biomeOf(c.id) === w.id).length
@@ -730,7 +795,7 @@ function showCourse(): void {
     }
     list.forEach((c, i) => (box.children[i] as HTMLElement).classList.toggle('on', c === myPaint[key]))
   }
-  $('#start').textContent = menuMode === 'hunt' ? 'Start hunt' : `Start ${COURSES[pickedCourse].name}`
+  $('#start').textContent = swapPending ? `Loading ${swapPending}…` : menuMode === 'hunt' ? 'Start hunt' : `Start ${COURSES[pickedCourse].name}`
   $('#ship-name').textContent = MODELS[shipPick]
   $('#ship-desc').textContent = SHIP_DESC[shipPick]
   $('#ship-desc').title = 'Every craft handles the same: the choice is looks.'
@@ -872,11 +937,8 @@ function pickShip(delta: number): void {
 function menuStart(): void {
   if (menuMode === 'hunt') { startHunt(); return }
   try { localStorage.setItem('dbu-course-' + biomeOf(COURSES[pickedCourse].id), COURSES[pickedCourse].id) } catch { /* blocked */ }
-  if (COURSES[pickedCourse] !== course.def) {
-    try { localStorage.setItem('dbu-course', COURSES[pickedCourse].id); sessionStorage.setItem('dbu-go', '1') } catch { /* blocked */ }
-    const u = new URL(location.href); u.searchParams.delete('course'); location.href = u.toString()
-    return
-  }
+  if (swapPending) return
+  if (COURSES[pickedCourse] !== course.def) { swapTo(COURSES[pickedCourse].id, true); return }
   startRace()
 }
 function setPaused(on: boolean): void {
@@ -1544,6 +1606,7 @@ function paceAuto(delta: number, now: number): void {
 }
 
 function frame(now: number): void {
+  if (retired) return
   requestAnimationFrame(frame)
   rafGaps[rafHead] = now - lastRaf; lastRaf = now
   rafHead = (rafHead + 1) % 30; if (rafN < 30) rafN++
@@ -2216,6 +2279,13 @@ requestAnimationFrame((t) => { last = t; frame(t) })
 showCourse()
 // Picked a different course on the title: it has loaded — straight into the race.
 try { if (sessionStorage.getItem('dbu-go')) { sessionStorage.removeItem('dbu-go'); startRace() } } catch { /* blocked */ }
+// Booted inside a swap frame: tell the host once two frames have drawn (shaders compiled, warm).
+if (window.parent !== window) {
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    if (params.get('go')) startRace()
+    window.parent.postMessage({ type: 'dbu-ready' }, location.origin)
+  }))
+}
 
 // Test hooks for tools/.
 const g = {
