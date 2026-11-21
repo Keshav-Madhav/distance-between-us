@@ -100,7 +100,7 @@ function glacier(seed: number, v: number) {
     const drift = 1 - sm(0, 0.16, t)
     k *= 1 + 0.3 * drift * drift
     k *= 1 + 0.07 * sm(0.78, 1, t) * Math.max(0, Math.sin(4 * th + lipPh))
-    if (v === 3) { k *= 1 - 0.17 * sm(0.33, 0.37, t); k *= 1 - 0.2 * sm(0.64, 0.68, t) } // icefall tiers
+    if (v === 3) k *= 1 - 0.22 * sm(0.5, 0.56, t) * (0.6 + 0.4 * Math.sin(3 * th + lipPh)) // one uneven step
     return k
   }
   const crown = (th: number, rho: number) => {
@@ -121,7 +121,7 @@ function glacier(seed: number, v: number) {
 /** Seracs and stranded bergs: few-sided, slab-faced blocks with tilted or peaked tops. */
 function serac(seed: number, v: number) {
   const r = rng(seed)
-  const sides = [7, 8, 6][v]
+  const sides = [7, 8, 5][v]
   const harm: [number, number][] = []
   for (let i = 2; i <= 4; i++) harm.push([(0.14 / i) * (0.4 + r()), r() * 6.28])
   const phi = r() * 6.28
@@ -130,7 +130,7 @@ function serac(seed: number, v: number) {
     for (let i = 0; i < harm.length; i++) k += harm[i][0] * Math.sin((i + 2) * th + harm[i][1])
     const drift = 1 - sm(0, 0.14, t)
     k *= 1 + 0.25 * drift * drift
-    if (v === 2) k *= 1 - 0.6 * Math.pow(sm(0.05, 1, t), 0.8) // tall, tapering serac
+    if (v === 2) k *= 1 - 0.25 * sm(0.3, 1, t) // a fractured block
     if (v === 1) k *= 1 + 0.06 * sm(0.75, 0.95, t) // overhanging lip
     if (v !== 2) k *= 1 - 0.18 * sm(0.2, 1, t) // walls lean in a little
     return k
@@ -138,7 +138,7 @@ function serac(seed: number, v: number) {
   const crown = (th: number, rho: number) => {
     if (v === 0) return 1 + 0.22 * rho * Math.cos(th - phi) // a tilted slab
     if (v === 1) return 1 + 0.2 * rho * Math.cos(2 * (th - phi)) - 0.05 // a saddle between two horns
-    return 1 + 0.5 * (1 - rho) + 0.12 * rho * Math.cos(th - phi) // a peaked, broken serac
+    return 1 + 0.35 * rho * Math.cos(th - phi) + 0.12 * rho * Math.abs(Math.sin(3 * th + phi)) // tilted, fractured top
   }
   return { geo: shell(prof, crown, sides, 6, 2, 0.8, null, seed), prof }
 }

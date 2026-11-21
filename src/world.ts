@@ -814,17 +814,22 @@ export class World {
   /** Ice landmarks placed by the course itself, close beside the line (the polar world's set pieces). */
   addHeroes(list: { x: number; z: number; r: number; h: number; kind: 'mesa' | 'butte' | 'spire'; v: number; yaw: number }[]): void {
     const groups = new Map<string, typeof list>()
-    for (const o of list) { const k = o.kind + o.v; if (!groups.has(k)) groups.set(k, []); groups.get(k)!.push(o) }
+    // Grouped by shape and by 5 km cell, each group its own culled mesh (thousands of small shards
+    // line a course; only the cells in view are drawn).
+    for (const o of list) { const k = `${o.kind}${o.v}:${Math.floor(o.x / 5000)},${Math.floor(o.z / 5000)}`; if (!groups.has(k)) groups.set(k, []); groups.get(k)!.push(o) }
+    const shapes = new Map<string, ReturnType<typeof iceGeometry>>()
     const m = new THREE.Matrix4(), q = new THREE.Quaternion(), v = new THREE.Vector3(), sc = new THREE.Vector3(), up = new THREE.Vector3(0, 1, 0)
     for (const g of groups.values()) {
-      const { geo, prof } = iceGeometry(g[0].kind, g[0].kind.length * 31 + 7 + g[0].v * 101, g[0].v)
+      const sk = g[0].kind + g[0].v
+      if (!shapes.has(sk)) shapes.set(sk, iceGeometry(g[0].kind, g[0].kind.length * 31 + 7 + g[0].v * 101, g[0].v))
+      const { geo, prof } = shapes.get(sk)!
       const mesh = new THREE.InstancedMesh(geo, g[0].kind === 'spire' ? this.spikeMat! : this.mesaMat!, g.length)
       g.forEach((o, i) => {
         const by = groundH(o.x, o.z) - 0.06 * o.h - 3
         this.fixed.push({ x: o.x, z: o.z, r: o.r, h: o.h, yaw: o.yaw, by, prof })
         mesh.setMatrixAt(i, m.compose(v.set(o.x, by, o.z), q.setFromAxisAngle(up, o.yaw), sc.set(o.r, o.h, o.r)))
       })
-      mesh.frustumCulled = false
+      mesh.computeBoundingSphere()
       this.group.add(mesh)
     }
   }

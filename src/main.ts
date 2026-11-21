@@ -89,6 +89,12 @@ if (BIOME === 'ice') {
   const laps = course.def.laps ?? 1
   const lapEnd = course.startI + Math.floor((course.finishI - course.startI) / laps)
   const heroes: Parameters<typeof world.addHeroes>[0] = []
+  // On bends a fast craft runs wide: everything moves out with the bend's sharpness.
+  const bendOut = (i: number) => {
+    const a = course.tangent(Math.max(0, i - 6)), b = course.tangent(Math.min(course.px.length - 1, i + 6))
+    const k = Math.abs(a[0] * b[1] - a[1] * b[0]) / 480 // 1 / radius
+    return Math.min(260, k * 300000)
+  }
   let i = course.startI + Math.round(1800 / 40)
   while (i < lapEnd - 40) {
     const roll = rnd()
@@ -98,14 +104,30 @@ if (BIOME === 'ice') {
     if (kind === 'mesa') { r = 220 + rnd() * 300; h = 130 + rnd() * 140; ext = 1.6 }
     else if (kind === 'butte') { r = 110 + rnd() * 110; h = 70 + rnd() * 80; ext = 1.4 }
     else { r = 40 + rnd() * 35; h = 260 + rnd() * 240; ext = 2.0 }
-    const gap = 150 + rnd() * 250
+    // (From the centre line: the edge pylons stand at 250 m; set pieces start just past them.)
+    const gap = 270 + rnd() * (tight ? 90 : 200)
     const side = rnd() < 0.5 ? -1 : 1
     const [tx, tz] = course.tangent(i)
-    const lat = side * (gap + r * ext)
+    const lat = side * (gap + r * ext + bendOut(i))
     const x = course.px[i] + tz * lat, z = course.pz[i] - tx * lat
     // Only where the nearest line is this one (a loop can bend back toward it).
     if (course.distance(x, z) > gap * 0.9 + r * ext * 0.95) heroes.push({ x, z, r, h, kind, v, yaw: rnd() * 6.28 })
     i += Math.round((tight ? 2200 + rnd() * 1300 : 3200 + rnd() * 1800) / 40)
+  }
+  // The near field: small shard clusters and broken blocks lining the course just outside the
+  // pylons, every 40-90 m a side, so the ice streams past at speed (the sense of flying through it).
+  for (const side of [-1, 1]) {
+    let j = course.startI + Math.round(rnd() * 3)
+    while (j < lapEnd - 10) {
+      const spike = rnd() < 0.62
+      const r = spike ? 5 + rnd() * 7 : 10 + rnd() * 14
+      const h = spike ? 22 + rnd() * 45 : 6 + rnd() * 12
+      const lat = side * (330 + Math.pow(rnd(), 1.5) * 170 + bendOut(j))
+      const [tx, tz] = course.tangent(j)
+      const x = course.px[j] + tz * lat, z = course.pz[j] - tx * lat
+      if (course.distance(x, z) > 320) heroes.push({ x, z, r, h, kind: spike ? 'spire' : 'butte', v: Math.floor(rnd() * 2.999), yaw: rnd() * 6.28 })
+      j += Math.max(1, Math.round((40 + rnd() * 50) / 40))
+    }
   }
   world.addHeroes(heroes)
 }

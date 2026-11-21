@@ -11,11 +11,27 @@ await page.evaluate(() => {
   window.__ev = { crash: 0, spin: 0, wasC: false, wasS: false, air: 0, airT: 0, wasA: false, long: 0 }
   setInterval(() => {
     const e = window.__ev
-    if (p.crashing && !e.wasC) e.crash++
+    if (p.crashing && !e.wasC) {
+      e.crash++
+      const c = g.course, me = g.race.racers[0], i = me.idx, [tx, tz] = c.tangent(i)
+      const lat = (p.pos.x - c.px[i]) * tz - (p.pos.z - c.pz[i]) * tx
+      ;(e.log ??= []).push(`crash at idx ${i} lat ${lat.toFixed(0)} m mach ${(p.speed / 340).toFixed(1)} y ${p.pos.y.toFixed(0)} air ${p.airborne}`)
+    }
     if (p.spin > 0 && !e.wasS) e.spin++
     if (p.airborne) e.airT += 0.016
     if (!p.airborne && e.wasA && p.airTime > 0.8) e.long++
-    if (p.airborne && !e.wasA) e.air++
+    if (p.airborne && !e.wasA) {
+      e.air++
+      const c = g.course, me = g.race.racers[0], i = me.idx, [tx, tz] = c.tangent(i)
+      const lat = (p.pos.x - c.px[i]) * tz - (p.pos.z - c.pz[i]) * tx
+      ;(e.log ??= []).push(`launch at idx ${i} lat ${lat.toFixed(0)} m mach ${(p.speed / 340).toFixed(1)}`)
+    }
+    {
+      const c = g.course, me = g.race.racers[0], i = me.idx, [tx, tz] = c.tangent(i)
+      const lat = (p.pos.x - c.px[i]) * tz - (p.pos.z - c.pz[i]) * tx
+      if (Math.abs(lat) > 260 && !e.out) (e.log ??= []).push(`left lane at idx ${i} lat ${lat.toFixed(0)} mach ${(p.speed / 340).toFixed(1)} spin ${p.spin > 0} air ${p.airborne}`)
+      e.out = Math.abs(lat) > 260
+    }
     e.wasA = p.airborne
     e.wasC = p.crashing; e.wasS = p.spin > 0
   }, 16)
@@ -26,5 +42,6 @@ while (Date.now() - t0 < 200000) {
   await page.waitForTimeout(2000)
   if (await page.evaluate(() => window.__g.race.racers[0].finished)) break
 }
+console.log(await page.evaluate(() => (window.__ev.log ?? []).join('\n')))
 console.log(await page.evaluate(() => { const g = window.__g, me = g.race.racers[0]; return `finished=${me.finished} P${me.place} time=${me.finishTime?.toFixed(1)}s crashes=${window.__ev.crash} spins=${window.__ev.spin} launches=${window.__ev.air} real jumps(>0.8s)=${window.__ev.long} airtime=${window.__ev.airT.toFixed(0)}s` }))
 await browser.close()

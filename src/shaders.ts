@@ -128,21 +128,26 @@ export function patchStandard(mat: THREE.MeshStandardMaterial, opts: PatchOpts =
           float n1 = vnoise(vec2((vFogW.x + vFogW.z) * 0.015, vFogW.y * 0.012));
           vec3 c = mix(deep, pale, clamp(0.05 + 0.65 * t + 0.35 * n1 + 0.15 * (sd2 - 0.5), 0.0, 1.0));
           // Annual layers: pale bands and darker dusty ones, folded and dipping per glacier.
-          float lay = fract(yL / (8.0 + 12.0 * sd));
+          float per = 8.0 + 12.0 * sd;
+          float lay = fract((yL + per * 0.3 * (vnoise(vFogW.xz * 0.04 + vFogW.y * 0.02) - 0.5) * 2.0) / per);
           c = mix(c, vec3(0.86, 0.95, 1.0), smoothstep(0.82, 0.88, lay) * (1.0 - smoothstep(0.92, 0.98, lay)) * 0.6);
           c *= 1.0 - 0.3 * smoothstep(0.4, 0.45, lay) * (1.0 - smoothstep(0.49, 0.54, lay)) * (0.5 + sd2);
           // Meltwater streaks running down the faces.
           float st = vnoise(vec2((vFogW.x - vFogW.z) * 0.05, vFogW.y * 0.0025));
           c = mix(c, deep * 0.7, smoothstep(0.6, 0.86, st) * 0.55);
           c = mix(c, vec3(0.75, 0.92, 1.0), (1.0 - smoothstep(0.0, 0.1, st)) * 0.35);
+          // Each facet a little lighter or darker (broken faces, not a painted tin).
+          c *= 0.92 + 0.16 * hash12(floor(vWN.xz * 6.0 + 50.0) + sd * 91.0);
           // Crevasse slots: dark, deep blue.
           c = mix(c, deep * 0.45, smoothstep(0.15, 0.7, vCrev));
           float wob = vnoise(vFogW.xz * 0.03 + vFogW.y * 0.02);
           float snow = smoothstep(0.42, 0.68, vWN.y + 0.12 * wob);
           #ifdef ICE_SPIKE
           // Shards: snow only banked at the foot; paler, glassier toward the tips.
-          snow = (1.0 - smoothstep(0.03, 0.08 + 0.05 * clamp(wob, 0.0, 1.0), t)) * 0.9;
-          c = mix(c, vec3(0.62, 0.88, 1.0), smoothstep(0.35, 1.0, t) * 0.7);
+          // Shards: deep blue at the root to pale glassy tips, snow on up-facing ledges and banked
+          // at the foot.
+          c = mix(deep * 1.4, vec3(0.6, 0.9, 1.0), smoothstep(0.05, 0.95, t)) * (0.92 + 0.16 * hash12(floor(vWN.xz * 6.0 + 50.0) + sd * 91.0));
+          snow = max(smoothstep(0.55, 0.8, vWN.y), (1.0 - smoothstep(0.03, 0.08 + 0.05 * clamp(wob, 0.0, 1.0), t)) * 0.9);
           #else
           // A cornice over the rim (dripping down the streaks), drifts banked against the foot.
           float e0 = 0.8 - 0.1 * clamp(st, 0.0, 1.0) - 0.05 * clamp(wob, 0.0, 1.0);
@@ -167,7 +172,7 @@ export function patchStandard(mat: THREE.MeshStandardMaterial, opts: PatchOpts =
             // Tips lit from within, breathing slowly with the aurora (each cluster out of step).
             float tt = (vFogW.y - vBaseY) / vHt;
             float br = 0.65 + 0.35 * sin(uAurT * 0.6 + hash12(floor(mod(vOrg, 72000.0) / 37.0)) * 6.28);
-            totalEmissiveRadiance += vec3(0.25, 0.75, 0.7) * smoothstep(0.55, 1.05, tt) * br * (0.5 + rim);
+            totalEmissiveRadiance += vec3(0.3, 0.9, 0.85) * smoothstep(0.45, 1.0, tt) * br * (0.9 + 1.5 * rim);
           }
           #endif
         }`,

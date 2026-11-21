@@ -189,24 +189,26 @@ const vec3 SUN_TINT = ${v3(LIGHT.tint)};
 uniform float uAurT;
 /** Aurora curtains: a bright wavy lower edge fading upward, fine vertical rays, green into magenta. */
 vec3 aurora(vec3 d) {
-  if (d.y < 0.015) return vec3(0.0);
+  if (d.y < 0.05) return vec3(0.0);
+  // (Every azimuth term uses a whole-number frequency: atan wraps at ±π, and any other frequency
+  //  cut a hard vertical edge into the sky there.)
   float az = atan(d.x, d.z), t = uAurT * 0.05;
   vec3 acc = vec3(0.0);
   for (int k = 0; k < 3; k++) {
     float fk = float(k);
-    // The curtain's foot snakes across the sky (several bends, drifting), never a ruler line.
-    float base = 0.15 + fk * 0.11 + 0.06 * sin(az * (2.0 + fk) + t * (1.0 + fk * 0.6)) + 0.035 * sin(az * 5.3 - t * 1.3 + fk * 2.0) + 0.015 * sin(az * 13.0 + t * 2.1 + fk);
+    // The curtain's foot snakes across the sky, high (well clear of the land), never a ruler line.
+    float base = 0.24 + fk * 0.1 + 0.06 * sin(az * (2.0 + fk) + t * (1.0 + fk * 0.6)) + 0.035 * sin(az * 5.0 - t * 1.3 + fk * 2.0) + 0.015 * sin(az * 13.0 + t * 2.1 + fk);
     float above = d.y - base;
-    // A feathered foot, a slow fade upward.
-    float curtain = smoothstep(-0.02, 0.03, above) * exp(-max(above, 0.0) * (3.5 + fk * 2.0));
+    float curtain = smoothstep(-0.025, 0.035, above) * exp(-max(above, 0.0) * (4.5 + fk * 2.0));
     // Rays at uneven spacing: a warped phase, so they bunch and thin like real folds.
-    float ph = az * 53.0 + 7.0 * sin(az * 3.7 + t + fk) + 3.0 * sin(az * 11.3 - t * 0.7);
-    float rays = 0.3 + 0.7 * pow(abs(sin(ph) * sin(az * 29.0 - t + fk * 1.3 + 2.0 * sin(az * 6.1))), 0.7);
-    float dens = smoothstep(0.35, 0.95, 0.5 + 0.5 * sin(az * 2.3 + t * 0.7 + fk * 1.7) * sin(az * 1.1 - t * 0.45 + fk));
+    float ph = az * 53.0 + 7.0 * sin(az * 4.0 + t + fk) + 3.0 * sin(az * 11.0 - t * 0.7);
+    float rays = 0.3 + 0.7 * pow(abs(sin(ph) * sin(az * 29.0 - t + fk * 1.3 + 2.0 * sin(az * 6.0))), 0.7);
+    // Curtains in a few bright folds with dark sky between, ends feathered.
+    float dens = smoothstep(0.4, 0.95, 0.5 + 0.5 * sin(az * 2.0 + t * 0.7 + fk * 1.7) * sin(az * 1.0 - t * 0.45 + fk));
     vec3 col = mix(vec3(0.1, 1.0, 0.45), vec3(0.75, 0.22, 0.95), smoothstep(0.08, 0.35, above));
     acc += col * curtain * rays * dens * (1.0 - fk * 0.3);
   }
-  return acc * 1.1 * smoothstep(0.015, 0.06, d.y);
+  return acc * 0.8 * smoothstep(0.05, 0.16, d.y);
 }
 #endif
 vec3 skyColor(vec3 d) {
