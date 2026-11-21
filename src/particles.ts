@@ -4,6 +4,7 @@
 // falls behind, and you fly through it.
 import * as THREE from 'three'
 import { SKY_GLSL } from './terrain'
+import { NOISE_TEX } from './shaders'
 
 export interface Emit {
   x: number; y: number; z: number
@@ -19,7 +20,12 @@ export interface Emit {
   streak?: number
 }
 
+// (Per-particle work moved to the vertex shader — fog and haze are constant across a puff — and every
+// quad's size on screen is capped: a dust cloud at the camera stacked full-screen quads dozens deep,
+// 50-100 ms frames on an M5 Pro.)
 const VERT = /* glsl */ `
+  ${SKY_GLSL}
+  uniform float uAdd;
   attribute vec4 aPos;   // xyz, size
   attribute vec4 aCol;   // rgba
   attribute vec4 aVel;   // velocity (for streaks), streak flag
@@ -32,7 +38,15 @@ const VERT = /* glsl */ `
     vCol = aCol;
     vSeed = fract(aPos.x * 0.137 + aPos.z * 0.311);
     vec4 mv = viewMatrix * vec4(aPos.xyz, 1.0);
-    vec2 off = position.xy * aPos.w;
+    // Fog (smoke) or distance haze (glow), once per particle.
+    if (uAdd > 0.5) { float d = length(aPos.xyz - cameraPosition) * 0.00006; vCol.rgb *= exp(-d * d); }
+    else vCol.rgb = applyFog(aCol.rgb, aPos.xyz);
+    // Size on screen capped (~a third of the screen height); a puff the camera is inside fades out.
+    float depth = max(-mv.z, 0.01);
+    float scr = aPos.w * projectionMatrix[1][1] / depth;
+    float size = aPos.w * min(1.0, 0.7 / max(scr, 1e-4));
+    vCol.a *= smoothstep(0.5, 1.6, depth / max(aPos.w, 0.01));
+    vec2 off = position.xy * size;
     if (aVel.w > 0.5) {
       // Stretched along the screen-space velocity.
       vec3 vv = mat3(viewMatrix) * aVel.xyz;
@@ -40,8 +54,8 @@ const VERT = /* glsl */ `
       float l = length(d);
       d = l > 1e-4 ? d / l : vec2(1.0, 0.0);
       vec2 nrm = vec2(-d.y, d.x);
-      float len = aPos.w * (1.0 + min(l * 0.05, 14.0));
-      off = d * position.y * len + nrm * position.x * aPos.w * 0.35;
+      float len = size * (1.0 + min(l * 0.05, 14.0));
+      off = d * position.y * len + nrm * position.x * size * 0.35;
     }
     mv.xy += off;
     vW = aPos.xyz;
@@ -53,9 +67,10 @@ function material(additive: boolean): THREE.ShaderMaterial {
     transparent: true,
     depthWrite: false,
     blending: additive ? THREE.AdditiveBlending : THREE.NormalBlending,
+    uniforms: { uAdd: { value: additive ? 1 : 0 }, tNoise: { value: NOISE_TEX } },
     vertexShader: VERT,
     fragmentShader: /* glsl */ `
-      ${SKY_GLSL}
+      uniform sampler2D tNoise;
       varying vec4 vCol;
       varying vec2 vUv;
       varying vec3 vW;
@@ -65,19 +80,14 @@ function material(additive: boolean): THREE.ShaderMaterial {
         float r = length(p);
         ${
           additive
-            ? `float a = pow(max(1.0 - r, 0.0), 1.8);
-               vec3 c = vCol.rgb * a * vCol.a;
-               // Distance haze eats glow too.
-               float d = length(vW - cameraPosition) * 0.00006;
-               c *= exp(-d * d);
-               gl_FragColor = vec4(c, 1.0);`
-            : `// A lumpy puff, not a disc.
-               float ang = atan(p.y, p.x);
-               float lump = 0.82 + 0.18 * sin(ang * 3.0 + vSeed * 20.0) * sin(ang * 5.0 - vSeed * 11.0);
+            ? `float a = pow(max(1.0 - r, 0.0), 1.8); // (a softer edge than a²: a² beaded the fire trails)
+               gl_FragColor = vec4(vCol.rgb * a * vCol.a, 1.0);`
+            : `// A lumpy puff, not a disc (one baked-noise read for the lumps).
+               if (r > 1.0) discard;
+               float lump = 0.66 + 0.34 * texture2D(tNoise, p * 0.18 + vSeed * 7.0).r;
                float a = smoothstep(lump, lump * 0.35, r) * vCol.a;
                if (a < 0.004) discard;
-               vec3 c = applyFog(vCol.rgb, vW);
-               gl_FragColor = vec4(c, a);`
+               gl_FragColor = vec4(vCol.rgb, a);`
         }
       }`,
   })

@@ -836,6 +836,7 @@ let runTop = 0
 let driftLvl = 0
 let secK = 0, pinUntil = 0
 function startRace(): void {
+  applyPending()
   runTop = 0; secK = 0; pinUntil = 0
   player.noCollide = false
   player.announce = true
@@ -870,6 +871,7 @@ function startRace(): void {
 }
 
 function startHunt(): void {
+  applyPending()
   runTop = 0
   player.noCollide = false
   player.announce = true
@@ -943,10 +945,11 @@ applyTier()
 // (Declared up here: applyGraphics() resets it during boot, before the frame-pacing code below.)
 let autoCap = 0
 let govAcc = 0, govN = 0, govBad = 0, govGood = 0, govLast = 0
+let pendingScale = -1, pendingTier: Tier | null = null, partCut = 1
 /**
- * Dynamic resolution, with hysteresis: every resize reallocates the render targets (a hitch), so it
- * steps down only after two slow half-seconds, up only after 4 s of clear headroom, and changes at
- * most once every 3 s — an oscillating governor was itself a source of choppiness.
+ * Dynamic resolution, with hysteresis — but never applied mid-race: a resize reallocates every render
+ * target (a 194 ms stall, then a 200 ms frame, measured). It decides while you drive and applies on
+ * the menu or at the next start; mid-race it only trims particles (free). The choice is remembered.
  */
 function governor(frameMs: number): void {
   if (tierName !== 'auto' || params.has('fixed') || settings.scale < 1) return
@@ -958,12 +961,30 @@ function governor(frameMs: number): void {
   govGood = avg < 13 ? govGood + 1 : 0
   const now = performance.now()
   if (now - govLast < 3000) return
-  const old = renderScale
-  if (govBad >= 3) renderScale = Math.max(0.7, renderScale - 0.1)
-  else if (govGood >= 8 && renderScale < 1) renderScale = Math.min(1, renderScale + 0.08)
-  if (renderScale !== old) { resize(); govLast = now; govBad = govGood = 0 }
-  if (avg > 26 && renderScale <= 0.7 && tier !== 'low') { tier = tier === 'ultra' ? 'high' : tier === 'high' ? 'medium' : 'low'; renderScale = 0.8; applyTier(); govLast = now }
+  let scale = pendingScale >= 0 ? pendingScale : renderScale
+  if (govBad >= 3) scale = Math.max(0.6, scale - 0.1)
+  else if (govGood >= 8 && scale < 1) scale = Math.min(1, scale + 0.08)
+  if (scale !== (pendingScale >= 0 ? pendingScale : renderScale)) { pendingScale = scale; govLast = now; govBad = govGood = 0 }
+  if (avg > 26 && scale <= 0.6 && tier !== 'low') { pendingTier = tier === 'ultra' ? 'high' : tier === 'high' ? 'medium' : 'low'; govLast = now }
+  // Mid-race relief that costs nothing to switch: fewer particles.
+  if (avg > 22) { partCut = Math.max(0.35, partCut * 0.8); fx.smoke.density = Math.min(TIERS[tier].density, settings.part) * partCut; fx.glow.density = settings.part * partCut }
+  if (mode === 'title') applyPending()
 }
+/** Apply what the governor decided (between races only). */
+function applyPending(): void {
+  partCut = 1
+  fx.smoke.density = Math.min(TIERS[tier].density, settings.part); fx.glow.density = settings.part
+  let changed = false
+  if (pendingTier && pendingTier !== tier) { tier = pendingTier; renderScale = 0.8; applyTier(); changed = true }
+  else if (pendingScale >= 0 && Math.abs(pendingScale - renderScale) > 0.001) { renderScale = pendingScale; resize(); changed = true }
+  pendingScale = -1; pendingTier = null
+  if (changed) try { localStorage.setItem('dbu-auto', JSON.stringify({ tier, renderScale })) } catch { /* blocked */ }
+}
+// AUTO starts where it settled last time (a slower machine should not re-learn every session).
+if (tierName === 'auto' && !params.has('fixed')) try {
+  const v = JSON.parse(localStorage.getItem('dbu-auto') || 'null')
+  if (v && TIERS[v.tier as Tier]) { tier = v.tier; renderScale = Math.min(1, Math.max(0.6, +v.renderScale || 1)); applyTier() }
+} catch { /* fresh */ }
 
 const qSel = $<HTMLSelectElement>('#q')
 qSel.value = tierName
@@ -1300,12 +1321,16 @@ function drawRacer(p: Player, alpha: number, dt: number, isMe: boolean): void {
       fx.smoke.emit(e)
     }
     // (Spread along the distance covered since last frame: a stream of fire, not a row of beads.)
-    for (let k = 0; k < 4; k++) {
-      const u = k / 4
+    // (Along the wreck's actual path since last frame — in a crash p.vel is not what moves it, and the
+    // stream came out as beads.)
+    const gap = v.lastDust.distanceTo(tmp)
+    const nf = Math.min(10, 3 + Math.ceil(gap / 3))
+    for (let k = 0; k < nf; k++) {
+      const u = k / nf
       const f = resetE()
-      f.x = tmp.x - p.vel.x * dt * u; f.y = tmp.y + 0.5 - p.vel.y * dt * u; f.z = tmp.z - p.vel.z * dt * u
-      f.vx = p.vel.x * 0.6 + (Math.random() - 0.5) * 8; f.vy = 6 + Math.random() * 6; f.vz = p.vel.z * 0.6 + (Math.random() - 0.5) * 8
-      f.life = 0.3 + Math.random() * 0.2; f.size0 = 3; f.size1 = 6.5; f.r = 7; f.g = 2.6 + Math.random(); f.b = 0.7; f.a = 0.8; f.drag = 2.5
+      f.x = tmp.x + (v.lastDust.x - tmp.x) * u; f.y = tmp.y + 0.5 + (v.lastDust.y - tmp.y) * u; f.z = tmp.z + (v.lastDust.z - tmp.z) * u
+      f.vx = (Math.random() - 0.5) * 8; f.vy = 6 + Math.random() * 6; f.vz = (Math.random() - 0.5) * 8
+      f.life = 0.3 + Math.random() * 0.2; f.size0 = 3; f.size1 = 7.5; f.r = 7; f.g = 2.6 + Math.random(); f.b = 0.7; f.a = 0.8; f.drag = 2.5
       fx.glow.emit(f)
     }
   }
@@ -2034,6 +2059,7 @@ const g = {
   skipCountdown: () => { race.countdown = 0.01 },
   force: (c: import('./player').Controls | null) => { forced = c },
   sound,
+  renderer,
   /** Put the player just before jump k, at Mach m. */
   toJump: (k: number, m = 3) => {
     const f = course.def.jumps[k] // on the line: k % 3 === 0
