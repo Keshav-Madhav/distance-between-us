@@ -93,6 +93,7 @@ export class Race {
     ROSTER.slice(0, n).forEach(([name, color], i) => {
       const p = new Player()
       p.announce = false
+      p.slew = false
       p.assist = 0.85
       this.racers.push(this.make(name, color, p, true, n > 9 ? 0.78 + (i % 10) * 0.045 : 0.72 + i * 0.05))
     })

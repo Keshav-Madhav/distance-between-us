@@ -506,7 +506,8 @@ export class Sound {
     this.burnSub.frequency.setTargetAtTime(32 + mach * 2, t, 0.1)
     this.burnRoarF.frequency.setTargetAtTime(600 + 140 * Math.min(10, mach), t, 0.2)
     this.crackleG.gain.setTargetAtTime(burn * 3.2 + live * boost * 0.4, t, 0.04)
-    this.windG.gain.setTargetAtTime(0.04 + 0.5 * Math.pow(Math.min(1, s), 1.5), t, k)
+    // (Quieter: "the wind passing noise is too much" — 2026-11-21.)
+    this.windG.gain.setTargetAtTime(0.03 + 0.22 * Math.pow(Math.min(1, s), 1.5), t, k)
     // Recorded layers: the roar's pitch rides the speed; the burner is the same roar, deeper and fat.
     if (this.engS) {
       this.engS.src.playbackRate.setTargetAtTime(0.62 + 0.09 * Math.min(10, mach) + 0.08 * boost, t, 0.08)
@@ -519,13 +520,13 @@ export class Sound {
     }
     if (this.windS) {
       this.windS.src.playbackRate.setTargetAtTime(0.75 + 0.5 * Math.min(1, s), t, 0.2)
-      this.windS.g.gain.setTargetAtTime(live * 0.5 * Math.pow(Math.min(1.2, s), 1.4), t, 0.15)
+      this.windS.g.gain.setTargetAtTime(live * 0.16 * Math.pow(Math.min(1.2, s), 1.4), t, 0.15)
     }
     this.windF.frequency.setTargetAtTime(500 + 8500 * Math.min(1, s * s), t, k)
     this.brakeG.gain.setTargetAtTime(live * brake * 0.26, t, 0.03)
     this.breathT += dt * (0.75 + 0.6 * Math.min(1, s))
     const br = Math.max(0, Math.sin(this.breathT * Math.PI)) ** 2
-    this.breathG.gain.setTargetAtTime(live * Math.max(0, (mach - 3.7) / 2) * br * 0.16, t, 0.05)
+    this.breathG.gain.setTargetAtTime(live * Math.max(0, (mach - 3.7) / 2) * br * 0.08, t, 0.05)
     this.breathF.frequency.setTargetAtTime(this.breathT % 2 < 1 ? 1400 : 900, t, 0.1)
     // Rivals: Doppler (closing speed against sound), distance, pan.
     for (let i = 0; i < 3; i++) {
@@ -786,8 +787,8 @@ export class Sound {
     const p = this.ctx.createStereoPanner()
     p.pan.setValueAtTime(Math.max(-1, Math.min(1, pan * 0.4)), t); p.pan.linearRampToValueAtTime(Math.max(-1, Math.min(1, pan)), t + 0.25)
     p.connect(this.sfx)
-    this.burst(t, 0.5, 'bandpass', 2600, 300, 0.55 * level, 1.6, p, 0.05)
-    this.sample('whoosh', t, 0.5 * level, 1.1 + Math.random() * 0.4, p)
+    this.burst(t, 0.5, 'bandpass', 2600, 300, 0.3 * level, 1.6, p, 0.05)
+    this.sample('whoosh', t, 0.22 * level, 1.1 + Math.random() * 0.4, p)
     this.dirty(t, 0.45, 300, 900, 120, 0.25 * level, p)
   }
 

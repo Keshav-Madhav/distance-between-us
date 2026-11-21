@@ -75,6 +75,10 @@ export class Player {
   maxMach = CFG.speed.boostMach
   /** The afterburner's hard ceiling (safety only). */
   capMach = CFG.speed.burnCap
+  /** The steering input as it reaches the craft (slew-limited by speed). */
+  steerIn = 0
+  /** Slew-limit the stick (yours; the AI's steering is already smooth). */
+  slew = true
   /** × the burner's soft limit (AI skill spread; a racer well behind gets a little). */
   burnMul = 1
   /** How much a slipstream does for this craft (the player's is much bigger). */
@@ -301,7 +305,12 @@ export class Player {
       let curve = curveOf(ab0)
       if (this.spin > 0) curve = Math.min(curve, 0.3)
       const beta0 = Math.atan2(this.lateral, Math.max(this.speed, 1))
-      let steer = this.spin > 0 ? 0 : c.steer
+      // The stick reaches the craft more slowly the faster you go (8/s at low speed → 2.6/s past Mach 6):
+      // a tap is a small correction at Mach 6, a held lock still builds into a slide. ("A little too
+      // responsive" at high speed — the authority stays, the twitch goes.)
+      const rate = this.slew ? THREE.MathUtils.lerp(8, 2.6, THREE.MathUtils.clamp((m - 2) / 4, 0, 1)) : 100
+      this.steerIn += THREE.MathUtils.clamp(c.steer - this.steerIn, -rate * dt, rate * dt)
+      let steer = this.spin > 0 ? 0 : this.steerIn
       // Assist: automatic countersteer once past the peak — but only when you are not steering into the
       // turn yourself (neutral, or already countering). It catches the slide you let go of; it never
       // fights a turn you are asking for (it used to cancel your lock exactly when you pushed).
@@ -310,7 +319,8 @@ export class Player {
       // than the ground effect can hold (sharp, and a slide if held); half lock is safe. The grip gauge
       // shows where the limit is.
       // The brake sharpens the turn (weight forward, more bite): authority up while it is on.
-      const auth = H.steerTorque * (this.airborne ? 0.7 : 1) * (1 + H.steerGain * THREE.MathUtils.clamp((m - 0.8) / 4.2, 0, 1)) * (1 + 0.5 * this.brake)
+      // (Above Mach 5 the extra bite tapers off: "a little too responsive" at high speed without the burner.)
+      const auth = H.steerTorque * (this.airborne ? 0.7 : 1) * (1 + H.steerGain * THREE.MathUtils.clamp((m - 0.8) / 4.2, 0, 1)) * (1 - 0.08 * THREE.MathUtils.clamp((m - 5) / 3, 0, 1)) * (1 + 0.5 * this.brake)
       // Weathervane: with grip, the nose is pulled back toward the travel.
       const align = (this.airborne ? H.airControl : 1) * -H.alignK * (1 + A * 0.5) * (1 + hs0 / 1400) * Math.sin(beta0) * curve * Math.min(1, hs0 / 250)
       // Afterburner lit: the stick barely moves the nose, and the yaw is damped hard — the burn holds
