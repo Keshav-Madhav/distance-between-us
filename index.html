@@ -89,6 +89,11 @@
   #title .tag { margin-top: 18px; font-size: clamp(13px, 1.4vw, 18px); letter-spacing: 0.3em; opacity: 0.9; text-shadow: 0 2px 12px rgba(0,0,0,0.6); }
   #title .go { margin-top: 7vh; font-size: 15px; letter-spacing: 0.5em; animation: blink 1.4s infinite; }
   #title .keys { margin-top: 4vh; font-size: 12px; letter-spacing: 0.2em; opacity: 0.75; line-height: 2; }
+  #course { margin-top: 3.2vh; font-size: 15px; letter-spacing: 0.3em; text-shadow: 0 2px 12px rgba(0,0,0,0.6); }
+  #course b { color: var(--hot); }
+  #course i { font-style: normal; opacity: 0.7; font-size: 12px; }
+  #course .arr { opacity: 0.6; padding: 0 0.6em; }
+  #course small { display: block; margin-top: 8px; font-size: 11px; opacity: 0.7; letter-spacing: 0.25em; }
   @keyframes blink { 50% { opacity: 0.35; } }
   #over { background: linear-gradient(180deg, rgba(8,3,2,0.2), rgba(8,3,2,0.55)); }
   #over h2 { margin: 0; font-size: 54px; letter-spacing: 0.3em; }
@@ -165,6 +170,7 @@
   <h1>THE DISTANCE<br/>BETWEEN <span>US</span></h1>
   <div class="tag">GAMES NEVER FEEL FAST ENOUGH, SO I'M MAKING THIS.</div>
   <div class="modes"><div><b>ENTER</b>&nbsp; RACE</div><div><b>H</b>&nbsp; HUNT</div></div>
+  <div id="course"></div>
   <div class="keys">W THROTTLE · SHIFT AFTERBURNER · A/D STEER · Q/E STRAFE · S BRAKE/DIVE · R LAST GATE · ESC SETTINGS<br/>HOLD W AS THE LIGHTS GO FOR A PERFECT START · GAMEPAD: RT THROTTLE · X AFTERBURNER · LT BRAKE · STICK STEER</div>
 </div>
 <div id="over" class="screen hide">

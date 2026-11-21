@@ -17,7 +17,7 @@ import { Input } from './input'
 import { Post } from './post'
 import { groundH, SUN_DIR } from './terrain'
 import { loadTextures } from './textures'
-import { Course, GATE_HALF, JUMPS, LAPS, SPRINT_KM } from './course'
+import { Course, COURSES, GATE_HALF, LAPS } from './course'
 import { Race, type Racer } from './race'
 import { ChaseCam } from './camera'
 import { Debris } from './debris'
@@ -50,7 +50,17 @@ renderer.toneMapping = THREE.NoToneMapping
 const scene = new THREE.Scene()
 const camera = new THREE.PerspectiveCamera(CFG.camera.fovBase, innerWidth / innerHeight, 0.3, 60000)
 
-const course = new Course()
+// The course: ?course=<id>, else the last one picked on the title screen. (Switching course rebuilds
+// the world — mesas cleared along the line, terrain mounds — so it is a reload, not a hot swap.)
+const courseDef = (() => {
+  let id = params.get('course')
+  try { id ??= localStorage.getItem('dbu-course') } catch { /* storage blocked */ }
+  return COURSES.find((c) => c.id === id) ?? COURSES[0]
+})()
+const course = new Course(courseDef)
+let pickedCourse = COURSES.indexOf(courseDef)
+const bestKey = (id: string) => `dbu-best-${id}`
+const bestOf = (id: string): number | null => { try { const v = localStorage.getItem(bestKey(id)); return v ? +v : null } catch { return null } }
 // Mesas clear of the course corridor — tested at every wrapped copy of each one that falls along the
 // 140 km line (the world repeats every 72 km).
 const clearAt = (x: number, z: number, r: number) => {
@@ -530,6 +540,10 @@ let flashT = 0
 let warnT = 0
 let countT = 0
 
+function showCourse(): void {
+  const d = COURSES[pickedCourse], b = bestOf(d.id)
+  $('#course').innerHTML = `<span class="arr">◀</span> <b>${d.name}</b> · ${d.km} KM${d === course.def ? '' : ' · <i>ENTER TO LOAD</i>'} <span class="arr">▶</span><small>${b !== null ? 'BEST ' + fmtLap(b) : 'NO TIME SET'}</small>`
+}
 function flash(text: string): void { flashEl.textContent = text; flashT = 1.1 }
 function warn(big: string, small: string): void {
   ;(warnEl.querySelector('.big') as HTMLElement).textContent = big
@@ -550,9 +564,16 @@ const ord = (n: number) => `${n}${n === 1 ? 'ST' : n === 2 ? 'ND' : n === 3 ? 'R
 function showResults(): void {
   if (mode !== 'race') return
   overlay = true
+  // Best time per course.
+  const me0 = race.racers[0]
+  let newBest = false
+  if (me0.finished) {
+    const b = bestOf(course.def.id)
+    if (b === null || me0.finishTime < b) { newBest = true; try { localStorage.setItem(bestKey(course.def.id), String(me0.finishTime)) } catch { /* blocked */ } }
+  }
   const rows = [...race.racers].sort((a, b) => a.place - b.place)
   $('#over-h').textContent = `${ord(race.racers[0].place)} PLACE`
-  $('#over-stats').innerHTML = `${SPRINT_KM} KM IN ${fmtLap(race.racers[0].finishTime)} · TOP SPEED MACH ${Math.max(runTop, player.topMach).toFixed(2)}`
+  $('#over-stats').innerHTML = `${course.def.name} · ${course.def.km} KM IN ${fmtLap(race.racers[0].finishTime)}${newBest ? ' · <b style="color:#ffb070">NEW BEST</b>' : ''} · TOP SPEED MACH ${Math.max(runTop, player.topMach).toFixed(2)}`
   $('#res').innerHTML = rows.map((r) => `<tr class="${r.ai ? '' : 'me'}"><td>${r.place}</td><td>${r.name}</td><td>${r.finished ? fmtLap(r.finishTime) : (race.toGo(r) / 1000).toFixed(1) + ' KM TO GO'}</td></tr>`).join('')
   $('#over .go').textContent = 'R TO RACE AGAIN · H FOR HUNT · ESC TO KEEP FLYING'
   $('#over').classList.remove('hide')
@@ -574,8 +595,9 @@ function resetVisuals(): void {
 
 // Top speed over the whole run (player.topMach resets with each respawn after a crash).
 let runTop = 0
+let secK = 0, pinUntil = 0
 function startRace(): void {
-  runTop = 0
+  runTop = 0; secK = 0; pinUntil = 0
   spectate = false
   wreckage.clear()
   sound.start()
@@ -1294,9 +1316,11 @@ function updateHud(dt: number, slow: boolean): void {
       $('#r-pen').textContent = ''
       // Rows built once; each tick only changes text that actually changed (no innerHTML re-parse,
       // no style recalc of the whole panel).
-      for (const r of race.racers) standRows[r.place - 1] = r
-      const top = standRows[0], lead = race.progress(top)
-      for (let k = 0; k < race.racers.length; k++) {
+      // (Places are 0 until the race has ticked once: nothing to list yet.)
+      for (const r of race.racers) if (r.place >= 1) standRows[r.place - 1] = r
+      const top = standRows[0], lead = top ? race.progress(top) : 0
+      for (let k = 0; top && k < race.racers.length; k++) {
+        if (!standRows[k]) continue
         const r = standRows[k], row = standEls[k]
         const gap = r.finished ? (r === top ? 'WINNER ' : '') + fmtLap(r.finishTime) : top.finished ? `${(race.toGo(r) / 1000).toFixed(1)} KM` : r === top ? 'LEADER' : `+${((lead - race.progress(r)) / Math.max(800, player.speed)).toFixed(1)}`
         const name = `${r.place}\u00a0\u00a0${r.name}`
@@ -1306,6 +1330,16 @@ function updateHud(dt: number, slow: boolean): void {
       }
     }
     drawMini()
+    // Section banners as you enter each (course 2), and a warning ~3 s before a hairpin.
+    const kmIn = course.pz[me.idx] / 1000
+    const secs = course.def.sections
+    while (secK < secs.length && kmIn >= secs[secK][0]) { if (kmIn - secs[secK][0] < 2) flash(secs[secK][1]); secK++ }
+    if (race.state === 'racing' && me.idx > pinUntil) {
+      const look = Math.min(course.n, me.idx + Math.round((player.speed * 3 + 300) / 40))
+      for (let i = me.idx; i < look; i += 3) {
+        if (course.curv[i] > 1 / 1700) { if (player.mach > 3.2) warn('HAIRPIN', 'BRAKE · S'); pinUntil = i + 80; break }
+      }
+    }
     $('#r-time').textContent = fmtLap(me.finished ? me.finishTime : race.clock + me.penalty)
     const [tx, tz] = course.tangent(me.idx)
     const along = player.vel.x * tx + player.vel.z * tz
@@ -1468,7 +1502,8 @@ function renderMap(): void {
     }
     course.group.traverse((o) => {
       const m = (o as THREE.Mesh).material as THREE.Material | undefined
-      if (m && m.blending === THREE.AdditiveBlending && !(o as THREE.InstancedMesh).isInstancedMesh) return
+      // (No glow on the map: the gates' light pillars drew a long stray line across it.)
+      if (m && m.blending === THREE.AdditiveBlending) return
       o.layers.enable(1)
     })
   }
@@ -1592,7 +1627,21 @@ addEventListener('keydown', (e) => {
     last = performance.now()
   }
   if (mode === 'title') {
-    if (e.code === 'Enter' || e.code === 'Space') startRace()
+    // Course select: ← / → on the title; a different course loads on Enter (a reload, straight into
+    // the race).
+    if (e.code === 'ArrowLeft' || e.code === 'ArrowRight') {
+      pickedCourse = (pickedCourse + (e.code === 'ArrowRight' ? 1 : COURSES.length - 1)) % COURSES.length
+      showCourse()
+      return
+    }
+    if (e.code === 'Enter' || e.code === 'Space') {
+      if (COURSES[pickedCourse] !== course.def) {
+        try { localStorage.setItem('dbu-course', COURSES[pickedCourse].id); sessionStorage.setItem('dbu-go', '1') } catch { /* blocked */ }
+        const u = new URL(location.href); u.searchParams.delete('course'); location.href = u.toString()
+        return
+      }
+      startRace()
+    }
     if (e.code === 'KeyH') startHunt()
     return
   }
@@ -1651,6 +1700,9 @@ loadBar.style.width = '100%'
 $('#loading').classList.add('hide')
 $('#title').classList.remove('hide')
 requestAnimationFrame((t) => { last = t; frame(t) })
+showCourse()
+// Picked a different course on the title: it has loaded — straight into the race.
+try { if (sessionStorage.getItem('dbu-go')) { sessionStorage.removeItem('dbu-go'); startRace() } } catch { /* blocked */ }
 
 // Test hooks for tools/.
 const g = {
@@ -1664,7 +1716,7 @@ const g = {
   force: (c: import('./player').Controls | null) => { forced = c },
   /** Put the player just before jump k, at Mach m. */
   toJump: (k: number, m = 3) => {
-    const f = JUMPS[k] // on the line: k % 3 === 0
+    const f = course.def.jumps[k] // on the line: k % 3 === 0
     const i = course.startI + Math.round(f * (course.finishI - course.startI)) - 25
     const [tx, tz] = course.tangent(i)
     player.reset(course.px[i], course.pz[i], Math.atan2(tx, tz), m)

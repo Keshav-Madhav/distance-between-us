@@ -10,29 +10,38 @@ import { Vector4 } from 'three'
 //   riverbeds: a meandering zero line of a sine, carved 9 m deep with a flat bed: dry tracks
 //              that run for kilometres, made for flying in
 
-const P = 12000
+// P = REBASE (72 km): wave numbers are ~6× the old 12 km set, nudged off multiples of 6, so the
+// pattern no longer repeats every 12 km (the top-down minimap made the tiling obvious: 2026-11-21).
+const P = 72000
 const TAU = Math.PI * 2
 /** kx, kz, amplitude, phase */
 const WAVES: readonly [number, number, number, number][] = [
+  // Two long swells (~9 km): broad rises and hollows, so no stretch looks like the last.
+  [7, 4, 3.0, 1.1],
+  [-5, 9, 2.4, 2.3],
   // (Halved, 2026-11-20: at Mach speeds the full-height dunes read as a washboard.)
-  [5, 2, 5.5, 0.3],
-  [3, -7, 4, 1.7],
-  [11, 4, 2.2, 2.9],
-  [-6, 13, 1.6, 0.8],
-  [17, -9, 0.9, 4.1],
-  [-23, 14, 0.5, 5.5],
+  [31, 11, 5.5, 0.3],
+  [17, -43, 4, 1.7],
+  [67, 23, 2.2, 2.9],
+  [-37, 79, 1.6, 0.8],
+  [101, -55, 0.9, 4.1],
+  [-139, 83, 0.5, 5.5],
 ]
 
 function smooth(e0: number, e1: number, x: number): number {
   const t = Math.min(1, Math.max(0, (x - e0) / (e1 - e0)))
   return t * t * (3 - 2 * t)
 }
+const k = (a: number, b: number, x: number, z: number) => (TAU * (a * x + b * z)) / P
 
 /** How deep in a riverbed (0 none … 1 on the bed floor). */
 export function riverAt(x: number, z: number): number {
-  const c = Math.sin((TAU * (1 * x + 3 * z)) / P + 0.4 + 0.9 * Math.sin((TAU * (4 * x - 1 * z)) / P + 2.0))
+  // A meandering zero line (three warps), and a mask so riverbeds come and go instead of striping
+  // the whole desert at a fixed spacing.
+  const c = Math.sin(k(7, 17, x, z) + 0.4 + 0.9 * Math.sin(k(23, -5, x, z) + 2.0) + 0.5 * Math.sin(k(-13, 29, x, z) + 1.0))
+  const m = 0.5 + 0.5 * Math.sin(k(4, -3, x, z) + 0.7) * Math.cos(k(2, 5, x, z) + 0.2)
   // (Wide, shallow banks: steep ones were ramps at Mach 6.)
-  return 1 - smooth(0.03, 0.3, Math.abs(c))
+  return (1 - smooth(0.03, 0.3, Math.abs(c))) * smooth(0.3, 0.55, m)
 }
 
 /**
@@ -66,11 +75,12 @@ export function groundH(x: number, z: number): number {
   }
   for (let i = 0; i < WAVES.length; i++) {
     const w = WAVES[i]
-    h += w[2] * Math.sin((TAU * (w[0] * x + w[1] * z)) / P + w[3])
+    h += w[2] * Math.sin(k(w[0], w[1], x, z) + w[3])
   }
-  // (Smooth crests: a kinked crest launched the craft at Mach speeds on every ridge.)
-  const c = Math.cos((TAU * (8 * x - 3 * z)) / P + 1.1)
-  h += 3 * c * c * c * c
+  // (Smooth crests: a kinked crest launched the craft at Mach speeds on every ridge.) Their height
+  // swells and fades across the desert.
+  const c = Math.cos(k(47, -19, x, z) + 1.1)
+  h += 3 * c * c * c * c * (0.55 + 0.45 * Math.sin(k(5, 3, x, z) + 0.4))
   h -= 5 * riverAt(x, z)
   return h
 }
@@ -84,10 +94,12 @@ export const TERRAIN_GLSL = /* glsl */ `
 #ifndef TAU
 #define TAU 6.283185307
 #endif
-#define PER 12000.0
+#define PER ${P.toFixed(1)}
+#define KW(a, b) (TAU * ((a) * p.x + (b) * p.y) / PER)
 float riverAt(vec2 p) {
-  float c = sin(TAU * (1.0 * p.x + 3.0 * p.y) / PER + 0.4 + 0.9 * sin(TAU * (4.0 * p.x - 1.0 * p.y) / PER + 2.0));
-  return 1.0 - smoothstep(0.03, 0.3, abs(c));
+  float c = sin(KW(7.0, 17.0) + 0.4 + 0.9 * sin(KW(23.0, -5.0) + 2.0) + 0.5 * sin(KW(-13.0, 29.0) + 1.0));
+  float m = 0.5 + 0.5 * sin(KW(4.0, -3.0) + 0.7) * cos(KW(2.0, 5.0) + 0.2);
+  return (1.0 - smoothstep(0.03, 0.3, abs(c))) * smoothstep(0.3, 0.55, m);
 }
 #define MAX_MOUNDS ${MAX_MOUNDS}
 uniform vec4 uMounds[MAX_MOUNDS];
@@ -102,8 +114,8 @@ float groundH(vec2 p) {
     if (q < 9.0) h += m.z * exp(-q);
   }
   ${glslWaves}
-  float c = cos(TAU * (8.0 * p.x - 3.0 * p.y) / PER + 1.1);
-  h += 3.0 * c * c * c * c;
+  float c = cos(KW(47.0, -19.0) + 1.1);
+  h += 3.0 * c * c * c * c * (0.55 + 0.45 * sin(KW(5.0, 3.0) + 0.4));
   h -= 5.0 * riverAt(p);
   return h;
 }

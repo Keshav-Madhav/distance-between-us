@@ -1,4 +1,4 @@
-// The race course: a 165 km sprint across the desert, resampled to an even 40 m polyline (the
+// The race course (one of COURSES): a route across the desert, resampled to an even 40 m polyline (the
 // racing line the AI follows and the minimap draws), with:
 //   gates      — every ~5 km: two 140 m towers and a glowing banner, the next one lit
 //   pylons     — knee-high markers down both edges every 320 m (they read speed as much as track)
@@ -11,10 +11,98 @@ import { patchStandard, SKY_FOG_ONLY } from './shaders'
 const STEP = 40
 export const GATE_HALF = 260
 export const LAPS = 1
-/** The sprint's length (km). */
-export const SPRINT_KM = 165
-/** Where the jumps are, as fractions of a lap (the test hooks use these too). */
-export const JUMPS = [0.075, 0.17, 0.3, 0.41, 0.55, 0.64, 0.77, 0.88, 0.95]
+
+/**
+ * A course, as data: the same desert, a different route. Distances in metres along the race unless
+ * said otherwise; `xAt` gives the line's x for a world z (the course always heads +z).
+ */
+export interface CourseDef {
+  id: string
+  name: string
+  /** Race length (km). */
+  km: number
+  xAt: (z: number) => number
+  /** Gate spacing (m). */
+  gateEvery: number
+  /** Jumps, as fractions of the race (on the line every third; the test hooks use these). */
+  jumps: number[]
+  /** Runs of whoops (four small mounds), as fractions. */
+  whoops: number[]
+  /** Boost pad spacing (m). */
+  padEvery: number
+  /** Spire spacing [min, max] (m) at a world z (km), or null for none there. */
+  spireGap: (zKm: number) => [number, number] | null
+  /** Chance a spire gets a partner (a rock gate to thread). */
+  rockGateP: number
+  seed: number
+  /** Named sections, shown as you enter them: [world z (km), name]. */
+  sections: [number, string][]
+}
+
+const ramp8 = (z: number) => (z <= 0 ? 0 : z >= 8000 ? 1 : (z / 8000) ** 2 * (3 - (2 * z) / 8000))
+
+/** Course 1: 165 km, nearly straight — flat out, spires to weave, micro-corrections. */
+export const SPRINT: CourseDef = {
+  id: 'sprint',
+  name: 'THE SPRINT',
+  km: 165,
+  // A sprint, not a loop: nearly straight. Two slow sine bends (62 km and 23.5 km wavelengths, radius
+  // never under ~6 km) ease in after the first 8 km. (A looping course kept turning — "why make it a
+  // loop, can make it much much more straight": user, 2026-11-20.)
+  xAt: (z) => {
+    // Three S-bend sections (14 km wavelength, radius ≥ ~4.5 km) eased in and out of the long run.
+    let ess = 0
+    for (const c of [40000, 95000, 145000]) {
+      const d = Math.abs(z - c) / 12000
+      if (d < 1) ess += (1 - d * d) ** 2 * 1100 * Math.sin((2 * Math.PI * (z - c)) / 14000)
+    }
+    return ramp8(z) * (4200 * Math.sin((2 * Math.PI * z) / 62000) + 1800 * Math.sin((2 * Math.PI * z) / 23500 + 1.2) - 1800 * Math.sin(1.2) + ess)
+  },
+  gateEvery: 5000,
+  jumps: [0.075, 0.17, 0.3, 0.41, 0.55, 0.64, 0.77, 0.88, 0.95],
+  whoops: [0.22, 0.52, 0.81],
+  padEvery: 8000,
+  spireGap: () => [800, 2000],
+  rockGateP: 0.22,
+  seed: 99,
+  sections: [],
+}
+
+/**
+ * Course 2: 85 km, technical. Meanders, a spire forest, two hairpins you must brake for, the jump
+ * fields, a last run to the line. (Plan: docs/COURSE-2.md.)
+ */
+export const DRY_RIVER: CourseDef = {
+  id: 'dry-river',
+  name: 'DRY RIVER',
+  km: 85,
+  xAt: (z) => {
+    // Every bend is a (1 − cos) bump: no heading jump at its ends (windowed sines left stray tight
+    // corners where the window closed). Peak curvature = h·(2π/L)², radius its inverse.
+    const bump = (z0: number, L: number, h: number) => (z > z0 && z < z0 + L ? h * (1 - Math.cos((2 * Math.PI * (z - z0)) / L)) : 0)
+    // Meanders (9–27 km): two long swings, radius ~4 km.
+    const meander = bump(9000, 9000, 510) + bump(18000, 9000, -510)
+    // The forest (28–40 km): a slow drift only.
+    const drift = bump(28000, 12000, 260)
+    // The hairpins (44–58 km): out left then out right, 7 km long and 2.4 km high — each a 47° kink
+    // in, a ~95° apex of radius ~1 km (Mach ~3.5 at the limit), a 47° kink out.
+    const pin = bump(44000, 7000, 1200) + bump(51000, 7000, -1200)
+    // A gentle wander elsewhere, so the straights are not ruler lines.
+    const wander = 900 * Math.sin((2 * Math.PI * z) / 37000 + 0.6) - 900 * Math.sin(0.6)
+    return ramp8(z) * (wander + meander + drift) + pin
+  },
+  gateEvery: 4000,
+  // The jump fields: z ~60–71 km, clear of the last hairpin's exit.
+  jumps: [0.04, 0.76, 0.78, 0.8, 0.82, 0.845, 0.87, 0.89],
+  whoops: [0.15, 0.77, 0.83],
+  padEvery: 6500,
+  spireGap: (zk) => (zk >= 28 && zk < 40 ? [260, 650] : zk >= 40 && zk < 59 ? null : [900, 2200]),
+  rockGateP: 0.38,
+  seed: 4242,
+  sections: [[9, 'THE MEANDERS'], [28, 'SPIRE FOREST'], [42.5, 'THE HAIRPINS'], [59, 'JUMP FIELDS'], [72, 'LAST RUN']],
+}
+
+export const COURSES: CourseDef[] = [SPRINT, DRY_RIVER]
 
 export interface Checkpoint {
   x: number; z: number
@@ -40,6 +128,9 @@ export class Course {
   readonly startI: number
   readonly finishI: number
   readonly box: { x0: number; x1: number; z0: number; z1: number }
+  readonly def: CourseDef
+  /** How sharply the line turns at each index (rad per metre). */
+  readonly curv: Float32Array
   private readonly beamMesh: THREE.InstancedMesh
   private readonly towerLights: THREE.InstancedMesh
   private readonly curtain: THREE.Mesh
@@ -51,22 +142,11 @@ export class Course {
   private readonly pillarMat2: THREE.ShaderMaterial
   private readonly col = new THREE.Color()
 
-  constructor() {
-    // A sprint, not a loop: 130 km across the desert, nearly straight. Two slow sine bends (62 km and
-    // 23.5 km wavelengths, radius never under ~6 km) ease in after the first 8 km. A 3 km run-up holds
-    // the grid; a 6 km run-off past the finish. (A looping course kept turning — "why make it a loop,
-    // can make it much much more straight": user, 2026-11-20.)
-    const RUNUP = 3000, RACE = SPRINT_KM * 1000, RUNOFF = 6000
-    const xAt = (z: number) => {
-      const ramp = z <= 0 ? 0 : z >= 8000 ? 1 : (z / 8000) ** 2 * (3 - (2 * z) / 8000)
-      // Three S-bend sections (14 km wavelength, radius ≥ ~4.5 km) eased in and out of the long run.
-      let ess = 0
-      for (const c of [40000, 95000, 145000]) {
-        const d = Math.abs(z - c) / 12000
-        if (d < 1) ess += (1 - d * d) ** 2 * 1100 * Math.sin((2 * Math.PI * (z - c)) / 14000)
-      }
-      return ramp * (4200 * Math.sin((2 * Math.PI * z) / 62000) + 1800 * Math.sin((2 * Math.PI * z) / 23500 + 1.2) - 1800 * Math.sin(1.2) + ess)
-    }
+  constructor(def: CourseDef = SPRINT) {
+    this.def = def
+    // A 3 km run-up holds the grid; a 6 km run-off past the finish.
+    const RUNUP = 3000, RACE = def.km * 1000, RUNOFF = 6000
+    const xAt = def.xAt
     const raw: [number, number][] = []
     for (let z = -RUNUP; z <= RACE + RUNOFF; z += 5) raw.push([xAt(z), z])
     const M = raw.length
@@ -102,7 +182,7 @@ export class Course {
     const raceLen = (finishI - startI) * STEP
 
     // Gates: the start, one every ~5 km, the finish.
-    const K = Math.round(raceLen / 5000) + 1
+    const K = Math.round(raceLen / def.gateEvery) + 1
     for (let k = 0; k < K; k++) {
       const i = k === K - 1 ? finishI : startI + Math.round((k * raceLen) / (K - 1) / STEP)
       const [tx, tz] = this.tangent(i)
@@ -112,14 +192,14 @@ export class Course {
     // Jumps: big mounds on the line, a few beside it (a choice of line); a few runs of whoops.
     const mounds: number[] = []
     const clear = (i: number) => i > startI + 75 && i < finishI - 50
-    JUMPS.forEach((f, k) => {
+    def.jumps.forEach((f, k) => {
       const i = at(f * raceLen)
       if (!clear(i)) return
       const [tx, tz] = this.tangent(i)
       const off = k % 3 === 1 ? 110 : k % 3 === 2 ? -110 : 0
       mounds.push(this.px[i] + tz * off, this.pz[i] - tx * off, 26 + (k % 4) * 4, 125 + (k % 3) * 20)
     })
-    for (const f of [0.22, 0.52, 0.81]) {
+    for (const f of def.whoops) {
       for (let w = 0; w < 4; w++) {
         const i = at(f * raceLen) + w * 8
         if (clear(i)) mounds.push(this.px[i], this.pz[i], 7, 90)
@@ -128,7 +208,7 @@ export class Course {
     setMounds(mounds)
 
     // Boost pads, every ~9 km, alternating sides.
-    for (let k = 0, m = 4000; m < raceLen - 3000; k++, m += 8000 + ((k * 2711) % 2000)) {
+    for (let k = 0, m = 4000; m < raceLen - 3000; k++, m += def.padEvery + ((k * 2711) % 2000)) {
       const i = at(m)
       const off = k % 3 === 0 ? 0 : k % 3 === 1 ? 70 : -70
       const [tx, tz] = this.tangent(i)
@@ -138,11 +218,13 @@ export class Course {
     // Rock spires: on and beside the line, every 0.8–2 km, to weave through at speed. Never at a gate,
     // a pad or a jump, nor in the first 4 km.
     {
-      let seed = 99
+      let seed = def.seed
       const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647)
       let i = startI + Math.round(4000 / STEP)
       while (i < finishI - 40) {
-        i += Math.round((800 + rnd() * 1200) / STEP)
+        const gap = def.spireGap(this.pz[i] / 1000)
+        if (!gap) { i += Math.round(500 / STEP); continue }
+        i += Math.round((gap[0] + rnd() * (gap[1] - gap[0])) / STEP)
         if (i >= finishI - 40) break
         const lat = (rnd() * 2 - 1) * 170
         const [tx, tz] = this.tangent(i)
@@ -155,13 +237,18 @@ export class Course {
         if (nearMound) continue
         this.rocks.push({ x, z, r, h: 70 + rnd() * 110, i, lat })
         // Now and then a rock gate: a second spire across the line, leaving a slot to thread.
-        if (rnd() < 0.22 && Math.abs(lat) < 120) {
+        if (rnd() < def.rockGateP && Math.abs(lat) < 120) {
           const gap = 120 + rnd() * 60
           const lat2 = lat + (lat > 0 ? -1 : 1) * (gap + r * 2)
           const r2 = 18 + rnd() * 16
           this.rocks.push({ x: this.px[i] - tz * lat2, z: this.pz[i] + tx * lat2, r: r2, h: 80 + rnd() * 100, i, lat: lat2 })
         }
       }
+    }
+    this.curv = new Float32Array(n)
+    for (let i = 0; i < n; i++) {
+      const [ax, az] = this.tangent(Math.max(0, i - 3)), [bx, bz] = this.tangent(Math.min(n - 1, i + 3))
+      this.curv[i] = Math.abs(Math.atan2(ax * bz - az * bx, ax * bx + az * bz)) / (6 * STEP)
     }
     let x0 = Infinity, x1 = -Infinity
     for (let i = 0; i < n; i++) { x0 = Math.min(x0, this.px[i]); x1 = Math.max(x1, this.px[i]) }

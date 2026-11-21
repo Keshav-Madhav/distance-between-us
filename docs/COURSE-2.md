@@ -1,5 +1,11 @@
 # Course 2 — plan (draft, 2026-11-21)
 
+**Status (2026-11-21): v1 built.** Course select on the title (← / →, Enter loads), best time per
+course, section banners, a HAIRPIN warning ~3 s out, AI corner speed from grip. Dry River v1 has
+the meanders, spire forest, hairpins (two ~1 km apexes and four sweepers), jump fields and last
+run. Not yet: the riverbed channel in the terrain (step 3), chevron boards at corners, per-course
+time of day. Course 1 is unchanged (same gates, spires and pads, checked).
+
 Same world (the desert, mesas, sky, dry river, terrain shader), a second route through it.
 Course 1 ("The Sprint", 165 km) is flat-out: nearly straight, spires to weave, micro-corrections.
 Course 2 should feel different to drive, not just look different.

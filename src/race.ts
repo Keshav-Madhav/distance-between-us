@@ -391,7 +391,12 @@ export class Race {
       bend = Math.max(bend, Math.acos(THREE.MathUtils.clamp(ax * bx + az * bz, -1, 1)) / (s * 0.04))
     }
     // Turn radius at speed v is v / yawMax; the line's radius is 1 / bend (km⁻¹ → m).
-    const safe = (CFG.handling.yawHigh * 1000) / Math.max(bend, 1e-3) / MACH
+    // …and what grip can hold: lateral (gripK + gripQ·v)·v ≥ v²κ ⇒ v ≤ gripK / (κ − gripQ) — above a
+    // radius of ~3 km grip holds anything. Take most of it (the yaw limit alone braked to Mach ~2.3
+    // for a bend grip holds at 3.5+).
+    const H = CFG.handling, kap = bend / 1000
+    const gripSafe = kap > H.gripQ ? (H.gripK / (kap - H.gripQ)) * (0.84 + r.skill * 0.08) / MACH : 99
+    const safe = Math.max((H.yawHigh * 1000) / Math.max(bend, 1e-3) / MACH, gripSafe)
     // Rubber band toward the player (mild): ahead → a lower ceiling, behind → a higher one.
     const gap = this.progress(r) - this.progress(this.racers[0])
     // (Raised again, 2026-11-21: "I crashed twice and still won". Ahead of you they ease a little;
