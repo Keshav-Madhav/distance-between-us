@@ -1,0 +1,12 @@
+import { chromium } from 'playwright-core'
+const browser = await chromium.launch({ channel: 'chrome', headless: true, args: ['--mute-audio', '--use-gl=angle', '--ignore-gpu-blocklist'] })
+const page = await (await browser.newContext({ viewport: { width: 960, height: 540 } })).newPage()
+await page.goto('http://localhost:4417/?fixed&q=low'); await page.waitForFunction('window.__g && window.__g.ready')
+await page.evaluate(() => { window.__g.start(); window.__g.skipCountdown() })
+await page.waitForTimeout(400)
+const st = () => page.evaluate(() => { const g = window.__g; return `boost=${g.input.c.boost} burner=${g.input.c.burner} mach=${g.player.mach.toFixed(2)} down=[${[...g.input.down].join(',')}]` })
+await page.keyboard.down('w'); await page.waitForTimeout(1500); console.log('W held        ', await st())
+await page.keyboard.down('Shift'); await page.waitForTimeout(1500); console.log('W+Shift       ', await st())
+await page.keyboard.up('Shift'); await page.waitForTimeout(800); console.log('Shift released', await st())
+await page.waitForTimeout(1500); console.log('later         ', await st())
+await browser.close()

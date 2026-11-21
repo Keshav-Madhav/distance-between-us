@@ -20,6 +20,7 @@ const _q = new THREE.Quaternion()
 const _e = new THREE.Euler()
 const _s = new THREE.Vector3()
 const _p = new THREE.Vector3()
+const _soot = new THREE.Color(0x17110d)
 
 class Builder {
   private readonly parts = new Map<string, THREE.BufferGeometry[]>()
@@ -121,8 +122,8 @@ function flameMaterial(core: THREE.Color, edge: THREE.Color): THREE.ShaderMateri
       void main() {
         float t = vUv.y;
         float facing = abs(dot(vN, vV));
-        float body = pow(facing, 1.5);
-        float fade = pow(1.0 - t, 1.6);
+        float body = pow(clamp(facing, 0.0, 1.0), 1.5);
+        float fade = pow(clamp(1.0 - t, 0.0, 1.0), 1.6);
         // A smooth flicker (a per-frame random strobed).
         float flick = 0.9 + 0.1 * sin(uTime * 53.0 + vUv.x * 6.28) * sin(uTime * 31.0);
         float diamonds = uBoost * smoothstep(0.55, 1.0, sin(t * 26.0 - uTime * 4.0)) * (1.0 - t);
@@ -163,7 +164,7 @@ export class Craft {
   readonly cone: THREE.Mesh
   private readonly coneMat: THREE.ShaderMaterial
 
-  constructor(env: THREE.Texture, paint: Paint = { body: 0xeef1f4, trim: 0xff5a14, number: '07' }) {
+  constructor(env: THREE.Texture, paint: Paint = { body: 0xeef1f4, trim: 0xff5a14, number: '07' }, variant = 0) {
     this.root.add(this.body)
     this.body.add(this.hi, this.lo)
     const mats: Record<string, THREE.Material> = {
@@ -174,9 +175,11 @@ export class Craft {
       glass: new THREE.MeshPhysicalMaterial({ color: 0x0b1420, roughness: 0.05, metalness: 0.5, clearcoat: 1, envMap: env, envMapIntensity: 1.6 }),
     }
     for (const m of Object.values(mats)) patchStandard(m as THREE.MeshStandardMaterial)
+    this.charMats = [mats.paint, mats.trim, mats.metal].map((m) => ({ m: m as THREE.MeshStandardMaterial, base: (m as THREE.MeshStandardMaterial).color.clone() }))
     this.glow = new THREE.MeshBasicMaterial({ color: new THREE.Color(0.3, 1.6, 3.2) })
     mats.glow = this.glow
     mats.hot = new THREE.MeshBasicMaterial({ color: new THREE.Color(1.5, 0.42, 0.1) })
+    mats.neon = new THREE.MeshBasicMaterial({ color: new THREE.Color(paint.trim).multiplyScalar(2.4) })
 
     const B = new Builder()
     // ── hull: three stepped slabs, each smaller and higher ──
@@ -224,6 +227,28 @@ export class Craft {
       B.add('carbon', new THREE.CylinderGeometry(0.47, 0.36, 0.3, 20, 1, true), x, y, NOZZLE_Z + 0.1, Math.PI / 2, 0, 0)
     }
     B.add('carbon', new THREE.CylinderGeometry(0.02, 0.03, 0.9, 5), -0.5, 1.2, -1.6, -0.3, 0, 0)
+    // Light lines in the team colour along the leading edges, and a light bar across the tail.
+    B.addSym('neon', new THREE.BoxGeometry(0.06, 0.05, 3.3), 1.62, 0.36, 1.2, 0, -0.38, 0)
+    B.addSym('neon', new THREE.BoxGeometry(0.05, 0.05, 1.6), 2.55, 0.34, -1.9, 0, -0.95, 0)
+    B.add('neon', new THREE.BoxGeometry(2.6, 0.07, 0.06), 0, 0.5, -4.2)
+    // Silhouettes: 1 = heavy (side pods, tall twin fins), 2 = needle (nose probe, canards, dorsal fin).
+    if (variant === 1) {
+      B.addSym('paint', new THREE.CapsuleGeometry(0.42, 3.2, 6, 14), 2.45, 0.28, -0.9, Math.PI / 2, 0, 0, 1, 1, 0.75)
+      B.addSym('trim', new THREE.BoxGeometry(0.1, 0.06, 3.0), 2.45, 0.6, -0.9)
+      B.addSym('carbon', new THREE.CylinderGeometry(0.3, 0.38, 0.5, 14, 1, true), 2.45, 0.28, -2.95, Math.PI / 2, 0, 0)
+      const tall = new THREE.BoxGeometry(0.1, 1.9, 1.5)
+      tall.translate(0, 0.95, 0)
+      B.addSym('paint', tall, 1.1, 0.75, -3.4, -0.35, 0, -0.12)
+      B.addSym('neon', new THREE.BoxGeometry(0.12, 0.1, 0.9), 1.32, 2.5, -3.95, -0.35, 0, -0.12)
+    } else if (variant === 2) {
+      B.add('metal', new THREE.CylinderGeometry(0.04, 0.12, 2.4, 8), 0, 0.42, 6.6, Math.PI / 2, 0, 0)
+      B.add('neon', new THREE.SphereGeometry(0.08, 8, 6), 0, 0.42, 7.8)
+      B.addSym('paint', new THREE.BoxGeometry(1.4, 0.06, 0.55), 1.35, 0.42, 3.0, 0, -0.5, 0)
+      const dorsal = new THREE.BoxGeometry(0.1, 1.5, 2.2)
+      dorsal.translate(0, 0.75, 0)
+      B.add('paint', dorsal, 0, 0.95, -2.9, -0.45, 0, 0)
+      B.add('neon', new THREE.BoxGeometry(0.12, 0.08, 1.8), 0, 2.15, -3.3, -0.45, 0, 0)
+    }
     B.build(mats, this.hi)
 
     // Racing numbers on the fins' outer faces.
@@ -282,6 +307,15 @@ export class Craft {
     this.cone.position.set(0, 0.4, -1.4)
     this.cone.visible = false
     this.body.add(this.cone)
+  }
+
+  private readonly charMats: { m: THREE.MeshStandardMaterial; base: THREE.Color }[] = []
+  private char = 0
+  /** Scorch the paint toward soot (0 clean … 1 burnt). */
+  setChar(a: number): void {
+    if (Math.abs(a - this.char) < 0.01) return
+    this.char = a
+    for (const { m, base } of this.charMats) m.color.copy(base).lerp(_soot, a * 0.85)
   }
 
   /** Detail by distance from the camera. */

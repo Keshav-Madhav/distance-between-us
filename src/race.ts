@@ -155,7 +155,8 @@ export class Race {
         const perfect = this.boostHeldSince >= 0 && this.boostHeldSince < 0.5
         const early = this.boostHeldSince >= 1.2
         for (const r of this.racers) {
-          r.p.speed = (r.ai ? 0.9 + r.skill * 0.6 : perfect ? 1.8 : early ? 0.3 : 0.9) * MACH
+          // (A slow roll off the line: the engines spool up to Mach 1, then it goes.)
+          r.p.speed = (r.ai ? 0.18 + r.skill * 0.15 : perfect ? 0.55 : early ? 0.05 : 0.2) * MACH
         }
         this.ev.go(perfect)
       }

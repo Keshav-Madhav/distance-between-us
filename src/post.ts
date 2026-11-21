@@ -61,12 +61,12 @@ const FINAL = {
         vec2 su = uv - o;
         // Chromatic fringing grows toward the edges.
         vec2 ca = d * uAberr * r * 2.0;
-        c.r += texture2D(tDiffuse, su + ca).r * w;
-        c.g += texture2D(tDiffuse, su).g * w;
-        c.b += texture2D(tDiffuse, su - ca).b * w;
+        vec3 sm = vec3(texture2D(tDiffuse, su + ca).r, texture2D(tDiffuse, su).g, texture2D(tDiffuse, su - ca).b);
+        if (any(isnan(sm)) || any(isinf(sm))) continue;
+        c += sm * w;
         wsum += w;
       }
-      c /= wsum;
+      c /= max(wsum, 1e-4);
       // Sharpen (contrast-adaptive, in a reversible tone curve so HDR highlights don't ring), weakest
       // where the motion blur is working — the centre stays crisp, the edges stay smooth.
       if (uSharpen > 0.001) {
@@ -81,7 +81,12 @@ const FINAL = {
         vec3 sh = clamp((e + (nb + nd + nf + nh) * w) / (1.0 + 4.0 * w), 0.0, 0.999);
         c = sh / (1.0 - sh);
       }
-      if (any(isnan(c)) || any(isinf(c))) c = vec3(0.0);
+      // (A NaN anywhere upstream must never show as black: take an unblurred neighbour instead.)
+      if (any(isnan(c)) || any(isinf(c))) {
+        c = texture2D(tDiffuse, vUv + uTexel * 3.0).rgb;
+        if (any(isnan(c)) || any(isinf(c))) c = texture2D(tDiffuse, vUv - uTexel * 3.0).rgb;
+        if (any(isnan(c)) || any(isinf(c))) c = vec3(0.4, 0.3, 0.25);
+      }
 
       // Speed streaks: pale spokes flowing outward at the edges of the view.
       if (uStreak > 0.004) {

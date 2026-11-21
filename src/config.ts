@@ -26,7 +26,7 @@ export const CFG = {
     /** Approach rate toward the target, 1/s. Exponential, so the first second kicks hardest. */
     boostK: 0.62,
     cruiseK: 0.35,
-    brakeK: 2.4,
+    brakeK: 1.8,
     /** Instant m/s shove on pressing boost. */
     boostKick: 95,
     /** Start of a run. */
@@ -54,7 +54,7 @@ export const CFG = {
     slideFloor: 0.42,
     spinSlip: 1.15,
     /** Grip multiplier under the air brake (a trail-brake starts a drift). */
-    driftBrakeGrip: 0.5,
+    driftBrakeGrip: 0.85,
     /** Gusts: sideways buffeting at speed (m/s²) and a little yaw (rad/s²). */
     gust: 55,
     gustYaw: 0.35,

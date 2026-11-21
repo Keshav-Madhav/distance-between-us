@@ -224,14 +224,18 @@ export class Player {
     const boosting = !!c.boost || burning
     this.throttle += ((boosting ? 1 : 0) - this.throttle) * Math.min(1, dt * 5)
     this.boost += ((boosting ? (burning ? 1 : 0.6) : 0) - this.boost) * Math.min(1, dt * 6)
-    this.brake += ((c.brake ? 1 : 0) - this.brake) * Math.min(1, dt * 8)
+    // The brake comes on progressively (~0.3 s), not as a wall.
+    this.brake += ((c.brake ? 1 : 0) - this.brake) * Math.min(1, dt * 3.5)
     // W is the throttle. Off it, you coast down (air and sand drag); there is no cruise control.
     let target = 0
     let k = S.coastK
-    // Brake with the stick over = a drift, not a stop: traction breaks, speed mostly stays.
-    const driftBrake = c.brake && Math.abs(c.steer) > 0.5
-    if (c.brake && !this.airborne) { target = S.brakeMach * MACH; k = driftBrake ? S.brakeK * 0.3 : S.brakeK }
-    else if (c.boost && !burning) { target = Math.min(S.boostMach, this.maxMach) * MACH; k = this.speed > target ? 0.15 : S.boostK }
+    if (this.brake > 0.02 && !this.airborne && !boosting) { target = S.brakeMach * MACH; k = S.brakeK * this.brake * (Math.abs(c.steer) > 0.5 ? 0.45 : 1) }
+    else if (c.boost && !burning) {
+      target = Math.min(S.boostMach, this.maxMach) * MACH
+      // Holding W keeps what the afterburner gave you (it never bleeds it away); below Mach 1 the
+      // engines are still spooling — a slow start, then they bite.
+      k = this.speed > target ? 0 : S.boostK * (0.32 + 0.68 * THREE.MathUtils.smoothstep(m, 0.55, 1.15))
+    }
     // (In the air there is nothing to push against: the engines only hold speed.)
     if (this.airborne) k *= 0.35
     const before = this.speed
@@ -292,7 +296,8 @@ export class Player {
       // Adaptive: authority grows with speed faster than grip does — at Mach 5 full lock asks for more
       // than the ground effect can hold (sharp, and a slide if held); half lock is safe. The grip gauge
       // shows where the limit is.
-      const auth = H.steerTorque * (this.airborne ? 0.7 : 1) * (1 + H.steerGain * THREE.MathUtils.clamp((m - 0.8) / 4.2, 0, 1))
+      // The brake sharpens the turn (weight forward, more bite): authority up while it is on.
+      const auth = H.steerTorque * (this.airborne ? 0.7 : 1) * (1 + H.steerGain * THREE.MathUtils.clamp((m - 0.8) / 4.2, 0, 1)) * (1 + 0.5 * this.brake)
       // Weathervane: with grip, the nose is pulled back toward the travel.
       const align = (this.airborne ? H.airControl : 1) * -H.alignK * (1 + A * 1.5) * (1 + hs0 / 1400) * Math.sin(beta0) * curve * Math.min(1, hs0 / 250)
       // Afterburner lit: the stick barely moves the nose, and the yaw is damped hard — the burn holds

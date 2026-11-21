@@ -239,7 +239,7 @@ export class Course {
         uniform float uTime; uniform vec3 uColor; varying vec2 vUv; varying vec3 vN; varying vec3 vV;
         void main() {
           float core = pow(abs(dot(vN, vV)), 2.0);
-          float up = pow(1.0 - vUv.y, 1.4);
+          float up = pow(clamp(1.0 - vUv.y, 0.0, 1.0), 1.4);
           float pulse = 0.8 + 0.2 * sin(uTime * 5.0 - vUv.y * 30.0);
           gl_FragColor = vec4(uColor * core * up * pulse * 1.3, 1.0);
         }`,

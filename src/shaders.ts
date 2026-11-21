@@ -34,7 +34,7 @@ export function patchStandard(mat: THREE.MeshStandardMaterial, opts: PatchOpts =
   mat.onBeforeCompile = (s) => {
     if (opts.strata) { s.uniforms.tRock = TEX.tRock; s.uniforms.tSand = TEX.tSand }
     s.vertexShader = s.vertexShader
-      .replace('#include <common>', '#include <common>\nvarying vec3 vFogW;\nvarying vec3 vWN;')
+      .replace('#include <common>', '#include <common>\nvarying vec3 vFogW;\nvarying vec3 vWN;\nvarying float vBaseY;')
       .replace(
         '#include <project_vertex>',
         `#include <project_vertex>
@@ -45,10 +45,15 @@ export function patchStandard(mat: THREE.MeshStandardMaterial, opts: PatchOpts =
           wn = mat3(instanceMatrix) * wn;
         #endif
         vFogW = (modelMatrix * fw).xyz;
-        vWN = normalize(mat3(modelMatrix) * wn);`,
+        vWN = normalize(mat3(modelMatrix) * wn);
+        #ifdef USE_INSTANCING
+          vBaseY = (modelMatrix * instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0)).y;
+        #else
+          vBaseY = (modelMatrix * vec4(0.0, 0.0, 0.0, 1.0)).y;
+        #endif`,
       )
     s.fragmentShader = s.fragmentShader
-      .replace('#include <common>', `#include <common>\nvarying vec3 vFogW;\nvarying vec3 vWN;\n${opts.strata ? 'uniform sampler2D tRock;\nuniform sampler2D tSand;' : ''}\n${SKY_GLSL}\n${NOISE_GLSL}`)
+      .replace('#include <common>', `#include <common>\nvarying vec3 vFogW;\nvarying vec3 vWN;\nvarying float vBaseY;\n${opts.strata ? 'uniform sampler2D tRock;\nuniform sampler2D tSand;' : ''}\n${SKY_GLSL}\n${NOISE_GLSL}`)
       .replace('#include <fog_fragment>', 'gl_FragColor.rgb = applyFog(gl_FragColor.rgb, vFogW);')
     if (opts.strata) {
       s.fragmentShader = s.fragmentShader.replace(
@@ -68,6 +73,11 @@ export function patchStandard(mat: THREE.MeshStandardMaterial, opts: PatchOpts =
           // Flat tops: sand-covered cap rock.
           vec3 top = texture2D(tSand, vFogW.xz / 30.0).rgb * vec3(0.95, 0.9, 0.85);
           c = mix(c, top, smoothstep(0.7, 0.92, vWN.y));
+          // Crevices darker, ledges lighter (the texture's own light and dark, pushed), and the foot
+          // of the rock in its own shade where it meets the sand.
+          float lum = dot(tx * wxz.x + tz * wxz.y, vec3(0.33));
+          c *= 0.78 + 0.5 * smoothstep(0.08, 0.5, lum);
+          c *= mix(0.55, 1.0, smoothstep(2.0, 45.0, vFogW.y - vBaseY - 4.0));
           diffuseColor.rgb = c;
         }`,
       )

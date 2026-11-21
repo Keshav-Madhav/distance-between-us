@@ -30,6 +30,7 @@ const noise = (t: number, s: number) => Math.sin(t * 1.7 + s) * 0.5 + Math.sin(t
 const _look = new THREE.Vector3()
 const _pos = new THREE.Vector3()
 const _tmp = new THREE.Vector3()
+const _up = new THREE.Vector3(0, 1, 0)
 
 export class ChaseCam {
   private readonly yaw = new Spring(0, 7)
@@ -76,6 +77,8 @@ export class ChaseCam {
     }
     // The offset from the wreck is what springs (so the camera rides along with the slide): behind
     // the line it was on, out to one side, a little above.
+    // A slow orbit round the wreck while it tumbles.
+    this.crashDir.applyAxisAngle(_up, dt * 0.45)
     const side = _tmp.set(this.crashDir.z, 0, -this.crashDir.x)
     const want = _pos.copy(this.crashDir).multiplyScalar(-22).addScaledVector(side, 12)
     want.y = 5

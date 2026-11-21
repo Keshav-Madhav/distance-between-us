@@ -3,6 +3,7 @@
 import '@fontsource/chakra-petch/400.css'
 import '@fontsource/chakra-petch/700.css'
 import * as THREE from 'three'
+import { FullScreenQuad } from 'three/addons/postprocessing/Pass.js'
 import { CFG, MACH, REBASE } from './config'
 import { World } from './world'
 import { Craft, type Paint } from './craft'
@@ -20,6 +21,7 @@ import { Course, GATE_HALF, JUMPS, LAPS, SPRINT_KM } from './course'
 import { Race } from './race'
 import { ChaseCam } from './camera'
 import { Debris } from './debris'
+import { Shock } from './shock'
 
 const STEP = 1 / 60
 const params = new URLSearchParams(location.search)
@@ -71,6 +73,8 @@ world.applyTextures(tex)
 loadBar.style.width = '50%'
 const fx = new Fx()
 scene.add(fx.group)
+const shock = new Shock()
+scene.add(shock.group)
 const wreckage = new Debris(env)
 scene.add(wreckage.mesh)
 wreckage.onSmoke = (x, y, z, vx, vz) => {
@@ -107,6 +111,8 @@ let offT = 0
 let fovMax = CFG.camera.fovMax
 /** After the finish: autopilot + cinematic camera, until Esc hands control back. */
 let spectate = false
+/** Graphics settings (the Esc panel). */
+const settings = { map: true, scale: 1, dist: 20, part: 1, bloom: true, blur: 1, sharp: 0.4, grain: true, cloud: true }
 let crashBreak = 0
 const rivalVoices: import('./audio').RivalVoice[] = []
 const camRight = new THREE.Vector3()
@@ -181,7 +187,7 @@ const PAINTS: Paint[] = [
 interface Visual { craft: Craft; trail: Trail[]; vapour: Trail[]; lastDust: THREE.Vector3; heading: number; wasDead: boolean; wasHidden: boolean }
 const visuals = new Map<Player, Visual>()
 race.racers.forEach((r, i) => {
-  const craft = new Craft(env, PAINTS[i])
+  const craft = new Craft(env, PAINTS[i], i === 0 ? 0 : i % 3)
   scene.add(craft.root)
   const trail: Trail[] = []
   const nT = r.ai ? 1 : 3
@@ -217,7 +223,10 @@ race.racers.forEach((r, i) => {
     sparks(x, y, z, v, Math.round(40 + sev * 60), 1.4)
     wreckage.burst(r.p.pos.x, r.p.pos.y, r.p.pos.z, v.x, v.y, v.z, Math.round(10 + sev * 10), 60 + sev * 50, paint.body, paint.trim)
     fx.dust(x, y - 2, z, nx * 50 + v.x * 0.3, nz * 50 + v.z * 0.3, Math.round(18 + sev * 20), 14 + sev * 10, 40)
-    fx.explosion(x, y, z, v.x * 0.3, 10, v.z * 0.3, destroyed ? 2 : 0.6 + sev * 0.4)
+    fx.explosion(x, y, z, v.x * 0.3, 10, v.z * 0.3, destroyed ? 2.4 : 1 + sev * 0.5)
+    fx.explosion(x + nx * 6, y + 4, z + nz * 6, v.x * 0.5, 20, v.z * 0.5, 0.8)
+    shock.ground(x, z, 0.7 + sev * 0.3, 1.2, true)
+    shock.air(r.p.pos, r.p.fwd, r.p.vel, 0.8 + sev * 0.2, 1)
     sound.wreck(Math.min(1.5, sev), mine ? 0 : dist)
     if (!mine) return
     flash(destroyed ? 'DESTROYED' : 'WRECKED')
@@ -235,7 +244,9 @@ race.racers.forEach((r, i) => {
     const g = groundH(r.p.pos.x, r.p.pos.z)
     fx.dust(r.p.pos.x, g, r.p.pos.z, r.p.vel.x * 0.3, r.p.vel.z * 0.3, Math.round(6 + impact / 4), 8 + impact * 0.2, 20 + impact * 0.3)
     sparks(r.p.pos.x, g + 0.5, r.p.pos.z, r.p.vel, Math.round(impact / 2), 0.8)
-    if (impact > 25) wreckage.burst(r.p.pos.x, g + 1, r.p.pos.z, r.p.vel.x, 5, r.p.vel.z, 2, 30, paint.body, paint.trim)
+    if (impact > 25) wreckage.burst(r.p.pos.x, g + 1, r.p.pos.z, r.p.vel.x, 5, r.p.vel.z, 3, 35, paint.body, paint.trim)
+    // Each hard bounce: a fresh burst of fire and a ring in the sand.
+    if (impact > 18) { fx.explosion(r.p.pos.x, g + 2, r.p.pos.z, r.p.vel.x * 0.4, 6, r.p.vel.z * 0.4, 0.35 + impact / 120); shock.ground(r.p.pos.x, r.p.pos.z, 0.25 + impact / 200, 0.7, true) }
     sound.bounce(Math.min(1, impact / 60), mine ? 0 : dist)
     if (mine) { shake(Math.min(0.6, impact / 80)); input.rumble(0.8, 0.6, 140) }
   }
@@ -335,16 +346,30 @@ walker.onDown = () => { walkerDone = true; score += 5000; pop('+5000  WALKER DOW
 // ───────────────────────── player feedback ─────────────────────────
 player.onMach = (m) => {
   flash(`MACH ${m}`)
-  sound.machCrack(m)
-  coneA = 0.7
-  shake(0.12 + m * 0.025)
-  cam.punch += 1.5
+  coneA = m === 1 ? 1.2 : 0.7
+  shock.air(player.pos, player.fwd, player.vel, m === 1 ? 1.3 : 0.8 + m * 0.1, m === 1 ? 1.4 : 0.9)
+  if (m === 1) {
+    // Breaking the sound barrier off the line: the boom, a ring on the sand, the punch.
+    sound.barrier('boom')
+    shock.ground(player.pos.x, player.pos.z, 1.1, 1)
+    fx.dust(player.pos.x, groundH(player.pos.x, player.pos.z), player.pos.z, player.vel.x * 0.3, player.vel.z * 0.3, 24, 18, 40)
+    shake(0.55)
+    cam.punch += 6
+    impactPulse = Math.max(impactPulse, 0.6)
+    input.rumble(0.8, 0.8, 300)
+  } else {
+    sound.machCrack(m)
+    shake(0.12 + m * 0.025)
+    cam.punch += 1.5
+  }
 }
 player.onBarrier = (ph) => {
   if (ph === 'none') return
   sound.barrier(ph)
   if (ph === 'boom') {
     flash('MACH 6')
+    shock.air(player.pos, player.fwd, player.vel, 1.8, 1.5)
+    shock.ground(player.pos.x, player.pos.z, 1.4, 0.9)
     shake(0.6)
     coneA = 0.8
     cam.punch += 4
@@ -352,10 +377,11 @@ player.onBarrier = (ph) => {
     fx.dust(player.pos.x, groundH(player.pos.x, player.pos.z), player.pos.z, player.vel.x * 0.4, player.vel.z * 0.4, 30, 22, 50)
   }
 }
-player.onBoostStart = () => { sound.boostKick(); shake(0.15); cam.punch += 2; input.rumble(0.6, 0.3, 160) }
+player.onBoostStart = () => { shock.air(player.pos, player.fwd, player.vel, 0.7, 1.1); sound.boostKick(); shake(0.15); cam.punch += 2; input.rumble(0.6, 0.3, 160) }
 player.onLaunch = (vy) => { sound.launch(Math.min(1, vy / 70)); cam.punch += 2 }
 player.onLand = (impact, air) => {
   landDust(player, impact)
+  if (impact > 40) shock.ground(player.pos.x, player.pos.z, 0.4 + impact / 150, 0.6)
   sound.land(impact)
   shake(Math.min(0.7, impact / 110))
   cam.impulse(0, -1, 0, Math.min(1.5, impact / 50))
@@ -462,6 +488,7 @@ function die(): void {
 // ───────────────────────── HUD ─────────────────────────
 const hud = $('#hud')
 const machNum = $('#mach .num')
+const kmsEl = $('#mach .kms')
 const barCells = Array.from(document.querySelectorAll<HTMLElement>('#bar i'))
 const hullEl = $('#hull')
 const hullFill = $('#hull .fill')
@@ -626,7 +653,7 @@ let govAcc = 0, govN = 0, govBad = 0, govGood = 0, govLast = 0
  * most once every 3 s — an oscillating governor was itself a source of choppiness.
  */
 function governor(frameMs: number): void {
-  if (tierName !== 'auto' || params.has('fixed')) return
+  if (tierName !== 'auto' || params.has('fixed') || settings.scale < 1) return
   govAcc += frameMs; govN++
   if (govAcc < 500) return
   const avg = govAcc / govN
@@ -648,6 +675,41 @@ qSel.onchange = () => { tierName = qSel.value as Tier | 'auto'; tier = tierName 
 const vols = () => sound.setVolumes(+$<HTMLInputElement>('#vm').value, +$<HTMLInputElement>('#vmu').value, +$<HTMLInputElement>('#vs').value)
 for (const id of ['#vm', '#vmu', '#vs']) $(id).oninput = vols
 $<HTMLInputElement>('#rs').onchange = (e) => { CFG.camera.reduceShake = (e.target as HTMLInputElement).checked }
+// Graphics settings: applied live, remembered.
+const applyGraphics = () => {
+  settings.scale = +$<HTMLInputElement>('#g-scale').value / 100
+  settings.dist = +$<HTMLSelectElement>('#g-dist').value
+  settings.part = +$<HTMLSelectElement>('#g-part').value
+  settings.bloom = $<HTMLInputElement>('#g-bloom').checked
+  settings.blur = +$<HTMLInputElement>('#g-blur').value / 100
+  settings.sharp = +$<HTMLInputElement>('#g-sharp').value / 100
+  settings.grain = $<HTMLInputElement>('#g-grain').checked
+  settings.cloud = $<HTMLInputElement>('#g-cloud').checked
+  settings.map = $<HTMLInputElement>('#g-map').checked
+  world.setDrawDistance(settings.dist * 1000)
+  fx.smoke.density = Math.min(TIERS[tier].density, settings.part)
+  fx.glow.density = settings.part
+  post.bloom.enabled = TIERS[tier].bloom && settings.bloom
+  world.ground.uCloudShadow.value = settings.cloud ? 1 : 0
+  if (settings.scale < 1) { renderScale = settings.scale; resize() }
+  try { localStorage.setItem('dbu-gfx', JSON.stringify(settings)) } catch { /* storage blocked */ }
+}
+try {
+  const saved = JSON.parse(localStorage.getItem('dbu-gfx') || 'null')
+  if (saved) {
+    $<HTMLInputElement>('#g-scale').value = String(Math.round(saved.scale * 100))
+    $<HTMLSelectElement>('#g-dist').value = String(saved.dist)
+    $<HTMLSelectElement>('#g-part').value = String(saved.part)
+    $<HTMLInputElement>('#g-bloom').checked = saved.bloom
+    $<HTMLInputElement>('#g-blur').value = String(Math.round(saved.blur * 100))
+    $<HTMLInputElement>('#g-sharp').value = String(Math.round(saved.sharp * 100))
+    $<HTMLInputElement>('#g-grain').checked = saved.grain
+    $<HTMLInputElement>('#g-cloud').checked = saved.cloud
+    $<HTMLInputElement>('#g-map').checked = saved.map
+  }
+} catch { /* fresh */ }
+for (const id of ['#g-scale', '#g-dist', '#g-part', '#g-bloom', '#g-blur', '#g-sharp', '#g-grain', '#g-cloud', '#g-map']) $(id).addEventListener('input', applyGraphics), $(id).addEventListener('change', applyGraphics)
+applyGraphics()
 $<HTMLSelectElement>('#as').onchange = (e) => { player.assist = +(e.target as HTMLSelectElement).value }
 $<HTMLInputElement>('#fov').oninput = (e) => { fovMax = +(e.target as HTMLInputElement).value }
 try {
@@ -678,6 +740,7 @@ function rebase(): void {
   walker.shift(dx, dz)
   fx.shift(dx, dz)
   wreckage.shift(dx, dz)
+  shock.shift(dx, dz)
   for (const v of visuals.values()) { for (const t of [...v.trail, ...v.vapour]) t.shift(dx, dz); v.lastDust.x += dx; v.lastDust.z += dz }
 }
 
@@ -755,6 +818,7 @@ function drawRacer(p: Player, alpha: number, dt: number, isMe: boolean): void {
   // A spin-out is messy: the hull shudders and rocks while it whirls.
   const mess = p.spin > 0 ? Math.min(1, p.spin) : 0
   const wob = mess * (Math.sin(time * 23 + p.pos.x) * 0.1 + Math.sin(time * 37) * 0.06)
+  craft.setChar(p.crashing ? Math.min(1, p.crashT / 0.9) : 0)
   if (p.crashing) craft.body.rotation.set(p.crashRot.x, p.crashRot.y, p.crashRot.z)
   else craft.body.rotation.set(THREE.MathUtils.lerp(p.prevPitch, p.pitch, alpha) + wob * 0.6, 0, -THREE.MathUtils.lerp(p.prevBank, p.bank, alpha) + roll + wob)
   // Suspension squash on landing; a slow float bob on the ground effect.
@@ -834,6 +898,20 @@ function drawRacer(p: Player, alpha: number, dt: number, isMe: boolean): void {
         e.a = 1
         fx.glow.emit(e)
       }
+    }
+  }
+  // Speed cues: sand wisps hanging low in the air ahead, which rush past at your speed.
+  if (isMe && !p.airborne && p.mach > 0.8) {
+    const n = Math.min(6, Math.floor(p.mach * 1.2))
+    for (let i = 0; i < n; i++) {
+      const ahead = 120 + Math.random() * 260, side = (Math.random() < 0.5 ? -1 : 1) * (14 + Math.random() * 60)
+      const x = tmp.x + p.fwd.x * ahead + p.right.x * side, z = tmp.z + p.fwd.z * ahead + p.right.z * side
+      const e = resetE()
+      e.x = x; e.y = groundH(x, z) + 0.6 + Math.random() * 5; e.z = z
+      e.vx = 0; e.vy = 0; e.vz = 0
+      e.life = 0.5 + Math.random() * 0.4; e.size0 = 1 + Math.random() * 2; e.size1 = 2.5 + Math.random() * 3
+      e.r = 0.95; e.g = 0.62; e.b = 0.38; e.a = 0.35
+      fx.smoke.emit(e)
     }
   }
   // Rubbing rock: a stream of sparks at the contact.
@@ -966,6 +1044,7 @@ function frame(now: number): void {
   combat.group.visible = mode === 'hunt'
   fx.update(dt)
   wreckage.update(dt)
+  shock.update(dt)
   for (const v of visuals.values()) { for (const t of v.trail) t.build(camera.position); for (const t of v.vapour) t.build(camera.position) }
   sound.scrape(mode === 'title' ? 0 : Math.max(player.scrape, player.drifting || player.spin > 0 ? 0.25 + Math.abs(player.slip) * 0.35 : 0))
 
@@ -994,17 +1073,18 @@ function frame(now: number): void {
   if (player.barrier === 'silence') white = Math.min(1, white + realDt * 1.6)
   else white = Math.max(0, white - realDt * (player.barrier === 'boom' ? 1.6 : 4))
   P.uSpeed.value = play ? s : 0
-  P.uBlur.value = play ? (cine ? 0.3 : 1) * CFG.post.radialBlur * (s * s * 1.2 + player.boost * 0.4 + white * 0.6 + impactPulse * 0.8) : 0
+  P.uBlur.value = play ? settings.blur * (cine ? 0.3 : 1) * CFG.post.radialBlur * (s * s * 1.2 + player.boost * 0.4 + white * 0.6 + impactPulse * 0.8) : 0
   P.uAberr.value = play ? CFG.post.aberration * (s + player.boost * 0.5 + damageFlash + impactPulse * 2.5) : 0
   P.uStreak.value = play ? (cine ? 0.25 : 1) * CFG.post.streaks * THREE.MathUtils.clamp((player.mach - 0.8) / 4, 0, 1) : 0
   P.uStreakT.value += realDt * (0.4 + player.mach * 0.45)
   P.uWhite.value = white * 0.45
   P.uDamage.value = damageFlash
   P.uTime.value = time
-  P.uGrain.value = CFG.post.grain
-  P.uSharpen.value = 0.35 + (1 - renderScale) * 1.2
+  P.uGrain.value = settings.grain ? CFG.post.grain : 0
+  P.uSharpen.value = settings.sharp + (1 - renderScale) * 1.2
   P.uExposure.value = CFG.post.exposure
   post.bloom.strength = CFG.post.bloom
+  world.ground.uCloudOff.value.copy((world.sky.material as THREE.ShaderMaterial).uniforms.uCloudOff.value)
   post.bloom.threshold = CFG.post.bloomThreshold
   const onGrid = mode === 'race' && race.state === 'grid'
   const engineMach = mode === 'title' ? 0.2 : onGrid ? 0.3 + player.boost * 0.9 : player.mach
@@ -1055,6 +1135,7 @@ function frame(now: number): void {
   sound.update(realDt, engineMach, player.boost, player.brake, mode === 'hunt' ? combat.lockProgress : 0, mode === 'hunt' && combat.locked, play && !player.dead && !player.crashing, heat, player.burning, rivalVoices)
 
   post.render(realDt)
+  renderMap()
   hudT -= realDt
   updateHud(realDt, hudT <= 0)
   if (hudT <= 0) hudT = 0.1
@@ -1065,6 +1146,7 @@ function updateHud(dt: number, slow: boolean): void {
   if (mode === 'title') return
   const m = player.mach
   machNum.textContent = m.toFixed(2)
+  kmsEl.textContent = `${(player.speed / 1000).toFixed(2)} KM/S`
   for (let i = 0; i < 6; i++) {
     barCells[i].classList.toggle('on', m >= i + 0.5 || m > i + 1)
     barCells[i].classList.toggle('white', m >= 5.9)
@@ -1244,12 +1326,81 @@ const MW = mini.width, MH = mini.height
 const MAP_H = MH - 56
 const WIN_BACK = 1500, WIN_AHEAD = 7000
 const mk = (MW - 24) / (WIN_BACK + WIN_AHEAD)
+const mapView = { cx: 0, cz: 0, kk: mk }
+const mapCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 1, 30000)
+mapCam.up.set(1, 0, 0) // screen up = +x, screen right = +z (the course runs left to right)
+const mapRT = new THREE.WebGLRenderTarget(MW, MAP_H + 4, { type: THREE.HalfFloatType, samples: 2 })
+const mapQuad = new FullScreenQuad(new THREE.ShaderMaterial({
+  uniforms: { tMap: { value: mapRT.texture } },
+  vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }',
+  fragmentShader: /* glsl */ `
+    uniform sampler2D tMap; varying vec2 vUv;
+    vec3 aces(vec3 x) { return clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14), 0.0, 1.0); }
+    void main() {
+      vec3 c = texture2D(tMap, vUv).rgb;
+      if (any(isnan(c))) c = vec3(0.3);
+      c = aces(c * 0.85);
+      // A touch darker and cooler than the view, so the icons on it read.
+      c = mix(c, c * vec3(0.8, 0.85, 0.95), 0.35);
+      c = mix(c * 12.92, 1.055 * pow(clamp(c, 0.0, 1.0), vec3(1.0 / 2.4)) - 0.055, step(0.0031308, c));
+      gl_FragColor = vec4(c, 1.0);
+    }`,
+  depthTest: false,
+  depthWrite: false,
+}))
+let mapFrame = 0
+const mapHide: THREE.Object3D[] = []
+/** The real top-down render under the map overlay: an orthographic camera straight down. */
+function renderMap(): void {
+  if (mode !== 'race' || !mini.classList.contains('on') || !settings.map) return
+  // Redrawn at ~15 fps (every 4th frame); blitted every frame.
+  if ((mapFrame++ & 3) !== 0) { blitMap(); return }
+  const kk = mapView.kk
+  // World extents of the panel's map area (canvas px → metres), matching the overlay's mapping.
+  const z0 = mapView.cz - WIN_BACK + (8 - 12) / kk, z1 = mapView.cz - WIN_BACK + (MW - 8 - 12) / kk
+  const halfX = (MAP_H / 2 + 2) / kk
+  mapCam.left = -(z1 - z0) / 2; mapCam.right = (z1 - z0) / 2
+  mapCam.top = halfX; mapCam.bottom = -halfX
+  mapCam.position.set(mapView.cx, 4000, (z0 + z1) / 2)
+  mapCam.lookAt(mapView.cx, 0, (z0 + z1) / 2)
+  mapCam.updateProjectionMatrix()
+  if (!mapHide.length) {
+    mapHide.push(world.sky, world.hills, fx.group, shock.group, wreckage.mesh, shadowMesh)
+    for (const v of visuals.values()) { mapHide.push(v.craft.root); for (const t of [...v.trail, ...v.vapour]) mapHide.push(t.mesh) }
+  }
+  const vis = mapHide.map((o) => o.visible)
+  for (const o of mapHide) o.visible = false
+  renderer.setRenderTarget(mapRT)
+  renderer.clear()
+  renderer.render(scene, mapCam)
+  renderer.setRenderTarget(null)
+  mapHide.forEach((o, i) => (o.visible = vis[i]))
+  blitMap()
+}
+function blitMap(): void {
+  const r = mini.getBoundingClientRect()
+  const sx = r.width / MW
+  const x = r.left + 8 * sx, w = (MW - 16) * sx, top = r.top + 8 * sx, h = (MAP_H + 4) * sx
+  const y = innerHeight - top - h
+  const auto = renderer.autoClear
+  renderer.autoClear = false
+  renderer.setViewport(x, y, w, h)
+  renderer.setScissor(x, y, w, h)
+  renderer.setScissorTest(true)
+  mapQuad.render(renderer)
+  renderer.setScissorTest(false)
+  renderer.setViewport(0, 0, innerWidth, innerHeight)
+  renderer.autoClear = auto
+}
+
 function drawMini(): void {
   const g = miniCtx
   g.clearRect(0, 0, MW, MH)
-  g.fillStyle = 'rgba(12,7,5,0.5)'
-  g.beginPath(); g.roundRect(2, 2, MW - 4, MH - 4, 20); g.fill()
-  g.strokeStyle = 'rgba(255,255,255,0.14)'; g.lineWidth = 2; g.stroke()
+  // (The map itself is a real top-down render, drawn underneath this canvas: renderMap().)
+  g.fillStyle = 'rgba(12,7,5,0.55)'
+  g.beginPath(); g.roundRect(2, MAP_H + 12, MW - 4, MH - MAP_H - 14, 14); g.fill()
+  g.strokeStyle = 'rgba(255,255,255,0.22)'; g.lineWidth = 3
+  g.beginPath(); g.roundRect(6, 6, MW - 12, MAP_H + 4, 14); g.stroke()
   const me = race.racers[0]
   const cz = player.pos.z
   // Centred across on the stretch in view (not on you): the S-bends stay inside the panel.
@@ -1266,19 +1417,20 @@ function drawMini(): void {
   g.save()
   g.beginPath(); g.roundRect(8, 8, MW - 16, MAP_H, 14); g.clip()
   // Kilometre ticks.
-  g.strokeStyle = 'rgba(255,255,255,0.06)'; g.lineWidth = 1.5
+  g.strokeStyle = 'rgba(255,255,255,0.0)'; g.lineWidth = 1.5
   for (let km = Math.ceil((cz - WIN_BACK) / 1000); km * 1000 < cz + WIN_AHEAD * (mk / kk); km++) { const x = 12 + (km * 1000 - (cz - WIN_BACK)) * kk; g.beginPath(); g.moveTo(x, 8); g.lineTo(x, 8 + MAP_H); g.stroke() }
   const path = new Path2D()
   for (let i = i0; i <= i1; i++) { const [x, y] = to(course.px[i], course.pz[i]); if (i === i0) path.moveTo(x, y); else path.lineTo(x, y) }
   g.lineJoin = 'round'; g.lineCap = 'round'
-  g.strokeStyle = 'rgba(255,190,140,0.16)'; g.lineWidth = 500 * kk; g.stroke(path)
-  g.strokeStyle = 'rgba(255,240,225,0.55)'; g.lineWidth = 2; g.setLineDash([10, 9]); g.stroke(path); g.setLineDash([])
+  g.strokeStyle = 'rgba(255,240,225,0.35)'; g.lineWidth = 2; g.setLineDash([10, 9]); g.stroke(path); g.setLineDash([])
+  // Spires: a thin ring round each (the render shows the rock; the ring makes it pop at this size).
   for (const rk of course.rocks) {
     if (rk.i < i0 || rk.i > i1) continue
     const [x, y] = to(rk.x, rk.z)
-    g.fillStyle = '#e0602e'; g.strokeStyle = 'rgba(20,6,2,0.85)'; g.lineWidth = 2.5
-    g.beginPath(); g.arc(x, y, Math.max(6, rk.r * 1.7 * kk), 0, Math.PI * 2); g.fill(); g.stroke()
+    g.strokeStyle = 'rgba(255,110,60,0.9)'; g.lineWidth = 2
+    g.beginPath(); g.arc(x, y, Math.max(6, rk.r * 1.8 * kk) + 2, 0, Math.PI * 2); g.stroke()
   }
+  mapView.cx = cx; mapView.cz = cz; mapView.kk = kk
   course.cps.forEach((c, k) => {
     if (c.i < i0 || c.i > i1) return
     const [ax, ay] = to(c.x + c.tz * GATE_HALF, c.z - c.tx * GATE_HALF)
@@ -1402,6 +1554,6 @@ const g = {
     tier, scale: renderScale, hull: Math.round(player.hull), air: player.airborne, agl: +player.agl.toFixed(1),
     place: race.racers[0].place, crashing: player.crashing, burning: player.burning, slip: +(player.slip * 57.3).toFixed(1), spin: +player.spin.toFixed(2), drift: +player.drift.toFixed(2), yaw: +player.yawRate.toFixed(2), lap: race.lapOf(race.racers[0]), passed: race.racers[0].passed, race: race.state, particles: fx.glow.count + fx.smoke.count,
   }),
-  player, race, course, combat, walker, CFG, world, scene, camera,
+  player, race, course, combat, walker, CFG, world, scene, camera, post, fx, input, wreckage,
 }
 ;(window as unknown as { __g: typeof g }).__g = g

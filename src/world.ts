@@ -179,6 +179,8 @@ export interface GroundUniforms {
   tClay: { value: THREE.Texture | null }
   tGravel: { value: THREE.Texture | null }
   tTrack: { value: THREE.Texture | null }
+  uCloudOff: { value: THREE.Vector2 }
+  uCloudShadow: { value: number }
   uTrackBox: { value: THREE.Vector4 }
   uTrackOn: { value: number }
 }
@@ -222,6 +224,8 @@ function terrainMaterial(shared: GroundUniforms, snap: { value: THREE.Vector2 },
       uniform sampler2D tClay;
       uniform sampler2D tGravel;
       uniform sampler2D tTrack;
+      uniform vec2 uCloudOff;
+      uniform float uCloudShadow;
       uniform vec4 uTrackBox;
       uniform float uTrackOn;
       varying vec3 vW;
@@ -271,6 +275,14 @@ function terrainMaterial(shared: GroundUniforms, snap: { value: THREE.Vector2 },
         }
         alb *= 0.72;
         float sun = max(dot(n, SUN_DIR), 0.0);
+        // Cloud shadows: the same coverage the sky draws, projected down along the sun, drifting.
+        if (uCloudShadow > 0.5) {
+          vec2 cp = p + SUN_DIR.xz / SUN_DIR.y * 2600.0 + uCloudOff;
+          vec2 q = cp * 0.00032;
+          float a = 0.5, b = 0.0;
+          for (int i = 0; i < 5; i++) { b += a * vnoise(q); q = q * 2.03 + 17.1; a *= 0.5; }
+          sun *= 1.0 - 0.6 * smoothstep(0.52, 0.78, b);
+        }
         vec3 col = alb * (vec3(1.0, 0.9, 0.78) * 2.4 * sun + skyColor(n) * 0.36 + vec3(0.5, 0.22, 0.1) * 0.2);
 
         // The craft's shadow, cast along the sun (fainter and wider the higher it flies).
@@ -289,7 +301,9 @@ function terrainMaterial(shared: GroundUniforms, snap: { value: THREE.Vector2 },
         float hov = exp(-dot(dc, dc) / 22.0) * near;
         col += vec3(0.1, 0.5, 1.0) * hov * 0.5;
         float ba = dot(dc, uFwd);
-        float behind = exp(-pow(dot(dc, side) / 3.5, 2.0)) * (1.0 - smoothstep(-4.0, 0.0, ba)) * exp(ba / 26.0) * near;
+        float sd = dot(dc, side) / 3.5;
+        // (x·x, never pow(x, 2.0): pow of a negative is NaN in GLSL — black pixels around the craft.)
+        float behind = exp(-sd * sd) * (1.0 - smoothstep(-4.0, 0.0, ba)) * exp(ba / 26.0) * near;
         col += vec3(1.4, 0.55, 0.18) * behind * (0.1 + 0.6 * uBoost);
 
         if (uWalker.w > 0.0) {
@@ -424,13 +438,13 @@ class Wrapped {
     geo: THREE.BufferGeometry,
     mat: THREE.Material,
     readonly tile: number,
-    readonly sinkFrom: number,
+    public sinkFrom: number,
     readonly bury: number,
     readonly prof: Profile,
     readonly big: boolean,
     readonly veto: ((x: number, z: number, r: number) => boolean) | null = null,
     /** Fully sunk (and not drawn) past this distance. */
-    readonly sinkTo = tile / 2,
+    public sinkTo = tile / 2,
   ) {
     this.mesh = new THREE.InstancedMesh(geo, mat, 1)
   }
@@ -500,6 +514,8 @@ export class World {
     tClay: { value: null },
     tGravel: { value: null },
     tTrack: { value: null },
+    uCloudOff: { value: new THREE.Vector2() },
+    uCloudShadow: { value: 1 },
     uTrackBox: { value: new THREE.Vector4(0, 0, 1, 1) },
     uTrackOn: { value: 0 },
   }
@@ -626,6 +642,11 @@ export class World {
     mesh.count = list.length
     mesh.frustumCulled = false
     this.group.add(mesh)
+  }
+
+  /** How far the mesas are drawn (m): they rise from the haze between 82% and 100% of it. */
+  setDrawDistance(d: number): void {
+    for (const w of this.wrapped) if (w.big) { w.sinkTo = d; w.sinkFrom = d * 0.82 }
   }
 
   applyTextures(t: { sand: THREE.Texture; clay: THREE.Texture; gravel: THREE.Texture }): void {

@@ -57,7 +57,7 @@ export class Debris {
       const p = this.pieces[i]
       p.on = true
       p.life = 3 + R() * 3
-      p.smoke = R() < 0.25
+      p.smoke = R() < 0.6
       p.p.set(x + (R() - 0.5) * 3, y + R() * 1.5, z + (R() - 0.5) * 3)
       p.v.set(vx * (0.55 + R() * 0.35) + (R() - 0.5) * spread, vy + 10 + R() * spread * 0.6, vz * (0.55 + R() * 0.35) + (R() - 0.5) * spread)
       p.q.setFromEuler(_e.set(R() * 6, R() * 6, R() * 6))

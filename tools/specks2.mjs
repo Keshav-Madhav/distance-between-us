@@ -1,0 +1,11 @@
+import { chromium } from 'playwright-core'
+const browser = await chromium.launch({ channel: 'chrome', headless: true, args: ['--mute-audio', '--use-gl=angle', '--ignore-gpu-blocklist'] })
+const page = await (await browser.newContext({ viewport: { width: 1280, height: 720 } })).newPage()
+await page.goto('http://localhost:4417/?fixed'); await page.waitForFunction('window.__g && window.__g.ready')
+await page.evaluate(() => { window.__g.start(); document.getElementById('hud').style.display = 'none' })
+await page.waitForTimeout(1200)
+await page.screenshot({ path: 'shots/sp-grid.png' })
+await page.evaluate(() => { const g = window.__g; g.skipCountdown(); g.autopilot(true) })
+await page.waitForTimeout(4500)
+await page.screenshot({ path: 'shots/sp-race.png' })
+await browser.close()

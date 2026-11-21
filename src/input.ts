@@ -4,7 +4,7 @@ import type { Controls } from './player'
 const THREE_clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v))
 
 export class Input {
-  private readonly down = new Set<string>()
+  readonly down = new Set<string>()
   private readonly pressed = new Set<string>()
   readonly c: Controls = { steer: 0, boost: false, burner: false, brake: false, strafe: 0, dodgeL: false, dodgeR: false }
   fire = false
