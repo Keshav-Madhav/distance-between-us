@@ -512,7 +512,7 @@ export class Course {
     // ── gates ──
     const dark = new THREE.MeshStandardMaterial({ color: 0x24262b, roughness: 0.45, metalness: 0.8 })
     // (Polar night: no warm desert bounce for metal to mirror — it went pure black. Painted, sky-lit.)
-    if (BIOME === 'ice') { dark.color.set(0x55627a); dark.metalness = 0.25; dark.roughness = 0.5; dark.emissive.set(0x0c1a2e) }
+    if (BIOME === 'ice') { dark.color.set(0x9aa6be); dark.metalness = 0; dark.roughness = 0.55; dark.emissive.set(0x23324c) }
     patchStandard(dark)
     // Square towers (faces along the track), a lit strip pair on each inner face.
     const towerGeo = new THREE.BoxGeometry(11, 140, 11)

@@ -119,13 +119,20 @@ if (BIOME === 'ice') {
   for (const side of [-1, 1]) {
     let j = course.startI + Math.round(rnd() * 3)
     while (j < lapEnd - 10) {
-      const spike = rnd() < 0.62
-      const r = spike ? 5 + rnd() * 7 : 10 + rnd() * 14
-      const h = spike ? 22 + rnd() * 45 : 6 + rnd() * 12
-      const lat = side * (330 + Math.pow(rnd(), 1.5) * 170 + bendOut(j))
+      // Mostly shard clusters tall enough to rise past the horizon as they whip by; now and then a
+      // sentinel spire right at the pylons; broken blocks between, any size, tilted, half sunk.
+      const roll = rnd()
+      const spike = roll < 0.62, sentinel = roll > 0.955
+      const sc = 0.4 + 1.6 * rnd()
+      const r = sentinel ? 14 + rnd() * 10 : spike ? 6 + rnd() * 8 : (12 + rnd() * 12) * sc
+      const h = sentinel ? 110 + rnd() * 90 : spike ? 45 + rnd() * 95 : (10 + rnd() * 16) * sc
+      const lat = side * ((sentinel ? 330 : 330 + Math.pow(rnd(), 1.5) * 170) + bendOut(j))
       const [tx, tz] = course.tangent(j)
       const x = course.px[j] + tz * lat, z = course.pz[j] - tx * lat
-      if (course.distance(x, z) > 320) heroes.push({ x, z, r, h, kind: spike ? 'spire' : 'butte', v: Math.floor(rnd() * 2.999), yaw: rnd() * 6.28 })
+      if (course.distance(x, z) > 320) heroes.push({
+        x, z, r, h, kind: spike || sentinel ? 'spire' : 'butte', v: Math.floor(rnd() * 2.999), yaw: rnd() * 6.28,
+        tilt: spike || sentinel ? 0 : (rnd() - 0.5) * 0.7, sink: spike || sentinel ? 0 : rnd() * 0.35,
+      })
       j += Math.max(1, Math.round((40 + rnd() * 50) / 40))
     }
   }

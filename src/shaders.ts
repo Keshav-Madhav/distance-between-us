@@ -138,6 +138,9 @@ export function patchStandard(mat: THREE.MeshStandardMaterial, opts: PatchOpts =
           c = mix(c, vec3(0.75, 0.92, 1.0), (1.0 - smoothstep(0.0, 0.1, st)) * 0.35);
           // Each facet a little lighter or darker (broken faces, not a painted tin).
           c *= 0.92 + 0.16 * hash12(floor(vWN.xz * 6.0 + 50.0) + sd * 91.0);
+          // Vertical fracture planes: tall darker bands down the faces.
+          float fb = vnoise(vec2((vFogW.x * 0.7 + vFogW.z) * 0.012 + sd * 13.0, vFogW.y * 0.0015));
+          c *= 1.0 - 0.3 * smoothstep(0.62, 0.8, fb);
           // Crevasse slots: dark, deep blue.
           c = mix(c, deep * 0.45, smoothstep(0.15, 0.7, vCrev));
           float wob = vnoise(vFogW.xz * 0.03 + vFogW.y * 0.02);
@@ -155,6 +158,8 @@ export function patchStandard(mat: THREE.MeshStandardMaterial, opts: PatchOpts =
           snow = max(snow, (1.0 - smoothstep(0.05, 0.12 + 0.08 * clamp(wob, 0.0, 1.0), t)) * 0.95);
           #endif
           c *= mix(0.6, 1.0, smoothstep(2.0, 30.0, hy));
+          // Pulled toward grey, so the ice sits in the lilac air instead of shouting cobalt.
+          c = mix(vec3(dot(c, vec3(0.3, 0.45, 0.25))), c, 0.75);
           c = mix(c, vec3(1.15, 1.18, 1.25), snow);
           gIceSnow = snow;
           diffuseColor.rgb = c;
@@ -173,6 +178,10 @@ export function patchStandard(mat: THREE.MeshStandardMaterial, opts: PatchOpts =
             float tt = (vFogW.y - vBaseY) / vHt;
             float br = 0.65 + 0.35 * sin(uAurT * 0.6 + hash12(floor(mod(vOrg, 72000.0) / 37.0)) * 6.28);
             totalEmissiveRadiance += vec3(0.3, 0.9, 0.85) * smoothstep(0.45, 1.0, tt) * br * (0.9 + 1.5 * rim);
+            // Light inside the shard, and a few facets catching it as a bright vertical streak.
+            totalEmissiveRadiance += (1.0 - sn) * vec3(0.04, 0.12, 0.16) * (1.0 + rim);
+            float fh = hash12(floor(vWN.xz * 6.0 + 50.0) + floor(mod(vOrg, 72000.0) / 37.0));
+            totalEmissiveRadiance += (1.0 - sn) * vec3(0.55, 0.85, 1.0) * pow(fh, 8.0) * 0.9 * (0.4 + 0.6 * tt);
           }
           #endif
         }`,

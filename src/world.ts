@@ -284,7 +284,11 @@ function terrainMaterial(shared: GroundUniforms, snap: { value: THREE.Vector2 },
           float l0 = dot(s1, vec3(0.33));
           float lx = dot(texture2D(tSand, (p + vec2(0.35, 0.0)) / 26.0, bias).rgb, vec3(0.33));
           float lz = dot(texture2D(tSand, (p + vec2(0.0, 0.35)) / 26.0, bias).rgb, vec3(0.33));
+          #ifdef BIOME_ICE
+          n = normalize(n + vec3(l0 - lx, 0.0, l0 - lz) * 0.3 * nearB * (1.0 - uSpeed * 0.7));
+          #else
           n = normalize(n + vec3(l0 - lx, 0.0, l0 - lz) * 0.8 * nearB * (1.0 - uSpeed * 0.7));
+          #endif
         }
         vec3 s2 = texture2D(tSand, rot * p / 170.0 + 0.37, bias * 0.5).rgb;
         vec3 sandT = mix(s1, s2, 0.45);
@@ -303,12 +307,22 @@ function terrainMaterial(shared: GroundUniforms, snap: { value: THREE.Vector2 },
         {
           float lumS = dot(sandT, vec3(0.333));
           // (Ripple contrast fades with distance: far sastrugi only made moire.)
-          float rk = mix(0.36, 0.08, smoothstep(120.0, 1200.0, length(vW - cameraPosition)));
-          vec3 snow = vec3(0.84, 0.89, 0.97) * (1.0 - rk * 0.5 + rk * lumS) * (0.94 + 0.12 * fbmT(p * 0.0011 + 3.1));
+          float rk = mix(0.15, 0.04, smoothstep(120.0, 1200.0, length(vW - cameraPosition)));
+          // Sastrugi: long wind-carved ridges, all one way, sharp on the lee side.
+          vec2 wd = vec2(0.8, 0.6);
+          float along = dot(p, wd), across = dot(p, vec2(-wd.y, wd.x));
+          float sg = fract(across / (7.0 + 5.0 * fbmT(p * 0.002)) + 0.4 * fbmT(vec2(along * 0.004, across * 0.01)));
+          float sas = smoothstep(0.0, 0.7, sg) * (1.0 - smoothstep(0.7, 0.78, sg)) * smoothstep(0.35, 0.7, fbmT(vec2(along * 0.0015, across * 0.004) + 7.0));
+          sas *= 1.0 - smoothstep(300.0, 2500.0, length(vW - cameraPosition));
+          vec3 snow = vec3(0.84, 0.89, 0.97) * (1.0 - rk * 0.5 + rk * lumS) * (1.0 - 0.12 * sas) * (0.94 + 0.12 * fbmT(p * 0.0011 + 3.1));
           vec3 rockI = vec3(0.26, 0.29, 0.36) * (0.85 + 0.3 * dot(grav, vec3(0.333)));
           alb = mix(snow, rockI, gm * 0.5);
           float cr = smoothstep(0.014, 0.0, abs(fbmT(p * 0.012) - 0.47)) + 0.6 * smoothstep(0.009, 0.0, abs(fbmT(p * 0.05 + 4.0) - 0.47));
           vec3 ice = mix(vec3(0.05, 0.11, 0.16), vec3(0.72, 0.86, 0.95), min(1.0, cr));
+          // Wind-polished blue ice: bare patches out on the snowfield (they mirror the sky like the lakes).
+          float pol = smoothstep(0.6, 0.66, fbmT(p * 0.0007 + 21.0)) * (1.0 - river);
+          alb = mix(alb, mix(vec3(0.16, 0.32, 0.48), vec3(0.6, 0.78, 0.92), min(1.0, cr * 0.7)), pol * 0.85);
+          river = max(river, pol * 0.55);
           alb = mix(alb, ice, river);
         }
         #endif
@@ -431,7 +445,7 @@ function pebbles(count: number, tile: number): THREE.InstancedMesh {
         if (n.y < 0.0) n = -n;
         vec3 alb = mix(vec3(0.3, 0.07, 0.03), vec3(0.55, 0.28, 0.14), vTint);
         #ifdef BIOME_ICE
-        alb = mix(vec3(0.15, 0.17, 0.22), vec3(0.55, 0.62, 0.75), vTint);
+        alb = mix(vec3(0.42, 0.48, 0.6), vec3(0.75, 0.82, 0.94), vTint);
         #endif
         float sun = max(dot(n, SUN_DIR), 0.0);
         vec3 col = alb * (SUN_COL * sun + skyColor(n) * 0.35);
@@ -812,22 +826,24 @@ export class World {
   }
 
   /** Ice landmarks placed by the course itself, close beside the line (the polar world's set pieces). */
-  addHeroes(list: { x: number; z: number; r: number; h: number; kind: 'mesa' | 'butte' | 'spire'; v: number; yaw: number }[]): void {
+  addHeroes(list: { x: number; z: number; r: number; h: number; kind: 'mesa' | 'butte' | 'spire'; v: number; yaw: number; tilt?: number; sink?: number }[]): void {
     const groups = new Map<string, typeof list>()
     // Grouped by shape and by 5 km cell, each group its own culled mesh (thousands of small shards
     // line a course; only the cells in view are drawn).
     for (const o of list) { const k = `${o.kind}${o.v}:${Math.floor(o.x / 5000)},${Math.floor(o.z / 5000)}`; if (!groups.has(k)) groups.set(k, []); groups.get(k)!.push(o) }
     const shapes = new Map<string, ReturnType<typeof iceGeometry>>()
-    const m = new THREE.Matrix4(), q = new THREE.Quaternion(), v = new THREE.Vector3(), sc = new THREE.Vector3(), up = new THREE.Vector3(0, 1, 0)
+    const m = new THREE.Matrix4(), q = new THREE.Quaternion(), v = new THREE.Vector3(), sc = new THREE.Vector3(), e = new THREE.Euler()
     for (const g of groups.values()) {
       const sk = g[0].kind + g[0].v
       if (!shapes.has(sk)) shapes.set(sk, iceGeometry(g[0].kind, g[0].kind.length * 31 + 7 + g[0].v * 101, g[0].v))
       const { geo, prof } = shapes.get(sk)!
       const mesh = new THREE.InstancedMesh(geo, g[0].kind === 'spire' ? this.spikeMat! : this.mesaMat!, g.length)
       g.forEach((o, i) => {
-        const by = groundH(o.x, o.z) - 0.06 * o.h - 3
+        // (Small blocks may lie tilted or half sunk: toppled pieces, not a row of identical boxes.)
+        const by = groundH(o.x, o.z) - (0.06 + (o.sink ?? 0)) * o.h - 3
         this.fixed.push({ x: o.x, z: o.z, r: o.r, h: o.h, yaw: o.yaw, by, prof })
-        mesh.setMatrixAt(i, m.compose(v.set(o.x, by, o.z), q.setFromAxisAngle(up, o.yaw), sc.set(o.r, o.h, o.r)))
+        q.setFromEuler(e.set(o.tilt ?? 0, o.yaw, (o.tilt ?? 0) * 0.6, 'YXZ'))
+        mesh.setMatrixAt(i, m.compose(v.set(o.x, by, o.z), q, sc.set(o.r, o.h, o.r)))
       })
       mesh.computeBoundingSphere()
       this.group.add(mesh)
