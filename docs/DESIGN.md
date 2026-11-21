@@ -23,8 +23,7 @@ something you feel, not a number on the HUD.
   off the line). Pressing too early bogs you down.
 - **Gates:** each is a pair of 140 m towers with a glowing banner 530 m wide. The next gate is lit
   cyan, with a holographic curtain, two light pillars rising 2.4 km into the sky, and an on-screen
-  diamond showing its distance. The finish is orange. Clipping past a gate or skipping one
-  costs +2 s. A gate chime plays as you pass; a lap gets a third note and a lap-time pop.
+  diamond showing its distance. The finish is orange. Missing a gate (passing outside its towers, or skipping it) costs no time; it rips away about 60% of your speed on the spot. A gate chime plays as you pass; a lap gets a third note and a lap-time pop.
 - **Track reading:** pylons line both edges every 320 m (orange on one side, white on the other),
   an arrow at the screen edge points to the next gate, and a minimap shows the whole loop.
 - **Boost pads:** chevron strips on the line add +Mach 0.75.

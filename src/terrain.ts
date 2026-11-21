@@ -31,7 +31,8 @@ function smooth(e0: number, e1: number, x: number): number {
 /** How deep in a riverbed (0 none … 1 on the bed floor). */
 export function riverAt(x: number, z: number): number {
   const c = Math.sin((TAU * (1 * x + 3 * z)) / P + 0.4 + 0.9 * Math.sin((TAU * (4 * x - 1 * z)) / P + 2.0))
-  return 1 - smooth(0.03, 0.13, Math.abs(c))
+  // (Wide, shallow banks: steep ones were ramps at Mach 6.)
+  return 1 - smooth(0.03, 0.3, Math.abs(c))
 }
 
 /**
@@ -86,7 +87,7 @@ export const TERRAIN_GLSL = /* glsl */ `
 #define PER 12000.0
 float riverAt(vec2 p) {
   float c = sin(TAU * (1.0 * p.x + 3.0 * p.y) / PER + 0.4 + 0.9 * sin(TAU * (4.0 * p.x - 1.0 * p.y) / PER + 2.0));
-  return 1.0 - smoothstep(0.03, 0.13, abs(c));
+  return 1.0 - smoothstep(0.03, 0.3, abs(c));
 }
 #define MAX_MOUNDS ${MAX_MOUNDS}
 uniform vec4 uMounds[MAX_MOUNDS];

@@ -51,22 +51,29 @@ const FINAL = {
 
       // Radial blur: strength grows with r², so the middle (where you aim) stays sharp.
       float amt = uBlur * smoothstep(0.16, 0.85, r) * r;
-      vec3 c = vec3(0.0);
-      float wsum = 0.0;
-      float j = hash(gl_FragCoord.xy + fract(uTime) * 61.0);
-      for (int i = 0; i < 12; i++) {
-        float t = (float(i) + j) / 12.0;
-        vec2 o = d * amt * t;
-        float w = 1.0 - t * 0.5;
-        vec2 su = uv - o;
-        // Chromatic fringing grows toward the edges.
-        vec2 ca = d * uAberr * r * 2.0;
-        vec3 sm = vec3(texture2D(tDiffuse, su + ca).r, texture2D(tDiffuse, su).g, texture2D(tDiffuse, su - ca).b);
-        if (any(isnan(sm)) || any(isinf(sm))) continue;
-        c += sm * w;
-        wsum += w;
+      // (Cost: the old loop read 36 texels a pixel at full Retina resolution. Now the middle, where
+      // there is no blur, reads 3; the edges read 8 for the blur + 2 for the fringe.)
+      vec2 ca = d * uAberr * r * 2.0;
+      vec3 c;
+      if (amt < 0.0012) {
+        c = vec3(texture2D(tDiffuse, uv + ca).r, texture2D(tDiffuse, uv).g, texture2D(tDiffuse, uv - ca).b);
+      } else {
+        c = vec3(0.0);
+        float wsum = 0.0;
+        float j = hash(gl_FragCoord.xy + fract(uTime) * 61.0);
+        for (int i = 0; i < 8; i++) {
+          float t = (float(i) + j) / 8.0;
+          float w = 1.0 - t * 0.5;
+          vec3 sm = texture2D(tDiffuse, uv - d * amt * t).rgb;
+          if (any(isnan(sm)) || any(isinf(sm))) continue;
+          c += sm * w;
+          wsum += w;
+        }
+        c /= max(wsum, 1e-4);
+        // The fringe: red and blue pulled apart once, on top of the blur.
+        vec2 rb = vec2(texture2D(tDiffuse, uv - d * amt * 0.5 + ca).r, texture2D(tDiffuse, uv - d * amt * 0.5 - ca).b);
+        if (!(any(isnan(rb)) || any(isinf(rb)))) { c.r = mix(c.r, rb.x, 0.6); c.b = mix(c.b, rb.y, 0.6); }
       }
-      c /= max(wsum, 1e-4);
       // Sharpen (contrast-adaptive, in a reversible tone curve so HDR highlights don't ring), weakest
       // where the motion blur is working — the centre stays crisp, the edges stay smooth.
       if (uSharpen > 0.001) {
@@ -152,6 +159,8 @@ export class Post {
   setSize(w: number, h: number, pixelRatio: number): void {
     this.composer.setPixelRatio(pixelRatio)
     this.composer.setSize(w, h)
+    // Bloom is soft by nature: computed at half resolution (a quarter of the pixels).
+    this.bloom.setSize(Math.max(1, Math.round((w * pixelRatio) / 2)), Math.max(1, Math.round((h * pixelRatio) / 2)))
     this.final.uniforms.uAspect.value = w / h
     this.final.uniforms.uTexel.value.set(1 / (w * pixelRatio), 1 / (h * pixelRatio))
   }

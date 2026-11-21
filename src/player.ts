@@ -384,10 +384,11 @@ export class Player {
     if (!this.airborne) {
       const terrainVy = slope * hs
       // Launch: rising, and the ground is about to fall away faster than the ground effect can hold.
-      if (slope > 0.02 && (slope - slopeAhead) * hs > LAUNCH_DV) {
+      // (The bar rises with speed: at Mach 6 every dune was a ramp and the craft lived in the air.)
+      if (slope > 0.02 && (slope - slopeAhead) * hs > LAUNCH_DV + 0.05 * hs) {
         this.airborne = true
         this.airTime = 0
-        this.vy = Math.min(terrainVy, 24 + 9 * m)
+        this.vy = Math.min(terrainVy, 20 + 5 * m)
         this.onLaunch?.(this.vy)
       } else {
         const w = H.hoverW

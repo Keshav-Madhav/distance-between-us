@@ -18,10 +18,13 @@ import { Post } from './post'
 import { groundH, SUN_DIR } from './terrain'
 import { loadTextures } from './textures'
 import { Course, GATE_HALF, JUMPS, LAPS, SPRINT_KM } from './course'
-import { Race } from './race'
+import { Race, type Racer } from './race'
 import { ChaseCam } from './camera'
 import { Debris } from './debris'
 import { Shock } from './shock'
+/** '#rrggbb' for a colour, cached (built per frame before: garbage on every HUD tick). */
+const hexOf = new Map<number, string>()
+function hex(c: number): string { let h = hexOf.get(c); if (!h) { h = '#' + new THREE.Color(c).getHexString(); hexOf.set(c, h) } return h }
 
 const STEP = 1 / 60
 const params = new URLSearchParams(location.search)
@@ -112,7 +115,7 @@ let fovMax = CFG.camera.fovMax
 /** After the finish: autopilot + cinematic camera, until Esc hands control back. */
 let spectate = false
 /** Graphics settings (the Esc panel). */
-const settings = { map: true, scale: 1, dist: 20, part: 1, bloom: true, blur: 1, sharp: 0.4, grain: true, cloud: true }
+const settings = { fps: 'auto' as 'auto' | '60' | '120' | 'max', map: true, scale: 1, dist: 20, part: 1, bloom: true, blur: 1, sharp: 0.4, grain: true, cloud: true }
 let crashBreak = 0
 const rivalVoices: import('./audio').RivalVoice[] = []
 const camRight = new THREE.Vector3()
@@ -124,7 +127,7 @@ const huntObs: import('./world').Obstacle[] = []
 const race = new Race(course, player, {
   gate(r, lapDone, missed) {
     if (r.p !== player) return
-    if (missed) { warn('MISSED GATE', '+2.0 S'); sound.missed() }
+    if (missed) { /* the speed cut and its effects: missedGate() */ }
     sound.gate(lapDone || r.passed === race.K - 1)
     if (r.passed > 1) pop(`GATE ${r.passed - 1}/${race.K - 2}  ·  P${r.place}  ·  ${fmtLap(race.clock + r.penalty)}`)
     if (r.passed === race.K - 1) flash('FINAL GATE')
@@ -158,6 +161,17 @@ const race = new Race(course, player, {
       const o = a.p === player ? b.p : a.p
       cam.impulse(Math.sign(player.pos.x - o.pos.x) * 0.5, 0.2, Math.sign(player.pos.z - o.pos.z) * 0.5, 0.6 + sev)
     } else if (camera.position.distanceTo(a.p.pos) < 500) sound.clang(0.3)
+  },
+  missedGate(r) {
+    if (r.p !== player) return
+    warn('MISSED GATE', 'SPEED LOST')
+    sound.missed()
+    sound.crash(false)
+    damageFlash = Math.max(damageFlash, 0.7)
+    impactPulse = 1
+    shake(0.6)
+    cam.punch -= 8
+    input.rumble(1, 0.6, 400)
   },
   countdown(n) {
     sound.start()
@@ -264,7 +278,7 @@ const enemyEls = Array.from({ length: 14 }, () => {
 const tagEls = race.racers.filter((r) => r.ai).map((r) => {
   const d = document.createElement('div')
   d.className = 'tag'
-  d.style.setProperty('--c', '#' + new THREE.Color(r.color).getHexString())
+  d.style.setProperty('--c', hex(r.color))
   d.innerHTML = `<span>${r.name}</span><i></i>`
   $('#tags').appendChild(d)
   return { r, d }
@@ -503,6 +517,12 @@ const hintsEl = $('#hints')
 const debugEl = $('#debug')
 const raceEl = $('#race')
 const standEl = $('#stand')
+const standRows: Racer[] = []
+const standEls = Array.from({ length: 10 }, () => {
+  const el = document.createElement('div'), name = document.createElement('span'), gap = document.createElement('span')
+  gap.className = 'g'; el.append(name, gap); standEl.append(el)
+  return { el, name, gap, who: null as Racer | null }
+})
 const countEl = $('#count')
 const mini = $<HTMLCanvasElement>('#mini')
 const reticle = $('#reticle')
@@ -579,7 +599,7 @@ function startRace(): void {
   scoreEl.style.display = 'none'
   reticle.style.display = 'none'
   hintsEl.style.opacity = '0.85'
-  setTimeout(() => (hintsEl.style.opacity = '0'), 14000)
+  setTimeout(() => (hintsEl.style.opacity = '0'), 9000)
 }
 
 function startHunt(): void {
@@ -620,8 +640,9 @@ type Tier = 'low' | 'medium' | 'high' | 'ultra'
 const TIERS: Record<Tier, { pr: number; samples: number; bloom: boolean; density: number }> = {
   low: { pr: 0.75, samples: 0, bloom: false, density: 0.5 },
   medium: { pr: 1, samples: 2, bloom: true, density: 0.75 },
-  high: { pr: 1.6, samples: 4, bloom: true, density: 1 },
-  ultra: { pr: 2, samples: 4, bloom: true, density: 1 },
+  high: { pr: 1.6, samples: 2, bloom: true, density: 1 },
+  // (MSAA 4 at native Retina was the single biggest GPU cost: 12.4 → 8.4 ms without it.)
+  ultra: { pr: 2, samples: 2, bloom: true, density: 1 },
 }
 let tierName = ((params.get('q') as Tier | null) ?? 'auto') as Tier | 'auto'
 let tier: Tier = tierName === 'auto' ? 'high' : tierName
@@ -686,6 +707,8 @@ const applyGraphics = () => {
   settings.grain = $<HTMLInputElement>('#g-grain').checked
   settings.cloud = $<HTMLInputElement>('#g-cloud').checked
   settings.map = $<HTMLInputElement>('#g-map').checked
+  settings.fps = $<HTMLSelectElement>('#g-fps').value as typeof settings.fps
+  autoCap = 0
   world.setDrawDistance(settings.dist * 1000)
   fx.smoke.density = Math.min(TIERS[tier].density, settings.part)
   fx.glow.density = settings.part
@@ -706,9 +729,10 @@ try {
     $<HTMLInputElement>('#g-grain').checked = saved.grain
     $<HTMLInputElement>('#g-cloud').checked = saved.cloud
     $<HTMLInputElement>('#g-map').checked = saved.map
+    if (saved.fps) $<HTMLSelectElement>('#g-fps').value = saved.fps
   }
 } catch { /* fresh */ }
-for (const id of ['#g-scale', '#g-dist', '#g-part', '#g-bloom', '#g-blur', '#g-sharp', '#g-grain', '#g-cloud', '#g-map']) $(id).addEventListener('input', applyGraphics), $(id).addEventListener('change', applyGraphics)
+for (const id of ['#g-fps', '#g-scale', '#g-dist', '#g-part', '#g-bloom', '#g-blur', '#g-sharp', '#g-grain', '#g-cloud', '#g-map']) $(id).addEventListener('input', applyGraphics), $(id).addEventListener('change', applyGraphics)
 applyGraphics()
 $<HTMLSelectElement>('#as').onchange = (e) => { player.assist = +(e.target as HTMLSelectElement).value }
 $<HTMLInputElement>('#fov').oninput = (e) => { fovMax = +(e.target as HTMLInputElement).value }
@@ -936,10 +960,15 @@ function drawRacer(p: Player, alpha: number, dt: number, isMe: boolean): void {
       e.r = 0.05; e.g = 0.045; e.b = 0.04; e.a = 0.75; e.r1 = 2.5; e.g1 = 2.4; e.b1 = 2.3; e.drag = 1.8; e.grav = -5
       fx.smoke.emit(e)
     }
-    const f = resetE()
-    f.x = tmp.x; f.y = tmp.y + 0.5; f.z = tmp.z; f.vx = p.vel.x * 0.8; f.vy = 6; f.vz = p.vel.z * 0.8
-    f.life = 0.35; f.size0 = 4; f.size1 = 7; f.r = 7; f.g = 2.8; f.b = 0.8; f.a = 1; f.drag = 3
-    fx.glow.emit(f)
+    // (Spread along the distance covered since last frame: a stream of fire, not a row of beads.)
+    for (let k = 0; k < 4; k++) {
+      const u = k / 4
+      const f = resetE()
+      f.x = tmp.x - p.vel.x * dt * u; f.y = tmp.y + 0.5 - p.vel.y * dt * u; f.z = tmp.z - p.vel.z * dt * u
+      f.vx = p.vel.x * 0.6 + (Math.random() - 0.5) * 8; f.vy = 6 + Math.random() * 6; f.vz = p.vel.z * 0.6 + (Math.random() - 0.5) * 8
+      f.life = 0.3 + Math.random() * 0.2; f.size0 = 3; f.size1 = 6.5; f.r = 7; f.g = 2.6 + Math.random(); f.b = 0.7; f.a = 0.8; f.drag = 2.5
+      fx.glow.emit(f)
+    }
   }
   // Smoking when badly hurt.
   if (p.hull < 35 && near) {
@@ -952,8 +981,44 @@ function drawRacer(p: Player, alpha: number, dt: number, isMe: boolean): void {
   v.lastDust.copy(tmp)
 }
 
+// ── frame pacing ──
+// On a 120 Hz screen a frame that takes 9–12 ms is shown alternately for 8 ms and 16 ms: judder, at a
+// "high" frame rate. AUTO watches for that and locks to an even 60 (retrying 120 later); 60 / 120 / MAX
+// are fixed. (rAF still fires every refresh; skipped refreshes simply don't render.)
+// Refresh interval: the median of the last 30 rAF gaps, in a fixed ring (no per-frame arrays).
+const rafGaps = new Float64Array(30), rafSorted = new Float64Array(30)
+let rafN = 0, rafHead = 0, refreshMs = 16.7
+let lastRaf = performance.now()
+let autoCap = 0
+let autoMisses = 0, autoFrames = 0, autoSince = 0
+function frameCap(): number {
+  const refresh = refreshMs
+  if (refresh > 12) return 0 // a 60 Hz screen: every refresh
+  if (settings.fps === '60') return 1000 / 60
+  if (settings.fps === '120' || settings.fps === 'max') return 0
+  return autoCap
+}
+function paceAuto(delta: number, now: number): void {
+  if (settings.fps !== 'auto') return
+  const refresh = refreshMs
+  if (refresh > 12) return
+  autoFrames++
+  if (delta > (autoCap || refresh) * 1.45) autoMisses++
+  if (autoFrames >= 120) {
+    if (!autoCap && autoMisses > 10) { autoCap = 1000 / 60; autoSince = now }
+    else if (autoCap && autoMisses === 0 && now - autoSince > 30000) { autoCap = 0; autoSince = now }
+    autoFrames = 0; autoMisses = 0
+  }
+}
+
 function frame(now: number): void {
   requestAnimationFrame(frame)
+  rafGaps[rafHead] = now - lastRaf; lastRaf = now
+  rafHead = (rafHead + 1) % 30; if (rafN < 30) rafN++
+  if ((rafHead & 7) === 0) { const v = rafSorted.subarray(0, rafN); v.set(rafGaps.subarray(0, rafN)); v.sort(); refreshMs = v[rafN >> 1] }
+  const cap = frameCap()
+  if (cap > 0 && now - last < cap - 2) return
+  paceAuto(now - last, now)
   const realDt = Math.min(0.1, (now - last) / 1000)
   lastMs = now - last
   last = now
@@ -1199,13 +1264,19 @@ function updateHud(dt: number, slow: boolean): void {
     if (slow) {
       $('#r-pos').innerHTML = `${me.place}<small>/${race.racers.length}</small>`
       $('#r-lap').innerHTML = `${(race.toGo(me) / 1000).toFixed(1)}<small> KM</small>`
-      $('#r-pen').textContent = me.penalty ? `+${me.penalty.toFixed(0)} S PENALTY` : ''
-      const rows = [...race.racers].sort((a, b) => a.place - b.place)
-      const lead = race.progress(rows[0])
-      standEl.innerHTML = rows.map((r) => {
-        const gap = r.finished ? (r === rows[0] ? 'WINNER ' : '') + fmtLap(r.finishTime) : rows[0].finished ? `${(race.toGo(r) / 1000).toFixed(1)} KM` : r === rows[0] ? 'LEADER' : `+${((lead - race.progress(r)) / Math.max(800, player.speed)).toFixed(1)}`
-        return `<div class="${r.ai ? '' : 'me'}" style="--c:#${new THREE.Color(r.color).getHexString()}"><span>${r.place}&nbsp;&nbsp;${r.name}</span><span class="g">${gap}</span></div>`
-      }).join('')
+      $('#r-pen').textContent = ''
+      // Rows built once; each tick only changes text that actually changed (no innerHTML re-parse,
+      // no style recalc of the whole panel).
+      for (const r of race.racers) standRows[r.place - 1] = r
+      const top = standRows[0], lead = race.progress(top)
+      for (let k = 0; k < race.racers.length; k++) {
+        const r = standRows[k], row = standEls[k]
+        const gap = r.finished ? (r === top ? 'WINNER ' : '') + fmtLap(r.finishTime) : top.finished ? `${(race.toGo(r) / 1000).toFixed(1)} KM` : r === top ? 'LEADER' : `+${((lead - race.progress(r)) / Math.max(800, player.speed)).toFixed(1)}`
+        const name = `${r.place}\u00a0\u00a0${r.name}`
+        if (row.who !== r) { row.who = r; row.el.className = r.ai ? '' : 'me'; row.el.style.setProperty('--c', hex(r.color)) }
+        if (row.name.textContent !== name) row.name.textContent = name
+        if (row.gap.textContent !== gap) row.gap.textContent = gap
+      }
     }
     drawMini()
     $('#r-time').textContent = fmtLap(me.finished ? me.finishTime : race.clock + me.penalty)
@@ -1221,7 +1292,7 @@ function updateHud(dt: number, slow: boolean): void {
     for (const { r, d } of tagEls) {
       const dist = r.p.pos.distanceTo(camera.position)
       proj.set(r.p.pos.x, r.p.pos.y + 4, r.p.pos.z).project(camera)
-      const on = !r.p.dead && proj.z < 1 && Math.abs(proj.x) < 1 && Math.abs(proj.y) < 1 && dist > 25 && dist < 8000
+      const on = !r.p.dead && proj.z < 1 && Math.abs(proj.x) < 1 && Math.abs(proj.y) < 1 && dist > 25 && dist < 4000
       d.style.display = on ? 'block' : 'none'
       if (on) {
         d.style.left = `${(proj.x * 0.5 + 0.5) * innerWidth}px`
@@ -1298,7 +1369,7 @@ function updateHud(dt: number, slow: boolean): void {
   }
   if (debugEl.style.display === 'block' && slow) {
     const i = renderer.info
-    debugEl.textContent = `${fps.toFixed(0)} fps  ${lastMs.toFixed(1)} ms\ncalls ${i.render.calls}  tris ${(i.render.triangles / 1000).toFixed(0)}k\ntier ${tier} (${tierName})  scale ${renderScale.toFixed(2)}  pr ${pixelRatio().toFixed(2)}\nmach ${m.toFixed(2)}  agl ${player.agl.toFixed(1)}  air ${player.airborne}\nslip ${(player.slip * 57.3).toFixed(0)}°  yaw ${player.yawRate.toFixed(2)}  drift ${player.drift.toFixed(2)}  spin ${player.spin.toFixed(1)}\nparticles ${fx.glow.count}+${fx.smoke.count}`
+    debugEl.textContent = `${fps.toFixed(0)} fps  ${lastMs.toFixed(1)} ms\ncalls ${i.render.calls}  tris ${(i.render.triangles / 1000).toFixed(0)}k\ntier ${tier} (${tierName})  scale ${renderScale.toFixed(2)}  pr ${pixelRatio().toFixed(2)}\ncap ${frameCap() ? '60' : 'max'}  mach ${m.toFixed(2)}  agl ${player.agl.toFixed(1)}  air ${player.airborne}\nslip ${(player.slip * 57.3).toFixed(0)}°  yaw ${player.yawRate.toFixed(2)}  drift ${player.drift.toFixed(2)}  spin ${player.spin.toFixed(1)}\nparticles ${fx.glow.count}+${fx.smoke.count}`
   }
 }
 
@@ -1329,7 +1400,11 @@ const mk = (MW - 24) / (WIN_BACK + WIN_AHEAD)
 const mapView = { cx: 0, cz: 0, kk: mk }
 const mapCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 1, 30000)
 mapCam.up.set(1, 0, 0) // screen up = +x, screen right = +z (the course runs left to right)
-const mapRT = new THREE.WebGLRenderTarget(MW, MAP_H + 4, { type: THREE.HalfFloatType, samples: 2 })
+const mapRT = new THREE.WebGLRenderTarget(MW >> 1, (MAP_H + 4) >> 1, { type: THREE.HalfFloatType })
+// The map camera sees layer 1 only: terrain, mesas, rocks, the course's solid parts and the sun —
+// no sky, particles, ships, trails or additive glow (a cheap render, not a second frame).
+mapCam.layers.set(1)
+let mapLayersSet = false
 const mapQuad = new FullScreenQuad(new THREE.ShaderMaterial({
   uniforms: { tMap: { value: mapRT.texture } },
   vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }',
@@ -1349,12 +1424,24 @@ const mapQuad = new FullScreenQuad(new THREE.ShaderMaterial({
   depthWrite: false,
 }))
 let mapFrame = 0
-const mapHide: THREE.Object3D[] = []
 /** The real top-down render under the map overlay: an orthographic camera straight down. */
 function renderMap(): void {
   if (mode !== 'race' || !mini.classList.contains('on') || !settings.map) return
-  // Redrawn at ~15 fps (every 4th frame); blitted every frame.
-  if ((mapFrame++ & 3) !== 0) { blitMap(); return }
+  if (!mapLayersSet) {
+    mapLayersSet = true
+    for (const o of world.group.children) {
+      const m = (o as THREE.Mesh).material as THREE.ShaderMaterial | undefined
+      if (o === world.sky || o === world.hills || m?.uniforms?.uTile) continue
+      o.layers.enable(1)
+    }
+    course.group.traverse((o) => {
+      const m = (o as THREE.Mesh).material as THREE.Material | undefined
+      if (m && m.blending === THREE.AdditiveBlending && !(o as THREE.InstancedMesh).isInstancedMesh) return
+      o.layers.enable(1)
+    })
+  }
+  // Redrawn evenly every other frame (cheap now), blitted every frame.
+  if ((mapFrame++ & 1) !== 0) { blitMap(); return }
   const kk = mapView.kk
   // World extents of the panel's map area (canvas px → metres), matching the overlay's mapping.
   const z0 = mapView.cz - WIN_BACK + (8 - 12) / kk, z1 = mapView.cz - WIN_BACK + (MW - 8 - 12) / kk
@@ -1364,17 +1451,10 @@ function renderMap(): void {
   mapCam.position.set(mapView.cx, 4000, (z0 + z1) / 2)
   mapCam.lookAt(mapView.cx, 0, (z0 + z1) / 2)
   mapCam.updateProjectionMatrix()
-  if (!mapHide.length) {
-    mapHide.push(world.sky, world.hills, fx.group, shock.group, wreckage.mesh, shadowMesh)
-    for (const v of visuals.values()) { mapHide.push(v.craft.root); for (const t of [...v.trail, ...v.vapour]) mapHide.push(t.mesh) }
-  }
-  const vis = mapHide.map((o) => o.visible)
-  for (const o of mapHide) o.visible = false
   renderer.setRenderTarget(mapRT)
   renderer.clear()
   renderer.render(scene, mapCam)
   renderer.setRenderTarget(null)
-  mapHide.forEach((o, i) => (o.visible = vis[i]))
   blitMap()
 }
 function blitMap(): void {
@@ -1393,6 +1473,7 @@ function blitMap(): void {
   renderer.autoClear = auto
 }
 
+const DASH = [10, 9], NODASH: number[] = []
 function drawMini(): void {
   const g = miniCtx
   g.clearRect(0, 0, MW, MH)
@@ -1412,44 +1493,45 @@ function drawMini(): void {
   // Zoom out if the stretch spreads wider across than the panel is tall (an S-bend on a diagonal).
   const kk = Math.min(mk, (MAP_H - 36) / Math.max(1, xhi - xlo))
   // True top-down (the course runs along +z, so +z is to the right; your right-hand side is down).
-  const to = (x: number, z: number): [number, number] => [12 + (z - (cz - WIN_BACK)) * kk, 8 + MAP_H / 2 - (x - cx) * kk]
+  const tx = (z: number) => 12 + (z - (cz - WIN_BACK)) * kk, ty = (x: number) => 8 + MAP_H / 2 - (x - cx) * kk
   const i0 = Math.max(0, me.idx - Math.round(WIN_BACK / 40) - 4), i1 = Math.min(course.n - 1, me.idx + Math.round((WIN_AHEAD * mk / kk) / 40) + 4)
   g.save()
   g.beginPath(); g.roundRect(8, 8, MW - 16, MAP_H, 14); g.clip()
   // Kilometre ticks.
   g.strokeStyle = 'rgba(255,255,255,0.0)'; g.lineWidth = 1.5
   for (let km = Math.ceil((cz - WIN_BACK) / 1000); km * 1000 < cz + WIN_AHEAD * (mk / kk); km++) { const x = 12 + (km * 1000 - (cz - WIN_BACK)) * kk; g.beginPath(); g.moveTo(x, 8); g.lineTo(x, 8 + MAP_H); g.stroke() }
-  const path = new Path2D()
-  for (let i = i0; i <= i1; i++) { const [x, y] = to(course.px[i], course.pz[i]); if (i === i0) path.moveTo(x, y); else path.lineTo(x, y) }
+  g.beginPath()
+  for (let i = i0; i <= i1; i++) { const x = tx(course.pz[i]), y = ty(course.px[i]); if (i === i0) g.moveTo(x, y); else g.lineTo(x, y) }
   g.lineJoin = 'round'; g.lineCap = 'round'
-  g.strokeStyle = 'rgba(255,240,225,0.35)'; g.lineWidth = 2; g.setLineDash([10, 9]); g.stroke(path); g.setLineDash([])
+  g.strokeStyle = 'rgba(255,240,225,0.35)'; g.lineWidth = 2; g.setLineDash(DASH); g.stroke(); g.setLineDash(NODASH)
   // Spires: a thin ring round each (the render shows the rock; the ring makes it pop at this size).
   for (const rk of course.rocks) {
     if (rk.i < i0 || rk.i > i1) continue
-    const [x, y] = to(rk.x, rk.z)
+    const x = tx(rk.z), y = ty(rk.x)
     g.strokeStyle = 'rgba(255,110,60,0.9)'; g.lineWidth = 2
     g.beginPath(); g.arc(x, y, Math.max(6, rk.r * 1.8 * kk) + 2, 0, Math.PI * 2); g.stroke()
   }
   mapView.cx = cx; mapView.cz = cz; mapView.kk = kk
-  course.cps.forEach((c, k) => {
-    if (c.i < i0 || c.i > i1) return
-    const [ax, ay] = to(c.x + c.tz * GATE_HALF, c.z - c.tx * GATE_HALF)
-    const [bx, by] = to(c.x - c.tz * GATE_HALF, c.z + c.tx * GATE_HALF)
+  for (let k = 0; k < course.cps.length; k++) {
+    const c = course.cps[k]
+    if (c.i < i0 || c.i > i1) continue
+    const ax = tx(c.z - c.tx * GATE_HALF), ay = ty(c.x + c.tz * GATE_HALF)
+    const bx = tx(c.z + c.tx * GATE_HALF), by = ty(c.x - c.tz * GATE_HALF)
     const fin = k === 0 || k === course.cps.length - 1
     g.strokeStyle = k === me.next ? '#5fe6ff' : k === me.next + 1 ? 'rgba(95,230,255,0.45)' : fin ? '#ff7a1a' : 'rgba(255,255,255,0.35)'
     g.lineWidth = k === me.next ? 5 : 3
     if (k === me.next) { g.shadowColor = '#5fe6ff'; g.shadowBlur = 12 }
     g.beginPath(); g.moveTo(ax, ay); g.lineTo(bx, by); g.stroke()
     g.shadowBlur = 0
-  })
+  }
   for (const r of race.racers) {
     if (!r.ai || r.p.dead) continue
-    const [x, y] = to(r.p.pos.x, r.p.pos.z)
-    g.fillStyle = '#' + new THREE.Color(r.color).getHexString()
+    const x = tx(r.p.pos.z), y = ty(r.p.pos.x)
+    g.fillStyle = hex(r.color)
     g.strokeStyle = 'rgba(0,0,0,0.75)'; g.lineWidth = 2.5
     g.beginPath(); g.arc(x, y, 7, 0, Math.PI * 2); g.fill(); g.stroke()
   }
-  const [px, py] = to(player.pos.x, player.pos.z)
+  const px = tx(player.pos.z), py = ty(player.pos.x)
   g.translate(px, py); g.rotate(-player.heading - Math.PI / 2)
   g.shadowColor = '#ff6a1a'; g.shadowBlur = 14
   g.fillStyle = '#ff6a1a'; g.strokeStyle = '#fff'; g.lineWidth = 2.5
@@ -1462,7 +1544,7 @@ function drawMini(): void {
   g.strokeStyle = '#ff7a1a'; g.beginPath(); g.moveTo(sx0, sy); g.lineTo(xAt(me.idx), sy); g.stroke()
   for (const c of course.cps) { g.fillStyle = 'rgba(255,255,255,0.45)'; g.fillRect(xAt(c.i) - 1, sy - 6, 2, 12) }
   for (const r of race.racers) {
-    g.fillStyle = r.ai ? '#' + new THREE.Color(r.color).getHexString() : '#ffffff'
+    g.fillStyle = r.ai ? hex(r.color) : '#ffffff'
     g.beginPath(); g.arc(xAt(r.idx), sy, r.ai ? 5 : 7, 0, Math.PI * 2); g.fill()
   }
 }
@@ -1515,10 +1597,25 @@ camera.position.set(player.pos.x + 10, player.pos.y + 2, player.pos.z + 10)
 camera.lookAt(player.pos)
 world.update(camera.position, 0)
 loadBar.style.width = '75%'
-// Compile with every racer visible so no shader compiles mid-race.
-for (const v of visuals.values()) v.craft.root.visible = true
-combat.group.visible = true
+// Warm-up: nothing may compile or upload for the first time mid-race (a 30–100 ms hitch exactly
+// at your first crash, Mach break or burner). Everything hidden — shock rings, flames, the vapour
+// cone, wreckage, the walker, combat — is shown for one compile + one real frame (frustum culling
+// off, so every texture and buffer uploads too), the map pipeline included, then restored.
+const hidden: THREE.Object3D[] = [], culled: THREE.Object3D[] = []
+scene.traverse((o) => {
+  if (!o.visible) { hidden.push(o); o.visible = true }
+  if (o.frustumCulled) { culled.push(o); o.frustumCulled = false }
+})
+const wreckCount = wreckage.mesh.count
+;wreckage.mesh.count = 1
 await renderer.compileAsync(scene, camera)
+post.render(0.016)
+renderer.setRenderTarget(mapRT); renderer.render(scene, mapCam); renderer.setRenderTarget(null)
+mapQuad.render(renderer)
+for (const o of hidden) o.visible = false
+for (const o of culled) o.frustumCulled = true
+;wreckage.mesh.count = wreckCount
+renderer.clear()
 post.render(0.016)
 loadBar.style.width = '100%'
 $('#loading').classList.add('hide')

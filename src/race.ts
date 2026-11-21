@@ -41,6 +41,7 @@ export interface Racer {
 
 export type RaceState = 'grid' | 'racing' | 'done'
 
+const BLK0 = new Float64Array(32), BLK1 = new Float64Array(32)
 const ROSTER: [string, number][] = [
   ['VEGA', 0xff3fa4],
   ['KESTREL', 0x7dff3a],
@@ -60,6 +61,7 @@ export interface RaceEvents {
   bumped(a: Racer, b: Racer, sev: number, x: number, y: number, z: number): void
   countdown(n: number): void
   go(perfect: boolean): void
+  missedGate?(r: Racer): void
 }
 
 export class Race {
@@ -135,9 +137,12 @@ export class Race {
 
   /** Rough distance (m) around the course, for ordering and gaps. */
   progress(r: Racer): number {
+    // Finished: by finish time alone (the distance to the line kept counting as they drove on past
+    // it — 19 km "behind" a racer who had only just crossed).
+    if (r.finished) return 1e12 - r.finishTime * 1000
     const c = this.course.cps[Math.min(r.next, this.K - 1)]
     const d = Math.hypot(r.p.pos.x - c.x, r.p.pos.z - c.z)
-    return r.passed * (this.course.length / this.K) - d + (r.finished ? 1e9 - r.finishTime * 1000 : 0)
+    return r.passed * (this.course.length / this.K) - d
   }
 
   step(dt: number, playerControls: Controls, world: World): void {
@@ -237,7 +242,14 @@ export class Race {
           return
         }
       }
-      r.penalty += 2 * ((ahead === 1 ? 1 : 0) + (wide ? 1 : 0))
+      // A missed gate is paid for on the spot: the speed is ripped away (and no time is added).
+      if (missed) {
+        r.p.speed *= 0.38
+        r.p.lateral *= 0.38
+        r.p.side *= 0.38
+        if (r.p.spin > 0 || r.p.recover > 0) { r.p.spinVx *= 0.38; r.p.spinVz *= 0.38 }
+        this.ev.missedGate?.(r)
+      }
       return
     }
   }
@@ -264,7 +276,13 @@ export class Race {
     const i = Math.min(c.n - 1, c.nearest(r.p.pos.x, r.p.pos.z, r.idx) + 6)
     const [tx, tz] = c.tangent(i)
     const hull = r.p.hull
-    const lat = r.ai ? (Math.random() - 0.5) * 120 : 0
+    // A lane clear of every spire in the next 2 km (so a respawn never lands you straight back on one).
+    let lat = r.ai ? (Math.random() - 0.5) * 120 : 0
+    for (let tries = 0; tries < 12; tries++) {
+      const hit = c.rocks.some((rk) => rk.i >= i && rk.i < i + 50 && Math.abs(rk.lat - lat) < rk.r * 1.8 + 40)
+      if (!hit) break
+      lat = (tries % 2 ? -1 : 1) * (40 + tries * 20)
+    }
     r.p.reset(c.px[i] - tz * lat, c.pz[i] + tx * lat, Math.atan2(tx, tz), 1.3)
     r.p.hull = Math.max(35, hull)
     r.p.ghost = 2.5
@@ -317,9 +335,20 @@ export class Race {
       if (Math.abs(lane - rk.lat) >= rk.r * 1.8 + 55 && !(soon && Math.abs(myLat - rk.lat) < rk.r * 1.8 + 30)) continue
       // The free gaps across the line at this spire (and any partner standing with it): block each
       // rock's width plus a margin, then take the clear point nearest to where the craft already is.
-      const blocks = this.course.rocks.filter((o) => Math.abs(o.i - rk.i) < 12).map((o) => [o.lat - o.r * 1.8 - 30, o.lat + o.r * 1.8 + 30] as [number, number]).sort((x, y) => x[0] - y[0])
+      // (Preallocated: this runs per racer per tick — fresh arrays here were GC pauses mid-race.)
+      let nb = 0
+      for (const o of this.course.rocks) {
+        if (Math.abs(o.i - rk.i) >= 12) continue
+        const b0 = o.lat - o.r * 1.8 - 30, b1 = o.lat + o.r * 1.8 + 30
+        let j = nb++
+        while (j > 0 && BLK0[j - 1] > b0) { BLK0[j] = BLK0[j - 1]; BLK1[j] = BLK1[j - 1]; j-- }
+        BLK0[j] = b0; BLK1[j] = b1
+        if (nb >= BLK0.length - 1) break
+      }
+      BLK0[nb] = 235; BLK1[nb] = 235; nb++
       let best = NaN, bestD = Infinity, lo = -235
-      for (const [b0, b1] of [...blocks, [235, 235] as [number, number]]) {
+      for (let q = 0; q < nb; q++) {
+        const b0 = BLK0[q], b1 = BLK1[q]
         if (b0 - lo > 16) {
           const cand = Math.max(lo + 8, Math.min(b0 - 8, myLat))
           if (Math.abs(cand - myLat) < bestD) { bestD = Math.abs(cand - myLat); best = cand }
@@ -332,7 +361,11 @@ export class Race {
       // (The nearest conflict decides; a farther spire overwriting the lane put it back into this one.)
       break
     }
-    lane = THREE.MathUtils.clamp(lane, -220, 220)
+    // Near a gate, the lane is squeezed inside its towers (a miss now costs most of your speed).
+    const nextGate = this.course.cps[Math.min(r.next, this.K - 1)]
+    const toGate = (nextGate.i - r.idx) * 40
+    const laneLim = toGate > 0 && toGate < p.speed * 2 + 600 ? 175 : 220
+    lane = THREE.MathUtils.clamp(lane, -laneLim, laneLim)
     r.aimLane = lane
     // Stanley-style steering: the line's heading a little ahead, plus a correction that closes the
     // cross-track error to the lane fast (the old far-point aim drifted 80 m off its own lane).
@@ -361,14 +394,15 @@ export class Race {
     const gap = this.progress(r) - this.progress(this.racers[0])
     // (Raised again, 2026-11-21: "I crashed twice and still won". Ahead of you they ease a little;
     // behind, they push hard.)
-    const band = THREE.MathUtils.clamp(-gap / 2500, -0.5, 0.8)
-    p.maxMach = THREE.MathUtils.clamp(4.5 + r.skill * 1.1 + band, 3.6, 6.2)
+    // (Up again after a playtest win from 10th: the field must hold Mach 6 like you do.)
+    const band = THREE.MathUtils.clamp(-gap / 2500, -0.4, 0.6)
+    p.maxMach = THREE.MathUtils.clamp(5.3 + r.skill * 0.8 + band, 4.6, 6.3)
     const corner = p.mach > safe * 0.92
     ctl.boost = !corner && Math.abs(err) < 0.5
     // The afterburner on the long straights only (it locks the steering), and only when the line
     // and their lane are clear for a while; the bolder ones light it more.
     const clearAhead = !this.course.rocks.some((rk) => rk.i > r.idx && rk.i < r.idx + (p.speed * 3) / 40 && Math.abs(rk.lat - lane) < rk.r * 1.8 + 80)
-    ctl.burner = ctl.boost && bend < 0.06 && Math.abs(err) < 0.08 && clearAhead && p.mach > 3.5 && p.mach < 4.6 + r.skill * 2.2
+    ctl.burner = ctl.boost && bend < 0.06 && Math.abs(err) < 0.08 && clearAhead && p.mach > 3.5 && p.mach < 5.6 + r.skill * 2.4
     ctl.brake = p.mach > safe * 1.08
     ctl.strafe = 0
     ctl.dodgeL = ctl.dodgeR = false

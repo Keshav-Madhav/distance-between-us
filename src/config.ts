@@ -88,7 +88,7 @@ export const CFG = {
   post: {
     bloom: 0.5,
     bloomThreshold: 2.4,
-    radialBlur: 0.05,
+    radialBlur: 0.032,
     aberration: 0.004,
     streaks: 1,
     grain: 0.022,

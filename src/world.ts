@@ -42,7 +42,7 @@ function skyMaterial(ground: boolean): THREE.ShaderMaterial {
       varying vec3 vDir;
       float fbm(vec2 p) {
         float a = 0.5, s = 0.0;
-        for (int i = 0; i < 5; i++) { s += a * vnoise(p); p = p * 2.03 + 17.1; a *= 0.5; }
+        for (int i = 0; i < 4; i++) { s += a * vnoise(p); p = p * 2.03 + 17.1; a *= 0.5; }
         return s;
       }
       void main() {
@@ -240,7 +240,7 @@ function terrainMaterial(shared: GroundUniforms, snap: { value: THREE.Vector2 },
 
         // (At Mach speeds fine texture detail sweeps past faster than the frame rate and strobes —
         // the "flashing". The mip level is pushed up with speed: the ground blurs like the motion does.)
-        float bias = uSpeed * 1.1;
+        float bias = uSpeed * 0.75;
         mat2 rot = mat2(0.8, -0.6, 0.6, 0.8);
         vec3 s1 = texture2D(tSand, p / 26.0, bias).rgb;
         // Up close, bump the light from the sand texture itself (ripples and grains catch the sun).
@@ -280,8 +280,8 @@ function terrainMaterial(shared: GroundUniforms, snap: { value: THREE.Vector2 },
           vec2 cp = p + SUN_DIR.xz / SUN_DIR.y * 2600.0 + uCloudOff;
           vec2 q = cp * 0.00032;
           float a = 0.5, b = 0.0;
-          for (int i = 0; i < 5; i++) { b += a * vnoise(q); q = q * 2.03 + 17.1; a *= 0.5; }
-          sun *= 1.0 - 0.6 * smoothstep(0.52, 0.78, b);
+          for (int i = 0; i < 3; i++) { b += a * vnoise(q); q = q * 2.03 + 17.1; a *= 0.5; }
+          sun *= 1.0 - 0.6 * smoothstep(0.46, 0.68, b);
         }
         vec3 col = alb * (vec3(1.0, 0.9, 0.78) * 2.4 * sun + skyColor(n) * 0.36 + vec3(0.5, 0.22, 0.1) * 0.2);
 

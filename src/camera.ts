@@ -173,7 +173,7 @@ export class ChaseCam {
 
     const g = THREE.MathUtils.clamp(p.accel / 320, -1.3, 1.4)
     const air = p.airborne ? Math.min(1, p.airTime * 2) : 0
-    const dist = this.dist.step(C.distBase + s * 2.2 + p.boost * C.distBoost + g * 2 + air * 3, dt)
+    const dist = this.dist.step(C.distBase + s * 0.9 + p.boost * C.distBoost * 0.6 + g * 1.6 + air * 2.5, dt)
     const h = this.height.step(C.height - s * 0.5 + air * 2.2 + p.brake * 0.4, dt)
     const fx = Math.sin(yaw), fz = Math.cos(yaw)
     _pos.set(at.x - fx * dist, at.y + h, at.z - fz * dist)
