@@ -552,7 +552,7 @@ function showResults(): void {
   overlay = true
   const rows = [...race.racers].sort((a, b) => a.place - b.place)
   $('#over-h').textContent = `${ord(race.racers[0].place)} PLACE`
-  $('#over-stats').innerHTML = `${SPRINT_KM} KM IN ${fmtLap(race.racers[0].finishTime)} · TOP SPEED MACH ${player.topMach.toFixed(2)}`
+  $('#over-stats').innerHTML = `${SPRINT_KM} KM IN ${fmtLap(race.racers[0].finishTime)} · TOP SPEED MACH ${Math.max(runTop, player.topMach).toFixed(2)}`
   $('#res').innerHTML = rows.map((r) => `<tr class="${r.ai ? '' : 'me'}"><td>${r.place}</td><td>${r.name}</td><td>${r.finished ? fmtLap(r.finishTime) : (race.toGo(r) / 1000).toFixed(1) + ' KM TO GO'}</td></tr>`).join('')
   $('#over .go').textContent = 'R TO RACE AGAIN · H FOR HUNT · ESC TO KEEP FLYING'
   $('#over').classList.remove('hide')
@@ -561,7 +561,7 @@ function showHuntOver(): void {
   if (mode !== 'hunt') return
   overlay = true
   $('#over-h').textContent = walkerDone && !player.dead ? 'WALKER DOWN' : 'SIGNAL LOST'
-  $('#over-stats').innerHTML = `SCORE ${score}<br/>TOP SPEED MACH ${player.topMach.toFixed(2)}<br/>DRONES DOWN ${combat.kills}<br/>TIME ${fmtTime(runTime)}`
+  $('#over-stats').innerHTML = `SCORE ${score}<br/>TOP SPEED MACH ${Math.max(runTop, player.topMach).toFixed(2)}<br/>DRONES DOWN ${combat.kills}<br/>TIME ${fmtTime(runTime)}`
   $('#res').innerHTML = ''
   $('#over .go').textContent = 'R TO RUN IT AGAIN · ENTER FOR A RACE'
   $('#over').classList.remove('hide')
@@ -572,7 +572,10 @@ function resetVisuals(): void {
   for (const v of visuals.values()) { for (const t of [...v.trail, ...v.vapour]) t.reset(); v.craft.root.visible = true }
 }
 
+// Top speed over the whole run (player.topMach resets with each respawn after a crash).
+let runTop = 0
 function startRace(): void {
+  runTop = 0
   spectate = false
   wreckage.clear()
   sound.start()
@@ -603,6 +606,7 @@ function startRace(): void {
 }
 
 function startHunt(): void {
+  runTop = 0
   spectate = false
   wreckage.clear()
   sound.start()
@@ -801,6 +805,7 @@ function simStep(): void {
   } else if (mode === 'hunt') {
     if (autopilot) huntAutopilot()
     player.step(STEP, forced ?? input.c, world)
+    runTop = Math.max(runTop, player.topMach)
     if (player.recovered) {
       player.recovered = false
       if (player.dead) die()

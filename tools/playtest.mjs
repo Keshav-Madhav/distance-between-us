@@ -1,23 +1,25 @@
 // A playtest through the real keyboard (the same input path a player uses), recorded to video.
 // A small bot looks at the game ~10×/s and presses W / Shift / A / D / S like a player would:
 // a timed launch, lining up the next gate, stepping round spires, afterburner on clear straights,
-// a brake-drift in the S-bends. Logs events; screenshots every 10 s; the video lands in shots/run4/video/.
+// a brake-drift in the S-bends. Logs events; screenshots every 10 s; the video lands in shots/run8/video/.
 //   node tools/playtest.mjs [seconds]
 import { chromium } from 'playwright-core'
 import { mkdirSync } from 'node:fs'
 
 const SECS = +(process.argv[2] ?? 150)
-mkdirSync('shots/run4/video', { recursive: true })
-mkdirSync('shots/run4/play', { recursive: true })
+// ANALOG=1: steer through a virtual analog stick (the AI brain's exact steer) instead of keys.
+const ANALOG = !!process.env.ANALOG
+mkdirSync('shots/run8/video', { recursive: true })
+mkdirSync('shots/run8/play', { recursive: true })
 const browser = await chromium.launch({ channel: 'chrome', headless: true, args: ['--mute-audio', '--use-gl=angle', '--ignore-gpu-blocklist'] })
-const ctx = await browser.newContext({ viewport: { width: 1280, height: 720 }, recordVideo: { dir: 'shots/run4/video', size: { width: 1280, height: 720 } } })
+const ctx = await browser.newContext({ viewport: { width: 1280, height: 720 }, recordVideo: { dir: 'shots/run8/video', size: { width: 1280, height: 720 } } })
 const page = await ctx.newPage()
 const errors = []
 page.on('pageerror', (e) => errors.push(e.message))
 page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()) })
 await page.goto('http://localhost:4417/'); await page.waitForFunction('window.__g && window.__g.ready')
 await page.waitForTimeout(2500)
-await page.screenshot({ path: 'shots/run4/play/00-title.png' })
+await page.screenshot({ path: 'shots/run8/play/00-title.png' })
 await page.keyboard.press('Enter')
 
 const held = new Set()
@@ -66,8 +68,16 @@ while ((Date.now() - t0) / 1000 < SECS) {
   // presses keys from it — the input path is the player's.
   const steer = await page.evaluate(() => { const g = window.__g, me = g.race.racers[0]; g.race.drive(me, 1 / 60); return me.controls.steer })
   const err = 0
-  await hold('d', steer > 0.12)
-  await hold('a', steer < -0.12)
+  // Feathered like a player: the key is held for a share of each ~60 ms tick in proportion to the
+  // steer wanted (the game's keyboard ramp turns short taps into part lock).
+  if (ANALOG) {
+    const clear = s.rockAhead > s.speed * 2.5 && s.bend < 0.05 && s.mach < 8
+    await page.evaluate(([st, burn]) => window.__g.force({ steer: st, boost: true, burner: burn, brake: false, strafe: 0, dodgeL: false, dodgeR: false }), [steer, clear && !s.air && !s.crashing])
+  }
+  const want = ANALOG ? 0 : Math.min(1, Math.abs(steer) * 1.6)
+  await hold(steer > 0 ? 'd' : 'a', want > 0.08)
+  await hold(steer > 0 ? 'a' : 'd', false)
+  if (want > 0.08 && want < 0.95) { await page.waitForTimeout(Math.round(60 * want)); await hold('d', false); await hold('a', false) }
   // Throttle always; afterburner on a clear straight; brake-drift once in a bend.
   await hold('w', !s.crashing)
   const clear = s.rockAhead > s.speed * 2.5 && s.bend < 0.05 && Math.abs(err) < 0.05 && s.mach < 8
@@ -77,11 +87,11 @@ while ((Date.now() - t0) / 1000 < SECS) {
     lastLog = el
     log.push(`${el.toFixed(0)}s P${s.place} gate ${s.passed}/${s.K} M${s.mach.toFixed(2)} hull ${Math.round(s.hull)} ${s.burning ? 'BURN' : ''} ${s.air ? 'AIR' : ''} ${s.crashing ? 'CRASH' : ''} ${s.wake > 0.2 ? 'WAKE' : ''} toGo ${(s.toGo / 1000).toFixed(1)}km`)
   }
-  if (el - lastShot > 10) { lastShot = el; await page.screenshot({ path: `shots/run4/play/${String(Math.round(el)).padStart(3, '0')}.png` }) }
+  if (el - lastShot > 10) { lastShot = el; await page.screenshot({ path: `shots/run8/play/${String(Math.round(el)).padStart(3, '0')}.png` }) }
   await page.waitForTimeout(60)
 }
 await page.waitForTimeout(5000)
-await page.screenshot({ path: 'shots/run4/play/zz-end.png' })
+await page.screenshot({ path: 'shots/run8/play/zz-end.png' })
 console.log(log.join('\n'))
 console.log(await page.evaluate(() => window.__g.race.racers.map((r) => `${r.name} passed=${r.passed}/${window.__g.course.cps.length} next=${r.next} fin=${r.finished} idx=${r.idx}/${window.__g.course.finishI} dead=${r.p.dead} crash=${r.p.crashing} mach=${r.p.mach.toFixed(1)}`).join('\n')))
 console.log(errors.length ? 'ERRORS:\n' + [...new Set(errors)].slice(0, 10).join('\n') : 'no errors')
