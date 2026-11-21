@@ -106,6 +106,12 @@ export function patchStandard(mat: THREE.MeshStandardMaterial, opts: PatchOpts =
           // Flat tops: sand-covered cap rock.
           vec3 top = texture2D(tSand, vFogW.xz / 30.0).rgb * vec3(0.95, 0.9, 0.85);
           c = mix(c, top, smoothstep(0.7, 0.92, vWN.y));
+          #ifdef BIOME_ICE
+          // Ice cliffs: blue-grey rock, icy bands, snow on every flat and gentle face.
+          c = vec3(dot(c, vec3(0.333))) * vec3(0.6, 0.68, 0.84) * 1.15;
+          c = mix(c, vec3(0.5, 0.74, 0.9), smoothstep(0.52, 0.6, fract(wy0 / 23.0)) * (1.0 - smoothstep(0.6, 0.68, fract(wy0 / 23.0))) * 0.45);
+          c = mix(c, vec3(0.9, 0.93, 1.0), smoothstep(0.35, 0.75, vWN.y));
+          #endif
           // Crevices darker, ledges lighter (the texture's own light and dark, pushed), and the foot
           // of the rock in its own shade where it meets the sand.
           float lum = dot(tx * wxz.x + tz * wxz.y, vec3(0.33));

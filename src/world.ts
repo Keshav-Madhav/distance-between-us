@@ -23,11 +23,14 @@ const smooth = (e0: number, e1: number, x: number) => {
 
 // ───────────────────────────── sky ─────────────────────────────
 
+/** The aurora's clock (shared: the sky, and the ice that reflects it). */
+export const AUR_T = { value: 0 }
+
 function skyMaterial(ground: boolean): THREE.ShaderMaterial {
   return new THREE.ShaderMaterial({
     side: THREE.BackSide,
     depthWrite: false,
-    uniforms: { uTime: { value: 0 }, uCloudOff: { value: new THREE.Vector2() }, tNoise: { value: NOISE_TEX }, ...MOUND_U },
+    uniforms: { uTime: { value: 0 }, uAurT: AUR_T, uCloudOff: { value: new THREE.Vector2() }, tNoise: { value: NOISE_TEX }, ...MOUND_U },
     vertexShader: /* glsl */ `
       varying vec3 vDir;
       void main() {
@@ -54,6 +57,9 @@ function skyMaterial(ground: boolean): THREE.ShaderMaterial {
           vec2 cp = d.xz / d.y * 2600.0 + uCloudOff;
           float base = fbm(cp * 0.00032);
           float cov = smoothstep(0.52, 0.78, base);
+          #ifdef BIOME_ICE
+          cov *= 0.35; // (a clear twilight: thin cloud, so the aurora and stars show)
+          #endif
           float detail = fbm(cp * 0.0016 + 3.0);
           cov *= smoothstep(0.25, 0.55, detail + cov * 0.4);
           float lit = clamp(fbm(cp * 0.00032 + SUN_DIR.xz * 0.06) - base + 0.55, 0.0, 1.0);
@@ -67,6 +73,18 @@ function skyMaterial(ground: boolean): THREE.ShaderMaterial {
           c = mix(c, vec3(1.45, 1.42, 1.38) * SUN_TINT + vec3(1.0, 0.8, 0.55) * pow(s, 8.0) * 0.5, cir * 0.42);
           c = mix(c, cc, cov * fade * 0.92);
         }
+        #ifdef BIOME_ICE
+        // Polar twilight: stars overhead (twinkling a little), and the aurora.
+        {
+          vec2 sg = vec2(atan(d.x, d.z) * 240.0, asin(clamp(d.y, -1.0, 1.0)) * 240.0);
+          vec2 cell = floor(sg);
+          float st = step(0.9965, hash12(cell)) * smoothstep(0.08, 0.35, d.y);
+          float tw = 0.65 + 0.35 * sin(uTime * (2.0 + hash12(cell + 3.1) * 4.0) + hash12(cell) * 40.0);
+          float sz = 1.0 - smoothstep(0.0, 0.35, length(fract(sg) - 0.5));
+          c += vec3(0.85, 0.9, 1.0) * st * tw * sz * 1.6;
+          c += aurora(d);
+        }
+        #endif
         // The sun: a hot disk (past bloom's threshold) and a wide glare.
         c += vec3(1.0, 0.9, 0.75) * (smoothstep(0.99955, 0.9998, s) * 40.0 + pow(s, 900.0) * 4.0 + pow(s, 30.0) * 0.4 + pow(s, 4.0) * 0.1);
         gl_FragColor = vec4(c, 1.0);
@@ -127,6 +145,9 @@ function mountains(): THREE.Mesh {
         vec3 sky = skyColor(vec3(d.x, max(d.y, 0.0) * 0.4, d.z));
         // Near range: warm, rusty, more solid; far: blue, nearly sky. Bases fade into the dust.
         vec3 rock = mix(vec3(0.42, 0.2, 0.14), vec3(0.34, 0.42, 0.6), vT.x);
+        #ifdef BIOME_ICE
+        rock = mix(vec3(0.62, 0.68, 0.82), vec3(0.28, 0.36, 0.55), vT.x);
+        #endif
         float sunSide = max(dot(normalize(vec3(d.x, 0.0, d.z)), normalize(vec3(SUN_DIR.x, 0.0, SUN_DIR.z))), 0.0);
         rock *= 0.8 + 0.5 * sunSide;
         float haze = mix(0.32, 0.6, vT.x);
@@ -185,6 +206,7 @@ export interface GroundUniforms {
   uCloudOff: { value: THREE.Vector2 }
   uCloudShadow: { value: number }
   tNoise: { value: THREE.Texture }
+  uAurT: { value: number }
   uTrackBox: { value: THREE.Vector4 }
   uTrackOn: { value: number }
 }
@@ -267,6 +289,19 @@ function terrainMaterial(shared: GroundUniforms, snap: { value: THREE.Vector2 },
         alb *= mix(vec3(1.0), vec3(0.78, 0.55, 0.5), smoothstep(0.45, 0.75, big) * 0.7);
         alb *= mix(vec3(1.0), vec3(1.12, 1.1, 1.05), smoothstep(3.0, 12.0, h0) * 0.6);
         alb *= 0.9 + 0.21 * fbmT(p * 0.03 + 1.7);
+        #ifdef BIOME_ICE
+        // Snow (the sand texture becomes its drift detail), dark rock where the gravel was, and the
+        // dry riverbeds frozen: black-teal ice with white cracks.
+        {
+          float lumS = dot(sandT, vec3(0.333));
+          vec3 snow = vec3(0.84, 0.89, 0.97) * (0.8 + 0.4 * lumS) * (0.94 + 0.12 * fbmT(p * 0.0011 + 3.1));
+          vec3 rockI = vec3(0.17, 0.19, 0.24) * (0.8 + 0.4 * dot(grav, vec3(0.333)));
+          alb = mix(snow, rockI, gm * 0.65);
+          float cr = smoothstep(0.014, 0.0, abs(fbmT(p * 0.012) - 0.47)) + 0.6 * smoothstep(0.009, 0.0, abs(fbmT(p * 0.05 + 4.0) - 0.47));
+          vec3 ice = mix(vec3(0.05, 0.11, 0.16), vec3(0.72, 0.86, 0.95), min(1.0, cr));
+          alb = mix(alb, ice, river);
+        }
+        #endif
 
         // The racing line, worn: packed and darker, the ripples gone, scorched lanes down it.
         vec2 tuv = (p - uTrackBox.xy) / uTrackBox.zw;
@@ -287,6 +322,19 @@ function terrainMaterial(shared: GroundUniforms, snap: { value: THREE.Vector2 },
           sun *= 1.0 - 0.6 * smoothstep(0.46, 0.68, b);
         }
         vec3 col = alb * (SUN_COL * sun + skyColor(n) * 0.36 + vec3(0.5, 0.22, 0.1) * 0.2);
+        #ifdef BIOME_ICE
+        // Snow is lit by the whole sky more than by the low sun; the ice mirrors the sky and aurora.
+        // (Snow: bright under an open twilight sky — the old sand bounce removed, a cool ambient added.)
+        col -= alb * vec3(0.5, 0.22, 0.1) * 0.2;
+        col += alb * (skyColor(n) * 0.5 + vec3(0.3, 0.36, 0.48));
+        // (Only where there is ice: the reflection — sky and aurora — cost every snow pixel 5 ms.)
+        if (river > 0.01) {
+          vec3 Vw = normalize(cameraPosition - vW), Rw = reflect(-Vw, n);
+          float fr = pow(1.0 - max(dot(Vw, n), 0.0), 4.0);
+          vec3 refl = skyColor(Rw) * 0.9 + aurora(Rw) * 0.9;
+          col = mix(col, refl, river * (0.22 + 0.6 * fr));
+        }
+        #endif
         // Sand glints: a few grains in each patch catch the sun toward you (near the camera, in sun,
         // fading out with speed so they never strobe).
         float gd = (1.0 - smoothstep(30.0, 200.0, length(vW - cameraPosition))) * (1.0 - min(1.0, uSpeed * 1.2));
@@ -530,6 +578,7 @@ export class World {
     uCloudOff: { value: new THREE.Vector2() },
     uCloudShadow: { value: 1 },
     tNoise: { value: NOISE_TEX },
+    uAurT: AUR_T,
     uTrackBox: { value: new THREE.Vector4(0, 0, 1, 1) },
     uTrackOn: { value: 0 },
   }
@@ -689,6 +738,7 @@ export class World {
     for (const r of this.rings) r.snap.value.set(Math.round(cam.x / r.step) * r.step, Math.round(cam.z / r.step) * r.step)
     for (const w of this.wrapped) w.update(cam.x, cam.z)
     this.ground.uTime.value = time
+    AUR_T.value = time
   }
 
   /**

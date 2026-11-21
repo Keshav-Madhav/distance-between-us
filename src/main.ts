@@ -15,7 +15,7 @@ import { Walker } from './walker'
 import { Sound } from './audio'
 import { Input } from './input'
 import { Post } from './post'
-import { groundH, SUN_DIR } from './terrain'
+import { BIOME, DUST, groundH, SUN_DIR } from './terrain'
 import { loadTextures } from './textures'
 import { centerline, Course, COURSES, LAPS } from './course'
 import { Race, type Racer } from './race'
@@ -507,7 +507,7 @@ function landDust(p: Player, impact: number): void {
     e.x = p.pos.x; e.y = g + 0.6; e.z = p.pos.z
     e.vx = p.vel.x * 0.35 + Math.cos(a) * sp; e.vy = 4 + Math.random() * 10; e.vz = p.vel.z * 0.35 + Math.sin(a) * sp
     e.life = 1.2 + Math.random(); e.size0 = 3; e.size1 = 12 + impact * 0.15
-    e.r = 0.8; e.g = 0.42; e.b = 0.21; e.a = 0.45; e.drag = 2.2; e.grav = 4
+    e.r = DUST[0]; e.g = DUST[1]; e.b = DUST[2]; e.a = 0.45; e.drag = 2.2; e.grav = 4
     fx.smoke.emit(e)
   }
 }
@@ -1241,7 +1241,7 @@ function drawRacer(p: Player, alpha: number, dt: number, isMe: boolean): void {
       const sp = 14 + p.boost * 22
       e.vx = p.vel.x * 0.08 + p.right.x * (Math.random() - 0.5) * sp * 2; e.vy = 6 + Math.random() * sp; e.vz = p.vel.z * 0.08 + p.right.z * (Math.random() - 0.5) * sp * 2
       e.life = 0.9 + Math.random() * 1.1; e.size0 = 1.5; e.size1 = 9 + p.boost * 8
-      e.r = 0.8; e.g = 0.42; e.b = 0.21; e.a = 0.3 * (1 - p.agl / 8); e.drag = 2.4; e.grav = 6
+      e.r = DUST[0]; e.g = DUST[1]; e.b = DUST[2]; e.a = 0.3 * (1 - p.agl / 8); e.drag = 2.4; e.grav = 6
       fx.smoke.emit(e)
     }
   }
@@ -1268,7 +1268,7 @@ function drawRacer(p: Player, alpha: number, dt: number, isMe: boolean): void {
       e.x = tmp.x + p.right.x * out * 2 + (Math.random() - 0.5) * 3; e.y = groundH(tmp.x, tmp.z) + 0.6; e.z = tmp.z + p.right.z * out * 2 + (Math.random() - 0.5) * 3
       const sp = 40 + Math.abs(p.slip) * 90
       e.vx = p.vel.x * 0.25 + p.right.x * out * sp; e.vy = 8 + Math.random() * 18; e.vz = p.vel.z * 0.25 + p.right.z * out * sp
-      e.life = 0.9 + Math.random() * 0.8; e.size0 = 2; e.size1 = 12; e.r = 0.82; e.g = 0.45; e.b = 0.22; e.a = 0.4; e.drag = 2.4; e.grav = 8
+      e.life = 0.9 + Math.random() * 0.8; e.size0 = 2; e.size1 = 12; e.r = DUST[0]; e.g = DUST[1]; e.b = DUST[2]; e.a = 0.4; e.drag = 2.4; e.grav = 8
       fx.smoke.emit(e)
     }
     if (isMe && p.drifting) {
@@ -1287,6 +1287,18 @@ function drawRacer(p: Player, alpha: number, dt: number, isMe: boolean): void {
       }
     }
   }
+  // FROSTLINE: snow drifting through the air around you (a few flakes a frame, small, slow, wind-blown).
+  if (isMe && BIOME === 'ice') {
+    for (let i = 0; i < 6; i++) {
+      const e = resetE()
+      const ahead = Math.random() * 220 - 30, side = (Math.random() - 0.5) * 140
+      e.x = tmp.x + p.fwd.x * ahead + p.right.x * side; e.z = tmp.z + p.fwd.z * ahead + p.right.z * side
+      e.y = groundH(e.x, e.z) + 1 + Math.random() * 30
+      e.vx = 14 + Math.random() * 6; e.vy = -2 - Math.random() * 2; e.vz = 6
+      e.life = 2.5; e.size0 = 0.22; e.size1 = 0.22; e.r = 1.6; e.g = 1.7; e.b = 1.9; e.a = 0.9
+      fx.smoke.emit(e)
+    }
+  }
   // Speed cues: sand wisps hanging low in the air ahead, which rush past at your speed.
   if (isMe && !p.airborne && p.mach > 0.8) {
     const n = Math.min(6, Math.floor(p.mach * 1.2))
@@ -1297,7 +1309,7 @@ function drawRacer(p: Player, alpha: number, dt: number, isMe: boolean): void {
       e.x = x; e.y = groundH(x, z) + 0.6 + Math.random() * 5; e.z = z
       e.vx = 0; e.vy = 0; e.vz = 0
       e.life = 0.5 + Math.random() * 0.4; e.size0 = 1 + Math.random() * 2; e.size1 = 2.5 + Math.random() * 3
-      e.r = 0.95; e.g = 0.62; e.b = 0.38; e.a = 0.35
+      e.r = DUST[0] * 1.15; e.g = DUST[1] * 1.3; e.b = DUST[2] * 1.5; e.a = 0.35
       fx.smoke.emit(e)
     }
   }

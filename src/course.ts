@@ -254,7 +254,33 @@ export const CANYON: CourseDef = {
   clearance: 380,
 }
 
-export const COURSES: CourseDef[] = [SPRINT, DRY_RIVER, DRAG, CIRCUIT, OVAL, CANYON]
+/**
+ * Course 7: FROSTLINE — the second world: an arctic plateau at polar twilight (docs/MAP-FROSTLINE.md).
+ * A wide, flowing loop across the frozen lakes: long sweepers (nothing under ~2 km radius), no
+ * spires, one pair of snow-drift jumps. Fast and forgiving; the place is the point.
+ */
+const frostPath = (u: number): [number, number] => {
+  const a = 2 * Math.PI * u
+  const r = 13000 + 1300 * Math.sin(3 * a + 0.5) + 520 * Math.sin(6 * a + 1.3) + 160 * Math.sin(13 * a + 2.1)
+  return [r * Math.sin(a) * 1.1, r * Math.cos(a) - 13000]
+}
+export const FROSTLINE: CourseDef = {
+  id: 'frostline',
+  name: 'FROSTLINE',
+  blurb: 'A NEW WORLD · FROZEN LAKES · AURORA · FLOWING LOOP',
+  km: Math.round(loopLength(frostPath) / 100) / 10,
+  loop: frostPath,
+  gateEvery: 5500,
+  jumps: [0.42, 0.45],
+  whoops: [],
+  padEvery: 9000,
+  spireGap: () => null,
+  rockGateP: 0,
+  seed: 41,
+  sections: [],
+}
+
+export const COURSES: CourseDef[] = [SPRINT, DRY_RIVER, DRAG, CIRCUIT, OVAL, CANYON, FROSTLINE]
 
 /** The race's line as points (x, z) every ~200 m, start to finish — for previews. */
 export function centerline(def: CourseDef): { xs: number[]; zs: number[] } {

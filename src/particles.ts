@@ -3,7 +3,7 @@
 // Particles keep their own momentum with drag — an explosion at Mach 5 keeps flying a moment, then
 // falls behind, and you fly through it.
 import * as THREE from 'three'
-import { SKY_GLSL } from './terrain'
+import { DUST, SKY_GLSL } from './terrain'
 import { NOISE_TEX } from './shaders'
 
 export interface Emit {
@@ -280,7 +280,7 @@ export class Fx {
       e.vx = vx + Math.cos(a) * sp; e.vy = up * (0.4 + R() * 0.8); e.vz = vz + Math.sin(a) * sp
       e.life = 1.4 + R() * 1.8
       e.size0 = size * 0.35; e.size1 = size * (1.2 + R())
-      e.r = 0.78; e.g = 0.4; e.b = 0.2; e.a = 0.55
+      e.r = DUST[0] * 0.97; e.g = DUST[1] * 0.95; e.b = DUST[2] * 0.95; e.a = 0.55
       e.r1 = 1.1; e.g1 = 1.15; e.b1 = 1.2
       e.drag = 2.2; e.grav = 9
       this.smoke.emit(e)
