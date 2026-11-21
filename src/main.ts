@@ -579,10 +579,10 @@ function huntCombatStep(): void {
   rounds.step(STEP, (r) => {
     if (r.pos.y < groundH(r.pos.x, r.pos.z)) return true
     if (r.mine) {
-      for (const d of darts.list) if (d.alive && segDist(r.prev, r.pos, d.pos) < d.radius) { d.hit(r.dmg, tmp3.copy(r.vel).normalize()); sound.hit(false); return true }
+      for (const d of darts.list) if (d.alive && segDist(r.prev, r.pos, d.pos) < d.radius) { d.hit(r.dmg, tmp3.copy(r.vel).normalize()); sound.hit(false); hitMark(false); return true }
       return false
     }
-    if (!player.dead && segDist(r.prev, r.pos, flight.pos) < 9) { flight.damage(r.dmg); damageFlash = Math.min(1, damageFlash + 0.35); shake(0.25); sound.hit(true); return true }
+    if (!player.dead && segDist(r.prev, r.pos, flight.pos) < 9) { flight.damage(r.dmg); damageFlash = Math.min(1, damageFlash + 0.35); shake(0.25); sound.hit(true); dmgFrom(r.vel); return true }
     return false
   })
   for (const d of darts.list) {
@@ -595,6 +595,20 @@ function huntCombatStep(): void {
     fx.explosion(d.pos.x, d.pos.y, d.pos.z, d.vel.x * 0.5, d.vel.y * 0.5, d.vel.z * 0.5, 1.4)
     sound.explosion(d.pos.distanceTo(flight.pos), 1, 0)
     hitstop = 0.04
+    hitMark(true)
+    flightPunch = 6
+  }
+  // Darts ripping past close: a whoosh from their side (the closer, the louder).
+  for (const d of darts.list) {
+    if (!d.alive) { passSide.delete(d); continue }
+    tmp3.subVectors(d.pos, flight.pos)
+    const ahead = tmp3.dot(flight.fwd)
+    const was = passSide.get(d) ?? ahead
+    passSide.set(d, ahead)
+    if (was > 0 && ahead <= 0) {
+      const side = tmp3.dot(flight.right), close = Math.hypot(side, tmp3.dot(flight.up))
+      if (close < 300) { sound.whoosh(Math.min(1, 90 / Math.max(close, 15)), side > 0 ? 0.8 : -0.8); if (close < 60) shake(0.15) }
+    }
   }
   // The practice director: a new flight a few seconds after the last one falls, bigger each time.
   if (darts.alive === 0 && directorOn) {
@@ -610,6 +624,27 @@ function huntCombatStep(): void {
   }
 }
 let autoFire = false
+let flightPunch = 0
+/** The hit marker: a white X on the nose for a hit, a bigger gold one for a kill. */
+let hitT = 0
+function hitMark(kill: boolean): void {
+  const el = $('#hitmark')
+  el.classList.toggle('kill', kill)
+  el.style.opacity = '1'
+  hitT = kill ? 0.35 : 0.12
+}
+/** A red arc at the edge toward where fire came from (screen direction of the shot's origin). */
+let dmgT = 0
+function dmgFrom(vel: THREE.Vector3): void {
+  const back = tmp3.copy(vel).normalize().negate()
+  // Its direction on screen: project a point back along the shot from the craft.
+  proj.copy(flight.pos).addScaledVector(back, 300).project(camera)
+  const ang = Math.atan2(proj.x * innerWidth, proj.y * innerHeight) * (proj.z > 1 ? -1 : 1)
+  const el = $('#dmgarc')
+  el.style.transform = `rotate(${ang}rad)`
+  el.style.opacity = '1'
+  dmgT = 0.6
+}
 let directorOn = true
 
 // The sandbox course: rings through the sky.
@@ -1940,7 +1975,13 @@ function frame(now: number): void {
     cam.cinematic(realDt, time, player, renderPos, heading)
   } else if (mode === 'hunt' && !player.dead) {
     flightQ.slerpQuaternions(flight.prevQuat, flight.quat, alpha)
-    fcam.update(realDt, renderPos, flightQ, flight.vel, flight.mach, fovMax)
+    flightPunch *= Math.exp(-realDt * 4)
+    fcam.update(realDt, renderPos, flightQ, flight.vel, flight.mach, fovMax, flightPunch)
+    if (hitT > 0) { hitT -= realDt; if (hitT <= 0) $('#hitmark').style.opacity = '0' }
+    if (dmgT > 0) { dmgT -= realDt; if (dmgT <= 0) $('#dmgarc').style.opacity = '0' }
+    // Hit marker sits on the nose.
+    proj.copy(flight.pos).addScaledVector(flight.fwd, 800).project(camera)
+    const hm = $('#hitmark'); hm.style.left = `${(proj.x * 0.5 + 0.5) * innerWidth}px`; hm.style.top = `${(-proj.y * 0.5 + 0.5) * innerHeight}px`
   } else {
     cam.update(realDt, time, player, renderPos, heading, world, fovMax)
   }

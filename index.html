@@ -344,6 +344,12 @@
   #tip { position: absolute; left: 2vw; bottom: 13vh; max-width: min(460px, 40vw); padding: 8px 12px; font-size: 13px; letter-spacing: 0.03em; line-height: 1.45; color: #fff4ea; background: rgba(8,5,4,0.5); border-left: 2px solid var(--hot); opacity: 0; transform: translateY(6px); transition: opacity 0.4s, transform 0.4s; pointer-events: none; text-shadow: 0 1px 6px rgba(0,0,0,0.6); }
   #tip.on { opacity: 1; transform: none; }
   #tip .kc, #pause .kc { display: inline-block; padding: 0 5px; margin: 0 1px; border: 1px solid rgba(255,255,255,0.4); border-radius: 3px; font-size: 11px; line-height: 1.45; }
+  /* HUNT feedback: a hit marker on the nose (white on a hit, gold on a kill); a red arc toward fire. */
+  #hitmark { position: absolute; left: 50%; top: 50%; width: 30px; height: 30px; margin: -15px 0 0 -15px; opacity: 0; pointer-events: none; transition: opacity 0.18s; }
+  #hitmark::before, #hitmark::after { content: ''; position: absolute; left: 14px; top: -4px; width: 2px; height: 38px; background: currentColor; }
+  #hitmark::before { transform: rotate(45deg); } #hitmark::after { transform: rotate(-45deg); }
+  #hitmark { color: #fff; } #hitmark.kill { color: #ffd23a; transform: scale(1.4); }
+  #dmgarc { position: absolute; left: 50%; top: 50%; width: 46vh; height: 46vh; margin: -23vh 0 0 -23vh; border-radius: 50%; border: 6px solid transparent; border-top-color: rgba(255,50,30,0.85); opacity: 0; pointer-events: none; transition: opacity 0.5s; filter: blur(1px); }
 </style>
 </head>
 <body>
@@ -370,7 +376,7 @@
   <div id="burn"></div>
   <div id="gmark"><div class="d"></div><div class="t"></div></div>
   <div id="tip"></div>
-  <div id="aimring"></div><div id="velmark"></div><div id="pipper"></div><div id="paintbox"></div>
+  <div id="aimring"></div><div id="velmark"></div><div id="pipper"></div><div id="paintbox"></div><div id="hitmark"></div><div id="dmgarc"></div>
   <div id="gmark2"><div class="d"></div></div>
   <div id="tags"></div>
   <canvas id="mini" width="440" height="700"></canvas>
