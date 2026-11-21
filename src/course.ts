@@ -281,7 +281,7 @@ export const FROSTLINE: CourseDef = {
   gateEvery: 5500,
   // Two laps: the world is on screen for more than 40 s. (Jumps are fractions of the whole race.)
   laps: 2,
-  aiPace: 0.5,
+  aiPace: 0.65,
   // (Listed once: the mounds are physical — lap two drives over the same ones.)
   jumps: [0.21, 0.225],
   whoops: [],
@@ -309,7 +309,9 @@ export const ICEFALL: CourseDef = {
   loop: icefallPath,
   gateEvery: 4500,
   laps: 2,
-  aiPace: 0.4,
+  // (Tighter bends were tried — ~550-850 m: a good driver tumbled off them at Mach 7, past 'not
+  //  too hard'. The challenge here is a faster pack instead.)
+  aiPace: 0.55,
   // On its straightest stretch (half a lap in), and lower: the loop bends everywhere, and a long
   // flight landed off the course.
   jumps: [0.243, 0.255],
@@ -739,11 +741,15 @@ export class Course {
     const n = this.n
     let best = 0, bd = Infinity
     if (hint < 0) {
-      // (Near ties go to the earlier index: a loop's run-off lies over its own start.)
+      // Near ties go to the earliest index: a loop's later laps and run-off lie over its start. (Within
+      // 60 m of the closest, not 20 m²: lap points do not line up, and a racer on the grid snapped to
+      // lap two — its gates then never counted.)
       for (let i = 0; i < n; i++) {
         const d = (this.px[i] - x) ** 2 + (this.pz[i] - z) ** 2
-        if (d < bd - 400) { bd = d; best = i }
+        if (d < bd) bd = d
       }
+      const lim = (Math.sqrt(bd) + 60) ** 2
+      for (let i = 0; i < n; i++) if ((this.px[i] - x) ** 2 + (this.pz[i] - z) ** 2 <= lim) return i
       return best
     }
     for (let k = -30; k <= 60; k++) {

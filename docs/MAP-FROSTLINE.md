@@ -44,3 +44,18 @@ mesas, physics and race code, recoloured and re-lit, with the aurora, stars and 
 
 Critic agents review in sequence, each one seeing the latest build: renders, in-race frames and
 performance numbers. Fixes go in after each review. A real playtest comes last.
+
+### What the six reviews found (2026-11-21)
+
+| Round | Score | Main fixes after it |
+|---|---|---|
+| 1 | 4/10 | A night sky with a real aurora, white snow, frozen lakes, amber gates |
+| 2 | 5/10 | Ice beside the line, varied sizes, calving walls, a calmer aurora |
+| 3 | 5.5/10 | Near-field shards, aurora seam fixed, lit pylons |
+| 4 | 6/10 | Tall shard fields, sastrugi floor, polished ice patches |
+| 5 | 6.5/10 | Zones (shard forest / glacier corridor / open ice), shard palettes, forgiving trackside ice |
+| 6 | 7/10 visuals; FROSTLINE 5.5, ICEFALL 6.5 gameplay | A faster pack (aiPace 0.65 / 0.55); grouped, leaning shards; loop lap-snapping fixed |
+
+- **Tighter ICEFALL bends (550–850 m) were tried and reverted.** A good driver tumbled off them at
+  Mach 7, which breaks "not too hard". The challenge comes from a closer pack instead.
+- **Playtests** (real input, analog line): both courses won narrowly with full hull and no crashes.

@@ -43,5 +43,6 @@ while (Date.now() - t0 < 200000) {
   if (await page.evaluate(() => window.__g.race.racers[0].finished)) break
 }
 console.log(await page.evaluate(() => (window.__ev.log ?? []).join('\n')))
+console.log(await page.evaluate(() => window.__g.race.racers.map((r) => `${r.name}:${r.finished ? r.finishTime.toFixed(1) : r.passed + "g"}`).join(' ')))
 console.log(await page.evaluate(() => { const g = window.__g, me = g.race.racers[0]; return `finished=${me.finished} P${me.place} time=${me.finishTime?.toFixed(1)}s crashes=${window.__ev.crash} spins=${window.__ev.spin} launches=${window.__ev.air} real jumps(>0.8s)=${window.__ev.long} airtime=${window.__ev.airT.toFixed(0)}s` }))
 await browser.close()

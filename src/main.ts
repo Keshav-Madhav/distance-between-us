@@ -151,12 +151,19 @@ if (BIOME === 'ice') {
       const sc = 0.4 + 1.6 * rnd()
       const r = sentinel ? 30 + rnd() * 15 : spike ? 6 + rnd() * 8 : (12 + rnd() * 12) * sc
       const h = sentinel ? 120 + rnd() * 80 : spike ? (zone === 'forest' ? 45 + rnd() * 95 : 20 + rnd() * 40) : (10 + rnd() * 16) * sc
-      const off = sentinel ? 305 : 300 + Math.pow(rnd(), 1.5) * (zone === 'forest' ? 150 : 220)
-      place(j, side, off, {
+      const off = sentinel ? 305 : 300 + Math.pow(rnd(), 1.5) * (zone === 'forest' ? 300 : 220)
+      if (spike && zone === 'forest' && rnd() < 0.5) {
+        // A group: 3-7 shards falling away in height from the tallest, leaning their own ways.
+        const k = 3 + Math.floor(rnd() * 5)
+        for (let q = 0; q < k; q++) {
+          const fall = 1 - q / (k + 1)
+          place(Math.min(lapEnd - 1, j + (q % 3)), side, off + (rnd() - 0.3) * 60 * q, { r: r * (0.6 + 0.4 * fall), h: h * fall, kind: 'spire', v: Math.floor(rnd() * 2.999), yaw: rnd() * 6.28, tilt: (rnd() - 0.5) * 0.24 }, 292)
+        }
+      } else place(j, side, off, {
         r, h, kind: spike || sentinel ? 'spire' : 'butte', v: Math.floor(rnd() * 2.999), yaw: rnd() * 6.28,
-        tilt: spike || sentinel ? 0 : (rnd() - 0.5) * 0.7, sink: spike || sentinel ? 0 : rnd() * 0.35,
+        tilt: spike || sentinel ? (rnd() - 0.5) * 0.24 : (rnd() - 0.5) * 0.7, sink: spike || sentinel ? 0 : rnd() * 0.35,
       }, 292)
-      const step = zone === 'forest' ? 25 + rnd() * 30 : zone === 'glacier' ? 60 + rnd() * 60 : 160 + rnd() * 220
+      const step = zone === 'forest' ? 40 + rnd() * 80 : zone === 'glacier' ? 60 + rnd() * 60 : 160 + rnd() * 220
       j += Math.max(1, Math.round(step / 40))
     }
   }

@@ -282,6 +282,21 @@ export class Race {
       }
       return
     }
+    // An AI racer well past its next gate without crossing it (thrown kilometres wide, or two gates
+    // skipped in one tick) counted it as missed; before, it raced on uncounted for the rest of the race.
+    while (r.ai && r.next < this.K && r.idx > this.course.cps[r.next].i + 40 && r.idx < this.course.cps[r.next].i + 200) {
+      r.passed++
+      r.next++
+      if (r.passed === 1) r.lapStart = this.clock + r.penalty
+      this.ev.gate(r, false, true)
+      if (r.passed >= this.K) {
+        r.finished = true
+        r.finishTime = this.clock + r.penalty
+        r.lastLap = r.bestLap = r.finishTime
+        this.ev.finish(r)
+        return
+      }
+    }
   }
 
   private pads(r: Racer, dt: number): void {
@@ -326,7 +341,8 @@ export class Race {
     const heading = Math.atan2(c.tx, c.tz)
     const off = r.ai ? (Math.random() - 0.5) * 80 : 0
     r.p.reset(c.x + c.tx * 40 + c.tz * off, c.z + c.tz * 40 - c.tx * off, heading, 1.4)
-    r.idx = this.course.nearest(r.p.pos.x, r.p.pos.z, -1)
+    // (From the gate's own index: a global search put a lap-two respawn back on lap one.)
+    r.idx = this.course.nearest(r.p.pos.x, r.p.pos.z, c.i)
     r.respawnT = 0
     r.stuck = 0
     r.p.ghost = 2.5
