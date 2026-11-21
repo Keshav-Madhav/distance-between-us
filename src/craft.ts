@@ -93,7 +93,7 @@ function flameMaterial(core: THREE.Color, edge: THREE.Color): THREE.ShaderMateri
     uniforms: {
       uThrottle: { value: 0 }, uBoost: { value: 0 }, uTime: { value: 0 },
       uLen: { value: 1 }, uWid: { value: 1 },
-      uCore: { value: core }, uEdge: { value: edge },
+      uCore: { value: core }, uEdge: { value: edge }, uTint: { value: new THREE.Vector3(1, 1, 1) }, uTintA: { value: 0 },
     },
     vertexShader: /* glsl */ `
       attribute vec2 aCenter;
@@ -115,7 +115,8 @@ function flameMaterial(core: THREE.Color, edge: THREE.Color): THREE.ShaderMateri
       }`,
     fragmentShader: /* glsl */ `
       uniform float uThrottle, uBoost, uTime;
-      uniform vec3 uCore, uEdge;
+      uniform vec3 uCore, uEdge, uTint;
+      uniform float uTintA;
       varying vec2 vUv;
       varying vec3 vN;
       varying vec3 vV;
@@ -128,6 +129,8 @@ function flameMaterial(core: THREE.Color, edge: THREE.Color): THREE.ShaderMateri
         float flick = 0.9 + 0.1 * sin(uTime * 53.0 + vUv.x * 6.28) * sin(uTime * 31.0);
         float diamonds = uBoost * smoothstep(0.55, 1.0, sin(t * 26.0 - uTime * 4.0)) * (1.0 - t);
         vec3 c = mix(uEdge, uCore, body * (1.0 - t * 0.7)) * (fade * body * 0.9 + diamonds * 0.5);
+        // Drift charge: the flame takes the charge's colour, brighter at the core.
+        c = mix(c, uTint * (fade * body * 1.1 + 0.15 * fade), uTintA);
         gl_FragColor = vec4(c * flick * (0.3 + 0.7 * uThrottle), 1.0);
       }`,
   })
@@ -337,6 +340,16 @@ export class Craft {
       m.uniforms.uWid.value = wid
     }
     this.glow.color.setRGB(0.3 + boost * 0.4, 1.6, 3.2)
+  }
+
+  /** Drift charge in the exhaust: 0 none, 1 first level (electric blue), 2 second (violet-white). */
+  setDriftTint(level: number, a: number): void {
+    for (const m of [this.flameMat, this.innerMat]) {
+      m.uniforms.uTintA.value = a
+      // (Kept under the bloom's white-out: at 2–3× these read as blue / violet, at 6× as white.)
+      if (level >= 2) m.uniforms.uTint.value.set(2.0, 0.7, 2.6)
+      else m.uniforms.uTint.value.set(0.35, 1.1, 2.8)
+    }
   }
 
   setCone(a: number, time: number): void {

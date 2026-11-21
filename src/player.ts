@@ -230,7 +230,9 @@ export class Player {
     let target = 0
     let k = S.coastK
     if (this.brake > 0.02 && !this.airborne && !boosting) { target = S.brakeMach * MACH; k = S.brakeK * this.brake * (Math.abs(c.steer) > 0.5 ? 0.45 : 1) }
-    else if (c.boost && !burning) {
+    // (The burner includes the throttle and adds to it: it used to replace W, so a Shift launch was
+    // slower than a W one — W's pull below Mach 6 is far stronger than the burner's 230 m/s².)
+    else if (c.boost || burning) {
       target = Math.min(S.boostMach, this.maxMach) * MACH
       // Holding W keeps what the afterburner gave you (it never bleeds it away); below Mach 1 the
       // engines are still spooling — a slow start, then they bite.
@@ -242,7 +244,7 @@ export class Player {
     // Slipstream: in a rival's wake the air is thinner — a pull forward (and the buffeting above).
     if (this.wake > 0) this.speed += 55 * this.wake * dt
     if (burning) this.speed += S.burnAccel * dt * (this.airborne ? 0.5 : 1)
-    else this.speed += (target - this.speed) * (1 - Math.exp(-k * dt))
+    if (!burning || this.speed < target) this.speed += (target - this.speed) * (1 - Math.exp(-k * dt))
     this.speed -= Math.abs(this.yawRate) * S.turnBleed * this.speed * dt
 
     // ── the barrier (the player only) ──

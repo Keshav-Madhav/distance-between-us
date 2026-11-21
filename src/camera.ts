@@ -44,6 +44,7 @@ export class ChaseCam {
   trauma = 0
   punch = 0
   private yawInit = false
+  private spinA = 0
 
   constructor(readonly camera: THREE.PerspectiveCamera) {}
 
@@ -163,7 +164,9 @@ export class ChaseCam {
     let dt0 = travel - heading
     dt0 = Math.atan2(Math.sin(dt0), Math.cos(dt0))
     // (In a spin-out the camera holds the travel: you watch the craft whirl, not the world.)
-    travel = p.spin > 0 || p.recover > 0 ? travel : heading + dt0 * 0.45
+    // Drifting: the camera swings wider toward the travel as the slide deepens (you feel the angle).
+    const swing = p.drifting ? Math.min(0.3, Math.abs(dt0) * 0.8) : 0
+    travel = p.spin > 0 || p.recover > 0 ? travel : heading + dt0 * (0.45 + swing)
     if (!this.yawInit) this.snap(travel)
     // Unwrap toward the spring's current value.
     let dy = travel - this.yaw.x
@@ -173,8 +176,10 @@ export class ChaseCam {
 
     const g = THREE.MathUtils.clamp(p.accel / 320, -1.3, 1.4)
     const air = p.airborne ? Math.min(1, p.airTime * 2) : 0
-    const dist = this.dist.step(C.distBase + s * 0.9 + p.boost * C.distBoost * 0.6 + g * 1.6 + air * 2.5, dt)
-    const h = this.height.step(C.height - s * 0.5 + air * 2.2 + p.brake * 0.4, dt)
+    // Spinning: pull back and up so the whirl reads (the camera holds the travel, the craft turns).
+    const spinA = this.spinA += ((p.spin > 0 ? 1 : p.recover > 0 ? 0.5 : 0) - this.spinA) * Math.min(1, dt * 4)
+    const dist = this.dist.step(C.distBase + s * 0.9 + p.boost * C.distBoost * 0.6 + g * 1.6 + air * 2.5 + spinA * 7 + (p.drifting ? Math.min(2, Math.abs(dt0) * 4) : 0), dt)
+    const h = this.height.step(C.height - s * 0.5 + air * 2.2 + p.brake * 0.4 + spinA * 3.5, dt)
     const fx = Math.sin(yaw), fz = Math.cos(yaw)
     _pos.set(at.x - fx * dist, at.y + h, at.z - fz * dist)
     // Never inside rock: walk the camera in toward the craft until it is clear.
@@ -200,9 +205,10 @@ export class ChaseCam {
     const ly = this.lookY.step(1.2 - air * 2.5 + (p.airborne ? p.vy * 0.03 : 0), dt)
     const vx = hv > 30 ? p.vel.x / hv : Math.sin(heading)
     const vz = hv > 30 ? p.vel.z / hv : Math.cos(heading)
-    _look.set(at.x + vx * 32, at.y + ly, at.z + vz * 32)
+    _look.set(at.x + vx * 32 * (1 - spinA * 0.7), at.y + ly, at.z + vz * 32 * (1 - spinA * 0.7))
     _tmp.set(-Math.cos(heading), 0, Math.sin(heading))
-    _look.addScaledVector(_tmp, -p.yawRate * 10)
+    // (Not in a spin: at 8 rad/s of yaw this aimed 80 m off to the side and lost the craft.)
+    _look.addScaledVector(_tmp, -THREE.MathUtils.clamp(p.yawRate, -1.5, 1.5) * 10 * (1 - spinA))
 
     const cam = this.camera
     cam.position.copy(_pos)
@@ -221,7 +227,7 @@ export class ChaseCam {
     cam.rotateZ(noise(ts, 13) * amt * 0.8)
 
     this.punch *= Math.exp(-dt * 3)
-    const fovT = C.fovBase + (fovMax - C.fovBase) * Math.pow(s, 1.25) + Math.min(12, Math.max(0, p.mach - 6) * 3) + p.boost * 3 + this.punch - p.brake * 6 + air * 4
+    const fovT = C.fovBase + (fovMax - C.fovBase) * Math.pow(s, 1.25) + Math.min(12, Math.max(0, p.mach - 6) * 3) + p.boost * 3 + this.punch - p.brake * 6 + air * 4 + (p.drifting ? Math.min(1, p.drift / 2.6) * 4 : 0) - spinA * 4
     cam.fov = this.fov.step(fovT, dt)
     cam.updateProjectionMatrix()
   }

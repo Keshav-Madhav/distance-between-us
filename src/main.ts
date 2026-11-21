@@ -216,7 +216,8 @@ race.racers.forEach((r, i) => {
   const trail: Trail[] = []
   const nT = r.ai ? 1 : 3
   for (let k = 0; k < nT; k++) {
-    const t = new Trail(r.ai ? 48 : 56, r.ai ? new THREE.Color(r.color).multiplyScalar(1.4) : new THREE.Color(1.6, 0.5, 0.12), true, r.ai ? 1.3 : 0.9)
+    // (Rivals' a touch longer and brighter: clearly told apart at a glance, not a laser show.)
+    const t = new Trail(r.ai ? 64 : 56, r.ai ? new THREE.Color(r.color).multiplyScalar(1.9) : new THREE.Color(1.6, 0.5, 0.12), true, r.ai ? 1.8 : 0.9)
     t.width = r.ai ? 0.9 : 0.42
     trail.push(t)
     scene.add(t.mesh)
@@ -414,6 +415,10 @@ player.onLand = (impact, air) => {
 }
 player.onSpin = (flip) => {
   flash(flip ? 'FLIPPED' : 'SPUN OUT')
+  // The moment it goes: a beat of slow motion (longer for a flip) so you see it happen.
+  slowmoT = Math.max(slowmoT, flip ? 0.9 : 0.55)
+  hitstop = Math.max(hitstop, 0.05)
+  sound.spinOut(flip)
   sound.crash(flip)
   shake(flip ? 0.9 : 0.45)
   cam.punch -= flip ? 6 : 2
@@ -424,7 +429,7 @@ player.onSpin = (flip) => {
   if (player.hull <= 0) die()
 }
 player.onDriftBoost = (lvl) => {
-  flash(lvl === 2 ? 'DRIFT BOOST II' : 'DRIFT BOOST')
+  sound.driftRelease(lvl)
   sound.pad()
   cam.punch += lvl === 2 ? 7 : 4
   shake(0.2 + lvl * 0.1)
@@ -595,6 +600,7 @@ function resetVisuals(): void {
 
 // Top speed over the whole run (player.topMach resets with each respawn after a crash).
 let runTop = 0
+let driftLvl = 0
 let secK = 0, pinUntil = 0
 function startRace(): void {
   runTop = 0; secK = 0; pinUntil = 0
@@ -903,6 +909,8 @@ function drawRacer(p: Player, alpha: number, dt: number, isMe: boolean): void {
   craft.lod(camera.position)
   const throttle = mode === 'title' ? 0.15 : p.dead || p.crashing ? 0 : 0.3 + 0.7 * p.throttle
   craft.setFlames(throttle, p.boost, time + (isMe ? 0 : p.pos.x * 0.01))
+  // The drift charge shows in the exhaust itself (no HUD bar): blue at level one, violet-white at two.
+  craft.setDriftTint(p.drift >= 2 ? 2 : 1, isMe && p.drift >= 0.9 && !p.burning ? Math.min(1, (p.drift - 0.9) * 4) * (0.75 + 0.25 * Math.sin(time * 30)) : 0)
   if (mode === 'title' || p.dead) return
   const near = camera.position.distanceToSquared(tmp) < 1500 * 1500
   for (let i = 0; i < v.trail.length; i++) {
@@ -960,15 +968,17 @@ function drawRacer(p: Player, alpha: number, dt: number, isMe: boolean): void {
       e.life = 0.9 + Math.random() * 0.8; e.size0 = 2; e.size1 = 12; e.r = 0.82; e.g = 0.45; e.b = 0.22; e.a = 0.4; e.drag = 2.4; e.grav = 8
       fx.smoke.emit(e)
     }
-    if (isMe && p.drift > 0.9) {
-      const l2 = p.drift >= 2
+    if (isMe && p.drifting) {
+      const l2 = p.drift >= 2, l1 = p.drift >= 0.9
       for (const side of [0, 1]) {
+        if (!l1 && Math.random() < 0.6) continue
         nozzleW.copy(craft.sidePuffs[side]).applyMatrix4(craft.body.matrixWorld)
         const e = resetE()
         e.x = nozzleW.x; e.y = nozzleW.y - 0.4; e.z = nozzleW.z
         e.vx = p.vel.x * 0.9 + (Math.random() - 0.5) * 30; e.vy = Math.random() * 20; e.vz = p.vel.z * 0.9 + (Math.random() - 0.5) * 30
         e.life = 0.25; e.size0 = 0.6; e.size1 = 0.3; e.streak = 1; e.drag = 2; e.grav = 30
-        if (l2) { e.r = 7; e.g = 2.5; e.b = 0.6 } else { e.r = 1.2; e.g = 3.5; e.b = 7 }
+        // Charging: dull orange grit; level one: blue; level two: violet-white and bigger.
+        if (l2) { e.r = 6; e.g = 2.6; e.b = 7.5; e.size0 = 0.9 } else if (l1) { e.r = 1.2; e.g = 3.5; e.b = 7 } else { e.r = 2.2; e.g = 1.0; e.b = 0.35 }
         e.a = 1
         fx.glow.emit(e)
       }
@@ -1161,6 +1171,7 @@ function frame(now: number): void {
   shock.update(dt)
   for (const v of visuals.values()) { for (const t of v.trail) t.build(camera.position); for (const t of v.vapour) t.build(camera.position) }
   sound.scrape(mode === 'title' ? 0 : Math.max(player.scrape, player.drifting || player.spin > 0 ? 0.25 + Math.abs(player.slip) * 0.35 : 0))
+  sound.slide(mode === 'title' || player.airborne ? 0 : player.drifting ? 0.4 + Math.min(0.6, Math.abs(player.slip)) : 0, player.drift / 2.6, player.spin > 0 ? player.yawRate : 0)
 
   world.update(camera.position, time)
   const G = world.ground
@@ -1293,10 +1304,10 @@ function updateHud(dt: number, slow: boolean): void {
   $('#grip').classList.toggle('locked', player.burning)
   // In a wake: the camera shakes with it.
   if (player.wake > 0.15) cam.trauma = Math.max(cam.trauma, player.wake * 0.45)
-  const dm = $('#drift')
-  dm.style.opacity = player.drift > 0.02 ? '1' : '0'
-  ;(dm.firstElementChild as HTMLElement).style.width = `${(player.drift / 2.6) * 100}%`
-  dm.classList.toggle('l2', player.drift >= 2)
+  // Drift charge levels: felt, not read — a thunk, a rumble and a camera nudge at each level.
+  const lvl = player.drifting ? (player.drift >= 2 ? 2 : player.drift >= 0.9 ? 1 : 0) : 0
+  if (lvl > driftLvl) { sound.driftLevel(lvl); input.rumble(0.35 + lvl * 0.2, 0.6, 110); cam.punch += 1.5 + lvl; shake(0.12 + lvl * 0.08) }
+  driftLvl = lvl
   hullFill.style.width = `${Math.max(0, player.hull)}%`
   hullEl.classList.toggle('low', player.hull < 35)
   flashT = Math.max(0, flashT - dt)
@@ -1714,6 +1725,7 @@ const g = {
   setMach: (m: number) => { player.speed = m * MACH },
   skipCountdown: () => { race.countdown = 0.01 },
   force: (c: import('./player').Controls | null) => { forced = c },
+  sound,
   /** Put the player just before jump k, at Mach m. */
   toJump: (k: number, m = 3) => {
     const f = course.def.jumps[k] // on the line: k % 3 === 0

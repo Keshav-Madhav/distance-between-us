@@ -53,8 +53,16 @@ export class Sound {
   private whineG!: GainNode
   private burnSub!: OscillatorNode
   private burnG!: GainNode
-  private burnHissF!: BiquadFilterNode
+  private burnRoarF!: BiquadFilterNode
   private crackleG!: GainNode
+  private crackle!: AudioBuffer
+  private smooth!: AudioBuffer
+  // slide (drift / spin): sand under the hull, a rising sizzle with the charge
+  private slideG!: GainNode
+  private slideF!: BiquadFilterNode
+  private sizzleG!: GainNode
+  private sizzleF!: BiquadFilterNode
+  private toneWob!: GainNode
   private windF!: BiquadFilterNode
   private windG!: GainNode
   private breathF!: BiquadFilterNode
@@ -125,7 +133,43 @@ export class Sound {
     const bd = this.brown.getChannelData(0)
     let last = 0
     for (let i = 0; i < bd.length; i++) { last = (last + 0.02 * (Math.random() * 2 - 1)) / 1.02; bd[i] = last * 3.5 }
-    const loop = (buf: AudioBuffer) => { const s = ctx.createBufferSource(); s.buffer = buf; s.loop = true; s.loopStart = Math.random(); s.start(); return s }
+    // Smooth random (−1…1, ~8 new values a second, cosine-eased): turbulence for gains and filters —
+    // a steady noise loop is what made everything sound generated.
+    this.smooth = ctx.createBuffer(1, sr * 8, sr)
+    {
+      const d = this.smooth.getChannelData(0), per = sr / 8
+      const pts = Array.from({ length: 65 }, () => Math.random() * 2 - 1); pts[64] = pts[0]
+      for (let i = 0; i < d.length; i++) {
+        const k = Math.floor(i / per), u = (i % per) / per, e = (1 - Math.cos(u * Math.PI)) / 2
+        d[i] = pts[k] + (pts[k + 1] - pts[k]) * e
+      }
+    }
+    // Crackle: sparse pops — many small, a few big — each a tiny decaying burst. A real afterburner
+    // crackles; a chopped noise only buzzes.
+    this.crackle = ctx.createBuffer(2, sr * 3, sr)
+    for (let ch = 0; ch < 2; ch++) {
+      const d = this.crackle.getChannelData(ch)
+      let i = 0
+      while (i < d.length) {
+        i += Math.floor((-Math.log(1 - Math.random()) / 70) * sr)
+        const big = Math.random() < 0.08
+        const a = (big ? 0.7 + Math.random() * 0.3 : Math.random() ** 2 * 0.5)
+        const len = Math.floor(sr * (big ? 0.01 + Math.random() * 0.02 : 0.001 + Math.random() * 0.006))
+        let lp = 0
+        for (let j = 0; j < len && i + j < d.length; j++) {
+          lp += ((Math.random() * 2 - 1) - lp) * (big ? 0.35 : 0.8)
+          d[i + j] += lp * a * Math.exp((-5 * j) / len)
+        }
+      }
+    }
+    const loop = (buf: AudioBuffer) => { const s = ctx.createBufferSource(); s.buffer = buf; s.loop = true; s.loopStart = Math.random() * Math.min(1, buf.duration); s.start(); return s }
+    /** A slow random modulator (rate: new values per second ≈ 8·rate) scaled to ±depth, into a param. */
+    const wob = (param: AudioParam, rate: number, depth: number) => {
+      const src = ctx.createBufferSource(); src.buffer = this.smooth; src.loop = true; src.playbackRate.value = rate
+      const g = ctx.createGain(); g.gain.value = depth
+      src.connect(g).connect(param); src.start(0, Math.random() * 8)
+      return g
+    }
     const drive = (k: number) => { const w = ctx.createWaveShaper(); const c = new Float32Array(1024); for (let i = 0; i < 1024; i++) c[i] = Math.tanh(((i / 1023) * 2 - 1) * k); w.curve = c; return w }
 
     // ── engine ──
@@ -135,6 +179,12 @@ export class Sound {
     this.roarF = ctx.createBiquadFilter(); this.roarF.type = 'bandpass'; this.roarF.Q.value = 0.7
     this.roarG = ctx.createGain(); this.roarG.gain.value = 0
     loop(this.noise).connect(this.roarF).connect(this.roarG).connect(this.eng)
+    // Turbulence: the roar's level and colour breathe; the rumble wanders.
+    const roarAM = ctx.createGain(); roarAM.gain.value = 1
+    this.roarG.disconnect(); this.roarG.connect(roarAM).connect(this.eng)
+    wob(roarAM.gain, 1.6, 0.35)
+    wob(this.roarF.frequency, 0.7, 180)
+    wob(this.rumbleF.frequency, 0.5, 40)
     this.toneA = ctx.createOscillator(); this.toneA.type = 'sawtooth'
     this.toneB = ctx.createOscillator(); this.toneB.type = 'sawtooth'; this.toneB.detune.value = 14
     this.toneF = ctx.createBiquadFilter(); this.toneF.type = 'lowpass'; this.toneF.Q.value = 2.5
@@ -142,6 +192,9 @@ export class Sound {
     this.toneA.connect(this.toneF); this.toneB.connect(this.toneF)
     this.toneF.connect(drive(3)).connect(this.toneG).connect(this.eng)
     this.toneA.start(); this.toneB.start()
+    // A little pitch wander (a machine under load, not an oscillator); the spin-out wobble rides it.
+    this.toneWob = wob(this.toneA.detune, 0.9, 9)
+    wob(this.toneB.detune, 1.1, 11)
     this.whine = ctx.createOscillator(); this.whine.type = 'sine'
     this.whine2 = ctx.createOscillator(); this.whine2.type = 'triangle'
     this.whineG = ctx.createGain(); this.whineG.gain.value = 0
@@ -151,25 +204,53 @@ export class Sound {
     vib.connect(vibG); vibG.connect(this.whine.frequency); vibG.connect(this.whine2.frequency); vib.start()
     this.whine.connect(this.whineG); this.whine2.connect(this.whineG); this.whineG.connect(this.eng)
     this.whine.start(); this.whine2.start()
-    // Afterburner: a sub, a chopped crackle and a blowtorch hiss.
-    this.burnSub = ctx.createOscillator(); this.burnSub.type = 'square'; this.burnSub.frequency.value = 38
-    const subF = ctx.createBiquadFilter(); subF.type = 'lowpass'; subF.frequency.value = 140
+    // Afterburner: a thick turbulent roar (brown noise, saturated, wide), a combustion rumble that
+    // surges, real crackle, and a sub — all breathing with random turbulence. (Was: a square sub, a
+    // 27 Hz chopped bandpass and a 2.5 kHz hiss: "just noise and bad".)
     this.burnG = ctx.createGain(); this.burnG.gain.value = 0
-    this.burnSub.connect(subF).connect(this.burnG).connect(this.eng); this.burnSub.start()
-    this.burnHissF = ctx.createBiquadFilter(); this.burnHissF.type = 'highpass'; this.burnHissF.frequency.value = 2500
-    loop(this.noise).connect(this.burnHissF).connect(this.burnG)
-    const crF = ctx.createBiquadFilter(); crF.type = 'bandpass'; crF.frequency.value = 700; crF.Q.value = 0.6
-    const chop = ctx.createGain(); chop.gain.value = 0
-    const lfo = ctx.createOscillator(); lfo.type = 'square'; lfo.frequency.value = 27
-    const lfoG = ctx.createGain(); lfoG.gain.value = 0.5
-    lfo.connect(lfoG).connect(chop.gain); lfo.start()
+    const burnAM = ctx.createGain(); burnAM.gain.value = 1
+    wob(burnAM.gain, 3, 0.22) // fast flutter: a flame, not a fan
+    this.burnG.connect(burnAM).connect(this.eng)
+    this.burnRoarF = ctx.createBiquadFilter(); this.burnRoarF.type = 'lowpass'; this.burnRoarF.frequency.value = 900; this.burnRoarF.Q.value = 0.5
+    wob(this.burnRoarF.frequency, 1.2, 260)
+    const sat = drive(2.4)
+    const roarL = ctx.createStereoPanner(); roarL.pan.value = -0.55
+    const roarR = ctx.createStereoPanner(); roarR.pan.value = 0.55
+    const roarMix = ctx.createGain(); roarMix.gain.value = 0.5
+    loop(this.brown).connect(roarL).connect(this.burnRoarF)
+    loop(this.brown).connect(roarR).connect(this.burnRoarF)
+    this.burnRoarF.connect(sat).connect(roarMix).connect(this.burnG)
+    const comb = ctx.createBiquadFilter(); comb.type = 'bandpass'; comb.frequency.value = 95; comb.Q.value = 1.4
+    const surge = ctx.createGain(); surge.gain.value = 1.4
+    wob(surge.gain, 0.8, 0.9)
+    loop(this.brown).connect(comb).connect(surge).connect(this.burnG)
+    this.burnSub = ctx.createOscillator(); this.burnSub.type = 'sine'; this.burnSub.frequency.value = 38
+    const subG = ctx.createGain(); subG.gain.value = 0.35
+    this.burnSub.connect(subG).connect(this.burnG); this.burnSub.start()
+    const crHP = ctx.createBiquadFilter(); crHP.type = 'highpass'; crHP.frequency.value = 350
+    const crLP = ctx.createBiquadFilter(); crLP.type = 'lowpass'; crLP.frequency.value = 5200
     this.crackleG = ctx.createGain(); this.crackleG.gain.value = 0
-    loop(this.noise).connect(crF).connect(chop).connect(this.crackleG).connect(this.eng)
+    const cr = ctx.createBufferSource(); cr.buffer = this.crackle; cr.loop = true; cr.start(0, Math.random() * 3)
+    cr.connect(crHP).connect(crLP).connect(this.crackleG).connect(this.eng)
+    this.crackleG.connect(this.verbIn)
+    // Slide: the hull scouring sand (low, gritty, surging) and a sizzle that rises with the charge.
+    this.slideF = ctx.createBiquadFilter(); this.slideF.type = 'bandpass'; this.slideF.frequency.value = 700; this.slideF.Q.value = 0.9
+    this.slideG = ctx.createGain(); this.slideG.gain.value = 0
+    const slideAM = ctx.createGain(); slideAM.gain.value = 1
+    wob(slideAM.gain, 2.5, 0.45)
+    loop(this.brown).connect(this.slideF).connect(slideAM).connect(this.slideG).connect(this.sfx)
+    this.sizzleF = ctx.createBiquadFilter(); this.sizzleF.type = 'bandpass'; this.sizzleF.frequency.value = 2000; this.sizzleF.Q.value = 2.2
+    this.sizzleG = ctx.createGain(); this.sizzleG.gain.value = 0
+    const cr2 = ctx.createBufferSource(); cr2.buffer = this.crackle; cr2.loop = true; cr2.playbackRate.value = 1.7; cr2.start(0, Math.random() * 3)
+    cr2.connect(this.sizzleF).connect(this.sizzleG).connect(this.sfx)
     // World.
     this.windF = ctx.createBiquadFilter(); this.windF.type = 'lowpass'; this.windF.frequency.value = 600
     const windH = ctx.createBiquadFilter(); windH.type = 'highpass'; windH.frequency.value = 160
     this.windG = ctx.createGain(); this.windG.gain.value = 0
-    loop(this.noise).connect(windH).connect(this.windF).connect(this.windG).connect(this.eng)
+    const gust = ctx.createGain(); gust.gain.value = 1
+    wob(gust.gain, 0.6, 0.4)
+    wob(this.windF.frequency, 0.5, 300)
+    loop(this.noise).connect(windH).connect(this.windF).connect(gust).connect(this.windG).connect(this.eng)
     this.breathF = ctx.createBiquadFilter(); this.breathF.type = 'bandpass'; this.breathF.frequency.value = 1300; this.breathF.Q.value = 1.4
     this.breathG = ctx.createGain(); this.breathG.gain.value = 0
     loop(this.noise).connect(this.breathF).connect(this.breathG).connect(this.sfx)
@@ -296,9 +377,10 @@ export class Sound {
     this.whine.frequency.setTargetAtTime(560 + 2700 * s * s, t, k)
     this.whine2.frequency.setTargetAtTime(1130 + 5200 * s * s, t, k)
     this.whineG.gain.setTargetAtTime(live * (0.004 + 0.042 * Math.min(1, s * s * s)), t, k)
-    this.burnG.gain.setTargetAtTime(burn * 0.34, t, 0.05)
-    this.burnSub.frequency.setTargetAtTime(34 + mach * 2, t, 0.1)
-    this.crackleG.gain.setTargetAtTime(burn * 0.3 + live * boost * 0.06, t, 0.03)
+    this.burnG.gain.setTargetAtTime(burn * 0.7, t, burn ? 0.06 : 0.18)
+    this.burnSub.frequency.setTargetAtTime(32 + mach * 2, t, 0.1)
+    this.burnRoarF.frequency.setTargetAtTime(600 + 140 * Math.min(10, mach), t, 0.2)
+    this.crackleG.gain.setTargetAtTime(burn * 3.2 + live * boost * 0.4, t, 0.04)
     this.windG.gain.setTargetAtTime(0.04 + 0.5 * Math.pow(Math.min(1, s), 1.5), t, k)
     this.windF.frequency.setTargetAtTime(500 + 8500 * Math.min(1, s * s), t, k)
     this.brakeG.gain.setTargetAtTime(live * brake * 0.26, t, 0.03)
@@ -556,9 +638,12 @@ export class Sound {
   whoosh(level: number, pan: number): void {
     if (!this.ctx) return
     const t = this.ctx.currentTime
-    const out = this.panned(pan)
-    this.burst(t, 0.45, 'bandpass', 3200, 380, 0.5 * level, 2.4, out, 0.06)
-    this.thump(t + 0.05, 120, 55, 0.3, 0.3 * level, out)
+    // Doppler: the pitch falls as it passes, and it crosses from front-side to behind.
+    const p = this.ctx.createStereoPanner()
+    p.pan.setValueAtTime(Math.max(-1, Math.min(1, pan * 0.4)), t); p.pan.linearRampToValueAtTime(Math.max(-1, Math.min(1, pan)), t + 0.25)
+    p.connect(this.sfx)
+    this.burst(t, 0.5, 'bandpass', 2600, 300, 0.55 * level, 1.6, p, 0.05)
+    this.dirty(t, 0.45, 300, 900, 120, 0.25 * level, p)
   }
 
   missile(): void {
@@ -604,8 +689,9 @@ export class Sound {
     const t = this.ctx.currentTime
     if (big) {
       this.thump(t, 80, 25, 1.0, 1.1)
-      this.burst(t, 1.1, 'lowpass', 4000, 200, 0.9)
-      this.burst(t, 0.5, 'highpass', 3000, 2000, 0.35)
+      this.dirty(t, 1.2, 3000, 1200, 150, 0.8)
+      this.burst(t, 0.5, 'highpass', 3000, 2000, 0.3)
+      this.pops(t + 0.05, 0.8, 18, 0.4)
     } else {
       this.burst(t, 0.22, 'bandpass', 1800, 600, 0.55, 1.5)
       this.thump(t, 160, 60, 0.15, 0.5)
@@ -614,20 +700,94 @@ export class Sound {
 
   flyby(v: number): void { this.whoosh(v, 0) }
 
-  /** The afterburner lighting: a hollow thoom and a roar opening. */
+  /** The afterburner lighting: a suck of air, then a hollow WHOOMP as it catches, a burst of pops. */
   boostKick(): void {
     if (!this.ctx) return
     const t = this.ctx.currentTime
-    this.thump(t, 75, 32, 0.6, 0.9)
-    this.burst(t, 0.8, 'lowpass', 400, 3000, 0.5, 0.9, this.sfx, 0.08)
-    this.burst(t, 1.2, 'lowpass', 1200, 200, 0.25, 0.6, this.verbIn)
+    this.burst(t, 0.09, 'bandpass', 600, 2400, 0.25, 1.2, this.sfx, 0.06)
+    this.thump(t + 0.07, 62, 28, 0.7, 1.0)
+    this.dirty(t + 0.07, 0.9, 180, 1600, 260, 0.6)
+    this.pops(t + 0.08, 0.5, 14, 0.5)
+    this.burst(t + 0.07, 1.4, 'lowpass', 900, 150, 0.35, 0.6, this.verbIn)
   }
 
+  /** Saturated brown noise swept lo → hi → down: fire, body, mass (where plain noise sounds thin). */
+  private dirty(t: number, dur: number, f0: number, f1: number, f2: number, v: number, dest: AudioNode = this.sfx): void {
+    const ctx = this.ctx!
+    const n = ctx.createBufferSource(); n.buffer = this.brown
+    const f = ctx.createBiquadFilter(); f.type = 'lowpass'; f.Q.value = 0.9
+    f.frequency.setValueAtTime(f0, t); f.frequency.exponentialRampToValueAtTime(f1, t + dur * 0.2); f.frequency.exponentialRampToValueAtTime(f2, t + dur)
+    const w = ctx.createWaveShaper(); const c = new Float32Array(512); for (let i = 0; i < 512; i++) c[i] = Math.tanh(((i / 511) * 2 - 1) * 3); w.curve = c
+    const g = ctx.createGain(); this.env(g, t, v, 0.01, dur)
+    n.connect(f).connect(w).connect(g).connect(dest)
+    n.start(t, Math.random()); n.stop(t + dur + 0.1)
+  }
+
+  /** A run of crackle pops (n over dur seconds). */
+  private pops(t: number, dur: number, n: number, v: number, dest: AudioNode = this.sfx): void {
+    const ctx = this.ctx!
+    for (let i = 0; i < n; i++) {
+      const at = t + Math.random() * dur
+      const s = ctx.createBufferSource(); s.buffer = this.crackle
+      const g = ctx.createGain(); g.gain.value = v * (1 - (at - t) / dur * 0.6)
+      s.connect(g).connect(dest)
+      s.start(at, Math.random() * 2.9, 0.04)
+    }
+  }
+
+  /** Continuous: sand under a sliding hull (level 0…1), the drift charge (0…1), spin yaw rate. */
+  slide(level: number, charge: number, spinYaw: number): void {
+    if (!this.ctx) return
+    const t = this.ctx.currentTime
+    this.slideG.gain.setTargetAtTime(level * 1.4, t, 0.05)
+    this.slideF.frequency.setTargetAtTime(500 + level * 900, t, 0.08)
+    this.sizzleG.gain.setTargetAtTime(level > 0 && charge > 0.1 ? 0.8 + charge * 3 : 0, t, 0.06)
+    this.sizzleF.frequency.setTargetAtTime(1400 + charge * 4200, t, 0.1)
+    // Spinning: the engine note wows with the rotation (the exhaust swings toward and away from you).
+    this.toneWob.gain.setTargetAtTime(spinYaw ? 9 + Math.min(220, Math.abs(spinYaw) * 40) : 9, t, 0.05)
+  }
+
+  /** The drift charge reaching a level: a heavy thunk and a bright ring rising with the level. */
+  driftLevel(lvl: number): void {
+    if (!this.ctx) return
+    const t = this.ctx.currentTime
+    this.thump(t, 140, 55, 0.22, 0.55)
+    const hz = lvl >= 2 ? 1320 : 880
+    for (const r of [1, 2.01, 2.76]) {
+      const o = this.ctx.createOscillator(); o.type = 'sine'; o.frequency.value = hz * r
+      const g = this.ctx.createGain(); this.env(g, t, 0.05 / r, 0.002, 0.35)
+      o.connect(g); g.connect(this.sfx); g.connect(this.verbIn); o.start(t); o.stop(t + 0.4)
+    }
+    this.pops(t, 0.15, lvl >= 2 ? 10 : 5, 0.35)
+  }
+
+  /** Letting a charged drift go: the stored energy kicks through the exhaust. */
+  driftRelease(lvl: number): void {
+    if (!this.ctx) return
+    const t = this.ctx.currentTime
+    this.thump(t, 90, 36, 0.5, 0.8)
+    this.dirty(t, 0.7, 300, 2600, 300, 0.45 + lvl * 0.15)
+    this.pops(t, 0.4, 8 + lvl * 6, 0.45)
+  }
+
+  /** Grip lets go: a lurch (the hull biting sideways) and the sand roaring up. */
+  spinOut(flip: boolean): void {
+    if (!this.ctx) return
+    const t = this.ctx.currentTime
+    this.thump(t, flip ? 70 : 110, 30, flip ? 0.9 : 0.5, flip ? 1.1 : 0.7)
+    this.dirty(t, flip ? 1.4 : 0.9, 220, 1200, 160, flip ? 0.7 : 0.5)
+    this.burst(t, 0.6, 'bandpass', 900, 3200, 0.3, 1.5, this.sfx, 0.08)
+  }
+
+  /** A sonic boom is an N-wave: two sharp cracks ~0.1 s apart, a bass push, a long rolling tail. */
   machCrack(n: number): void {
     if (!this.ctx) return
     const t = this.ctx.currentTime
-    this.burst(t, 0.35, 'highpass', 900, 500, 0.3 + n * 0.04, 0.5)
-    this.thump(t, 110, 40, 0.3, 0.4)
+    const v = 0.4 + n * 0.05
+    this.burst(t, 0.06, 'highpass', 1800, 900, v, 0.7, this.sfx, 0.001)
+    this.burst(t + 0.1, 0.07, 'highpass', 1500, 700, v * 0.85, 0.7, this.sfx, 0.001)
+    this.thump(t, 85, 30, 0.45, 0.55)
+    this.dirty(t, 1.6, 900, 400, 60, 0.3, this.verbIn)
   }
 
   barrier(phase: 'silence' | 'boom'): void {
@@ -710,14 +870,18 @@ export class Sound {
   gate(big: boolean): void {
     if (!this.ctx) return
     const t = this.ctx.currentTime
-    const notes = big ? [880, 1108.7, 1318.5, 1760] : [1046.5, 1568]
+    // Through the curtain: a field hum you punch through (a phasey rush), then a soft bell pair.
+    this.burst(t, 0.35, 'bandpass', 5000, 900, 0.3, 3, this.sfx, 0.01)
+    this.thump(t, 70, 45, 0.25, 0.35)
+    const notes = big ? [659.3, 987.8, 1318.5] : [783.99, 1174.7]
     notes.forEach((hz, i) => {
-      const o = this.ctx!.createOscillator(); o.type = 'triangle'; o.frequency.value = hz
-      const g = this.ctx!.createGain(); this.env(g, t + i * 0.07, 0.1, 0.003, 0.4)
-      o.connect(g); g.connect(this.sfx); g.connect(this.verbIn)
-      o.start(t + i * 0.07); o.stop(t + i * 0.07 + 0.5)
+      for (const [r, a] of [[1, 1], [2.76, 0.3], [5.4, 0.12]] as const) {
+        const o = this.ctx!.createOscillator(); o.type = 'sine'; o.frequency.value = hz * r
+        const g = this.ctx!.createGain(); this.env(g, t + 0.05 + i * 0.08, 0.07 * a, 0.002, 0.7 / r + 0.2)
+        o.connect(g); g.connect(this.sfx); g.connect(this.verbIn)
+        o.start(t + 0.05 + i * 0.08); o.stop(t + 1.2)
+      }
     })
-    this.burst(t, 0.4, 'bandpass', 4000, 700, 0.25, 2, this.sfx, 0.03)
   }
 
   /** The finish: a brass-ish chord stab and a rising arpeggio, into the reverb. */
@@ -749,13 +913,9 @@ export class Sound {
   pad(): void {
     if (!this.ctx) return
     const t = this.ctx.currentTime
-    const o = this.ctx.createOscillator(); o.type = 'sawtooth'
-    o.frequency.setValueAtTime(220, t); o.frequency.exponentialRampToValueAtTime(1800, t + 0.25)
-    const f = this.ctx.createBiquadFilter(); f.type = 'bandpass'; f.frequency.value = 1400; f.Q.value = 1.2
-    const g = this.ctx.createGain(); this.env(g, t, 0.22, 0.01, 0.35)
-    o.connect(f).connect(g); g.connect(this.sfx); g.connect(this.verbIn)
-    o.start(t); o.stop(t + 0.45)
-    this.thump(t, 90, 40, 0.35, 0.6)
+    this.thump(t, 95, 40, 0.35, 0.6)
+    this.dirty(t, 0.6, 400, 3000, 500, 0.35)
+    this.burst(t + 0.05, 0.5, 'highpass', 2000, 6000, 0.12, 0.7, this.verbIn)
   }
 
   launch(v: number): void {
@@ -768,7 +928,8 @@ export class Sound {
     const t = this.ctx.currentTime
     const v = Math.min(1.2, impact / 60)
     this.thump(t, 120, 35, 0.4 + v * 0.3, 0.5 + v * 0.6)
-    this.burst(t, 0.5 + v * 0.4, 'lowpass', 2500, 150, 0.3 + v * 0.5)
+    this.dirty(t, 0.5 + v * 0.5, 1500, 700, 120, 0.25 + v * 0.45)
+    this.burst(t + 0.02, 0.3, 'highpass', 2500, 5000, 0.08 * v, 0.6)
   }
 
   clang(v: number): void {
