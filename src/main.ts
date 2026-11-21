@@ -666,6 +666,7 @@ function toTitle(): void {
   race.reset()
   player.reset(course.cps[0].x - course.cps[0].tx * 60, course.cps[0].z - course.cps[0].tz * 60, Math.atan2(course.cps[0].tx, course.cps[0].tz), 0)
   renderPos.copy(player.pos)
+  player.speed = 4 * MACH
   resetVisuals()
   hud.classList.remove('on'); raceEl.classList.remove('on'); standEl.classList.remove('on'); mini.classList.remove('on')
   scoreEl.style.display = 'none'
@@ -744,6 +745,8 @@ let driftLvl = 0
 let secK = 0, pinUntil = 0
 function startRace(): void {
   runTop = 0; secK = 0; pinUntil = 0
+  player.noCollide = false
+  player.announce = true
   spectate = false
   wreckage.clear()
   sound.start()
@@ -776,6 +779,9 @@ function startRace(): void {
 
 function startHunt(): void {
   runTop = 0
+  player.noCollide = false
+  player.announce = true
+  player.maxMach = CFG.speed.boostMach
   spectate = false
   wreckage.clear()
   sound.start()
@@ -949,6 +955,24 @@ const nozzleW = new THREE.Vector3()
 const proj = new THREE.Vector3()
 const renderPos = new THREE.Vector3()
 let attractYaw = 0
+let orbitYaw = -0.65, orbitPitch = 0.12, orbitKey = 0, orbitKeyP = 0
+{
+  // Drag on the menu background to turn the view.
+  let drag = false, lx = 0, ly = 0
+  // (The menu overlay covers the canvas: catch the drag on it, outside its panels.)
+  $('#title').addEventListener('pointerdown', (e) => { if (mode === 'title' && !(e.target as HTMLElement).closest('.menu, .preview')) { drag = true; lx = e.clientX; ly = e.clientY } })
+  addEventListener('pointerup', () => (drag = false))
+  addEventListener('pointermove', (e) => {
+    if (!drag || mode !== 'title') return
+    orbitYaw -= (e.clientX - lx) * 0.006
+    orbitPitch = THREE.MathUtils.clamp(orbitPitch + (e.clientY - ly) * 0.004, 0.02, 0.9)
+    lx = e.clientX; ly = e.clientY
+  })
+  addEventListener('keyup', (e) => {
+    if (e.code === 'ArrowLeft' || e.code === 'ArrowRight') orbitKey = 0
+    if (e.code === 'ArrowUp' || e.code === 'ArrowDown') orbitKeyP = 0
+  })
+}
 let hudT = 0
 
 function rebase(): void {
@@ -965,7 +989,27 @@ function rebase(): void {
   for (const v of visuals.values()) { for (const t of [...v.trail, ...v.vapour]) t.shift(dx, dz); v.lastDust.x += dx; v.lastDust.z += dz }
 }
 
+/** The menu's flight: your ship flat out down the course (the AI's line round the spires), never
+ *  colliding, back to the start before the finish. */
+function titleStep(): void {
+  const me = race.racers[0]
+  me.idx = course.nearest(player.pos.x, player.pos.z, me.idx)
+  if (me.idx > course.finishI - 150 || player.crashing || player.spin > 0) {
+    const c = course.cps[1]
+    player.reset(c.x - c.tx * 400, c.z - c.tz * 400, Math.atan2(c.tx, c.tz), 4)
+    me.idx = course.nearest(player.pos.x, player.pos.z, -1)
+    cam.snap(player.heading)
+  }
+  race.drive(me, STEP)
+  player.noCollide = true
+  player.announce = false
+  player.maxMach = 4.2
+  titleCtl.steer = me.controls.steer
+  player.step(STEP, titleCtl, world)
+}
+const titleCtl = { steer: 0, boost: true, burner: false, brake: false, strafe: 0, dodgeL: false, dodgeR: false }
 function simStep(): void {
+  if (mode === 'title') { titleStep(); return }
   if (mode === 'race') {
     const me = race.racers[0]
     const auto = autopilot || (spectate && me.finished)
@@ -1049,11 +1093,11 @@ function drawRacer(p: Player, alpha: number, dt: number, isMe: boolean): void {
   craft.body.scale.set(1 + p.squash * 0.04, 1 - p.squash * 0.1, 1)
   craft.root.updateMatrixWorld(true)
   craft.lod(camera.position)
-  const throttle = mode === 'title' ? 0.15 : p.dead || p.crashing ? 0 : 0.3 + 0.7 * p.throttle
+  const throttle = p.dead || p.crashing ? 0 : 0.3 + 0.7 * p.throttle
   craft.setFlames(throttle, p.boost, time + (isMe ? 0 : p.pos.x * 0.01))
   // The drift charge shows in the exhaust itself (no HUD bar): blue at level one, violet-white at two.
   craft.setDriftTint(p.drift >= 2 ? 2 : 1, isMe && p.drift >= 0.9 && !p.burning ? Math.min(1, (p.drift - 0.9) * 4) * (0.75 + 0.25 * Math.sin(time * 30)) : 0)
-  if (mode === 'title' || p.dead) return
+  if (p.dead) return
   const near = camera.position.distanceToSquared(tmp) < 1500 * 1500
   for (let i = 0; i < v.trail.length; i++) {
     nozzleW.copy(craft.nozzles[v.trail.length === 1 ? 1 : i]).applyMatrix4(craft.body.matrixWorld)
@@ -1237,16 +1281,13 @@ function frame(now: number): void {
   time += dt
 
   input.read(realDt, now / 1000)
-  if (mode === 'title') {
-    player.prev.copy(player.pos)
-    player.pos.y = groundH(player.pos.x, player.pos.z) + CFG.handling.hover + Math.sin(time * 1.6) * 0.25
-  } else {
+  {
     acc += dt
     let steps = 0
     while (acc >= STEP && steps < 6) { simStep(); acc -= STEP; steps++ }
     if (steps >= 6) acc = 0
   }
-  const alpha = mode === 'title' ? 1 : acc / STEP
+  const alpha = acc / STEP
 
   for (const r of race.racers) {
     const v = visuals.get(r.p)!
@@ -1286,14 +1327,18 @@ function frame(now: number): void {
   myCraft.setCone(mode === 'title' ? 0 : Math.max(coneA, nearMach1), time)
 
   if (mode === 'title') {
-    attractYaw += realDt * 0.12
-    // A low three-quarter view, the ship in the lower right, the title above it.
+    // A fixed orbit round the ship as it flies (← → and ↑ ↓, or drag, turn it): locked to the ship,
+    // so the desert streams past at Mach 4.
+    void attractYaw
+    orbitYaw += orbitKey * realDt * 1.6
+    orbitPitch = THREE.MathUtils.clamp(orbitPitch + orbitKeyP * realDt * 0.8, 0.02, 0.9)
     const r = 17
-    const a = heading + Math.PI * 0.8 + Math.sin(attractYaw) * 0.3
-    camera.position.set(renderPos.x + Math.sin(a) * r, renderPos.y + 1.1, renderPos.z + Math.cos(a) * r)
+    const a = heading + Math.PI + orbitYaw
+    camera.position.set(renderPos.x + Math.sin(a) * Math.cos(orbitPitch) * r, renderPos.y + 1.4 + Math.sin(orbitPitch) * r, renderPos.z + Math.cos(a) * Math.cos(orbitPitch) * r)
+    camera.position.y = Math.max(camera.position.y, groundH(camera.position.x, camera.position.z) + 1.5)
     tmp.set(-Math.cos(a), 0, Math.sin(a))
     // (Centred between the menu on the left and the course map on the right.)
-    camera.lookAt(renderPos.x - tmp.x * 0.4, renderPos.y + 2.6, renderPos.z - tmp.z * 0.4)
+    camera.lookAt(renderPos.x - tmp.x * 0.4, renderPos.y + 1.6, renderPos.z - tmp.z * 0.4)
     camera.fov = 42
     camera.updateProjectionMatrix()
   } else if (mode === 'race' && spectate && race.racers[0].finished) {
@@ -1355,7 +1400,7 @@ function frame(now: number): void {
   world.ground.uCloudOff.value.copy((world.sky.material as THREE.ShaderMaterial).uniforms.uCloudOff.value)
   post.bloom.threshold = CFG.post.bloomThreshold
   const onGrid = mode === 'race' && race.state === 'grid'
-  const engineMach = mode === 'title' ? 0.2 : onGrid ? 0.3 + player.boost * 0.9 : player.mach
+  const engineMach = mode === 'title' ? 2.5 : onGrid ? 0.3 + player.boost * 0.9 : player.mach
   const heat = mode === 'race' ? Math.min(1, (Math.max(0, me.passed - 1) / course.cps.length) * 1.5 * LAPS) : walker.state === 'fight' || walker.state === 'coming' ? 1 : 0
   // Rivals' engines: the three nearest, with their closing speed (Doppler) and side (pan).
   rivalVoices.length = 0
@@ -1793,13 +1838,9 @@ addEventListener('keydown', (e) => {
     // Course select: ← / → on the title; a different course loads on Enter (a reload, straight into
     // the race).
     if (!$('#pause').classList.contains('hide')) { if (e.code === 'Escape') $('#p-close').click(); return }
-    if (e.code === 'ArrowLeft' || e.code === 'ArrowRight') {
-      pickedCourse = (pickedCourse + (e.code === 'ArrowRight' ? 1 : COURSES.length - 1)) % COURSES.length
-      menuMode = 'race'
-      showCourse()
-      return
-    }
-    if (e.code === 'ArrowUp' || e.code === 'ArrowDown') { pickShip(e.code === 'ArrowDown' ? 1 : -1); return }
+    // Arrows turn the view round the ship (the menu is for the mouse).
+    if (e.code === 'ArrowLeft' || e.code === 'ArrowRight') { orbitKey = e.code === 'ArrowLeft' ? 1 : -1; e.preventDefault(); return }
+    if (e.code === 'ArrowUp' || e.code === 'ArrowDown') { orbitKeyP = e.code === 'ArrowUp' ? 1 : -1; e.preventDefault(); return }
     if (e.code === 'Enter') menuStart()
     if (e.code === 'KeyH') { menuMode = 'hunt'; showCourse() }
     return
@@ -1830,6 +1871,7 @@ canvas.addEventListener('webglcontextrestored', () => { paused = false; last = p
 // ───────────────────────── boot ─────────────────────────
 race.reset()
 player.reset(course.cps[0].x - course.cps[0].tx * 60, course.cps[0].z - course.cps[0].tz * 60, Math.atan2(course.cps[0].tx, course.cps[0].tz), 0)
+player.speed = 4 * MACH // the menu flight
 renderPos.copy(player.pos)
 camera.position.set(player.pos.x + 10, player.pos.y + 2, player.pos.z + 10)
 camera.lookAt(player.pos)

@@ -97,6 +97,7 @@
   button.big { background: var(--hot); border-color: var(--hot); color: #1a0d06; font-weight: 700; font-size: 14px; padding: 13px 34px; }
   button.big:hover { background: #ff8a3a; }
   #title { align-items: stretch; justify-content: flex-start; padding: 0; flex-direction: row; text-align: left; background: linear-gradient(90deg, rgba(10,5,3,0.72) 0%, rgba(10,5,3,0.35) 34%, rgba(0,0,0,0) 55%); }
+  #title { user-select: none; -webkit-user-select: none; }
   #title .menu { width: min(460px, 40vw); padding: 6vh 0 0 4vw; display: flex; flex-direction: column; gap: 12px; }
   #title h1 { font-size: clamp(30px, 3.6vw, 58px); text-align: left; margin-bottom: 8px; }
   #title .tabs { display: flex; gap: 0; }
@@ -219,7 +220,7 @@
     <div class="sec">SHIP</div>
     <div class="ship"><button id="ship-prev" aria-label="previous ship">◀</button><div class="sn"><b id="ship-name"></b><small id="ship-desc"></small></div><button id="ship-next" aria-label="next ship">▶</button></div>
     <div class="row"><button id="start" class="big">START</button><button id="open-settings">SETTINGS</button></div>
-    <div class="keys">ENTER START · ← → COURSE · ↑ ↓ SHIP · H HUNT<br/>W THROTTLE · SHIFT AFTERBURNER · A/D STEER · Q/E STRAFE · S BRAKE · R LAST GATE · ESC PAUSE</div>
+    <div class="keys">ENTER START · ARROWS OR DRAG TURN THE VIEW<br/>W THROTTLE · SHIFT AFTERBURNER · A/D STEER · Q/E STRAFE · S BRAKE · R LAST GATE · ESC PAUSE</div>
   </div>
   <div class="preview race-only"><div class="ph"><b id="tp-name"></b><span id="tp-meta"></span></div><canvas id="track" width="560" height="760"></canvas><div id="tp-info"></div></div>
 </div>
