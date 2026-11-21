@@ -59,8 +59,100 @@ export class ChaseCam {
     this.kick[2].v += nz * amount * 9
   }
 
+  // ── crash cam: pulls back and up to the side at the moment of impact, then follows the wreck ──
+  private readonly crashDir = new THREE.Vector3()
+  private readonly crashPos = new THREE.Vector3()
+  private readonly crashVel = new THREE.Vector3()
+  private readonly crashRel = new THREE.Vector3()
+  private inCrash = false
+  private crashCam(dt: number, time: number, _p: Player, at: THREE.Vector3, world: World): void {
+    const cam = this.camera
+    if (!this.inCrash) {
+      this.inCrash = true
+      // Behind the line it was travelling, and off to one side: you see the hit and the tumble.
+      this.crashDir.set(Math.sin(this.yaw.x), 0, Math.cos(this.yaw.x))
+      this.crashRel.copy(cam.position).sub(at)
+      this.crashVel.set(0, 0, 0)
+    }
+    // The offset from the wreck is what springs (so the camera rides along with the slide): behind
+    // the line it was on, out to one side, a little above.
+    const side = _tmp.set(this.crashDir.z, 0, -this.crashDir.x)
+    const want = _pos.copy(this.crashDir).multiplyScalar(-22).addScaledVector(side, 12)
+    want.y = 5
+    const w = 2.4
+    for (const k of ['x', 'y', 'z'] as const) {
+      const d = this.crashRel[k] - want[k]
+      const tmp = (this.crashVel[k] + w * d) * dt
+      const e = Math.exp(-w * dt)
+      this.crashRel[k] = want[k] + (d + tmp) * e
+      this.crashVel[k] = (this.crashVel[k] - w * tmp) * e
+    }
+    this.crashPos.copy(at).add(this.crashRel)
+    this.crashPos.y = Math.max(this.crashPos.y, groundH(this.crashPos.x, this.crashPos.z) + 2)
+    cam.position.copy(this.crashPos)
+    cam.up.set(0, 1, 0)
+    cam.lookAt(at.x, at.y + 1, at.z)
+    this.trauma = Math.max(0, this.trauma - dt * 1.1)
+    const amt = this.trauma * this.trauma * CFG.camera.shakeMax * 1.4 * (CFG.camera.reduceShake ? 0.25 : 1)
+    cam.rotateY(noise(time * 15, 1) * amt)
+    cam.rotateX(noise(time * 15, 7) * amt)
+    cam.fov = this.fov.step(58, dt)
+    cam.updateProjectionMatrix()
+    void world
+  }
+
+  // ── cinematic: cycling shots around a craft (after the finish) ──
+  private cineT = 0
+  private cineShot = 0
+  private readonly cineAnchor = new THREE.Vector3()
+  cinematic(dt: number, time: number, p: Player, at: THREE.Vector3, heading: number): void {
+    const cam = this.camera
+    this.cineT += dt
+    const shots = 4
+    const fwd = _tmp.set(Math.sin(heading), 0, Math.cos(heading))
+    const right = _look.set(-fwd.z, 0, fwd.x)
+    if (this.cineT > (this.cineShot === 2 ? 3 : 4.2) || this.cineT === dt) {
+      if (this.cineT !== dt) this.cineShot = (this.cineShot + 1) % shots
+      this.cineT = dt
+      // The flyby: a fixed point a little way down the line, beside it.
+      this.cineAnchor.copy(at).addScaledVector(fwd, 60 + p.speed * 1.6).addScaledVector(right, (Math.random() < 0.5 ? -1 : 1) * 26)
+      this.cineAnchor.y = groundH(this.cineAnchor.x, this.cineAnchor.z) + 4
+    }
+    const u = this.cineT
+    let fov = 50
+    if (this.cineShot === 0) {
+      // Tracking alongside, low, drifting forward.
+      cam.position.copy(at).addScaledVector(right, 16).addScaledVector(fwd, -4 + u * 2)
+      cam.position.y = at.y + 2.2
+      cam.lookAt(at.x + fwd.x * 6, at.y + 0.8, at.z + fwd.z * 6)
+      fov = 46
+    } else if (this.cineShot === 1) {
+      // Low in front, looking back as it bears down.
+      cam.position.copy(at).addScaledVector(fwd, 22 - u * 1.5).addScaledVector(right, -5)
+      cam.position.y = groundH(cam.position.x, cam.position.z) + 1.4
+      cam.lookAt(at.x, at.y + 1.2, at.z)
+      fov = 40
+    } else if (this.cineShot === 2) {
+      // Trackside: it screams past a fixed camera.
+      cam.position.copy(this.cineAnchor)
+      cam.lookAt(at.x, at.y + 1, at.z)
+      fov = 34
+    } else {
+      // High, slowly orbiting.
+      const a = time * 0.25
+      cam.position.set(at.x + Math.sin(a) * 40, at.y + 26, at.z + Math.cos(a) * 40).addScaledVector(fwd, 20)
+      cam.lookAt(at.x, at.y, at.z)
+      fov = 55
+    }
+    cam.fov = this.fov.step(fov, dt)
+    cam.updateProjectionMatrix()
+    this.yaw.x = heading
+  }
+
   update(dt: number, time: number, p: Player, at: THREE.Vector3, heading: number, world: World, fovMax: number): void {
     const C = CFG.camera
+    if (p.crashing) { this.crashCam(dt, time, p, at, world); return }
+    if (this.inCrash) { this.inCrash = false; this.snap(heading) }
     const s = Math.min(1, p.mach / 6)
     // Yaw target: heading, pulled toward the real direction of travel when sliding.
     const hv = Math.hypot(p.vel.x, p.vel.z)
@@ -126,7 +218,7 @@ export class ChaseCam {
     cam.rotateZ(noise(ts, 13) * amt * 0.8)
 
     this.punch *= Math.exp(-dt * 3)
-    const fovT = C.fovBase + (fovMax - C.fovBase) * Math.pow(s, 1.25) + p.boost * 3 + this.punch - p.brake * 6 + air * 4
+    const fovT = C.fovBase + (fovMax - C.fovBase) * Math.pow(s, 1.25) + Math.min(12, Math.max(0, p.mach - 6) * 3) + p.boost * 3 + this.punch - p.brake * 6 + air * 4
     cam.fov = this.fov.step(fovT, dt)
     cam.updateProjectionMatrix()
   }

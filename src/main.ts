@@ -19,6 +19,7 @@ import { loadTextures } from './textures'
 import { Course, JUMPS, LAPS, SPRINT_KM } from './course'
 import { Race } from './race'
 import { ChaseCam } from './camera'
+import { Debris } from './debris'
 
 const STEP = 1 / 60
 const params = new URLSearchParams(location.search)
@@ -70,6 +71,15 @@ world.applyTextures(tex)
 loadBar.style.width = '50%'
 const fx = new Fx()
 scene.add(fx.group)
+const wreckage = new Debris(env)
+scene.add(wreckage.mesh)
+wreckage.onSmoke = (x, y, z, vx, vz) => {
+  if (Math.random() > 0.35) return
+  const e = resetE()
+  e.x = x; e.y = y; e.z = z; e.vx = vx * 0.3; e.vy = 4; e.vz = vz * 0.3
+  e.life = 1.2; e.size0 = 1; e.size1 = 6; e.r = 0.07; e.g = 0.06; e.b = 0.055; e.a = 0.55; e.r1 = 3; e.g1 = 3; e.b1 = 3; e.drag = 2
+  fx.smoke.emit(e)
+}
 const sound = new Sound()
 const input = new Input()
 const player = new Player()
@@ -95,6 +105,12 @@ let forced: import('./player').Controls | null = null
 let wrongT = 0
 let offT = 0
 let fovMax = CFG.camera.fovMax
+/** After the finish: autopilot + cinematic camera, until Esc hands control back. */
+let spectate = false
+let crashBreak = 0
+const rivalVoices: import('./audio').RivalVoice[] = []
+const camRight = new THREE.Vector3()
+const passSide = new Map<object, number>()
 
 const shake = (t: number) => { cam.trauma = Math.min(1, cam.trauma + t) }
 const huntObs: import('./world').Obstacle[] = []
@@ -110,7 +126,11 @@ const race = new Race(course, player, {
   finish(r) {
     if (r.p === player) {
       flash(`P${r.place} · FINISHED`)
-      setTimeout(showResults, 2600)
+      spectate = true
+      sound.fanfare(r.place <= 3)
+      slowmoT = 1.2
+      sound.slowmo(1)
+      setTimeout(showResults, 3200)
     } else pop(`${r.name} FINISHED P${r.place}`)
   },
   pad(r) {
@@ -185,6 +205,41 @@ race.racers.forEach((r, i) => {
   }
 })
 const myCraft = visuals.get(player)!.craft
+
+// ── wrecks: every racer's crash and every bounce of it ──
+race.racers.forEach((r, i) => {
+  const paint = PAINTS[i]
+  const mine = r.p === player
+  r.p.onCrashStart = (sev, destroyed, x, y, z, nx, nz) => {
+    const dist = camera.position.distanceTo(r.p.pos)
+    if (dist > 3000) return
+    const v = r.p.vel
+    sparks(x, y, z, v, Math.round(40 + sev * 60), 1.4)
+    wreckage.burst(r.p.pos.x, r.p.pos.y, r.p.pos.z, v.x, v.y, v.z, Math.round(10 + sev * 10), 60 + sev * 50, paint.body, paint.trim)
+    fx.dust(x, y - 2, z, nx * 50 + v.x * 0.3, nz * 50 + v.z * 0.3, Math.round(18 + sev * 20), 14 + sev * 10, 40)
+    fx.explosion(x, y, z, v.x * 0.3, 10, v.z * 0.3, destroyed ? 2 : 0.6 + sev * 0.4)
+    sound.wreck(Math.min(1.5, sev), mine ? 0 : dist)
+    if (!mine) return
+    flash(destroyed ? 'DESTROYED' : 'WRECKED')
+    hitstop = 0.09
+    slowmoT = 1.1
+    sound.slowmo(1)
+    shake(1)
+    damageFlash = 1
+    impactPulse = 1
+    input.rumble(1, 1, 700)
+  }
+  r.p.onBounce = (impact) => {
+    const dist = camera.position.distanceTo(r.p.pos)
+    if (dist > 2500 || impact < 8) return
+    const g = groundH(r.p.pos.x, r.p.pos.z)
+    fx.dust(r.p.pos.x, g, r.p.pos.z, r.p.vel.x * 0.3, r.p.vel.z * 0.3, Math.round(6 + impact / 4), 8 + impact * 0.2, 20 + impact * 0.3)
+    sparks(r.p.pos.x, g + 0.5, r.p.pos.z, r.p.vel, Math.round(impact / 2), 0.8)
+    if (impact > 25) wreckage.burst(r.p.pos.x, g + 1, r.p.pos.z, r.p.vel.x, 5, r.p.vel.z, 2, 30, paint.body, paint.trim)
+    sound.bounce(Math.min(1, impact / 60), mine ? 0 : dist)
+    if (mine) { shake(Math.min(0.6, impact / 80)); input.rumble(0.8, 0.6, 140) }
+  }
+})
 const rivalCols = new Map(race.racers.map((r) => [r.p, new THREE.Color(r.color)]))
 const rivalColor = (p: Player) => rivalCols.get(p)!
 // Name tags over the rivals.
@@ -471,6 +526,8 @@ function resetVisuals(): void {
 }
 
 function startRace(): void {
+  spectate = false
+  wreckage.clear()
   sound.start()
   sound.revive()
   mode = 'race'
@@ -499,6 +556,8 @@ function startRace(): void {
 }
 
 function startHunt(): void {
+  spectate = false
+  wreckage.clear()
   sound.start()
   sound.revive()
   mode = 'hunt'
@@ -534,7 +593,7 @@ type Tier = 'low' | 'medium' | 'high' | 'ultra'
 const TIERS: Record<Tier, { pr: number; samples: number; bloom: boolean; density: number }> = {
   low: { pr: 0.75, samples: 0, bloom: false, density: 0.5 },
   medium: { pr: 1, samples: 2, bloom: true, density: 0.75 },
-  high: { pr: 1.3, samples: 4, bloom: true, density: 1 },
+  high: { pr: 1.6, samples: 4, bloom: true, density: 1 },
   ultra: { pr: 2, samples: 4, bloom: true, density: 1 },
 }
 let tierName = ((params.get('q') as Tier | null) ?? 'auto') as Tier | 'auto'
@@ -572,15 +631,15 @@ function governor(frameMs: number): void {
   if (govAcc < 500) return
   const avg = govAcc / govN
   govAcc = 0; govN = 0
-  govBad = avg > 17.6 ? govBad + 1 : 0
-  govGood = avg < 12 ? govGood + 1 : 0
+  govBad = avg > 19 ? govBad + 1 : 0
+  govGood = avg < 13 ? govGood + 1 : 0
   const now = performance.now()
   if (now - govLast < 3000) return
   const old = renderScale
-  if (govBad >= 2) renderScale = Math.max(0.5, renderScale - 0.12)
+  if (govBad >= 3) renderScale = Math.max(0.7, renderScale - 0.1)
   else if (govGood >= 8 && renderScale < 1) renderScale = Math.min(1, renderScale + 0.08)
   if (renderScale !== old) { resize(); govLast = now; govBad = govGood = 0 }
-  if (avg > 24 && renderScale <= 0.5 && tier !== 'low') { tier = tier === 'ultra' ? 'high' : tier === 'high' ? 'medium' : 'low'; renderScale = 0.8; applyTier(); govLast = now }
+  if (avg > 26 && renderScale <= 0.7 && tier !== 'low') { tier = tier === 'ultra' ? 'high' : tier === 'high' ? 'medium' : 'low'; renderScale = 0.8; applyTier(); govLast = now }
 }
 
 const qSel = $<HTMLSelectElement>('#q')
@@ -618,18 +677,32 @@ function rebase(): void {
   combat.shift(dx, dz)
   walker.shift(dx, dz)
   fx.shift(dx, dz)
+  wreckage.shift(dx, dz)
   for (const v of visuals.values()) { for (const t of [...v.trail, ...v.vapour]) t.shift(dx, dz); v.lastDust.x += dx; v.lastDust.z += dz }
 }
 
 function simStep(): void {
   if (mode === 'race') {
     const me = race.racers[0]
-    if (autopilot) race.drive(me, STEP)
-    race.step(STEP, forced ?? (autopilot ? me.controls : input.c), world)
+    const auto = autopilot || (spectate && me.finished)
+    if (auto) race.drive(me, STEP)
+    race.step(STEP, forced ?? (auto ? me.controls : input.c), world)
     if (race.state !== 'grid') runTime += STEP
   } else if (mode === 'hunt') {
     if (autopilot) huntAutopilot()
     player.step(STEP, forced ?? input.c, world)
+    if (player.recovered) {
+      player.recovered = false
+      if (player.dead) die()
+      else {
+        // Upright again, pointing where it slid, rolling slowly.
+        const hull = player.hull
+        player.reset(player.pos.x, player.pos.z, Math.atan2(player.vel.x, player.vel.z) || player.heading, 0.8)
+        player.hull = hull
+        player.ghost = 1.5
+        cam.snap(player.heading)
+      }
+    }
     combat.step(STEP, input.fire)
     walker.step(STEP)
     rebase()
@@ -682,14 +755,15 @@ function drawRacer(p: Player, alpha: number, dt: number, isMe: boolean): void {
   // A spin-out is messy: the hull shudders and rocks while it whirls.
   const mess = p.spin > 0 ? Math.min(1, p.spin) : 0
   const wob = mess * (Math.sin(time * 23 + p.pos.x) * 0.1 + Math.sin(time * 37) * 0.06)
-  craft.body.rotation.set(THREE.MathUtils.lerp(p.prevPitch, p.pitch, alpha) + wob * 0.6, 0, -THREE.MathUtils.lerp(p.prevBank, p.bank, alpha) + roll + wob)
+  if (p.crashing) craft.body.rotation.set(p.crashRot.x, p.crashRot.y, p.crashRot.z)
+  else craft.body.rotation.set(THREE.MathUtils.lerp(p.prevPitch, p.pitch, alpha) + wob * 0.6, 0, -THREE.MathUtils.lerp(p.prevBank, p.bank, alpha) + roll + wob)
   // Suspension squash on landing; a slow float bob on the ground effect.
   const bob = p.airborne ? 0 : Math.sin(time * 1.9 + p.pos.x * 0.001) * 0.16 + Math.sin(time * 3.1) * 0.05
   craft.body.position.y = -p.squash * 0.55 + bob
   craft.body.scale.set(1 + p.squash * 0.04, 1 - p.squash * 0.1, 1)
   craft.root.updateMatrixWorld(true)
   craft.lod(camera.position)
-  const throttle = mode === 'title' ? 0.15 : p.dead ? 0 : 0.5 + 0.5 * Math.min(1, p.mach / 2)
+  const throttle = mode === 'title' ? 0.15 : p.dead || p.crashing ? 0 : 0.3 + 0.7 * p.throttle
   craft.setFlames(throttle, p.boost, time + (isMe ? 0 : p.pos.x * 0.01))
   if (mode === 'title' || p.dead) return
   const near = camera.position.distanceToSquared(tmp) < 1500 * 1500
@@ -774,6 +848,21 @@ function drawRacer(p: Player, alpha: number, dt: number, isMe: boolean): void {
     e.life = 0.15; e.size0 = 1.6; e.size1 = 3.5; e.r = 1.5; e.g = 3; e.b = 6; e.a = 1; e.drag = 4
     fx.glow.emit(e)
   }
+  // A wreck burns as it tumbles: fire at the hull, a thick black plume behind.
+  if (p.crashing && near) {
+    for (let k = 0; k < 3; k++) {
+      const e = resetE()
+      e.x = tmp.x + (Math.random() - 0.5) * 3; e.y = tmp.y + Math.random() * 2; e.z = tmp.z + (Math.random() - 0.5) * 3
+      e.vx = p.vel.x * 0.5; e.vy = 10 + Math.random() * 10; e.vz = p.vel.z * 0.5
+      e.life = 1.6 + Math.random(); e.size0 = 3; e.size1 = 14 + Math.random() * 8
+      e.r = 0.05; e.g = 0.045; e.b = 0.04; e.a = 0.75; e.r1 = 2.5; e.g1 = 2.4; e.b1 = 2.3; e.drag = 1.8; e.grav = -5
+      fx.smoke.emit(e)
+    }
+    const f = resetE()
+    f.x = tmp.x; f.y = tmp.y + 0.5; f.z = tmp.z; f.vx = p.vel.x * 0.8; f.vy = 6; f.vz = p.vel.z * 0.8
+    f.life = 0.35; f.size0 = 4; f.size1 = 7; f.r = 7; f.g = 2.8; f.b = 0.8; f.a = 1; f.drag = 3
+    fx.glow.emit(f)
+  }
   // Smoking when badly hurt.
   if (p.hull < 35 && near) {
     const e = resetE()
@@ -798,7 +887,7 @@ function frame(now: number): void {
 
   let timeScale = 1
   if (hitstop > 0) { hitstop -= realDt; timeScale = 0.06 }
-  else if (slowmoT > 0) { slowmoT -= realDt; timeScale = THREE.MathUtils.lerp(1, 0.28, Math.min(1, slowmoT / 0.6)); if (slowmoT <= 0) sound.slowmo(0) }
+  else if (slowmoT > 0) { slowmoT -= realDt; timeScale = THREE.MathUtils.lerp(1, 0.22, Math.min(1, slowmoT / 0.6)); if (slowmoT <= 0) sound.slowmo(0) }
   if (slowmoT > 0) sound.slowmo(Math.min(1, slowmoT / 0.6))
   const dt = realDt * timeScale
   time += dt
@@ -862,6 +951,8 @@ function frame(now: number): void {
     camera.lookAt(renderPos.x + tmp.x * 2.2, renderPos.y + 3.4, renderPos.z + tmp.z * 2.2)
     camera.fov = 42
     camera.updateProjectionMatrix()
+  } else if (mode === 'race' && spectate && race.racers[0].finished) {
+    cam.cinematic(realDt, time, player, renderPos, heading)
   } else {
     cam.update(realDt, time, player, renderPos, heading, world, fovMax)
   }
@@ -874,6 +965,7 @@ function frame(now: number): void {
   if (mode === 'hunt') combat.render(alpha, realDt, time)
   combat.group.visible = mode === 'hunt'
   fx.update(dt)
+  wreckage.update(dt)
   for (const v of visuals.values()) { for (const t of v.trail) t.build(camera.position); for (const t of v.vapour) t.build(camera.position) }
   sound.scrape(mode === 'title' ? 0 : Math.max(player.scrape, player.drifting || player.spin > 0 ? 0.25 + Math.abs(player.slip) * 0.35 : 0))
 
@@ -895,26 +987,72 @@ function frame(now: number): void {
   const s = Math.min(1, player.mach / 6)
   const P = post.final.uniforms
   const play = mode !== 'title'
+  const cine = mode === 'race' && spectate && race.racers[0].finished
+  hud.style.opacity = cine ? '0.3' : ''
   damageFlash = Math.max(0, damageFlash - realDt * 1.8)
   impactPulse = Math.max(0, impactPulse - realDt * 3)
   if (player.barrier === 'silence') white = Math.min(1, white + realDt * 1.6)
   else white = Math.max(0, white - realDt * (player.barrier === 'boom' ? 1.6 : 4))
   P.uSpeed.value = play ? s : 0
-  P.uBlur.value = play ? CFG.post.radialBlur * (s * s * 1.2 + player.boost * 0.4 + white * 0.6 + impactPulse * 0.8) : 0
+  P.uBlur.value = play ? (cine ? 0.3 : 1) * CFG.post.radialBlur * (s * s * 1.2 + player.boost * 0.4 + white * 0.6 + impactPulse * 0.8) : 0
   P.uAberr.value = play ? CFG.post.aberration * (s + player.boost * 0.5 + damageFlash + impactPulse * 2.5) : 0
-  P.uStreak.value = play ? CFG.post.streaks * THREE.MathUtils.clamp((player.mach - 0.8) / 4, 0, 1) : 0
+  P.uStreak.value = play ? (cine ? 0.25 : 1) * CFG.post.streaks * THREE.MathUtils.clamp((player.mach - 0.8) / 4, 0, 1) : 0
   P.uStreakT.value += realDt * (0.4 + player.mach * 0.45)
   P.uWhite.value = white * 0.45
   P.uDamage.value = damageFlash
   P.uTime.value = time
   P.uGrain.value = CFG.post.grain
+  P.uSharpen.value = 0.35 + (1 - renderScale) * 1.2
   P.uExposure.value = CFG.post.exposure
   post.bloom.strength = CFG.post.bloom
   post.bloom.threshold = CFG.post.bloomThreshold
   const onGrid = mode === 'race' && race.state === 'grid'
   const engineMach = mode === 'title' ? 0.2 : onGrid ? 0.3 + player.boost * 0.9 : player.mach
   const heat = mode === 'race' ? Math.min(1, (Math.max(0, me.passed - 1) / course.cps.length) * 1.5 * LAPS) : walker.state === 'fight' || walker.state === 'coming' ? 1 : 0
-  sound.update(realDt, engineMach, player.boost, player.brake, mode === 'hunt' ? combat.lockProgress : 0, mode === 'hunt' && combat.locked, play && !player.dead, heat)
+  // Rivals' engines: the three nearest, with their closing speed (Doppler) and side (pan).
+  rivalVoices.length = 0
+  if (mode === 'race') {
+    camRight.set(1, 0, 0).applyQuaternion(camera.quaternion)
+    for (const r of race.racers) {
+      if (!r.ai || r.p.dead) continue
+      tmp.subVectors(r.p.pos, camera.position)
+      const dist = tmp.length()
+      if (dist > 900) continue
+      tmp.multiplyScalar(1 / (dist || 1))
+      const closing = -((r.p.vel.x - player.vel.x) * tmp.x + (r.p.vel.z - player.vel.z) * tmp.z)
+      rivalVoices.push({ dist, closing, pan: tmp.dot(camRight), mach: r.p.mach })
+    }
+    rivalVoices.sort((a, b) => a.dist - b.dist)
+    // Passing things: a whoosh as a spire or a rival goes by.
+    const me = race.racers[0]
+    for (const rk of course.rocks) {
+      if (Math.abs(rk.i - me.idx) > 6) continue
+      const ahead = (rk.x - player.pos.x) * player.fwd.x + (rk.z - player.pos.z) * player.fwd.z
+      const was = passSide.get(rk) ?? ahead
+      passSide.set(rk, ahead)
+      if (was > 0 && ahead <= 0) {
+        const lat = (rk.x - player.pos.x) * player.right.x + (rk.z - player.pos.z) * player.right.z
+        const close = Math.abs(lat) - rk.r
+        if (close < 160) { sound.whoosh(Math.min(1, 50 / Math.max(close, 8)) * Math.min(1, player.mach / 3), lat > 0 ? 0.8 : -0.8); if (close < 40) shake(0.12) }
+      }
+    }
+    for (const r of race.racers) {
+      if (!r.ai) continue
+      const ahead = (r.p.pos.x - player.pos.x) * player.fwd.x + (r.p.pos.z - player.pos.z) * player.fwd.z
+      const was = passSide.get(r) ?? ahead
+      passSide.set(r, ahead)
+      const lat = (r.p.pos.x - player.pos.x) * player.right.x + (r.p.pos.z - player.pos.z) * player.right.z
+      if (Math.sign(was) !== Math.sign(ahead) && Math.abs(lat) < 60) sound.whoosh(0.7, lat > 0 ? 0.7 : -0.7)
+    }
+    // The music's sections.
+    if (race.state === 'grid') sound.setSection('build')
+    else if (me.finished) sound.setSection('outro')
+    else if (player.crashing || (crashBreak > 0 && (crashBreak -= realDt) > 0)) sound.setSection('break')
+    else sound.setSection(race.toGo(me) < 25000 ? 'final' : 'drop')
+    if (player.crashing) crashBreak = 2
+  } else if (mode === 'hunt') sound.setSection(walker.state === 'fight' || walker.state === 'coming' ? 'final' : player.crashing ? 'break' : 'drop')
+  else sound.setSection('title')
+  sound.update(realDt, engineMach, player.boost, player.brake, mode === 'hunt' ? combat.lockProgress : 0, mode === 'hunt' && combat.locked, play && !player.dead && !player.crashing, heat, player.burning, rivalVoices)
 
   post.render(realDt)
   hudT -= realDt
@@ -946,6 +1084,13 @@ function updateHud(dt: number, slow: boolean): void {
   ;(gg.querySelector('i') as HTMLElement).style.width = `${Math.min(100, (load / 1.6) * 100)}%`
   gg.className = player.spin > 0 || player.recover > 0 ? 'spin' : player.spinRisk > 0.55 ? 'danger' : load > 1 ? 'slide' : load > 0.8 ? 'edge' : ''
   ;(gg.querySelector('span') as HTMLElement).textContent = player.spin > 0 ? 'SPIN' : player.spinRisk > 0.55 ? 'CATCH IT' : load > 1 ? 'SLIDING' : 'GRIP'
+  // The afterburner: say plainly that the steering is locked, and say it louder if you try to turn.
+  const bn = $('#burn')
+  const fighting = player.burning && Math.abs(player.steerWant) > 0.3
+  bn.style.display = player.burning ? 'block' : 'none'
+  bn.className = fighting ? 'fight' : ''
+  bn.innerHTML = fighting ? 'RELEASE <b>SHIFT</b> TO TURN' : 'AFTERBURNER · <b>STEERING LOCKED</b>'
+  $('#grip').classList.toggle('locked', player.burning)
   const dm = $('#drift')
   dm.style.opacity = player.drift > 0.02 ? '1' : '0'
   ;(dm.firstElementChild as HTMLElement).style.width = `${(player.drift / 2.6) * 100}%`
@@ -970,7 +1115,7 @@ function updateHud(dt: number, slow: boolean): void {
       const rows = [...race.racers].sort((a, b) => a.place - b.place)
       const lead = race.progress(rows[0])
       standEl.innerHTML = rows.map((r) => {
-        const gap = r === rows[0] ? 'LEADER' : r.finished ? fmtLap(r.finishTime) : `+${((lead - race.progress(r)) / Math.max(800, player.speed)).toFixed(1)}`
+        const gap = r.finished ? (r === rows[0] ? 'WINNER ' : '') + fmtLap(r.finishTime) : rows[0].finished ? `${(race.toGo(r) / 1000).toFixed(1)} KM` : r === rows[0] ? 'LEADER' : `+${((lead - race.progress(r)) / Math.max(800, player.speed)).toFixed(1)}`
         return `<div class="${r.ai ? '' : 'me'}" style="--c:#${new THREE.Color(r.color).getHexString()}"><span>${r.place}&nbsp;&nbsp;${r.name}</span><span class="g">${gap}</span></div>`
       }).join('')
       drawMini()
@@ -978,10 +1123,10 @@ function updateHud(dt: number, slow: boolean): void {
     $('#r-time').textContent = fmtLap(me.finished ? me.finishTime : race.clock + me.penalty)
     const [tx, tz] = course.tangent(me.idx)
     const along = player.vel.x * tx + player.vel.z * tz
-    wrongT = race.state === 'racing' && along < -0.3 * player.speed && player.speed > 100 ? wrongT + dt : 0
+    wrongT = race.state === 'racing' && !player.crashing && player.ghost <= 0 && along < -0.3 * player.speed && player.speed > 100 ? wrongT + dt : 0
     if (wrongT > 1.2 && warnT < 0.5) warn('WRONG WAY', 'TURN AROUND · R FOR THE LAST GATE')
     const off = Math.hypot(player.pos.x - course.px[me.idx], player.pos.z - course.pz[me.idx])
-    offT = off > 2600 && race.state === 'racing' ? offT + dt : 0
+    offT = off > 2600 && race.state === 'racing' && !player.crashing ? offT + dt : 0
     if (offT > 1 && warnT < 0.5) warn('OFF COURSE', 'R TO RETURN TO THE LAST GATE')
     for (const el of enemyEls) el.style.display = 'none'
     // Rival tags.
@@ -996,7 +1141,7 @@ function updateHud(dt: number, slow: boolean): void {
         d.style.opacity = String(THREE.MathUtils.clamp(1.2 - dist / 8000, 0.45, 1))
       }
     }
-    const c = course.cps[me.next]
+    const c = course.cps[Math.min(me.next, course.cps.length - 1)]
     // The next gate: a diamond on it when on screen (with distance), the edge arrow when not.
     proj.set(c.x, groundH(c.x, c.z) + 70, c.z).project(camera)
     const gm = $('#gmark')
@@ -1160,7 +1305,7 @@ addEventListener('keydown', (e) => {
   if (e.code === 'Backquote') debugEl.style.display = debugEl.style.display === 'block' ? 'none' : 'block'
   if (e.code === 'KeyG') void import('./gui').then((g) => g.toggleGui())
   if (e.code === 'Escape' && mode !== 'title') {
-    if (overlay) { overlay = false; $('#over').classList.add('hide'); return }
+    if (overlay) { overlay = false; spectate = false; $('#over').classList.add('hide'); cam.snap(player.heading); return }
     paused = !paused
     $('#pause').classList.toggle('hide', !paused)
     sound.suspend(paused)
@@ -1239,7 +1384,7 @@ const g = {
   stats: () => ({
     fps: Math.round(fps), ms: +lastMs.toFixed(1), calls: renderer.info.render.calls, tris: renderer.info.render.triangles, mach: +player.mach.toFixed(2),
     tier, scale: renderScale, hull: Math.round(player.hull), air: player.airborne, agl: +player.agl.toFixed(1),
-    place: race.racers[0].place, slip: +(player.slip * 57.3).toFixed(1), spin: +player.spin.toFixed(2), drift: +player.drift.toFixed(2), yaw: +player.yawRate.toFixed(2), lap: race.lapOf(race.racers[0]), passed: race.racers[0].passed, race: race.state, particles: fx.glow.count + fx.smoke.count,
+    place: race.racers[0].place, crashing: player.crashing, burning: player.burning, slip: +(player.slip * 57.3).toFixed(1), spin: +player.spin.toFixed(2), drift: +player.drift.toFixed(2), yaw: +player.yawRate.toFixed(2), lap: race.lapOf(race.racers[0]), passed: race.racers[0].passed, race: race.state, particles: fx.glow.count + fx.smoke.count,
   }),
   player, race, course, combat, walker, CFG, world, scene, camera,
 }

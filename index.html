@@ -42,6 +42,11 @@
   #grip.danger, #grip.spin { animation: gblink 0.18s infinite; }
   #grip.danger span, #grip.spin span { color: #ff5a4a; }
   @keyframes gblink { 50% { opacity: 0.4; } }
+  #burn { position: absolute; left: 50%; bottom: 23vh; transform: translateX(-50%); font-size: 13px; letter-spacing: 0.32em; font-weight: 700; color: #9fe8ff; text-shadow: 0 0 14px rgba(120,220,255,0.8); display: none; white-space: nowrap; padding: 6px 16px; border: 1px solid rgba(159,232,255,0.45); background: rgba(10,30,40,0.3); }
+  #burn b { color: #fff; }
+  #burn.fight { color: #ff6a4a; border-color: rgba(255,90,60,0.8); background: rgba(60,10,6,0.45); text-shadow: 0 0 14px rgba(255,80,50,0.9); animation: gblink 0.22s infinite; }
+  #grip.locked { opacity: 0.35 !important; }
+  #grip.locked span::after { content: ' · LOCKED'; }
   #align { position: absolute; left: 50%; top: 60%; transform: translateX(-50%); font-size: 13px; letter-spacing: 0.3em; font-weight: 700; display: none; text-shadow: 0 0 10px rgba(0,0,0,0.6); }
   #align.bad { color: #ff4a3a; } #align.ok { color: #7dff9a; }
   #drift { width: 300px; height: 5px; margin: 7px auto 0; background: rgba(255,255,255,0.1); transform: skewX(-20deg); opacity: 0; transition: opacity 0.2s; position: relative; }
@@ -82,7 +87,7 @@
   #title .go { margin-top: 7vh; font-size: 15px; letter-spacing: 0.5em; animation: blink 1.4s infinite; }
   #title .keys { margin-top: 4vh; font-size: 12px; letter-spacing: 0.2em; opacity: 0.75; line-height: 2; }
   @keyframes blink { 50% { opacity: 0.35; } }
-  #over { background: rgba(8,3,2,0.55); backdrop-filter: blur(3px); }
+  #over { background: linear-gradient(180deg, rgba(8,3,2,0.2), rgba(8,3,2,0.55)); }
   #over h2 { margin: 0; font-size: 54px; letter-spacing: 0.3em; }
   #over .stats { margin-top: 24px; font-size: 18px; letter-spacing: 0.2em; line-height: 2; }
   #over .go { margin-top: 30px; font-size: 14px; letter-spacing: 0.4em; animation: blink 1.4s infinite; }
@@ -125,7 +130,8 @@
   <div id="lock"><div class="d"></div><div class="t">LOCK</div></div>
   <div id="arrow"><div class="t">WALKER</div></div>
   <div id="hints">
-    <div><b>W / SHIFT</b>THROTTLE (OFF IT, YOU COAST)</div>
+    <div><b>W</b>THROTTLE (OFF IT, YOU COAST)</div>
+    <div><b>SHIFT</b>AFTERBURNER: NO TOP SPEED · STEERING LOCKS</div>
     <div><b>A D</b>STEER</div>
     <div><b>Q E</b>STRAFE · TAP TWICE: DODGE</div>
     <div><b>S + STEER</b>BREAK TRACTION: DRIFT · STRAIGHTEN TO BOOST</div>
@@ -138,6 +144,7 @@
   <div id="stand"></div>
   <div id="count"></div>
   <div id="align"></div>
+  <div id="burn"></div>
   <div id="gmark"><div class="d"></div><div class="t"></div></div>
   <div id="gmark2"><div class="d"></div></div>
   <div id="tags"></div>
@@ -153,7 +160,7 @@
   <h1>THE DISTANCE<br/>BETWEEN <span>US</span></h1>
   <div class="tag">GAMES NEVER FEEL FAST ENOUGH, SO I'M MAKING THIS.</div>
   <div class="modes"><div><b>ENTER</b>&nbsp; RACE</div><div><b>H</b>&nbsp; HUNT</div></div>
-  <div class="keys">W/SHIFT BOOST · A/D STEER · Q/E STRAFE · S BRAKE/DIVE · R LAST GATE · ESC SETTINGS<br/>HOLD BOOST AS THE LIGHTS GO FOR A PERFECT START · GAMEPAD: RT BOOST · LT BRAKE · STICK STEER</div>
+  <div class="keys">W THROTTLE · SHIFT AFTERBURNER · A/D STEER · Q/E STRAFE · S BRAKE/DIVE · R LAST GATE · ESC SETTINGS<br/>HOLD W AS THE LIGHTS GO FOR A PERFECT START · GAMEPAD: RT THROTTLE · X AFTERBURNER · LT BRAKE · STICK STEER</div>
 </div>
 <div id="over" class="screen hide">
   <h2 id="over-h">SIGNAL LOST</h2>

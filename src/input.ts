@@ -6,7 +6,7 @@ const THREE_clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b,
 export class Input {
   private readonly down = new Set<string>()
   private readonly pressed = new Set<string>()
-  readonly c: Controls = { steer: 0, boost: false, brake: false, strafe: 0, dodgeL: false, dodgeR: false }
+  readonly c: Controls = { steer: 0, boost: false, burner: false, brake: false, strafe: 0, dodgeL: false, dodgeR: false }
   fire = false
   private steerS = 0
   /** Double-tap Q/E (or a quick tap of a shoulder) dodges. */
@@ -35,7 +35,8 @@ export class Input {
     const k = (a: string) => this.down.has(a)
     let steer = (k('KeyD') || k('ArrowRight') ? 1 : 0) - (k('KeyA') || k('ArrowLeft') ? 1 : 0)
     let strafe = (k('KeyE') ? 1 : 0) - (k('KeyQ') ? 1 : 0)
-    let boost = k('KeyW') || k('ArrowUp') || k('ShiftLeft') || k('ShiftRight')
+    let boost = k('KeyW') || k('ArrowUp')
+    let burner = k('ShiftLeft') || k('ShiftRight')
     let brake = k('KeyS') || k('ArrowDown')
     let fire = k('Space') || k('Mouse0') || k('KeyJ')
     let dodgeL = false
@@ -62,6 +63,7 @@ export class Input {
       const rt = p.buttons[7]?.value ?? 0
       const lt = p.buttons[6]?.value ?? 0
       if (rt > 0.3) boost = true
+      if (p.buttons[2]?.pressed) burner = true // X: afterburner
       if (lt > 0.3) brake = true
       if (p.buttons[0]?.pressed || p.buttons[5]?.pressed) fire = true
       const rx = dz(p.axes[2] ?? 0)
@@ -74,6 +76,7 @@ export class Input {
     this.c.steer = steer
     this.c.strafe = strafe
     this.c.boost = boost
+    this.c.burner = burner
     this.c.brake = brake
     this.c.dodgeL = dodgeL
     this.c.dodgeR = dodgeR

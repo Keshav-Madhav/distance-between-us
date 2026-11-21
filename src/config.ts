@@ -18,6 +18,9 @@ export const CFG = {
     coastK: 0.11,
     /** Afterburner target. The barrier sits at 6.0. */
     boostMach: 6.3,
+    /** Afterburner (Shift): constant shove (m/s²) with no target — only a sanity cap (Mach). */
+    burnAccel: 230,
+    burnCap: 14,
     /** Air brake target. */
     brakeMach: 0.12,
     /** Approach rate toward the target, 1/s. Exponential, so the first second kicks hardest. */
@@ -52,6 +55,8 @@ export const CFG = {
     spinSlip: 1.15,
     /** Grip multiplier under the air brake (a trail-brake starts a drift). */
     driftBrakeGrip: 0.5,
+    /** Steering authority left while the afterburner burns. */
+    burnSteer: 0.18,
     /** In the air: the share of grip and self-align the fins give (steering bends the path). */
     airControl: 0.4,
     /** Side-thruster strafe acceleration (m/s²). */
@@ -80,10 +85,10 @@ export const CFG = {
   post: {
     bloom: 0.5,
     bloomThreshold: 2.4,
-    radialBlur: 0.06,
+    radialBlur: 0.05,
     aberration: 0.004,
     streaks: 1,
-    grain: 0.035,
+    grain: 0.022,
     exposure: 0.8,
   },
   combat: {

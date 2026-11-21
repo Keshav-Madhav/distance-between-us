@@ -39,6 +39,9 @@ something you feel, not a number on the HUD.
   results table at the end.
 
 ## Throttle, brake, steering
+- **Shift is the afterburner:** +230 m/s² with no top speed, but the steering is mostly locked
+  (18% authority, yaw damped). A banner says AFTERBURNER · STEERING LOCKED, and turns red with
+  RELEASE SHIFT TO TURN if you steer against it.
 - **W is the throttle.** Off it, you coast down; there's no cruise control. **S brakes hard.** S with
   steer is a trail-brake drift that still scrubs speed. In the air, S dives at +120 m/s².
 - **Adaptive steering:** authority grows ×1.75 by Mach 5, faster than grip does. Sharp turns are
@@ -70,6 +73,19 @@ momentum.
   little automatic countersteer. The AI drives on High.
 - **Floatier feel:** soft hover suspension with a slow bob, under-damped bank and pitch, and gravity
   of 34 m/s².
+
+## Crashes
+A hard hit into rock (more than 300 m/s into it) isn't a deflection, it's a wreck:
+- **Momentum:** the craft keeps its tangential momentum, bounces off weakly, and is thrown low.
+- **Tumble:** it cartwheels at rates set by the impact, bounces (each bounce kicks the tumble, and
+  throws dust, sparks and fragments), then grinds along the sand to a stop.
+- **Visuals:** it burns and trails thick smoke, and real hull fragments in its paint scheme fly off
+  with their own physics.
+- **Feel:** slow motion with a muffled mix and a layered crash sound (sub thud, crunch, metal ring,
+  debris clatter).
+- **Crash cam:** it holds an offset from the wreck, behind and to one side.
+- **After:** back on the line just ahead, ghosted for 2.5 s. A racer-on-racer T-bone at a closing
+  speed of 700 m/s+ wrecks both.
 
 ## Flight
 Ground effect holds the craft over dunes. A crest that would strip more than 45 m/s of climb within

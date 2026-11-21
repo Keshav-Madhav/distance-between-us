@@ -1,4 +1,4 @@
-// The race course: a 130 km sprint across the desert, resampled to an even 40 m polyline (the
+// The race course: a 165 km sprint across the desert, resampled to an even 40 m polyline (the
 // racing line the AI follows and the minimap draws), with:
 //   gates      — every ~5 km: two 140 m towers and a glowing banner, the next one lit
 //   pylons     — knee-high markers down both edges every 320 m (they read speed as much as track)
@@ -12,7 +12,7 @@ const STEP = 40
 export const GATE_HALF = 260
 export const LAPS = 1
 /** The sprint's length (km). */
-export const SPRINT_KM = 130
+export const SPRINT_KM = 165
 /** Where the jumps are, as fractions of a lap (the test hooks use these too). */
 export const JUMPS = [0.075, 0.17, 0.3, 0.41, 0.55, 0.64, 0.77, 0.88, 0.95]
 
@@ -59,7 +59,13 @@ export class Course {
     const RUNUP = 3000, RACE = SPRINT_KM * 1000, RUNOFF = 6000
     const xAt = (z: number) => {
       const ramp = z <= 0 ? 0 : z >= 8000 ? 1 : (z / 8000) ** 2 * (3 - (2 * z) / 8000)
-      return ramp * (4200 * Math.sin((2 * Math.PI * z) / 62000) + 1800 * Math.sin((2 * Math.PI * z) / 23500 + 1.2) - 1800 * Math.sin(1.2))
+      // Three S-bend sections (14 km wavelength, radius ≥ ~4.5 km) eased in and out of the long run.
+      let ess = 0
+      for (const c of [40000, 95000, 145000]) {
+        const d = Math.abs(z - c) / 12000
+        if (d < 1) ess += (1 - d * d) ** 2 * 1100 * Math.sin((2 * Math.PI * (z - c)) / 14000)
+      }
+      return ramp * (4200 * Math.sin((2 * Math.PI * z) / 62000) + 1800 * Math.sin((2 * Math.PI * z) / 23500 + 1.2) - 1800 * Math.sin(1.2) + ess)
     }
     const raw: [number, number][] = []
     for (let z = -RUNUP; z <= RACE + RUNOFF; z += 5) raw.push([xAt(z), z])
@@ -148,6 +154,13 @@ export class Course {
         for (let m = 0; m < mounds.length; m += 4) if (Math.hypot(mounds[m] - x, mounds[m + 1] - z) < mounds[m + 3] * 1.6 + 80) nearMound = true
         if (nearMound) continue
         this.rocks.push({ x, z, r, h: 70 + rnd() * 110, i, lat })
+        // Now and then a rock gate: a second spire across the line, leaving a slot to thread.
+        if (rnd() < 0.22 && Math.abs(lat) < 120) {
+          const gap = 120 + rnd() * 60
+          const lat2 = lat + (lat > 0 ? -1 : 1) * (gap + r * 2)
+          const r2 = 18 + rnd() * 16
+          this.rocks.push({ x: this.px[i] - tz * lat2, z: this.pz[i] + tx * lat2, r: r2, h: 80 + rnd() * 100, i, lat: lat2 })
+        }
       }
     }
     let x0 = Infinity, x1 = -Infinity

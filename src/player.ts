@@ -17,7 +17,10 @@ import type { Obstacle, World } from './world'
 
 export interface Controls {
   steer: number // -1 left … 1 right
+  /** W: the throttle (cruise up to throttleMach). */
   boost: boolean
+  /** Shift: the afterburner (to Mach 6+, burns energy). */
+  burner?: boolean
   brake: boolean
   strafe: number // -1 … 1
   dodgeL: boolean // edge
@@ -101,7 +104,25 @@ export class Player {
   onLand: ((impact: number, airTime: number) => void) | null = null
   onLaunch: ((vy: number) => void) | null = null
   onBoostStart: (() => void) | null = null
-  private wasBoost = false
+  private wasBurn = false
+  /** The afterburner is lit this step (steering mostly locked). */
+  burning = false
+  /** What the stick asked for (the HUD flags steering against a lit afterburner). */
+  steerWant = 0
+  /** Throttle, smoothed (0 … 1). `boost` is the afterburner, smoothed. */
+  throttle = 0
+  // ── the crash: a wreck tumbling with real momentum ──
+  crashing = false
+  crashT = 0
+  /** Visual tumble angles (pitch, yaw offset, roll) and their rates. */
+  readonly crashRot = new THREE.Vector3()
+  readonly crashW = new THREE.Vector3()
+  readonly crashVel = new THREE.Vector3()
+  crashGround = false
+  /** Set when a crash ends and the craft should be put back (race / hunt consume it). */
+  recovered = false
+  onCrashStart: ((sev: number, destroyed: boolean, x: number, y: number, z: number, nx: number, nz: number) => void) | null = null
+  onBounce: ((impact: number) => void) | null = null
   private lastMach = 0
   private readonly obs: Obstacle[] = []
   private dodgeCool = 0
@@ -123,6 +144,11 @@ export class Player {
     this.spin = 0
     this.recover = 0
     this.tumble = 0
+    this.crashing = false
+    this.crashT = 0
+    this.crashRot.set(0, 0, 0)
+    this.recovered = false
+    this.throttle = 0
     this.drift = 0
     this.bankV = this.pitchV = 0
     this.bank = this.pitch = this.prevBank = this.prevPitch = 0
@@ -162,11 +188,13 @@ export class Player {
       // On the grid: engines live, wheels-up, held.
       const g = groundH(this.pos.x, this.pos.z)
       this.pos.y = g + CFG.handling.hover
-      this.boost += ((c.boost ? 1 : 0) - this.boost) * Math.min(1, dt * 6)
+      this.throttle += ((c.boost ? 1 : 0) - this.throttle) * Math.min(1, dt * 6)
+      this.boost += ((c.burner ? 1 : 0) - this.boost) * Math.min(1, dt * 6)
       this.speed = 0
       this.vel.set(0, 0, 0)
       return
     }
+    if (this.crashing) { this.crashStep(dt, world); return }
     if (this.dead) {
       this.speed *= Math.exp(-1.2 * dt)
       this.pos.addScaledVector(this.fwd, this.speed * dt)
@@ -180,13 +208,18 @@ export class Player {
     const m = this.speed / MACH
 
     // ── speed ──
-    const boosting = c.boost && this.barrier !== 'silence'
-    if (boosting && !this.wasBoost) {
+    // W accelerates to Mach 6.3. Shift is the afterburner: speed with no ceiling, at the price of the
+    // steering (mostly locked while it burns — the HUD says so).
+    const burning = !!c.burner && this.barrier !== 'silence'
+    if (burning && !this.wasBurn) {
       this.speed += S.boostKick
       this.onBoostStart?.()
     }
-    this.wasBoost = c.boost
-    this.boost += ((boosting ? 1 : 0) - this.boost) * Math.min(1, dt * 6)
+    this.wasBurn = burning
+    this.burning = burning
+    const boosting = !!c.boost || burning
+    this.throttle += ((boosting ? 1 : 0) - this.throttle) * Math.min(1, dt * 5)
+    this.boost += ((boosting ? (burning ? 1 : 0.6) : 0) - this.boost) * Math.min(1, dt * 6)
     this.brake += ((c.brake ? 1 : 0) - this.brake) * Math.min(1, dt * 8)
     // W is the throttle. Off it, you coast down (air and sand drag); there is no cruise control.
     let target = 0
@@ -194,11 +227,12 @@ export class Player {
     // Brake with the stick over = a drift, not a stop: traction breaks, speed mostly stays.
     const driftBrake = c.brake && Math.abs(c.steer) > 0.5
     if (c.brake && !this.airborne) { target = S.brakeMach * MACH; k = driftBrake ? S.brakeK * 0.3 : S.brakeK }
-    else if (boosting) { target = Math.min(S.boostMach, this.maxMach) * MACH; k = S.boostK }
+    else if (c.boost && !burning) { target = Math.min(S.boostMach, this.maxMach) * MACH; k = this.speed > target ? 0.15 : S.boostK }
     // (In the air there is nothing to push against: the engines only hold speed.)
     if (this.airborne) k *= 0.35
     const before = this.speed
-    this.speed += (target - this.speed) * (1 - Math.exp(-k * dt))
+    if (burning) this.speed += S.burnAccel * dt * (this.airborne ? 0.5 : 1)
+    else this.speed += (target - this.speed) * (1 - Math.exp(-k * dt))
     this.speed -= Math.abs(this.yawRate) * S.turnBleed * this.speed * dt
 
     // ── the barrier (the player only) ──
@@ -255,8 +289,11 @@ export class Player {
       const auth = H.steerTorque * (this.airborne ? 0.7 : 1) * (1 + H.steerGain * THREE.MathUtils.clamp((m - 0.8) / 4.2, 0, 1))
       // Weathervane: with grip, the nose is pulled back toward the travel.
       const align = (this.airborne ? H.airControl : 1) * -H.alignK * (1 + A * 1.5) * (1 + hs0 / 1400) * Math.sin(beta0) * curve * Math.min(1, hs0 / 250)
-      const damp = this.spin > 0 ? 0.9 : H.yawDamp
-      this.yawRate += (-steer * auth - damp * this.yawRate + align) * dt
+      // Afterburner lit: the stick barely moves the nose, and the yaw is damped hard — the burn holds
+      // you on the line you lit it on.
+      const damp = this.spin > 0 ? 0.9 : H.yawDamp * (this.burning ? 2.2 : 1)
+      this.steerWant = c.steer
+      this.yawRate += (-steer * auth * (this.burning ? H.burnSteer : 1) - damp * this.yawRate + align * (this.burning ? 0.4 : 1)) * dt
       this.heading += this.yawRate * dt
       // Turning keeps the velocity: re-split it against the new heading (the slide is real).
       const lat0 = this.lateral + this.side
@@ -288,7 +325,7 @@ export class Player {
       // of it; a slide scrubs.)
       this.speed = Math.sqrt(this.speed * this.speed + dl * dl * (ab < peak * 1.4 ? 0.85 : 0.3))
       if (ab > peak && !this.airborne) this.speed *= 1 - Math.min(0.4, (ab - peak) * 0.28) * dt
-      this.speed = Math.min(this.speed, 6.6 * MACH)
+      this.speed = Math.min(this.speed, S.burnCap * MACH)
       this.slip = beta
       // Grip load for the gauge: 1 = at the limit (the peak slip angle, or the turn rate grip can hold).
       const omegaMax = H.gripK * (1 + A * 0.35) + H.gripQ * hs0 + H.gripLow / Math.max(hs0, 50)
@@ -465,12 +502,123 @@ export class Player {
     if (this.recover === 0 && this.spin === 0) this.setHorizontal(this.spinVx, this.spinVz)
   }
 
+  /**
+   * A crash: the craft bounces off what it hit (normal speed reflected at 0.3, the rest scrubbed),
+   * is thrown into the air and cartwheels — pitch, roll and yaw at rates set by how hard it was —
+   * then bounces and grinds along the sand until it stops. (nx, nz): away from the obstacle.
+   */
+  startCrash(sev: number, nx: number, nz: number): void {
+    if (this.crashing || this.dead) return
+    // Off the rock, not back up the track: the tangential part carries on, a share of the original
+    // momentum skids it round the obstacle, the normal part bounces weakly. Low and fast — it
+    // cartwheels and grinds along the sand rather than flying.
+    const vx = this.vel.x, vz = this.vel.z
+    const vn = vx * nx + vz * nz
+    const tx = vx - vn * nx, tz = vz - vn * nz
+    const sp = Math.hypot(vx, vz) || 1
+    let cx = tx * 0.6 + (vx / sp) * sp * 0.22 - Math.min(vn, 0) * 0.25 * nx + nx * 35
+    let cz = tz * 0.6 + (vz / sp) * sp * 0.22 - Math.min(vn, 0) * 0.25 * nz + nz * 35
+    // Head-on, the tangential part is ~0: glance it off to one side instead of straight back.
+    if (Math.hypot(tx, tz) < sp * 0.3) { const sd = Math.random() < 0.5 ? 1 : -1; cx += -nz * sd * sp * 0.25; cz += nx * sd * sp * 0.25 }
+    const ch = Math.hypot(cx, cz)
+    if (ch > 650) { cx *= 650 / ch; cz *= 650 / ch }
+    this.crashVel.set(cx, 8 + Math.min(20, sev * 7), cz)
+    const k = Math.min(1.6, 0.5 + sev)
+    const r = () => (Math.random() < 0.5 ? -1 : 1) * (0.6 + Math.random() * 0.6)
+    this.crashW.set(r() * 9 * k, r() * 5 * k, r() * 13 * k)
+    this.crashRot.set(0, 0, 0)
+    this.crashing = true
+    this.crashT = 0
+    this.crashGround = false
+    this.spin = 0
+    this.recover = 0
+    this.tumble = 0
+    this.drift = 0
+    this.airborne = true
+    this.hull -= Math.min(65, 18 + sev * 40)
+    this.sinceHurt = 0
+    this.onCrashStart?.(sev, this.hull <= 0, this.scrapeAt.x, this.scrapeAt.y, this.scrapeAt.z, nx, nz)
+  }
+
+  private readonly cobs: Obstacle[] = []
+  private crashStep(dt: number, world: World): void {
+    this.crashT += dt
+    const cv = this.crashVel
+    cv.y -= 34 * dt
+    this.pos.addScaledVector(cv, dt)
+    const g = groundH(this.pos.x, this.pos.z)
+    this.crashGround = false
+    if (this.pos.y < g + 1.1) {
+      this.pos.y = g + 1.1
+      if (cv.y < -6) {
+        const impact = -cv.y
+        cv.y = impact * 0.34
+        // Each bounce kicks the tumble about.
+        this.crashW.x += (Math.random() - 0.5) * impact * 0.12
+        this.crashW.z += (Math.random() - 0.5) * impact * 0.16
+        this.onBounce?.(impact)
+      } else { cv.y = Math.max(cv.y, 0); this.crashGround = true }
+    }
+    const hs = Math.hypot(cv.x, cv.z)
+    if (this.crashGround) {
+      // Grinding along the sand: friction on the speed and on the spin; it settles flat.
+      const f = Math.exp(-1.5 * dt)
+      cv.x *= f; cv.z *= f
+      this.crashW.multiplyScalar(Math.exp(-2.6 * dt))
+      this.crashRot.x *= Math.exp(-2 * dt)
+      this.crashRot.z += (Math.round(this.crashRot.z / Math.PI) * Math.PI - this.crashRot.z) * Math.min(1, dt * 2)
+    } else this.crashW.multiplyScalar(Math.exp(-0.25 * dt))
+    this.crashRot.addScaledVector(this.crashW, dt)
+    // Rock still stops a wreck.
+    const n = world.near(this.pos.x, this.pos.z, this.pos.y, 20, this.cobs)
+    for (let i = 0; i < n; i++) {
+      const o = this.cobs[i]
+      const dx = this.pos.x - o.x, dz = this.pos.z - o.z, d = Math.hypot(dx, dz)
+      if (d >= o.cr + 2) continue
+      const nx = dx / (d || 1), nz = dz / (d || 1)
+      this.pos.x = o.x + nx * (o.cr + 2); this.pos.z = o.z + nz * (o.cr + 2)
+      const vn = cv.x * nx + cv.z * nz
+      if (vn < 0) { cv.x -= 1.3 * vn * nx; cv.z -= 1.3 * vn * nz; this.onBounce?.(-vn * 0.5) }
+    }
+    this.vel.copy(cv)
+    this.speed = hs
+    this.lateral = 0
+    this.side = 0
+    this.vy = cv.y
+    this.agl = this.pos.y - g
+    this.yawRate = 0
+    this.boost = 0
+    this.throttle = 0
+    if (this.crashT > 3.6 || (this.crashGround && hs < 60 && this.crashT > 1.5)) {
+      this.crashing = false
+      if (this.hull <= 0) this.dead = true
+      this.recovered = true
+    }
+  }
+
   /** Rock: push out along the true surface normal; keep the tangential speed (a glancing hit scrapes,
    *  a head-on one stops you hard); turn the nose part-way along the wall. */
   /** Tools: no rock collisions (handling tests on open ground). */
   noCollide = false
   private collide(world: World): void {
     if (this.noCollide) return
+    // Swept: at Mach 8+ a step is longer than a spire is wide. Walk the step in 12 m samples and stop
+    // at the first one inside rock, then resolve there.
+    const sx = this.pos.x - this.prev.x, sz = this.pos.z - this.prev.z
+    const len = Math.hypot(sx, sz)
+    if (len > 12) {
+      const steps = Math.ceil(len / 12)
+      const n0 = world.near(this.prev.x + sx / 2, this.prev.z + sz / 2, this.pos.y, len / 2 + 40, this.obs)
+      if (n0 > 0) {
+        outer: for (let k = 1; k < steps; k++) {
+          const x = this.prev.x + (sx * k) / steps, z = this.prev.z + (sz * k) / steps
+          for (let i = 0; i < n0; i++) {
+            const o = this.obs[i]
+            if (Math.hypot(x - o.x, z - o.z) < o.cr + 2.6) { this.pos.x = x; this.pos.z = z; break outer }
+          }
+        }
+      }
+    }
     const n = world.near(this.pos.x, this.pos.z, this.pos.y, 40, this.obs)
     for (let i = 0; i < n; i++) {
       const o = this.obs[i]
@@ -494,6 +642,13 @@ export class Player {
       const nvx = tx * fr - e * vn * nx
       const nvz = tz * fr - e * vn * nz
       const sev = -vn / 600
+      // Hard into rock: not a deflection — a wreck.
+      // (Only a real hit: more than 300 m/s into the rock. A shallow one at Mach 5 scrapes.)
+      if (o.big && sev > 0.5 && this.ghost <= 0) {
+        this.scrapeAt.set(o.x + nx * o.cr, this.pos.y - 0.5, o.z + nz * o.cr)
+        this.startCrash(sev, nx, nz)
+        return
+      }
       // Nose follows the new direction part of the way (a deflection, not a snap).
       const nh = Math.atan2(nvx, nvz)
       let dh = nh - this.heading
@@ -520,7 +675,7 @@ export class Player {
 const _n = new THREE.Vector3()
 /** Racer-on-racer: separate, swap the closing speed (a bump that shoves), report the hit. */
 export function bump(a: Player, b: Player, onHit: (a: Player, b: Player, severity: number, x: number, y: number, z: number) => void): void {
-  if (a.dead || b.dead || a.ghost > 0 || b.ghost > 0) return
+  if (a.dead || b.dead || a.ghost > 0 || b.ghost > 0 || a.crashing || b.crashing) return
   const dx = b.pos.x - a.pos.x, dz = b.pos.z - a.pos.z, dy = b.pos.y - a.pos.y
   if (Math.abs(dy) > 3.5) return
   const d2 = dx * dx + dz * dz
@@ -542,4 +697,6 @@ export function bump(a: Player, b: Player, onHit: (a: Player, b: Player, severit
   if (sev > 0.15) { const d = Math.min(12, sev * 3); a.hull -= d; b.hull -= d }
   a.sinceHurt = b.sinceHurt = 0
   onHit(a, b, sev, (a.pos.x + b.pos.x) / 2, (a.pos.y + b.pos.y) / 2, (a.pos.z + b.pos.z) / 2)
+  // A real T-bone at a closing speed of 700 m/s+: both go down.
+  if (sev > 1.75) { a.startCrash(sev * 0.5, -_n.x, -_n.z); b.startCrash(sev * 0.5, _n.x, _n.z) }
 }

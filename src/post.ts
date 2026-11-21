@@ -24,11 +24,14 @@ const FINAL = {
     uExposure: { value: 1 },
     uGrain: { value: 0.03 },
     uCenter: { value: new THREE.Vector2(0.5, 0.52) },
+    uSharpen: { value: 0.35 },
+    uTexel: { value: new THREE.Vector2(1 / 1280, 1 / 720) },
   },
   vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }',
   fragmentShader: /* glsl */ `
     uniform sampler2D tDiffuse;
-    uniform float uSpeed, uBlur, uAberr, uStreak, uStreakT, uWhite, uDamage, uTime, uAspect, uExposure, uGrain;
+    uniform float uSpeed, uBlur, uAberr, uStreak, uStreakT, uWhite, uDamage, uTime, uAspect, uExposure, uGrain, uSharpen;
+    uniform vec2 uTexel;
     uniform vec2 uCenter;
     varying vec2 vUv;
     float hash(vec2 p) { vec3 p3 = fract(vec3(p.xyx) * 0.1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
@@ -64,6 +67,20 @@ const FINAL = {
         wsum += w;
       }
       c /= wsum;
+      // Sharpen (contrast-adaptive, in a reversible tone curve so HDR highlights don't ring), weakest
+      // where the motion blur is working — the centre stays crisp, the edges stay smooth.
+      if (uSharpen > 0.001) {
+        vec3 e = c / (1.0 + c);
+        vec3 nb = texture2D(tDiffuse, uv + vec2(0.0, -uTexel.y)).rgb; nb /= 1.0 + nb;
+        vec3 nd = texture2D(tDiffuse, uv + vec2(-uTexel.x, 0.0)).rgb; nd /= 1.0 + nd;
+        vec3 nf = texture2D(tDiffuse, uv + vec2(uTexel.x, 0.0)).rgb; nf /= 1.0 + nf;
+        vec3 nh = texture2D(tDiffuse, uv + vec2(0.0, uTexel.y)).rgb; nh /= 1.0 + nh;
+        vec3 mn = min(min(nb, nd), min(nf, nh)), mx = max(max(nb, nd), max(nf, nh));
+        vec3 amp = clamp(min(mn, 1.0 - mx) / max(mx, 1e-4), 0.0, 1.0);
+        float w = -0.2 * uSharpen * (1.0 - smoothstep(0.0, 0.03, amt)) * dot(sqrt(amp), vec3(0.333));
+        vec3 sh = clamp((e + (nb + nd + nf + nh) * w) / (1.0 + 4.0 * w), 0.0, 0.999);
+        c = sh / (1.0 - sh);
+      }
       if (any(isnan(c)) || any(isinf(c))) c = vec3(0.0);
 
       // Speed streaks: pale spokes flowing outward at the edges of the view.
@@ -131,6 +148,7 @@ export class Post {
     this.composer.setPixelRatio(pixelRatio)
     this.composer.setSize(w, h)
     this.final.uniforms.uAspect.value = w / h
+    this.final.uniforms.uTexel.value.set(1 / (w * pixelRatio), 1 / (h * pixelRatio))
   }
 
   setSamples(n: number): void { this.target.samples = n }

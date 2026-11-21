@@ -236,9 +236,17 @@ function terrainMaterial(shared: GroundUniforms, snap: { value: THREE.Vector2 },
 
         // (At Mach speeds fine texture detail sweeps past faster than the frame rate and strobes —
         // the "flashing". The mip level is pushed up with speed: the ground blurs like the motion does.)
-        float bias = uSpeed * 2.2;
+        float bias = uSpeed * 1.1;
         mat2 rot = mat2(0.8, -0.6, 0.6, 0.8);
         vec3 s1 = texture2D(tSand, p / 26.0, bias).rgb;
+        // Up close, bump the light from the sand texture itself (ripples and grains catch the sun).
+        float nearB = 1.0 - smoothstep(60.0, 260.0, length(vW - cameraPosition));
+        if (nearB > 0.0) {
+          float l0 = dot(s1, vec3(0.33));
+          float lx = dot(texture2D(tSand, (p + vec2(0.35, 0.0)) / 26.0, bias).rgb, vec3(0.33));
+          float lz = dot(texture2D(tSand, (p + vec2(0.0, 0.35)) / 26.0, bias).rgb, vec3(0.33));
+          n = normalize(n + vec3(l0 - lx, 0.0, l0 - lz) * 0.8 * nearB * (1.0 - uSpeed * 0.7));
+        }
         vec3 s2 = texture2D(tSand, rot * p / 170.0 + 0.37, bias * 0.5).rgb;
         vec3 sandT = mix(s1, s2, 0.45);
         float gm = smoothstep(0.58, 0.72, vnoise(p * 0.0045 + 11.0) * 0.7 + vnoise(p * 0.03) * 0.3);
