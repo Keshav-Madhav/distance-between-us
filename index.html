@@ -115,6 +115,13 @@
   #title .ship .sn { flex: 1; text-align: center; padding: 8px 0; border: 1px solid rgba(255,255,255,0.16); background: rgba(0,0,0,0.25); }
   #title .ship .sn b { display: block; letter-spacing: 0.35em; font-size: 15px; }
   #title .ship .sn small { font-size: 10px; letter-spacing: 0.2em; opacity: 0.6; }
+  #title .paints { display: flex; flex-direction: column; gap: 6px; }
+  #title .paints > div { display: flex; align-items: center; gap: 8px; }
+  #title .paints small { width: 44px; font-size: 9px; letter-spacing: 0.3em; opacity: 0.6; }
+  #title .paints span { display: flex; gap: 6px; flex-wrap: wrap; }
+  #title .paints i { width: 22px; height: 22px; border-radius: 50%; border: 2px solid rgba(255,255,255,0.18); cursor: pointer; box-shadow: inset 0 -3px 6px rgba(0,0,0,0.3); transition: transform 0.12s, border-color 0.12s; }
+  #title .paints i:hover { transform: scale(1.12); }
+  #title .paints i.on { border-color: #fff; transform: scale(1.15); }
   #title .row { display: flex; gap: 10px; margin-top: 10px; }
   #title .row .big { flex: 1; }
   #title .keys { position: static; margin-top: 14px; font-size: 10px; letter-spacing: 0.18em; opacity: 0.55; line-height: 1.9; text-align: left; }
@@ -219,6 +226,7 @@
     <div class="hunt-only huntinfo">THE OLD COMBAT SANDBOX: DRONES IN WAVES, A WALKER, OPEN DESERT. SURVIVE AND SCORE.</div>
     <div class="sec">SHIP</div>
     <div class="ship"><button id="ship-prev" aria-label="previous ship">◀</button><div class="sn"><b id="ship-name"></b><small id="ship-desc"></small></div><button id="ship-next" aria-label="next ship">▶</button></div>
+    <div class="paints"><div><small>BODY</small><span id="sw-body"></span></div><div><small>TEAM</small><span id="sw-trim"></span></div></div>
     <div class="row"><button id="start" class="big">START</button><button id="open-settings">SETTINGS</button></div>
     <div class="keys">ENTER START · ARROWS OR DRAG TURN THE VIEW<br/>W THROTTLE · SHIFT AFTERBURNER · A/D STEER · Q/E STRAFE · S BRAKE · R LAST GATE · ESC PAUSE</div>
   </div>

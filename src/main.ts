@@ -17,7 +17,7 @@ import { Input } from './input'
 import { Post } from './post'
 import { groundH, SUN_DIR } from './terrain'
 import { loadTextures } from './textures'
-import { Course, COURSES, LAPS } from './course'
+import { centerline, Course, COURSES, LAPS } from './course'
 import { Race, type Racer } from './race'
 import { ChaseCam } from './camera'
 import { Debris } from './debris'
@@ -197,8 +197,15 @@ const race = new Race(course, player, {
 })
 
 let shipPick = (() => { try { return Math.min(MODELS.length - 1, Math.max(0, +(localStorage.getItem('dbu-ship') ?? 0) || 0)) } catch { return 0 } })()
+// Your paint: a body colour and a team colour (trim, lights, number), picked on the menu, saved.
+const BODY_COLORS = [0xeef1f4, 0x1b1d24, 0x16324a, 0x8a1c22, 0xd9c3a0, 0x1f3a2a, 0x2a1d44, 0xc9a227, 0x6b7380]
+const TRIM_COLORS = [0xff5a14, 0xff3fa4, 0x29d3ff, 0x7dff3a, 0xffc21a, 0xa96bff, 0xff3b30, 0xf2f2f2, 0x3dffc5]
+const myPaint: Paint = (() => {
+  try { const v = JSON.parse(localStorage.getItem('dbu-paint') || 'null'); if (v && typeof v.body === 'number' && typeof v.trim === 'number') return { body: v.body, trim: v.trim, number: '07' } } catch { /* fresh */ }
+  return { body: 0xeef1f4, trim: 0xff5a14, number: '07' }
+})()
 const PAINTS: Paint[] = [
-  { body: 0xeef1f4, trim: 0xff5a14, number: '07' },
+  myPaint,
   { body: 0x1b1d24, trim: 0xff3fa4, number: '11' },
   { body: 0xf2f2ea, trim: 0x5fe02a, number: '23' },
   { body: 0x2a2018, trim: 0xffc21a, number: '04' },
@@ -571,6 +578,23 @@ function showCourse(): void {
     el.classList.toggle('on', i === pickedCourse)
     el.innerHTML = `<b>${d.name}</b><span class="best">${b !== null ? fmtLap(b) : d.km + ' KM'}</span><small>${d.blurb}</small>`
   })
+  // Paint swatches (built once; the picked ones ringed).
+  for (const [id, list, key] of [['#sw-body', BODY_COLORS, 'body'], ['#sw-trim', TRIM_COLORS, 'trim']] as const) {
+    const box = $(id)
+    if (!box.childElementCount) for (const c of list) {
+      const el = document.createElement('i')
+      el.style.background = hex(c)
+      el.title = hex(c)
+      el.onclick = () => {
+        myPaint[key] = c
+        myCraft.setPaint(myPaint)
+        try { localStorage.setItem('dbu-paint', JSON.stringify({ body: myPaint.body, trim: myPaint.trim })) } catch { /* blocked */ }
+        showCourse()
+      }
+      box.append(el)
+    }
+    list.forEach((c, i) => (box.children[i] as HTMLElement).classList.toggle('on', c === myPaint[key]))
+  }
   $('#ship-name').textContent = MODELS[shipPick]
   $('#ship-desc').textContent = SHIP_DESC[shipPick] + ' · LOOKS ONLY'
   drawTrackPreview(COURSES[pickedCourse])
@@ -581,55 +605,68 @@ function drawTrackPreview(d: (typeof COURSES)[number]): void {
   // Sized to its box (the panel runs the full height), at device pixels: never stretched.
   const dpr = Math.min(2, devicePixelRatio)
   cv.width = Math.max(100, Math.round(cv.clientWidth * dpr)); cv.height = Math.max(100, Math.round(cv.clientHeight * dpr))
-  const W = cv.width, H = cv.height, M = 28 * dpr
+  const W = cv.width, H = cv.height, M = 30 * dpr
   g.setTransform(1, 0, 0, 1, 0, 0)
   const u = dpr
   g.clearRect(0, 0, W, H)
-  const L = d.km * 1000
-  const zs: number[] = [], xs: number[] = []
-  for (let z = 0; z <= L; z += 200) { zs.push(z); xs.push(d.xAt(z)) }
-  let mx = 1
-  for (const x of xs) mx = Math.max(mx, Math.abs(x))
-  // True scale: one metre is one metre both ways (fit to whichever runs out first) — no warp.
-  const ky = Math.min((H - 2 * M) / L, (W / 2 - 50 * dpr) / mx)
-  const kx = ky
-  const ex = 1
-  const P = (x: number, z: number): [number, number] => [W / 2 + x * kx, H - M - z * ky]
-  // Spires: a grey band either side where they stand.
-  g.fillStyle = 'rgba(255,255,255,0.07)'
-  for (let i = 0; i < zs.length; i++) if (zs[i] > 4000 && d.spireGap(zs[i] / 1000)) { const [px, py] = P(xs[i], zs[i]); g.fillRect(px - 20 * u, py - 200 * ky, 40 * u, 200 * ky + 1) }
+  // The line as points (any shape: a sprint up the page, a loop), and the distance along it.
+  const { xs, zs } = centerline(d)
+  const N = xs.length, arc = [0]
+  for (let i = 1; i < N; i++) arc.push(arc[i - 1] + Math.hypot(xs[i] - xs[i - 1], zs[i] - zs[i - 1]))
+  const L = arc[N - 1]
+  let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity
+  for (let i = 0; i < N; i++) { x0 = Math.min(x0, xs[i]); x1 = Math.max(x1, xs[i]); z0 = Math.min(z0, zs[i]); z1 = Math.max(z1, zs[i]) }
+  // True scale, fitted (one metre is one metre both ways — no warp).
+  const k = Math.min((W - 2 * M) / Math.max(1, x1 - x0), (H - 2 * M) / Math.max(1, z1 - z0))
+  const P = (x: number, z: number): [number, number] => [W / 2 + (x - (x0 + x1) / 2) * k, H / 2 - (z - (z0 + z1) / 2) * k]
+  const at = (s: number): [number, number] => {
+    let i = 1
+    while (i < N - 1 && arc[i] < s) i++
+    const t = Math.min(1, Math.max(0, (s - arc[i - 1]) / Math.max(1e-6, arc[i] - arc[i - 1])))
+    return P(xs[i - 1] + (xs[i] - xs[i - 1]) * t, zs[i - 1] + (zs[i] - zs[i - 1]) * t)
+  }
+  // Spires (open courses): a grey band where they stand.
+  if (!d.loop) {
+    g.fillStyle = 'rgba(255,255,255,0.07)'
+    for (let i = 0; i < N; i++) if (zs[i] > 4000 && d.spireGap(zs[i] / 1000)) { const [px, py] = P(xs[i], zs[i]); g.fillRect(px - 20 * u, py - 200 * k, 40 * u, 200 * k + 1) }
+  }
   // The line.
   g.lineJoin = 'round'; g.lineCap = 'round'
   g.strokeStyle = 'rgba(255,240,225,0.9)'; g.lineWidth = 4 * u
   g.beginPath()
-  zs.forEach((z, i) => { const [px, py] = P(xs[i], z); if (i) g.lineTo(px, py); else g.moveTo(px, py) })
+  for (let i = 0; i < N; i++) { const [px, py] = P(xs[i], zs[i]); if (i) g.lineTo(px, py); else g.moveTo(px, py) }
   g.stroke()
-  // Tight bends (true curvature): red.
+  // Tight bends (true curvature, three-point): red.
   g.strokeStyle = '#ff3b30'; g.lineWidth = 6 * u
-  for (let i = 1; i < zs.length - 1; i++) {
-    const h = 200, d1 = (xs[i + 1] - xs[i - 1]) / (2 * h), d2 = (xs[i + 1] - 2 * xs[i] + xs[i - 1]) / (h * h)
-    if (Math.abs(d2) / Math.pow(1 + d1 * d1, 1.5) > 1 / 1700) { const [ax, ay] = P(xs[i - 1], zs[i - 1]), [bx, by] = P(xs[i + 1], zs[i + 1]); g.beginPath(); g.moveTo(ax, ay); g.lineTo(bx, by); g.stroke() }
+  for (let i = 1; i < N - 1; i++) {
+    const ax = xs[i] - xs[i - 1], az = zs[i] - zs[i - 1], bx = xs[i + 1] - xs[i], bz = zs[i + 1] - zs[i]
+    const cx = xs[i + 1] - xs[i - 1], cz = zs[i + 1] - zs[i - 1]
+    const kap = (2 * Math.abs(ax * bz - az * bx)) / Math.max(1e-6, Math.hypot(ax, az) * Math.hypot(bx, bz) * Math.hypot(cx, cz))
+    if (kap > 1 / 1700) { const [a1, a2] = P(xs[i - 1], zs[i - 1]), [b1, b2] = P(xs[i + 1], zs[i + 1]); g.beginPath(); g.moveTo(a1, a2); g.lineTo(b1, b2); g.stroke() }
   }
-  // Gates: ticks across.
-  g.strokeStyle = '#5fe6ff'; g.lineWidth = 2.5 * u
-  for (let z = d.gateEvery; z < L; z += d.gateEvery) { const [px, py] = P(d.xAt(z), z); g.beginPath(); g.moveTo(px - 11 * u, py); g.lineTo(px + 11 * u, py); g.stroke() }
-  // Jumps: orange triangles.
+  // Gates: dots on the line.
+  g.fillStyle = '#5fe6ff'
+  for (let s = d.gateEvery; s < L - 100; s += d.gateEvery) { const [px, py] = at(s); g.beginPath(); g.arc(px, py, 4 * u, 0, Math.PI * 2); g.fill() }
+  // Jumps: orange triangles beside the line.
   g.fillStyle = '#ff8a3d'
-  for (const f of d.jumps) { const z = f * L, [px, py] = P(d.xAt(z), z); g.beginPath(); g.moveTo(px + 14 * u, py); g.lineTo(px + 24 * u, py - 6 * u); g.lineTo(px + 24 * u, py + 6 * u); g.fill() }
-  // Start and finish.
-  const [sx, sy] = P(d.xAt(0), 0), [fx, fy] = P(d.xAt(L), L)
-  g.fillStyle = '#7dff3a'; g.fillRect(sx - 16 * u, sy - 2 * u, 32 * u, 4 * u)
-  for (let i = 0; i < 8; i++) { g.fillStyle = i % 2 ? '#111' : '#fff'; g.fillRect(fx - 16 * u + i * 4 * u, fy - 3 * u, 4 * u, 3 * u); g.fillStyle = i % 2 ? '#fff' : '#111'; g.fillRect(fx - 16 * u + i * 4 * u, fy, 4 * u, 3 * u) }
-  // Section names; km marks.
+  for (const f of d.jumps) { const [px, py] = at(f * L); g.beginPath(); g.moveTo(px + 9 * u, py); g.lineTo(px + 19 * u, py - 6 * u); g.lineTo(px + 19 * u, py + 6 * u); g.fill() }
+  // Start (green) and finish (chequered; on a loop, the same line).
+  const [sx, sy] = P(xs[0], zs[0]), [fx, fy] = P(xs[N - 1], zs[N - 1])
+  for (let i = 0; i < 8; i++) { g.fillStyle = i % 2 ? '#111' : '#fff'; g.fillRect(fx - 16 * u + i * 4 * u, fy - 7 * u, 4 * u, 3 * u); g.fillStyle = i % 2 ? '#fff' : '#111'; g.fillRect(fx - 16 * u + i * 4 * u, fy - 4 * u, 4 * u, 3 * u) }
+  g.fillStyle = '#7dff3a'; g.fillRect(sx - 16 * u, sy + 1 * u, 32 * u, 4 * u)
+  // Direction of travel on a loop: an arrow a little way after the start.
+  if (d.loop) {
+    const [ax, ay] = at(L * 0.04), [bx, by] = at(L * 0.055)
+    const an = Math.atan2(by - ay, bx - ax)
+    g.fillStyle = '#7dff3a'; g.beginPath(); g.moveTo(bx + Math.cos(an) * 9 * u, by + Math.sin(an) * 9 * u); g.lineTo(bx + Math.cos(an + 2.5) * 9 * u, by + Math.sin(an + 2.5) * 9 * u); g.lineTo(bx + Math.cos(an - 2.5) * 9 * u, by + Math.sin(an - 2.5) * 9 * u); g.fill()
+  }
+  // Section names (open courses).
   g.font = `600 ${Math.round(11 * dpr)}px "Chakra Petch", system-ui, sans-serif`; g.textBaseline = 'middle'
-  for (const [zk, name] of d.sections) { const [px, py] = P(d.xAt(zk * 1000), zk * 1000); g.fillStyle = 'rgba(255,255,255,0.85)'; g.fillText(name, Math.min(W - 110 * dpr, px + 26 * dpr), py) }
-  g.fillStyle = 'rgba(255,255,255,0.4)'; g.font = `${Math.round(9 * dpr)}px "Chakra Petch", system-ui, sans-serif`
-  const step = L > 120000 ? 50000 : 20000
-  for (let z = step; z < L; z += step) { const [, py] = P(0, z); g.fillText(`${z / 1000}`, 4 * u, py) }
+  if (d.xAt) for (const [zk, name] of d.sections) { const [px, py] = P(d.xAt(zk * 1000), zk * 1000); g.fillStyle = 'rgba(255,255,255,0.85)'; g.fillText(name, Math.min(W - 110 * dpr, px + 26 * dpr), py) }
   $('#tp-name').textContent = d.name
   const best = bestOf(d.id)
-  $('#tp-meta').textContent = `${d.km} KM · ${Math.round(d.km * 1000 / d.gateEvery) + 1} GATES · ${d.jumps.length} JUMPS · ${d.racers ?? 10} RACERS`
-  $('#tp-info').innerHTML = `${best !== null ? 'YOUR BEST ' + fmtLap(best) : 'NO TIME SET YET'}${d === course.def ? '' : ' · LOADS ON START'}<br/><span style="color:#5fe6ff">━</span> GATES &nbsp;<span style="color:#ff8a3d">▶</span> JUMPS &nbsp;<span style="color:#ff3b30">━</span> HAIRPINS &nbsp;░ SPIRES${ex > 1.3 ? `<br/>WIDTH SHOWN ×${Math.round(ex)}` : ''}`
+  $('#tp-meta').textContent = `${d.km} KM${d.loop ? ' LOOP' : ''} · ${Math.round(d.km * 1000 / d.gateEvery) + 1} GATES · ${d.jumps.length} JUMPS · ${d.racers ?? 10} RACERS`
+  $('#tp-info').innerHTML = `${best !== null ? 'YOUR BEST ' + fmtLap(best) : 'NO TIME SET YET'}${d === course.def ? '' : ' · LOADS ON START'}<br/><span style="color:#5fe6ff">●</span> GATES &nbsp;<span style="color:#ff8a3d">▶</span> JUMPS &nbsp;<span style="color:#ff3b30">━</span> HAIRPINS${d.loop ? '' : ' &nbsp;░ SPIRES'}`
 }
 function pickShip(delta: number): void {
   shipPick = (shipPick + delta + MODELS.length) % MODELS.length
@@ -1547,7 +1584,8 @@ function updateHud(dt: number, slow: boolean): void {
     if (race.state === 'racing' && me.idx > pinUntil) {
       const look = Math.min(course.n, me.idx + Math.round((player.speed * 3 + 300) / 40))
       for (let i = me.idx; i < look; i += 3) {
-        if (course.curv[i] > 1 / 1700) { if (player.mach > 3.2) warn('HAIRPIN', 'BRAKE · S'); pinUntil = i + 80; break }
+        // (1.25 km: the circuit's constant sweepers are not hairpins; Dry River's ~1 km ones are.)
+        if (course.curv[i] > 1 / 1250) { if (player.mach > 3.2) warn('HAIRPIN', 'BRAKE · S'); pinUntil = i + 80; break }
       }
     }
     $('#r-time').textContent = fmtLap(me.finished ? me.finishTime : race.clock + me.penalty)
@@ -1673,7 +1711,7 @@ const MW = mini.width, MH = mini.height
 const MAP_H = MH - 56
 const WIN_BACK = 1500, WIN_AHEAD = 7000
 const mk = (MAP_H - 24) / (WIN_BACK + WIN_AHEAD)
-const mapView = { cx: 0, cz: 0, kk: mk }
+const mapView = { cx: 0, cz: 0, kk: mk, ang: 0, fx: 0, fz: 1, init: false }
 const mapCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 1, 30000)
 mapCam.up.set(0, 0, 1) // screen up = +z (the way the course runs), screen right = −x (your right)
 const mapRT = new THREE.WebGLRenderTarget((MW - 16) >> 1, MAP_H >> 1, { type: THREE.HalfFloatType })
@@ -1721,12 +1759,13 @@ function renderMap(): void {
   if ((mapFrame++ & 1) !== 0) { blitMap(); return }
   const kk = mapView.kk
   // World extents of the panel's map area (canvas px → metres), matching the overlay's mapping.
-  const z0 = mapView.cz - WIN_BACK - 12 / kk, z1 = mapView.cz - WIN_BACK + (MAP_H - 12) / kk
-  const halfX = (MW / 2 - 8) / kk
+  // Heading-up: centred on the panel's centre point, screen-up along the line's direction.
+  const halfX = (MW / 2 - 8) / kk, halfZ = MAP_H / 2 / kk
   mapCam.left = -halfX; mapCam.right = halfX
-  mapCam.top = (z1 - z0) / 2; mapCam.bottom = -(z1 - z0) / 2
-  mapCam.position.set(mapView.cx, 4000, (z0 + z1) / 2)
-  mapCam.lookAt(mapView.cx, 0, (z0 + z1) / 2)
+  mapCam.top = halfZ; mapCam.bottom = -halfZ
+  mapCam.up.set(mapView.fx, 0, mapView.fz)
+  mapCam.position.set(mapView.cx, 4000, mapView.cz)
+  mapCam.lookAt(mapView.cx, 0, mapView.cz)
   mapCam.updateProjectionMatrix()
   renderer.setRenderTarget(mapRT)
   renderer.clear()
@@ -1760,39 +1799,39 @@ function drawMini(): void {
   g.strokeStyle = 'rgba(255,255,255,0.22)'; g.lineWidth = 3
   g.beginPath(); g.roundRect(6, 6, MW - 12, MAP_H + 4, 14); g.stroke()
   const me = race.racers[0]
-  const cz = player.pos.z
-  // Centred across on the stretch in view (not on you): the S-bends stay inside the panel.
-  const ia = Math.max(0, me.idx - Math.round(WIN_BACK / 40)), ib = Math.min(course.n - 1, me.idx + Math.round(WIN_AHEAD / 40))
-  let xlo = Infinity, xhi = -Infinity
-  for (let i = ia; i <= ib; i += 4) { xlo = Math.min(xlo, course.px[i]); xhi = Math.max(xhi, course.px[i]) }
-  xlo = Math.min(xlo, player.pos.x); xhi = Math.max(xhi, player.pos.x)
-  const cx = (xlo + xhi) / 2
-  // Zoom out if the stretch spreads wider across than the panel is tall (an S-bend on a diagonal).
-  const kk = Math.min(mk, (MW - 40) / Math.max(1, xhi - xlo))
-  // True top-down, upright: the course runs up the panel (+z is up), your right-hand side (−x) is right.
-  // tx/ty map a world z / x to canvas y / x.
-  const tx = (z: number) => 8 + MAP_H - 12 - (z - (cz - WIN_BACK)) * kk, ty = (x: number) => MW / 2 - (x - cx) * kk
-  const i0 = Math.max(0, me.idx - Math.round(WIN_BACK / 40) - 4), i1 = Math.min(course.n - 1, me.idx + Math.round((WIN_AHEAD * mk / kk) / 40) + 4)
+  // Heading-up, true top-down: screen-up is the line's direction just ahead (eased, so the map turns
+  // smoothly through bends — any course shape, loops included); your right-hand side is right.
+  const [t1x, t1z] = course.tangent(me.idx), [t2x, t2z] = course.tangent(Math.min(course.n - 1, me.idx + 30))
+  const want = Math.atan2(t1x + t2x, t1z + t2z)
+  if (!mapView.init) { mapView.ang = want; mapView.init = true }
+  mapView.ang += Math.atan2(Math.sin(want - mapView.ang), Math.cos(want - mapView.ang)) * Math.min(1, lastMs / 1000 * 2.5)
+  const fx = Math.sin(mapView.ang), fz = Math.cos(mapView.ang), rx = -fz, rz = fx
+  const kk = mk
+  const ahead = (WIN_AHEAD - WIN_BACK) / 2
+  const cx = player.pos.x + fx * ahead, cz = player.pos.z + fz * ahead
+  const SX = (x: number, z: number) => MW / 2 + ((x - cx) * rx + (z - cz) * rz) * kk
+  const SY = (x: number, z: number) => 8 + MAP_H / 2 - ((x - cx) * fx + (z - cz) * fz) * kk
+  const i0 = Math.max(0, me.idx - Math.round(WIN_BACK / 40) - 10), i1 = Math.min(course.n - 1, me.idx + Math.round((WIN_AHEAD * 1.6) / 40))
   g.save()
   g.beginPath(); g.roundRect(8, 8, MW - 16, MAP_H, 14); g.clip()
   g.beginPath()
-  for (let i = i0; i <= i1; i++) { const y = tx(course.pz[i]), x = ty(course.px[i]); if (i === i0) g.moveTo(x, y); else g.lineTo(x, y) }
+  for (let i = i0; i <= i1; i++) { const x = SX(course.px[i], course.pz[i]), y = SY(course.px[i], course.pz[i]); if (i === i0) g.moveTo(x, y); else g.lineTo(x, y) }
   g.lineJoin = 'round'; g.lineCap = 'round'
   g.strokeStyle = 'rgba(255,240,225,0.35)'; g.lineWidth = 2; g.setLineDash(DASH); g.stroke(); g.setLineDash(NODASH)
   // Spires: a thin ring round each (the render shows the rock; the ring makes it pop at this size).
   for (const rk of course.rocks) {
     if (rk.i < i0 || rk.i > i1) continue
-    const y = tx(rk.z), x = ty(rk.x)
+    const x = SX(rk.x, rk.z), y = SY(rk.x, rk.z)
     g.strokeStyle = 'rgba(255,110,60,0.9)'; g.lineWidth = 2
     g.beginPath(); g.arc(x, y, Math.max(6, rk.r * 1.8 * kk) + 2, 0, Math.PI * 2); g.stroke()
   }
-  mapView.cx = cx; mapView.cz = cz; mapView.kk = kk
+  mapView.cx = cx; mapView.cz = cz; mapView.kk = kk; mapView.fx = fx; mapView.fz = fz
   for (let k = 0; k < course.cps.length; k++) {
     const c = course.cps[k]
     if (c.i < i0 || c.i > i1) continue
     const gh = course.gateHalf
-    const ay = tx(c.z - c.tx * gh), ax = ty(c.x + c.tz * gh)
-    const by = tx(c.z + c.tx * gh), bx = ty(c.x - c.tz * gh)
+    const ax = SX(c.x + c.tz * gh, c.z - c.tx * gh), ay = SY(c.x + c.tz * gh, c.z - c.tx * gh)
+    const bx = SX(c.x - c.tz * gh, c.z + c.tx * gh), by = SY(c.x - c.tz * gh, c.z + c.tx * gh)
     const fin = k === 0 || k === course.cps.length - 1
     g.strokeStyle = k === me.next ? '#5fe6ff' : k === me.next + 1 ? 'rgba(95,230,255,0.45)' : fin ? '#ff7a1a' : 'rgba(255,255,255,0.35)'
     g.lineWidth = k === me.next ? 5 : 3
@@ -1802,13 +1841,13 @@ function drawMini(): void {
   }
   for (const r of race.racers) {
     if (!r.ai || r.p.dead) continue
-    const y = tx(r.p.pos.z), x = ty(r.p.pos.x)
+    const x = SX(r.p.pos.x, r.p.pos.z), y = SY(r.p.pos.x, r.p.pos.z)
     g.fillStyle = hex(r.color)
     g.strokeStyle = 'rgba(0,0,0,0.75)'; g.lineWidth = 2.5
     g.beginPath(); g.arc(x, y, 7, 0, Math.PI * 2); g.fill(); g.stroke()
   }
-  const py = tx(player.pos.z), px = ty(player.pos.x)
-  g.translate(px, py); g.rotate(Math.PI - player.heading)
+  const px = SX(player.pos.x, player.pos.z), py = SY(player.pos.x, player.pos.z)
+  g.translate(px, py); g.rotate(Math.PI - (player.heading - mapView.ang))
   g.shadowColor = '#ff6a1a'; g.shadowBlur = 14
   g.fillStyle = '#ff6a1a'; g.strokeStyle = '#fff'; g.lineWidth = 2.5
   g.beginPath(); g.moveTo(0, 15); g.lineTo(9, -10); g.lineTo(0, -5); g.lineTo(-9, -10); g.closePath(); g.fill(); g.stroke()

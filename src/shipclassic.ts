@@ -166,10 +166,10 @@ export function buildClassic(variant: number, hi: boolean): { parts: Parts; spec
       // Pylon angled along the hull edge (a straight one only met the hull at its rear half).
       B.addSym('paint', rbox(0.9, 0.1, 1.6), 3.05, 0.35, -0.9, 0, 0.36, 0)
       B.addSym('trim', rbox(0.06, 0.03, 1.5), 3.05, 0.41, -0.9, 0, 0.36, 0)
-      B.addSym('paint', new THREE.CapsuleGeometry(0.42, 2.6, 12, 32), 3.7, 0.3, -0.6, Math.PI / 2, 0, 0, 1, 1, 0.75)
-      B.addSym('trim', rbox(0.1, 0.035, 2.4), 3.7, 0.615, -0.6)
-      B.addSym('carbon', nacelle(0.32), 3.7, 0.3, -3.05, 0, 0, 0, 1, 0.75, 1)
-      B.addSym('hot', new THREE.CircleGeometry(0.22, 28), 3.7, 0.3, -2.65, 0, Math.PI, 0, 1, 0.75, 1)
+      B.addSym('paint', new THREE.CapsuleGeometry(0.34, 2.6, 12, 32), 3.7, 0.3, -0.6, Math.PI / 2, 0, 0, 1, 1, 0.75)
+      B.addSym('trim', rbox(0.1, 0.035, 2.4), 3.7, 0.555, -0.6)
+      B.addSym('carbon', nacelle(0.27), 3.7, 0.3, -2.85, 0, 0, 0, 1, 0.75, 1)
+      B.addSym('hot', new THREE.CircleGeometry(0.19, 28), 3.7, 0.3, -2.45, 0, Math.PI, 0, 1, 0.75, 1)
       finAt(1.85, 0.5, -2.1, -0.14, 1.6, 0.9, 1.9, 1.0, true)
       wingtip = [3.7, 0.3, -3.0]
     } else if (variant === 2) {

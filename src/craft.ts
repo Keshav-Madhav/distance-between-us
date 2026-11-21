@@ -205,6 +205,20 @@ export class Craft {
     this.body.add(this.cone)
   }
 
+  /** Repaint live: body, team colour (trim, neon, number). */
+  setPaint(p: Paint): void {
+    const m = this.mats
+    ;(m.paint as THREE.MeshStandardMaterial).color.set(p.body)
+    ;(m.trim as THREE.MeshStandardMaterial).color.set(p.trim)
+    ;(m.trim as THREE.MeshStandardMaterial).emissive.set(p.trim)
+    ;(m.neon as THREE.MeshBasicMaterial).color.set(p.trim).multiplyScalar(2.4)
+    for (const c of this.charMats) c.base.copy(c.m.color)
+    this.char = -1
+    this.numMat.map?.dispose()
+    this.numMat.map = numberTexture(p.number, '#' + new THREE.Color(p.trim).getHexString())
+    this.numMat.needsUpdate = true
+  }
+
   /** Build (or rebuild, swapping ship live) the shape: hull, numbers, low detail, flames. */
   setModel(model: number): void {
     if (model === this.model) return

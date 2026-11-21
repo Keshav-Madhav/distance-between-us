@@ -38,9 +38,10 @@ export function buildShip(variant: number, hi: boolean): { parts: Parts; spec: S
   const brute = v === 1, needle = v === 2
   // Proportions per silhouette.
   const podX = brute ? 2.2 : needle ? 1.75 : 1.95
-  const podW = brute ? 0.66 : needle ? 0.44 : 0.54
-  const podH = brute ? 0.62 : needle ? 0.46 : 0.54
-  const bodyW = brute ? 1.3 : needle ? 0.95 : 1.12
+  // (Slimmed: "some ships still feel weirdly bulky" — 2026-11-21.)
+  const podW = brute ? 0.58 : needle ? 0.41 : 0.5
+  const podH = brute ? 0.55 : needle ? 0.43 : 0.5
+  const bodyW = brute ? 1.16 : needle ? 0.92 : 1.06
   const nose = needle ? 7.4 : brute ? 5.6 : 6.3
   const tailZ = -4.45
   const NY = 0.36 // nozzle line height

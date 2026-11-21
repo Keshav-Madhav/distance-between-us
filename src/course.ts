@@ -23,7 +23,10 @@ export interface CourseDef {
   blurb: string
   /** Race length (km). */
   km: number
-  xAt: (z: number) => number
+  /** An open course: the line's x for a world z (heading +z). */
+  xAt?: (z: number) => number
+  /** A loop: a closed path, u 0…1 → (x, z); the race is one lap, finishing where it started. */
+  loop?: (u: number) => [number, number]
   /** Gate spacing (m). */
   gateEvery: number
   /** Jumps, as fractions of the race (on the line every third; the test hooks use these). */
@@ -153,7 +156,50 @@ export const DRAG: CourseDef = {
   gateTall: 1.5,
 }
 
-export const COURSES: CourseDef[] = [SPRINT, DRY_RIVER, DRAG]
+/** A loop's length (m), measured along the path. */
+function loopLength(f: (u: number) => [number, number]): number {
+  let L = 0, [px, pz] = f(0)
+  for (let i = 1; i <= 8000; i++) { const [x, z] = f(i / 8000); L += Math.hypot(x - px, z - pz); px = x; pz = z }
+  return L
+}
+
+/**
+ * Course 4: THE CIRCUIT — a huge loop, one lap, no spires: the line never stops turning. A wide
+ * ellipse (~30 × 37 km) with three layers of bends on it (13, 23 and 35 per lap), so there is always
+ * a sweeper coming, now and then two stacking into something you have to lift for.
+ */
+const circuitPath = (u: number): [number, number] => {
+  const a = 2 * Math.PI * u
+  // (Bend layers picked by a sweep: ~2/3 of the lap under 6 km radius, half under 4 km, the tightest
+  // ~900 m; three-quarters of the lap can be taken flat out.)
+  const r = 15500 + 364 * Math.sin(13 * a + 0.4) + 182 * Math.sin(23 * a + 2.0) + 84 * Math.sin(35 * a + 1.1)
+  return [r * Math.sin(a) * 1.18, r * Math.cos(a) - 15500]
+}
+export const CIRCUIT: CourseDef = {
+  id: 'circuit',
+  name: 'THE CIRCUIT',
+  blurb: 'A HUGE LOOP · NO SPIRES · ALWAYS TURNING',
+  km: Math.round(loopLength(circuitPath) / 100) / 10,
+  loop: circuitPath,
+  gateEvery: 5000,
+  jumps: [],
+  whoops: [],
+  padEvery: 9000,
+  spireGap: () => null,
+  rockGateP: 0,
+  seed: 11,
+  sections: [],
+}
+
+export const COURSES: CourseDef[] = [SPRINT, DRY_RIVER, DRAG, CIRCUIT]
+
+/** The race's line as points (x, z) every ~200 m, start to finish — for previews. */
+export function centerline(def: CourseDef): { xs: number[]; zs: number[] } {
+  const xs: number[] = [], zs: number[] = []
+  if (def.loop) for (let i = 0; i <= 600; i++) { const [x, z] = def.loop(i / 600); xs.push(x); zs.push(z) }
+  else for (let z = 0; z <= def.km * 1000; z += 200) { xs.push(def.xAt!(z)); zs.push(z) }
+  return { xs, zs }
+}
 
 export interface Checkpoint {
   x: number; z: number
@@ -202,9 +248,19 @@ export class Course {
     this.gateTall = def.gateTall ?? 1
     // A 3 km run-up holds the grid; a 6 km run-off past the finish.
     const RUNUP = 3000, RACE = def.km * 1000, RUNOFF = 6000
-    const xAt = def.xAt
     const raw: [number, number][] = []
-    for (let z = -RUNUP; z <= RACE + RUNOFF; z += 5) raw.push([xAt(z), z])
+    // A loop: the path from a little before u = 0 (the grid) round past u = 1 (the run-off carries on
+    // into the first bends). An open course: x(z) from the run-up to the run-off.
+    let rawStart = 0
+    if (def.loop) {
+      const f = def.loop, u0 = -RUNUP / RACE, u1 = 1 + RUNOFF / RACE
+      const N = Math.ceil((RACE + RUNUP + RUNOFF) / 5)
+      for (let i = 0; i <= N; i++) {
+        const u = u0 + ((u1 - u0) * i) / N
+        if (u < 0) rawStart = i + 1
+        raw.push(f(((u % 1) + 1) % 1))
+      }
+    } else for (let z = -RUNUP; z <= RACE + RUNOFF; z += 5) raw.push([def.xAt!(z), z])
     const M = raw.length
     let total = 0
     const seg: number[] = []
@@ -229,11 +285,18 @@ export class Course {
     }
     // Arc-length index of a distance (m) from the start line.
     let startI = 0
-    while (startI < n - 1 && this.pz[startI] < 0) startI++
+    if (def.loop) {
+      let a0 = 0
+      for (let i = 0; i < rawStart - 1; i++) a0 += seg[i]
+      startI = Math.round(a0 / STEP)
+    } else while (startI < n - 1 && this.pz[startI] < 0) startI++
     this.startI = startI
     const at = (m: number) => Math.min(n - 1, startI + Math.round(m / STEP))
-    // The race distance along the line (not z): find the finish by walking the arc.
-    const finishI = Math.min(n - 1, startI + Math.round((RACE * 1.02) / STEP))
+    // The race distance along the line (not z): find the finish by walking the arc. (A loop: one lap,
+    // the finish back on the start line.)
+    let lapLen = 0
+    if (def.loop) { let [px0, pz0] = def.loop(0); for (let i = 1; i <= 8000; i++) { const [x, z] = def.loop(i / 8000); lapLen += Math.hypot(x - px0, z - pz0); px0 = x; pz0 = z } }
+    const finishI = Math.min(n - 1, startI + Math.round((def.loop ? lapLen : RACE * 1.02) / STEP))
     this.finishI = finishI
     const raceLen = (finishI - startI) * STEP
 
@@ -308,9 +371,11 @@ export class Course {
       const [ax, az] = this.tangent(Math.max(0, i - 3)), [bx, bz] = this.tangent(Math.min(n - 1, i + 3))
       this.curv[i] = Math.abs(Math.atan2(ax * bz - az * bx, ax * bx + az * bz)) / (6 * STEP)
     }
-    let x0 = Infinity, x1 = -Infinity
-    for (let i = 0; i < n; i++) { x0 = Math.min(x0, this.px[i]); x1 = Math.max(x1, this.px[i]) }
-    this.box = { x0, x1, z0: this.pz[0], z1: this.pz[n - 1] }
+    // (The z range measured, not taken from the ends: a loop doubles back — its box was 1 km deep and
+    // the mesa clearance never looked at most of it.)
+    let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity
+    for (let i = 0; i < n; i++) { x0 = Math.min(x0, this.px[i]); x1 = Math.max(x1, this.px[i]); z0 = Math.min(z0, this.pz[i]); z1 = Math.max(z1, this.pz[i]) }
+    this.box = { x0, x1, z0, z1 }
 
     // ── gates ──
     const dark = new THREE.MeshStandardMaterial({ color: 0x24262b, roughness: 0.45, metalness: 0.8 })
@@ -540,9 +605,10 @@ export class Course {
     const n = this.n
     let best = 0, bd = Infinity
     if (hint < 0) {
+      // (Near ties go to the earlier index: a loop's run-off lies over its own start.)
       for (let i = 0; i < n; i++) {
         const d = (this.px[i] - x) ** 2 + (this.pz[i] - z) ** 2
-        if (d < bd) { bd = d; best = i }
+        if (d < bd - 400) { bd = d; best = i }
       }
       return best
     }
