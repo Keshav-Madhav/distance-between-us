@@ -1,6 +1,7 @@
 // Shared shader helpers: fog patching for three's standard materials, and small noise functions.
 import * as THREE from 'three'
 import { SKY_GLSL, TERRAIN_GLSL } from './terrain'
+import { SHADOW_GLSL, SHADOW_U } from './shadow'
 
 export const NOISE_GLSL = /* glsl */ `
 float hash12(vec2 p) { vec3 p3 = fract(vec3(p.xyx) * 0.1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
@@ -58,6 +59,8 @@ export interface PatchOpts {
   ice?: boolean
   /** Basalt (CINDER's columns, cones and stacks): dark rock, ash on the tops, glowing splits. */
   lava?: boolean
+  /** Receives the sun shadow maps (src/shadow.ts). */
+  shadow?: boolean
   /** VERDANT: granite, bark and foliage by the aCrev mask; foliage sways (needs `aur` as the clock). */
   forest?: boolean
   /** With ice: the shards (spikes) — no snow cap, glowing tips that breathe with the aurora clock. */
@@ -73,10 +76,14 @@ export interface PatchOpts {
 export function patchStandard(mat: THREE.MeshStandardMaterial, opts: PatchOpts = {}): void {
   mat.fog = false
   // (three caches programs by onBeforeCompile's source text, the same for every patch: key it.)
-  mat.customProgramCacheKey = () => `patched-${opts.strata ? 'strata' : opts.lava ? 'lava' : opts.forest ? 'forest' : opts.ice ? (opts.spike ? 'spike' : 'ice') : 'plain'}`
+  mat.customProgramCacheKey = () => `patched-${opts.shadow ? 'sh-' : ''}${opts.strata ? 'strata' : opts.lava ? 'lava' : opts.forest ? 'forest' : opts.ice ? (opts.spike ? 'spike' : 'ice') : 'plain'}`
   mat.onBeforeCompile = (s) => {
     if (opts.strata) { s.uniforms.tRock = TEX.tRock; s.uniforms.tSand = TEX.tSand }
     if (opts.aur) s.uniforms.uAurT = opts.aur
+    if (opts.shadow) {
+      Object.assign(s.uniforms, SHADOW_U)
+      // (After the full patch below has declared vFogW: appended at the end of this callback.)
+    }
     if (opts.forest && opts.aur) s.uniforms.uWindT = opts.aur
     if (opts.ice || opts.lava || opts.forest) {
       // The crevasse depth (a geometry attribute) and the instance's own origin (a per-glacier seed).
@@ -312,6 +319,11 @@ export function patchStandard(mat: THREE.MeshStandardMaterial, opts: PatchOpts =
           diffuseColor.rgb = c;
         }`,
       )
+    }
+    if (opts.shadow) {
+      s.fragmentShader = s.fragmentShader
+        .replace('#include <common>', `#include <common>\n${SHADOW_GLSL}`)
+        .replace('#include <aomap_fragment>', `{ float shd = mix(0.25, 1.0, sunShadow(vFogW)); reflectedLight.directDiffuse *= shd; reflectedLight.directSpecular *= shd; }\n#include <aomap_fragment>`)
     }
   }
 }

@@ -14,6 +14,7 @@ import { Combat } from './combat'
 import { FlightCam, FlightCraft, type FlightControls } from './flight'
 import { Rings } from './rings'
 import { Tips } from './tips'
+import { markCasters, SunShadow } from './shadow'
 import { CANNON, Cannon, interceptT, Missiles, Rounds, segDist, type Target } from './hunt/weapons'
 import { DART, Darts } from './hunt/enemies'
 import { Sound } from './audio'
@@ -318,7 +319,7 @@ let fovMax = CFG.camera.fovMax
 /** After the finish: autopilot + cinematic camera, until Esc hands control back. */
 let spectate = false
 /** Graphics settings (the Esc panel). */
-const settings = { fps: 'auto' as 'auto' | '60' | '120' | 'max', map: true, scale: 1, dist: 20, part: 1, bloom: true, blur: 1, sharp: 0.4, grain: true, cloud: true }
+const settings = { shadows: !params.has('noshadow'), fps: 'auto' as 'auto' | '60' | '120' | 'max', map: true, scale: 1, dist: 20, part: 1, bloom: true, blur: 1, sharp: 0.4, grain: true, cloud: true }
 let crashBreak = 0
 const rivalVoices: import('./audio').RivalVoice[] = []
 const camRight = new THREE.Vector3()
@@ -1148,6 +1149,7 @@ function animTrackPreview(now: number): void {
 function pickShip(delta: number): void {
   shipPick = (shipPick + delta + MODELS.length) % MODELS.length
   myCraft.setModel(shipPick)
+  markCasters(myCraft.root)
   try { localStorage.setItem('dbu-ship', String(shipPick)) } catch { /* blocked */ }
   showCourse()
 }
@@ -1368,6 +1370,10 @@ let tier: Tier = tierName === 'auto' ? 'high' : tierName
 let renderScale = 1
 bootMark('mid')
 const post = new Post(renderer, scene, camera, TIERS[tier].samples)
+// Sun shadows (src/shadow.ts): mesas, trees, towers and ships cast them; off on the low tier.
+const sunShadow = new SunShadow()
+const markAllCasters = () => { markCasters(world.group); markCasters(course.group); for (const v of visuals.values()) markCasters(v.craft.root); markCasters(darts.mesh) }
+markAllCasters()
 function applyTier(): void {
   const t = TIERS[tier]
   post.setSamples(t.samples)
@@ -1441,6 +1447,7 @@ for (const id of ['#vm', '#vmu', '#vs']) $(id).oninput = vols
 sound.setCourse(course.def.id)
 $<HTMLSelectElement>('#mus').onchange = (e) => { sound.musicChoice = (e.target as HTMLSelectElement).value; sound.refreshMusic() }
 $<HTMLInputElement>('#rs').onchange = (e) => { CFG.camera.reduceShake = (e.target as HTMLInputElement).checked }
+$<HTMLInputElement>('#shadows').onchange = (e) => { settings.shadows = (e.target as HTMLInputElement).checked }
 $<HTMLInputElement>('#invp').onchange = (e) => { invertPitch = (e.target as HTMLInputElement).checked }
 $<HTMLInputElement>('#tipson').onchange = (e) => { tips.enabled = (e.target as HTMLInputElement).checked; if (!tips.enabled) tips.hide() }
 $('#tipsreset').onclick = () => { tips.reset(); pop('TIPS RESET') }
@@ -2172,6 +2179,8 @@ function frame(now: number): void {
   else sound.setSection('title')
   sound.update(realDt, engineMach, player.boost, player.brake, mode === 'hunt' ? combat.lockProgress : 0, mode === 'hunt' && combat.locked, play && !player.dead && !player.crashing, heat, player.burning, rivalVoices)
 
+  sunShadow.enabled = tier !== 'low' && settings.shadows
+  sunShadow.update(renderer, scene, camera.position, tmp.set(camera.matrixWorld.elements[8] * -1, 0, camera.matrixWorld.elements[10] * -1))
   post.render(realDt)
   if (freezeWanted) {
     freezeWanted = false

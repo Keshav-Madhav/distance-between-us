@@ -11,6 +11,7 @@ import { FOREST_VARIANTS, forestGeometry } from './forest'
 /** The world's own landform shapes (ice or basalt) — the desert's mesas come from mesaGeometry. */
 const landGeometry = (kind: 'mesa' | 'butte' | 'spire', seed: number, v: number) => BIOME === 'lava' ? lavaGeometry(kind, seed, v) : BIOME === 'forest' ? forestGeometry(kind, seed, v) : iceGeometry(kind, seed, v)
 import { FBMT_GLSL, NOISE_TEX, patchStandard, WORLD_GLSL } from './shaders'
+import { SHADOW_GLSL, SHADOW_U } from './shadow'
 
 export function rng(seed: number): () => number {
   let a = seed >>> 0
@@ -295,7 +296,7 @@ export interface GroundUniforms {
 
 function terrainMaterial(shared: GroundUniforms, snap: { value: THREE.Vector2 }, drop: number): THREE.ShaderMaterial {
   return new THREE.ShaderMaterial({
-    uniforms: { ...shared, ...MOUND_U, uSnap: snap, uDrop: { value: drop } },
+    uniforms: { ...shared, ...MOUND_U, ...SHADOW_U, uSnap: snap, uDrop: { value: drop } },
     vertexShader: /* glsl */ `
       ${WORLD_GLSL}
       uniform vec2 uSnap;
@@ -320,6 +321,7 @@ function terrainMaterial(shared: GroundUniforms, snap: { value: THREE.Vector2 },
       }`,
     fragmentShader: /* glsl */ `
       ${WORLD_GLSL}
+      ${SHADOW_GLSL}
       uniform vec3 uCraft;
       uniform vec2 uShadow;
       uniform float uShadowK;
@@ -478,6 +480,9 @@ function terrainMaterial(shared: GroundUniforms, snap: { value: THREE.Vector2 },
           float b = fbmT(cp * 0.00032) * 0.93;
           sun *= 1.0 - 0.6 * smoothstep(0.46, 0.68, b);
         }
+        // Cast shadows (mesas, trees, gate towers, the craft): sun light only, the sky fill stays.
+        float shd = sunShadow(vW);
+        sun *= shd;
         vec3 col = alb * (SUN_COL * sun + skyColor(n) * 0.36 + vec3(0.5, 0.22, 0.1) * 0.2);
         #ifdef BIOME_ICE
         // Snow is lit by the whole sky more than by the low sun; the ice mirrors the sky and aurora.
@@ -546,7 +551,8 @@ function terrainMaterial(shared: GroundUniforms, snap: { value: THREE.Vector2 },
         float halfw = 3.1 * clamp((5.6 - sa) / 9.8, 0.0, 1.0);
         float soft = 0.9 + uShadowK * 0.08;
         float inside = (1.0 - smoothstep(halfw - soft, halfw + soft, ss)) * smoothstep(-4.2 - soft, -4.2 + soft, sa) * (1.0 - smoothstep(5.6 - soft, 5.6 + soft, sa));
-        col *= 1.0 - (0.3 / (spread * spread)) * inside;
+        // (The painted-on shadow, now only a soft contact darkening: the shadow map draws the real one.)
+        col *= 1.0 - (0.3 / (spread * spread)) * inside * (1.0 - uShOn * 0.7);
         vec2 dc = p - uCraft.xz;
         float near = exp(-uShadowK * 0.25);
         float hov = exp(-dot(dc, dc) / 22.0) * near;
@@ -873,12 +879,12 @@ export class World {
 
     const mesaMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.92, metalness: 0, flatShading: true })
     const ICE = BIOME === 'ice', LAVA = BIOME === 'lava', FOREST = BIOME === 'forest'
-    if (ICE) { mesaMat.roughness = 0.3; patchStandard(mesaMat, { ice: true }) }
-    else if (LAVA) { mesaMat.roughness = 0.85; patchStandard(mesaMat, { lava: true }) }
-    else if (FOREST) { mesaMat.roughness = 0.8; mesaMat.flatShading = true; patchStandard(mesaMat, { forest: true, aur: AUR_T }) }
-    else patchStandard(mesaMat, { strata: true })
+    if (ICE) { mesaMat.roughness = 0.3; patchStandard(mesaMat, { ice: true, shadow: true }) }
+    else if (LAVA) { mesaMat.roughness = 0.85; patchStandard(mesaMat, { lava: true, shadow: true }) }
+    else if (FOREST) { mesaMat.roughness = 0.8; mesaMat.flatShading = true; patchStandard(mesaMat, { forest: true, aur: AUR_T, shadow: true }) }
+    else patchStandard(mesaMat, { strata: true, shadow: true })
     const spikeMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.18, metalness: 0, flatShading: true })
-    patchStandard(spikeMat, { ice: true, spike: true, aur: AUR_T })
+    patchStandard(spikeMat, { ice: true, spike: true, aur: AUR_T, shadow: true })
     this.spikeMat = spikeMat
     const r = rng(1234)
     const kinds: [Kind, number, number][] = BIOME === 'forest'
@@ -972,7 +978,7 @@ export class World {
     const bg = bGeo.toNonIndexed()
     bg.computeVertexNormals()
     const bMat = new THREE.MeshStandardMaterial({ color: 0x8a3a1c, roughness: 0.95, flatShading: true })
-    patchStandard(bMat, { strata: true })
+    patchStandard(bMat, { strata: true, shadow: true })
     const bw = new Wrapped(bg, bMat, 6000, 2400, 0.12, () => 0.92, false, keepOff, 3000)
     let bt = 0
     while (bw.items.length < 80 && bt++ < 4000) {
