@@ -6,7 +6,7 @@ import * as THREE from 'three'
 import { FullScreenQuad } from 'three/addons/postprocessing/Pass.js'
 import { CFG, MACH, REBASE } from './config'
 import { World } from './world'
-import { Craft, MODELS, type Paint } from './craft'
+import { primeModels, Craft, MODELS, type Paint } from './craft'
 import { Fx, resetE } from './particles'
 import { Trail } from './trails'
 import { Player } from './player'
@@ -34,6 +34,14 @@ function hex(c: number): string { let h = hexOf.get(c); if (!h) { h = '#' + new 
 
 const STEP = 1 / 60
 const params = new URLSearchParams(location.search)
+// Boot timing (tools read window.__boot): where the load spends its main-thread time.
+const BOOT: [string, number][] = [['start', performance.now()]]
+const bootMark = (name: string) => BOOT.push([name, performance.now()])
+/** Booting behind a running world (a swap, in a frame): hand the main thread back between heavy steps
+ *  so the world you are looking at keeps drawing. A no-op on a normal load. */
+const EMBED = window.parent !== window
+const breathe = () => (EMBED ? new Promise<void>((r) => setTimeout(r, 0)) : Promise.resolve())
+;(window as unknown as { __boot: typeof BOOT }).__boot = BOOT
 
 // ───────────────────────── seamless world / course swaps ─────────────────────────
 // A world is compiled in at load (sky, light, ground, landforms), so a new one is a new instance of
@@ -41,10 +49,13 @@ const params = new URLSearchParams(location.search)
 // this one keeps flying, menu up — and when it is ready it fades in and the old one retires (its
 // loop stops, its music fades, its GPU memory freed). The top window hosts every later swap.
 let retired = false
+/** Freeze the view (next frame is copied to #freeze, then rendering stops): see the #freeze CSS. */
+let freezeWanted = false, frozen = false
 let swapPending: string | null = null
 function swapTo(id: string, go: boolean): void {
   if (swapPending) return
   try { localStorage.setItem('dbu-course', id) } catch { /* blocked */ }
+  freezeWanted = true
   swapPending = COURSES.find((c) => c.id === id)?.name ?? id
   showCourse()
   const msg = { type: 'dbu-swap', id, go }
@@ -129,6 +140,8 @@ const courseDef = (() => {
   return COURSES.find((c) => c.id === id) ?? COURSES[0]
 })()
 const course = new Course(courseDef)
+bootMark('course')
+await breathe()
 let pickedCourse = COURSES.indexOf(courseDef)
 // Worlds first, then the courses in that world.
 const WORLDS = [
@@ -149,6 +162,8 @@ const clearAt = (x: number, z: number, r: number) => {
   return true
 }
 const world = new World(clearAt, (x, z, r) => course.distance(x, z) < 460 + r)
+bootMark('world')
+await breathe()
 world.addFixed(course.rocks)
 // The polar world's set pieces: glaciers, seracs and spike fields placed close beside the line
 // (150–400 m off its edge), so the race threads past the ice instead of seeing it on the horizon.
@@ -246,9 +261,13 @@ if (BIOME !== 'desert') {
 scene.add(world.group)
 scene.add(course.group)
 const env = world.makeEnv(renderer)
+bootMark('heroes+env')
+await breathe()
 loadBar.style.width = '30%'
 const tex = await loadTextures(renderer)
 world.applyTextures(tex)
+bootMark('textures')
+await breathe()
 {
   const w = course.wearTexture()
   world.ground.tTrack.value = w.tex
@@ -305,6 +324,7 @@ let whooshCool = 0
 const shake = (t: number) => { cam.trauma = Math.min(1, cam.trauma + t) }
 const huntObs: import('./world').Obstacle[] = []
 
+bootMark('pre-race')
 const race = new Race(course, player, {
   gate(r, lapDone, missed) {
     if (r.p !== player) return
@@ -393,7 +413,12 @@ for (let i = PAINTS.length; i < race.racers.length; i++)
   PAINTS.push({ body: i % 2 ? 0x1c1e24 : 0xe6e8ec, trim: race.racers[i].color, number: String(40 + i * 3) })
 interface Visual { craft: Craft; trail: Trail[]; vapour: Trail[]; lastDust: THREE.Vector3; heading: number; wasDead: boolean; wasHidden: boolean }
 const visuals = new Map<Player, Visual>()
-race.racers.forEach((r, i) => {
+bootMark('race')
+// Ship geometry from a worker: the page keeps drawing while six models build.
+await primeModels([0, 1, 2, 3, 4, 5])
+bootMark('models')
+for (const [i, r] of race.racers.entries()) {
+  await breathe()
   // Your ship: the one picked on the title (saved); the field: a spread of all six.
   const craft = new Craft(env, PAINTS[i], i === 0 ? shipPick : (i * 7) % MODELS.length)
   scene.add(craft.root)
@@ -418,7 +443,7 @@ race.racers.forEach((r, i) => {
     r.p.onCrash = (sev, big, x, y, z) => { if (camera.position.distanceTo(r.p.pos) < 800) sparks(x, y, z, r.p.vel, big ? 30 : 10, 0.7 + sev) }
     r.p.onLand = (impact) => { if (camera.position.distanceTo(r.p.pos) < 700) landDust(r.p, impact) }
   }
-})
+}
 const myCraft = visuals.get(player)!.craft
 
 // ── wrecks: every racer's crash and every bounce of it ──
@@ -500,6 +525,7 @@ const shadowS = new THREE.Vector3()
 const Y_AXIS = new THREE.Vector3(0, 1, 0)
 
 // Hunt mode: the old combat sandbox.
+bootMark('crafts')
 const combat = new Combat({
   player,
   fx,
@@ -1336,6 +1362,7 @@ const TIERS: Record<Tier, { pr: number; samples: number; bloom: boolean; density
 let tierName = ((params.get('q') as Tier | null) ?? 'auto') as Tier | 'auto'
 let tier: Tier = tierName === 'auto' ? 'high' : tierName
 let renderScale = 1
+bootMark('mid')
 const post = new Post(renderer, scene, camera, TIERS[tier].samples)
 function applyTier(): void {
   const t = TIERS[tier]
@@ -1876,7 +1903,7 @@ function paceAuto(delta: number, now: number): void {
 }
 
 function frame(now: number): void {
-  if (retired) return
+  if (retired || frozen) return
   requestAnimationFrame(frame)
   rafGaps[rafHead] = now - lastRaf; lastRaf = now
   rafHead = (rafHead + 1) % 30; if (rafN < 30) rafN++
@@ -2130,6 +2157,14 @@ function frame(now: number): void {
   sound.update(realDt, engineMach, player.boost, player.brake, mode === 'hunt' ? combat.lockProgress : 0, mode === 'hunt' && combat.locked, play && !player.dead && !player.crashing, heat, player.burning, rivalVoices)
 
   post.render(realDt)
+  if (freezeWanted) {
+    freezeWanted = false
+    const fz = $<HTMLCanvasElement>('#freeze'), src = renderer.domElement
+    fz.width = src.width; fz.height = src.height
+    fz.getContext('2d')!.drawImage(src, 0, 0)
+    fz.classList.add('on')
+    frozen = true
+  }
   renderMap()
   hudT -= realDt
   updateHud(realDt, hudT <= 0)
@@ -2620,16 +2655,49 @@ scene.traverse((o) => {
 })
 const wreckCount = wreckage.mesh.count
 ;wreckage.mesh.count = 1
+bootMark('pre-compile')
 await renderer.compileAsync(scene, camera)
+// The post passes' shaders too, both ways they are drawn (into a target, to the screen): compiled on
+// their first use they stalled a world switch ~200 ms.
+{
+  const ps = new THREE.Scene(), plane = new THREE.PlaneGeometry(1, 1)
+  for (const m of post.materials()) ps.add(new THREE.Mesh(plane, m))
+  const rt = new THREE.WebGLRenderTarget(4, 4, { type: THREE.HalfFloatType })
+  renderer.setRenderTarget(rt); await renderer.compileAsync(ps, camera)
+  renderer.setRenderTarget(null); await renderer.compileAsync(ps, camera)
+  rt.dispose()
+}
+bootMark('compile')
+// First draws upload every buffer and texture: in a swap, a slice of the scene at a time (one full
+// frame of uploads stalled the world on screen for ~300 ms).
+if (EMBED) {
+  // Render units: the scene's children, with big groups (the world: terrain, sky, every rock mesh)
+  // split into their own children — the world group alone was a 190 ms first draw.
+  const units: THREE.Object3D[] = []
+  for (const o of scene.children) { if (o.children.length > 12) units.push(...o.children); else units.push(o) }
+  const all: THREE.Object3D[] = []
+  scene.traverse((o) => { if (o !== scene) all.push(o) })
+  const was = new Map(all.map((o) => [o, o.visible] as const))
+  for (let i = 0; i < units.length; i += 8) {
+    for (const o of all) o.visible = false
+    for (const u of units.slice(i, i + 8)) { u.traverse((o) => { o.visible = true }); let p = u.parent; while (p && p !== scene) { p.visible = true; p = p.parent } }
+    renderer.render(scene, camera)
+    await breathe()
+  }
+  for (const [o, v] of was) o.visible = v
+  bootMark('slices')
+}
 post.render(0.016)
+bootMark('post1')
 renderer.setRenderTarget(mapRT); renderer.render(scene, mapCam); renderer.setRenderTarget(null)
 mapQuad.render(renderer)
+bootMark('map')
 for (const o of hidden) o.visible = false
 for (const o of culled) o.frustumCulled = true
 ;wreckage.mesh.count = wreckCount
 renderer.clear()
 post.render(0.016)
-loadBar.style.width = '100%'
+bootMark('warm'); loadBar.style.width = '100%'
 $('#loading').classList.add('hide')
 $('#title').classList.remove('hide')
 requestAnimationFrame((t) => { last = t; frame(t) })

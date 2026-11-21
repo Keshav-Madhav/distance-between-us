@@ -8,8 +8,7 @@
 import * as THREE from 'three'
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
 import { patchStandard } from './shaders'
-import { buildShip } from './shipdesign'
-import { buildClassic } from './shipclassic'
+import { buildModelArrays, type ModelArrays } from './shipbuild'
 
 /** The ships: three classics (the first model, refined) and three lofted. */
 export const MODELS = ['VANGUARD', 'BULWARK', 'LANCE', 'ARROW', 'BRUTE', 'NEEDLE'] as const
@@ -19,34 +18,43 @@ const NOZZLE_Z = -4.45
 
 export interface Paint { body: number; trim: number; number: string }
 
-const _m = new THREE.Matrix4()
-const _q = new THREE.Quaternion()
-const _e = new THREE.Euler()
-const _s = new THREE.Vector3()
-const _p = new THREE.Vector3()
 const _soot = new THREE.Color(0x17110d)
 
-class Builder {
-  private readonly parts = new Map<string, THREE.BufferGeometry[]>()
-  add(key: string, g: THREE.BufferGeometry, x = 0, y = 0, z = 0, rx = 0, ry = 0, rz = 0, sx = 1, sy = 1, sz = 1): void {
-    const geo = g.index ? g.toNonIndexed() : g.clone()
-    for (const name of Object.keys(geo.attributes)) if (name !== 'position' && name !== 'normal') geo.deleteAttribute(name)
-    _m.compose(_p.set(x, y, z), _q.setFromEuler(_e.set(rx, ry, rz)), _s.set(sx, sy, sz))
-    geo.applyMatrix4(_m)
-    if (!this.parts.has(key)) this.parts.set(key, [])
-    this.parts.get(key)!.push(geo)
+
+/** Each model's merged geometry, built once and shared by every craft flying it (ten racers rebuilt
+ *  the same lofts: 760 ms of a world switch). Built in a worker (primeModels) so the page keeps
+ *  drawing; built here if it is asked for first. Materials stay per craft (paint). */
+interface ModelGeo { hi: [string, THREE.BufferGeometry][]; lo: [string, THREE.BufferGeometry][]; spec: ModelArrays['spec'] }
+const MODEL_CACHE = new Map<number, ModelGeo>()
+function fromArrays(m: ModelArrays): ModelGeo {
+  const geo = ([key, p, n]: [string, Float32Array, Float32Array]): [string, THREE.BufferGeometry] => {
+    const g = new THREE.BufferGeometry()
+    g.setAttribute('position', new THREE.BufferAttribute(p, 3))
+    g.setAttribute('normal', new THREE.BufferAttribute(n, 3))
+    g.computeBoundingSphere()
+    return [key, g]
   }
-  /** Also mirrored across x = 0. */
-  addSym(key: string, g: THREE.BufferGeometry, x: number, y: number, z: number, rx = 0, ry = 0, rz = 0, sx = 1, sy = 1, sz = 1): void {
-    this.add(key, g, x, y, z, rx, ry, rz, sx, sy, sz)
-    this.add(key, g, -x, y, z, rx, -ry, -rz, sx, sy, sz)
-  }
-  build(mats: Record<string, THREE.Material>, into: THREE.Object3D): void {
-    for (const [key, list] of this.parts) {
-      const g = mergeGeometries(list)
-      into.add(new THREE.Mesh(g, mats[key]))
-    }
-  }
+  return { hi: m.hi.map(geo), lo: m.lo.map(geo), spec: m.spec }
+}
+function modelGeo(model: number): ModelGeo {
+  let m = MODEL_CACHE.get(model)
+  if (!m) { m = fromArrays(buildModelArrays(model)); MODEL_CACHE.set(model, m) }
+  return m
+}
+/** Build these models' geometry in a worker; resolves when they are all cached (or built here if a
+ *  worker cannot start). */
+export function primeModels(models: number[]): Promise<void> {
+  const want = models.filter((m) => !MODEL_CACHE.has(m))
+  if (!want.length) return Promise.resolve()
+  return new Promise((done) => {
+    let w: Worker
+    try { w = new Worker(new URL('./shipworker.ts', import.meta.url), { type: 'module' }) } catch { for (const m of want) modelGeo(m); done(); return }
+    let left = want.length
+    const finish = () => { w.terminate(); done() }
+    w.onmessage = (e: MessageEvent<ModelArrays>) => { if (!MODEL_CACHE.has(e.data.model)) MODEL_CACHE.set(e.data.model, fromArrays(e.data)); if (--left === 0) finish() }
+    w.onerror = () => { for (const m of want) modelGeo(m); finish() }
+    w.postMessage(want)
+  })
 }
 
 function numberTexture(text: string, color: string): THREE.Texture {
@@ -223,16 +231,15 @@ export class Craft {
   setModel(model: number): void {
     if (model === this.model) return
     this.model = model
-    const build = (hi: boolean) => (model < 3 ? buildClassic(model, hi) : buildShip(model - 3, hi))
+    // (Geometry is shared through MODEL_CACHE: removed, never disposed; the number planes are ours.)
     for (const grp of [this.hi, this.lo]) {
-      for (const c of [...grp.children]) { grp.remove(c); (c as THREE.Mesh).geometry?.dispose() }
+      for (const c of [...grp.children]) { grp.remove(c); if ((c as THREE.Mesh).geometry instanceof THREE.PlaneGeometry) (c as THREE.Mesh).geometry.dispose() }
     }
     for (const f of this.flames) { this.body.remove(f); f.geometry.dispose() }
     this.flames = []
-    const { parts, spec } = build(true)
-    const B = new Builder()
-    for (const [key, list] of parts) for (const g of list) B.add(key, g)
-    B.build(this.mats, this.hi)
+    const G = modelGeo(model)
+    const spec = G.spec
+    for (const [key, g] of G.hi) this.hi.add(new THREE.Mesh(g, this.mats[key]))
     spec.nozzles.forEach(([x, y], i) => this.nozzles[i].set(x, y, spec.nozzleZ - 0.1))
     const [wx, wy, wz] = spec.wingtip
     this.wingtips[0].set(-wx, wy, wz); this.wingtips[1].set(wx, wy, wz)
@@ -247,9 +254,7 @@ export class Craft {
       plane.rotateX(N.tilt)
       this.hi.add(plane)
     }
-    const L = new Builder()
-    for (const [key, list] of build(false).parts) for (const g of list) L.add(key, g)
-    L.build(this.mats, this.lo)
+    for (const [key, g] of G.lo) this.lo.add(new THREE.Mesh(g, this.mats[key]))
     // Flames: two draws for all three nozzles.
     for (const [r, m] of [[0.48, this.flameMat], [0.26, this.innerMat]] as const) {
       const f = new THREE.Mesh(flameGeometry(r, spec.nozzles, spec.nozzleZ), m)

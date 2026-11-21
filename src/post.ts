@@ -209,4 +209,11 @@ export class Post {
   setSamples(n: number): void { this.target.samples = n }
 
   render(dt: number): void { this.composer.render(dt) }
+  /** Every material the passes use (for compiling them ahead of the first frame, off the hitch). */
+  materials(): THREE.Material[] {
+    const out = new Set<THREE.Material>()
+    const take = (v: unknown) => { if (v instanceof THREE.Material) out.add(v); else if (Array.isArray(v)) for (const x of v) if (x instanceof THREE.Material) out.add(x) }
+    for (const pass of this.composer.passes) for (const v of Object.values(pass)) take(v)
+    return [...out]
+  }
 }
