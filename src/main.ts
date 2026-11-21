@@ -470,6 +470,7 @@ const enemyEls = Array.from({ length: 14 }, () => {
   $('#tags').appendChild(d)
   return d
 })
+const tagPlaced: { d: HTMLElement; x: number; y: number; dist: number; stacked?: boolean }[] = []
 const tagEls = race.racers.filter((r) => r.ai).map((r) => {
   const d = document.createElement('div')
   d.className = 'tag'
@@ -2242,6 +2243,7 @@ function updateHud(dt: number, slow: boolean): void {
     if (offT > 1 && warnT < 0.5) warn('OFF COURSE', 'R TO RETURN TO THE LAST GATE')
     for (const el of enemyEls) el.style.display = 'none'
     // Rival tags.
+    tagPlaced.length = 0
     for (const { r, d } of tagEls) {
       const dist = r.p.pos.distanceTo(camera.position)
       proj.set(r.p.pos.x, r.p.pos.y + 4, r.p.pos.z).project(camera)
@@ -2254,9 +2256,20 @@ function updateHud(dt: number, slow: boolean): void {
         // the view hid the spires you were about to meet. Near the centre of the screen, fainter still.
         const far = dist > 1200
         if (d.classList.contains('far') !== far) d.classList.toggle('far', far)
+        tagPlaced.push({ d, x: (proj.x * 0.5 + 0.5) * innerWidth, y: (-proj.y * 0.5 + 0.5) * innerHeight, dist })
         const centre = Math.hypot(proj.x, proj.y * 1.6)
         d.style.opacity = String(THREE.MathUtils.clamp(1.2 - dist / 8000, 0.45, 1) * (far ? 0.6 : 1) * THREE.MathUtils.lerp(0.45, 1, THREE.MathUtils.smoothstep(centre, 0.08, 0.3)))
       }
+    }
+    // Bunched up (at a gate, in the pack far ahead): the nearest keeps its name, any tag overlapping a
+    // nearer one shrinks to its chevron — a clump of names read as nothing.
+    tagPlaced.sort((a, b) => a.dist - b.dist)
+    for (let i = 0; i < tagPlaced.length; i++) {
+      const t = tagPlaced[i]
+      let hidden = false
+      for (let j = 0; j < i; j++) if (!tagPlaced[j].stacked && Math.abs(tagPlaced[j].x - t.x) < 70 && Math.abs(tagPlaced[j].y - t.y) < 18) { hidden = true; break }
+      t.stacked = hidden
+      if (hidden && !t.d.classList.contains('far')) t.d.classList.add('far')
     }
     const c = course.cps[Math.min(me.next, course.cps.length - 1)]
     // The next gate: a diamond on it when on screen (with distance), the edge arrow when not.

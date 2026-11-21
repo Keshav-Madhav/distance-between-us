@@ -379,6 +379,10 @@ function terrainMaterial(shared: GroundUniforms, snap: { value: THREE.Vector2 },
           alb = mix(alb, vec3(0.16, 0.08, 0.05), smoothstep(0.45, 0.9, streak) * 0.35);
           #endif
         }
+        // Fine grain right under you: a fifth-scale octave of the ground texture, close in only — the
+        // speed blur has something to smear, and the ground reads as rushing past.
+        float nearG = 1.0 - smoothstep(25.0, 150.0, length(vW - cameraPosition));
+        if (nearG > 0.0) alb *= 1.0 + (dot(texture2D(tSand, p / 5.0, bias).rgb, vec3(0.333)) - 0.45) * 0.4 * nearG;
         alb *= 0.72;
         float sun = max(dot(n, SUN_DIR), 0.0);
         // Cloud shadows: the same coverage the sky draws, projected down along the sun, drifting.
