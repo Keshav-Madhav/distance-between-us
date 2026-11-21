@@ -119,7 +119,8 @@ export class Race {
       const slot = k === 0 ? mine : k <= mine ? k - 1 : k
       const row = Math.floor(slot / cols), col = slot % cols
       const back = 60 + row * (wide ? 60 : 45)
-      const side = wide ? (col - 1.5) * 68 : (col === 0 ? -1 : 1) * 32
+      // (Four abreast, alternate rows staggered half a slot: nobody sits dead behind another.)
+      const side = wide ? (col - 1.5) * 68 + (row % 2 ? 34 : 0) : (col === 0 ? -1 : 1) * 32
       const x = start.x - start.tx * back + start.tz * side
       const z = start.z - start.tz * back - start.tx * side
       r.p.reset(x, z, heading, 0)
@@ -140,8 +141,7 @@ export class Race {
       r.respawnT = 0
       r.p.maxMach = r.ai ? 4.7 + r.skill * 1.3 : CFG.speed.boostMach
       // The drag race tops out around Mach 11 (flat out with the burner); elsewhere the usual ceiling.
-      r.p.capMach = c.def.drag ? 11 : CFG.speed.burnCap
-      r.p.rampRide = !!c.def.drag
+      r.p.burnMul = 1
     })
     this.state = 'grid'
     this.clock = 0
@@ -209,14 +209,18 @@ export class Race {
       this.pads(r, dt)
     }
     // Wakes: right behind a rival (40–300 m, within ~30 m across) you're in its turbulent slipstream.
+    // (Drag: no slipstream for the first 6 s — off the grid every back row drafted into the one ahead.)
+    const wakeOn = !this.course.def.drag || this.clock > 6
     for (const r of this.racers) {
       let w = 0
       for (const o of this.racers) {
-        if (o === r || o.p.dead || o.p.crashing) continue
+        if (o === r || o.p.dead || o.p.crashing || !wakeOn) continue
         const dx = o.p.pos.x - r.p.pos.x, dz = o.p.pos.z - r.p.pos.z
         const ahead = dx * r.p.fwd.x + dz * r.p.fwd.z
         const side = Math.abs(dx * r.p.right.x + dz * r.p.right.z)
-        if (ahead > 40 && ahead < 300 && side < 32) w = Math.max(w, (1 - side / 32) * (1 - (ahead - 40) / 260))
+        // (The wake stretches with speed: 300 m is 80 ms at Mach 11 — it could hardly be held.)
+        const len = 300 + r.p.speed * 0.3, wid = 38
+        if (ahead > 30 && ahead < len && side < wid) w = Math.max(w, (1 - side / wid) * (1 - (ahead - 30) / (len - 30)))
       }
       r.p.wake += (w - r.p.wake) * Math.min(1, dt * 4)
     }
@@ -334,7 +338,8 @@ export class Race {
     // (Drag: the first 10 s each holds its grid lane — no wander through a four-wide pack.)
     let lane = r.lane + Math.sin(r.laneT * 0.21 + r.skill * 9) * 70 * (c.def.drag ? THREE.MathUtils.clamp((this.clock - 10) / 8, 0, 1) : 1)
     // (Drag: no swerving off the grid — every racer has one 60 m ahead in its lane, and all swung at once.)
-    const settled = !c.def.drag || this.clock > 8
+    // (Drag: no lane swings at all — the side thrusters below do the dodging, only when closing.)
+    const settled = !c.def.drag
     for (const o of this.racers) {
       if (o === r || !settled) continue
       const dx = o.p.pos.x - p.pos.x, dz = o.p.pos.z - p.pos.z
@@ -437,23 +442,18 @@ export class Race {
     const clearAhead = !this.course.rocks.some((rk) => rk.i > r.idx && rk.i < r.idx + (p.speed * 3) / 40 && Math.abs(rk.lat - lane) < rk.r * 1.8 + 80)
     ctl.burner = ctl.boost && bend < 0.06 && Math.abs(err) < 0.08 && clearAhead && p.mach > 3.5 && p.mach < 5.6 + r.skill * 2.4
     ctl.brake = p.mach > safe * 1.08
-    // Drag race: the field paces itself on you — each racer steers its speed toward yours plus a pull
-    // back toward where you are, with its own slow jostle, so it stays neck and neck and positions
-    // trade. The last 25 km the pull loosens and they race for real. (Never below Mach 5.5 once
-    // going: you can still be left behind.)
+    // Drag race: they race their own race, flat out — the same physics as you, a skill spread of a few
+    // per cent in the burner's soft limit, and the slipstream. Nobody waits for you: drop to Mach 4 and
+    // you lose (they used to slow down to pace you — "that doesn't make sense", 2026-11-21). The only
+    // help is one way: a rival far behind you gets a little extra so it is not out of it for good.
     if (c.def.drag && this.state === 'racing') {
-      const me = this.racers[0]
-      const gap = this.progress(r) - this.progress(me)
-      const late = this.toGo(r) < 25000
-      const jostle = Math.sin(r.laneT * 0.13 + r.skill * 7) * 45 + Math.sin(r.laneT * 0.37 + r.skill * 3) * 20
-      const floor = this.clock > 12 ? 5.5 * MACH : 0
-      const want = Math.max(me.p.speed, floor) - THREE.MathUtils.clamp(gap * (late ? 0.12 : 0.45), -1000, 320) + jostle + (r.skill - 1) * (late ? 140 : 50)
+      const gap = this.progress(r) - this.progress(this.racers[0])
       p.maxMach = 30
-      // Behind you at the ceiling it could never close: a little headroom when behind.
-      p.capMach = 11 + THREE.MathUtils.clamp(-gap / 1500, 0, 3)
-      ctl.boost = p.speed < want + 30
-      ctl.burner = p.speed < want - 15 && p.mach > (gap < -150 ? 1 : 2.5) && !p.airborne
-      ctl.brake = p.speed > want + 260
+      // (A spread of ±1–2%: a 6% spread strung the field out over 90 km.)
+      p.burnMul = 0.985 + (r.skill - 0.78) * 0.06 + THREE.MathUtils.clamp(-gap / 40000, 0, 0.03)
+      ctl.boost = true
+      ctl.burner = p.mach > 1.5 && !p.airborne
+      ctl.brake = false
     }
     ctl.strafe = 0
     // Drag race: dodge on the side thrusters (the burner locks the stick, not the thrusters) — a
@@ -465,7 +465,8 @@ export class Race {
         const dx = o.p.pos.x - p.pos.x, dz = o.p.pos.z - p.pos.z
         const ahead = dx * p.fwd.x + dz * p.fwd.z, side = dx * p.right.x + dz * p.right.z
         const closing = Math.max(0, (p.vel.x - o.p.vel.x) * p.fwd.x + (p.vel.z - o.p.vel.z) * p.fwd.z)
-        if ((ahead > -10 && ahead < 120 + closing * 1.2 && Math.abs(side) < 26) || (Math.abs(ahead) < 45 && Math.abs(side) < 30)) push += side > 0 ? -1 : 1
+        // (Only when actually closing: at matched speed the whole grid saw one ahead and swerved at once.)
+        if ((closing > 25 && ahead > -10 && ahead < 120 + closing * 1.2 && Math.abs(side) < 26) || (Math.abs(ahead) < 40 && Math.abs(side) < 18)) push += side > 0 ? -1 : 1
       }
       ctl.strafe = THREE.MathUtils.clamp(push, -1, 1)
     }

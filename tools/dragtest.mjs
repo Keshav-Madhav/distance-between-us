@@ -3,19 +3,28 @@
 import { chromium } from 'playwright-core'
 import { mkdirSync } from 'node:fs'
 const BURN = process.argv[2] !== '0'
+// MESS=1: a mistake mid-race — 4 s off the throttle and braking (down to ~Mach 3), then flat out again.
+const MESS = !!process.env.MESS
 mkdirSync('shots/run11', { recursive: true })
 const browser = await chromium.launch({ channel: 'chrome', headless: true, args: ['--mute-audio', '--use-gl=angle', '--ignore-gpu-blocklist'] })
 const page = await (await browser.newContext({ viewport: { width: 1280, height: 720 } })).newPage()
 page.on('pageerror', (e) => console.log('ERR', e.message))
 await page.goto('http://localhost:4417/?fixed&course=drag'); await page.waitForFunction('window.__g && window.__g.ready')
-await page.evaluate((burn) => {
+await page.evaluate(([burn, mess]) => {
   const g = window.__g, me = g.race.racers[0]
   window.__st = { bumps: 0, air: 0, maxM: 0, wasAir: false, crashes: 0, wasC: false }
   g.race.ev.bumped = ((f) => (...a) => { window.__st.bumps++; return f(...a) })(g.race.ev.bumped)
   const tick = () => {
     if (g.race.state === 'racing' && !me.finished) {
+      // Like a player: tuck into the slipstream of the nearest racer ahead (within 1.5 km).
+      const c = g.course, [tx, tz] = c.tangent(me.idx)
+      const lat = (r) => (r.p.pos.x - c.px[me.idx]) * -tz + (r.p.pos.z - c.pz[me.idx]) * tx
+      let best = null, bd = 1500
+      for (const o of g.race.racers) { if (o === me || o.p.crashing) continue; const a = g.race.progress(o) - g.race.progress(me); if (a > 40 && a < bd) { bd = a; best = o } }
+      me.lane = best ? lat(best) : 0; me.laneT = -1e9
       g.race.drive(me, 1 / 60)
-      g.force({ steer: me.controls.steer, boost: true, burner: burn && !g.player.airborne, brake: false, strafe: 0, dodgeL: false, dodgeR: false })
+      const oops = mess && g.race.clock > 20 && g.race.clock < 24
+      g.force({ steer: me.controls.steer, boost: !oops, burner: !oops && burn && !g.player.airborne, brake: oops, strafe: 0, dodgeL: false, dodgeR: false })
     } else g.force({ steer: 0, boost: g.race.state !== 'grid' || g.race.countdown < 0.4, burner: false, brake: false, strafe: 0, dodgeL: false, dodgeR: false })
     const s = window.__st, p = g.player
     s.maxM = Math.max(s.maxM, p.mach)
@@ -26,7 +35,7 @@ await page.evaluate((burn) => {
   }
   tick()
   g.start()
-}, BURN)
+}, [BURN, MESS])
 const t0 = Date.now(); let shot = 0
 while (Date.now() - t0 < 240000) {
   await page.waitForTimeout(5000)

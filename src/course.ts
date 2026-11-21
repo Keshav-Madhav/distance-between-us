@@ -46,8 +46,8 @@ export interface CourseDef {
   /** Jump size: height ×, radius × (default 1, 1). */
   rampH?: number
   rampR?: number
-  /** Each jump a row of three across the line (a wide field all gets one). */
-  rampRow?: boolean
+  /** Each jump on one half of the track, alternating sides: take it or go round (the drag race). */
+  rampHalf?: boolean
 }
 
 const ramp8 = (z: number) => (z <= 0 ? 0 : z >= 8000 ? 1 : (z / 8000) ** 2 * (3 - (2 * z) / 8000))
@@ -124,9 +124,9 @@ export const DRAG: CourseDef = {
   // Straight, with a breath of a curve so it is not a ruler line.
   xAt: (z) => ramp8(z) * 700 * Math.sin((2 * Math.PI * z) / 95000),
   gateEvery: 20000,
-  // Ramps every ~18 km (big ones: at Mach 10 a crest throws you for kilometres).
-  // Ten ramps, each a row of three (30 mounds: the terrain takes 32).
-  jumps: [0.06, 0.15, 0.24, 0.33, 0.42, 0.51, 0.6, 0.69, 0.78, 0.87],
+  // Ramps every ~11 km, each on one side.
+  // Sixteen ramps, each on one half of the track (alternating), so taking one is a choice.
+  jumps: [0.05, 0.1, 0.16, 0.21, 0.27, 0.33, 0.38, 0.44, 0.5, 0.55, 0.61, 0.67, 0.72, 0.78, 0.84, 0.9],
   whoops: [],
   padEvery: 12000,
   spireGap: () => null,
@@ -136,10 +136,10 @@ export const DRAG: CourseDef = {
   racers: 20,
   drag: true,
   wear: 0.3,
-  // Steep enough to throw you at Mach 11 (the launch bar rises with speed).
-  rampH: 2.2,
-  rampR: 1.3,
-  rampRow: true,
+  // (Gentler: "too aggressive" at 2.2× — 2026-11-21.) Still launches at Mach 11; ~half the track wide.
+  rampH: 1.5,
+  rampR: 0.95,
+  rampHalf: true,
 }
 
 export const COURSES: CourseDef[] = [SPRINT, DRY_RIVER, DRAG]
@@ -238,8 +238,8 @@ export class Course {
       const [tx, tz] = this.tangent(i)
       const off = k % 3 === 1 ? 110 : k % 3 === 2 ? -110 : 0
       const h = (26 + (k % 4) * 4) * (def.rampH ?? 1), rr = (125 + (k % 3) * 20) * (def.rampR ?? 1)
-      if (def.rampRow) for (const o of [-150, 0, 150]) mounds.push(this.px[i] + tz * o, this.pz[i] - tx * o, h, rr)
-      else mounds.push(this.px[i] + tz * off, this.pz[i] - tx * off, h, rr)
+      const o = def.rampHalf ? (k % 2 ? 125 : -125) : off
+      mounds.push(this.px[i] + tz * o, this.pz[i] - tx * o, h, rr)
     })
     for (const f of def.whoops) {
       for (let w = 0; w < 4; w++) {

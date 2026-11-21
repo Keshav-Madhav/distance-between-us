@@ -566,7 +566,8 @@ function pop(text: string): void {
   setTimeout(() => d.remove(), 1700)
 }
 const fmtTime = (t: number) => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, '0')}`
-const fmtLap = (t: number) => `${Math.floor(t / 60)}:${(t % 60).toFixed(1).padStart(4, '0')}`
+// (Milliseconds: a drag-race finish is decided by hundredths.)
+const fmtLap = (t: number) => `${Math.floor(t / 60)}:${(t % 60).toFixed(3).padStart(6, '0')}`
 const ord = (n: number) => `${n}${n === 1 ? 'ST' : n === 2 ? 'ND' : n === 3 ? 'RD' : 'TH'}`
 
 function showResults(): void {

@@ -73,10 +73,10 @@ export class Player {
   topMach = 0
   /** Speed multiplier ceiling (AI skill / rubber band). */
   maxMach = CFG.speed.boostMach
-  /** The afterburner's ceiling (Mach): the drag race sets its own. */
+  /** The afterburner's hard ceiling (safety only). */
   capMach = CFG.speed.burnCap
-  /** Ride a ramp's face up to its crest instead of re-landing on it (the drag race's ramps). */
-  rampRide = false
+  /** × the burner's soft limit (AI skill spread; a racer well behind gets a little). */
+  burnMul = 1
   /** 0 … 1 = within grip, > 1 = sliding (for the gauge). */
   gripLoad = 0
   /** 0 … 1: how close the slide is to a spin-out. */
@@ -246,8 +246,11 @@ export class Player {
     if (this.airborne) k *= 0.35
     const before = this.speed
     // Slipstream: in a rival's wake the air is thinner — a pull forward (and the buffeting above).
-    if (this.wake > 0) this.speed += 55 * this.wake * dt
-    if (burning) this.speed += S.burnAccel * dt * (this.airborne ? 0.5 : 1)
+    if (this.wake > 0) this.speed += 110 * this.wake * dt
+    // The burner's push fades as you near its soft limit (thin air, not a wall); in a slipstream the
+    // limit rises — that is how you close on someone faster.
+    const soft = S.burnSoft * this.burnMul * (1 + 0.22 * this.wake)
+    if (burning) this.speed += S.burnAccel * dt * (this.airborne ? 0.5 : 1) * Math.max(0, 1 - (m / soft) ** 2)
     if (!burning || this.speed < target) this.speed += (target - this.speed) * (1 - Math.exp(-k * dt))
     this.speed -= Math.abs(this.yawRate) * S.turnBleed * this.speed * dt
 
@@ -396,7 +399,8 @@ export class Player {
       if (slope > 0.02 && (slope - slopeAhead) * hs > LAUNCH_DV + 0.05 * hs) {
         this.airborne = true
         this.airTime = 0
-        this.vy = Math.min(terrainVy, 20 + 5 * m)
+        // (Toned down: ~3.5 s of air at Mach 11, ~2.5 s at Mach 6.)
+        this.vy = Math.min(terrainVy, 18 + 4 * m)
         this.onLaunch?.(this.vy)
       } else {
         const w = H.hoverW
@@ -411,11 +415,12 @@ export class Player {
       this.airTime += dt
       this.vy -= (GRAVITY + (c.brake && this.tumble <= 0 ? 120 : 0)) * dt
       this.pos.y += this.vy * dt
-      // On a ramp's rising face at Mach 10 the ground climbs ~1 km/s against a ~75 m/s launch: it
-      // re-landed the next frame. Riding the face to the crest makes the launch real.
-      if (this.rampRide && this.pos.y <= ride && this.airTime < 0.8 && slope > 0.01) {
+      // On a ramp's rising face the ground climbs far faster than the launch (~1 km/s at Mach 10
+      // against ~75 m/s): it re-landed the next frame, on every course — "sticky to the floor". Riding
+      // the face to the crest makes the launch real.
+      if (this.pos.y <= ride && this.airTime < 0.8 && slope > 0.01) {
         this.pos.y = ride
-        this.vy = Math.max(this.vy, Math.min(slope * hs, 20 + 5 * m))
+        this.vy = Math.max(this.vy, Math.min(slope * hs, 18 + 4 * m))
       } else if (this.pos.y <= ride) {
         const terrainVy = slope * hs
         // (Against a rising slope at Mach speeds the raw number is hundreds of m/s: it is felt —

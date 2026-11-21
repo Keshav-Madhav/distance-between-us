@@ -20,7 +20,11 @@ export const CFG = {
     boostMach: 6.3,
     /** Afterburner (Shift): constant shove (m/s²) with no target — only a sanity cap (Mach). */
     burnAccel: 230,
-    burnCap: 14,
+    /** A safety ceiling only (Mach); the real limit is soft — burnSoft. */
+    burnCap: 40,
+    /** The burner's push fades toward this (Mach, alone in clean air): accel × (1 − (M/soft)²).
+     *  A slipstream raises it ~22% — drafting is how you catch up. */
+    burnSoft: 12,
     /** Air brake target. */
     brakeMach: 0.12,
     /** Approach rate toward the target, 1/s. Exponential, so the first second kicks hardest. */
