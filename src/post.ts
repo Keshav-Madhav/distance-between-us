@@ -14,6 +14,8 @@ import { BIOME } from './terrain'
 /** A grade per world: shadow tint, highlight tint, saturation, black lift. */
 const GRADE = BIOME === 'ice'
   ? { sh: 'vec3(0.85, 0.95, 1.15)', hi: 'vec3(1.0, 0.98, 1.04)', sat: '1.05', lift: '0.0' }
+  : BIOME === 'forest'
+    ? { sh: 'vec3(0.9, 0.98, 1.06)', hi: 'vec3(1.05, 1.02, 0.93)', sat: '1.1', lift: '0.0' }
   : BIOME === 'lava'
     ? { sh: 'vec3(0.75, 0.82, 1.02)', hi: 'vec3(1.12, 0.95, 0.8)', sat: '1.22', lift: '-0.02' }
     : { sh: 'vec3(0.92, 0.98, 1.1)', hi: 'vec3(1.05, 1.0, 0.94)', sat: '1.12', lift: '0.0' }

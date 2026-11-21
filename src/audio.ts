@@ -34,7 +34,7 @@ export const TRACKS: Record<string, { name: string; file: string; climax?: strin
   hyperflight: { name: 'HYPERFLIGHT', file: 'hyperflight' },
 }
 /** Each course's own track (AUTO). */
-export const COURSE_TRACK: Record<string, string> = { sprint: 'neon-circuit', 'dry-river': 'hot-roadway', drag: 'cool-highway', circuit: 'drive', oval: 'cool-highway', canyon: 'hyperflight', frostline: 'drive', icefall: 'hyperflight', caldera: 'hot-roadway', faultline: 'neon-circuit' }
+export const COURSE_TRACK: Record<string, string> = { sprint: 'neon-circuit', 'dry-river': 'hot-roadway', drag: 'cool-highway', circuit: 'drive', oval: 'cool-highway', canyon: 'hyperflight', frostline: 'drive', icefall: 'hyperflight', caldera: 'hot-roadway', faultline: 'neon-circuit', greenway: 'drive', riverrun: 'cool-highway' }
 const MENU_TRACK = 'empty-stretch'
 
 export interface RivalVoice { dist: number; closing: number; pan: number; mach: number }
@@ -350,7 +350,13 @@ export class Sound {
     this.ambG = g
     const src = (buf: AudioBuffer, rate = 1) => { const s = ctx.createBufferSource(); s.buffer = buf; s.loop = true; s.playbackRate.value = rate; s.start(0, Math.random() * buf.duration); return s }
     const lfo = (param: AudioParam, hz: number, depth: number) => { const o = ctx.createOscillator(); o.frequency.value = hz; const d = ctx.createGain(); d.gain.value = depth; o.connect(d).connect(param); o.start() }
-    if (BIOME === 'ice') {
+    if (BIOME === 'forest') {
+      // Leaves in the wind: a soft high rustle, gusting.
+      const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 2600; bp.Q.value = 0.6
+      const vg = ctx.createGain(); vg.gain.value = 0.35
+      lfo(vg.gain, 0.12, 0.25)
+      src(this.noise).connect(bp).connect(vg).connect(g)
+    } else if (BIOME === 'ice') {
       for (const [f, q, v, hz] of [[520, 9, 0.5, 0.07], [880, 12, 0.3, 0.11]] as const) {
         const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = f; bp.Q.value = q
         const vg = ctx.createGain(); vg.gain.value = v
@@ -376,7 +382,17 @@ export class Sound {
     if (this.ambT > 0) return
     this.ambT = 1.5 + Math.random() * 3.5
     const pan = this.ctx.createStereoPanner(); pan.pan.value = Math.random() * 1.6 - 0.8; pan.connect(this.ambG)
-    if (BIOME === 'ice') {
+    if (BIOME === 'forest') {
+      // A bird: a little phrase of 2-5 chirps, each a quick sine sweep.
+      const n = 2 + Math.floor(Math.random() * 4), base = 2600 + Math.random() * 2200
+      for (let i = 0; i < n; i++) {
+        const t0 = t + i * (0.09 + Math.random() * 0.05)
+        const o = this.ctx.createOscillator(); o.type = 'sine'
+        o.frequency.setValueAtTime(base * (1 + Math.random() * 0.2), t0); o.frequency.exponentialRampToValueAtTime(base * (1.3 + Math.random() * 0.3), t0 + 0.05)
+        const gg = this.ctx.createGain(); gg.gain.setValueAtTime(0, t0); gg.gain.linearRampToValueAtTime(0.18, t0 + 0.01); gg.gain.exponentialRampToValueAtTime(0.001, t0 + 0.07)
+        o.connect(gg).connect(pan); o.start(t0); o.stop(t0 + 0.08)
+      }
+    } else if (BIOME === 'ice') {
       // A creak: a low groan sliding down, then a sharp crack.
       this.burst(t, 0.6, 'bandpass', 160 + Math.random() * 80, 70, 0.9, 6, pan, 0.08)
       if (Math.random() < 0.5) this.burst(t + 0.5, 0.12, 'highpass', 2500, 1500, 0.6, 0.7, pan)

@@ -6,9 +6,10 @@ import { REBASE } from './config'
 import { BIOME, groundH, LIGHT, MOUND_U, SUN_DIR } from './terrain'
 import { ICE_VARIANTS, iceGeometry } from './ice'
 import { LAVA_VARIANTS, lavaGeometry } from './lava'
+import { FOREST_VARIANTS, forestGeometry } from './forest'
 
 /** The world's own landform shapes (ice or basalt) — the desert's mesas come from mesaGeometry. */
-const landGeometry = (kind: 'mesa' | 'butte' | 'spire', seed: number, v: number) => BIOME === 'lava' ? lavaGeometry(kind, seed, v) : iceGeometry(kind, seed, v)
+const landGeometry = (kind: 'mesa' | 'butte' | 'spire', seed: number, v: number) => BIOME === 'lava' ? lavaGeometry(kind, seed, v) : BIOME === 'forest' ? forestGeometry(kind, seed, v) : iceGeometry(kind, seed, v)
 import { FBMT_GLSL, NOISE_TEX, patchStandard, WORLD_GLSL } from './shaders'
 
 export function rng(seed: number): () => number {
@@ -55,7 +56,7 @@ function skyMaterial(ground: boolean): THREE.ShaderMaterial {
         vec3 d = normalize(vDir);
         vec3 c = skyColor(d);
         float s = max(dot(d, SUN_DIR), 0.0);
-        ${ground ? `c = mix(c, ${BIOME === 'lava' ? 'vec3(0.06, 0.04, 0.035)' : BIOME === 'ice' ? 'vec3(0.6, 0.66, 0.8)' : 'vec3(0.62, 0.3, 0.13)'}, 1.0 - smoothstep(-0.08, 0.0, d.y));` : ''}
+        ${ground ? `c = mix(c, ${BIOME === 'lava' ? 'vec3(0.06, 0.04, 0.035)' : BIOME === 'ice' ? 'vec3(0.6, 0.66, 0.8)' : BIOME === 'forest' ? 'vec3(0.2, 0.3, 0.12)' : 'vec3(0.62, 0.3, 0.13)'}, 1.0 - smoothstep(-0.08, 0.0, d.y));` : ''}
         // Fair-weather cumulus on a plane 2.6 km up: fbm coverage, lit tops, grey-blue bases,
         // thinned toward the horizon where they would alias.
         if (d.y > 0.015) {
@@ -171,6 +172,9 @@ function mountains(): THREE.Mesh {
         #endif
         #ifdef BIOME_LAVA
         rock = mix(vec3(0.07, 0.055, 0.055), vec3(0.16, 0.08, 0.07), vT.x);
+        #endif
+        #ifdef BIOME_FOREST
+        rock = mix(vec3(0.16, 0.26, 0.16), vec3(0.32, 0.42, 0.55), vT.x);
         #endif
         float sunSide = max(dot(normalize(vec3(d.x, 0.0, d.z)), normalize(vec3(SUN_DIR.x, 0.0, SUN_DIR.z))), 0.0);
         rock *= 0.8 + 0.5 * sunSide;
@@ -347,6 +351,30 @@ function terrainMaterial(shared: GroundUniforms, snap: { value: THREE.Vector2 },
         }
         #endif
 
+        #ifdef BIOME_FOREST
+        // VERDANT: meadow grass (the sand texture as its blades), drier and darker patches, rock where
+        // the gravel was, wildflowers close in, wind rolling across it in bright waves; rivers below.
+        {
+          float lumS = dot(sandT, vec3(0.333));
+          float dry = smoothstep(0.45, 0.75, fbmT(p * 0.0009 + 4.0));
+          vec3 grass = mix(vec3(0.17, 0.3, 0.07), vec3(0.33, 0.36, 0.12), dry) * (0.75 + 0.5 * lumS) * (0.85 + 0.3 * fbmT(p * 0.004 + 9.0));
+          vec3 rockG = vec3(0.42, 0.41, 0.38) * (0.8 + 0.4 * dot(grav, vec3(0.333)));
+          alb = mix(grass, rockG, gm * 0.55);
+          // Wind waves over the grass: soft bright bands drifting across.
+          float wv = sin(dot(p, vec2(0.012, 0.007)) - uTime * 1.4 + fbmT(p * 0.002) * 6.0);
+          alb *= 1.0 + 0.1 * smoothstep(0.4, 1.0, wv) * (1.0 - gm);
+          // Wildflowers, close in: sparse dots of white, yellow, violet.
+          float fd = 1.0 - smoothstep(40.0, 220.0, length(vW - cameraPosition));
+          if (fd > 0.0) {
+            vec2 fc = floor(p * 0.9);
+            float fl = step(0.985, hash12(fc)) * (1.0 - smoothstep(0.2, 0.42, length(fract(p * 0.9) - 0.5))) * fd * (1.0 - gm);
+            vec3 fcol = hash12(fc + 3.0) < 0.4 ? vec3(0.95, 0.92, 0.85) : hash12(fc + 3.0) < 0.75 ? vec3(0.95, 0.8, 0.2) : vec3(0.6, 0.4, 0.85);
+            alb = mix(alb, fcol, fl);
+          }
+          // River beds: gravel banks under clear water (the water itself is lit below).
+          alb = mix(alb, vec3(0.3, 0.32, 0.26), smoothstep(0.05, 0.3, river));
+        }
+        #endif
         #ifdef BIOME_LAVA
         // CINDER: black basalt sand, grey ash drifts where the gravel was, crusted banks to the lava.
         {
@@ -366,6 +394,8 @@ function terrainMaterial(shared: GroundUniforms, snap: { value: THREE.Vector2 },
           alb = mix(alb, alb * vec3(0.8, 0.86, 0.97), pack * 0.8);
           #elif defined(BIOME_LAVA)
           alb = mix(alb, vec3(0.2, 0.185, 0.18), pack * 0.75); // packed ash: a grey road on black sand
+          #elif defined(BIOME_FOREST)
+          alb = mix(alb, vec3(0.36, 0.27, 0.17), pack * 0.85); // a dirt road through the grass
           #else
           alb = mix(alb, mix(s2, vec3(dot(s2, vec3(0.33))), 0.25) * vec3(0.86, 0.74, 0.68), pack * 0.7);
           #endif
@@ -375,6 +405,8 @@ function terrainMaterial(shared: GroundUniforms, snap: { value: THREE.Vector2 },
           alb = mix(alb, vec3(0.45, 0.55, 0.7), smoothstep(0.45, 0.9, streak) * 0.35);
           #elif defined(BIOME_LAVA)
           alb = mix(alb, vec3(0.03, 0.02, 0.02), smoothstep(0.45, 0.9, streak) * 0.35);
+          #elif defined(BIOME_FOREST)
+          alb = mix(alb, vec3(0.2, 0.14, 0.08), smoothstep(0.45, 0.9, streak) * 0.35);
           #else
           alb = mix(alb, vec3(0.16, 0.08, 0.05), smoothstep(0.45, 0.9, streak) * 0.35);
           #endif
@@ -404,6 +436,22 @@ function terrainMaterial(shared: GroundUniforms, snap: { value: THREE.Vector2 },
           vec3 refl = skyColor(Rw) * 0.9 + aurora(Rw) * 0.9;
           col = mix(col, refl, river * (0.35 + 0.6 * fr));
         }
+        #endif
+        #ifdef BIOME_FOREST
+        // Clear rivers: the sky and clouds mirrored, a little teal in the deep (only where there is water).
+        if (river > 0.25) {
+          vec3 Vw = normalize(cameraPosition - vW), Rw = reflect(-Vw, n);
+          float fr = pow(1.0 - max(dot(Vw, n), 0.0), 3.0);
+          float w = smoothstep(0.25, 0.55, river);
+          // (Darker and less mirror-like than first drawn: at a racer's grazing angle the full sky
+          //  turned every river into a pale sheet.)
+          vec3 water = mix(vec3(0.03, 0.1, 0.12), skyColor(Rw) * 0.75, 0.15 + 0.4 * fr);
+          water *= 0.85 + 0.15 * fbmT(p * 0.01 + vec2(uTime * 0.03, 0.0));
+          water += vec3(0.9, 0.85, 0.7) * pow(max(dot(Rw, SUN_DIR), 0.0), 160.0) * 1.2;
+          col = mix(col, water, w);
+        }
+        // Sunlit grass glows a little (it scatters light): a warm fill so the meadow is never dull.
+        col += alb * vec3(0.12, 0.14, 0.06);
         #endif
         #ifdef BIOME_LAVA
         // The lava: flowing, glowing, crusting over in plates; and its glow on the sand beside it.
@@ -499,6 +547,9 @@ function pebbles(count: number, tile: number): THREE.InstancedMesh {
         vec3 alb = mix(vec3(0.3, 0.07, 0.03), vec3(0.55, 0.28, 0.14), vTint);
         #ifdef BIOME_ICE
         alb = mix(vec3(0.42, 0.48, 0.6), vec3(0.75, 0.82, 0.94), vTint);
+        #endif
+        #ifdef BIOME_FOREST
+        alb = mix(vec3(0.3, 0.3, 0.28), vec3(0.55, 0.54, 0.5), vTint);
         #endif
         #ifdef BIOME_LAVA
         alb = mix(vec3(0.05, 0.045, 0.045), vec3(0.2, 0.17, 0.16), vTint);
@@ -766,28 +817,32 @@ export class World {
     this.group.add(pebbles(1800, 1500))
 
     const mesaMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.92, metalness: 0, flatShading: true })
-    const ICE = BIOME === 'ice', LAVA = BIOME === 'lava'
+    const ICE = BIOME === 'ice', LAVA = BIOME === 'lava', FOREST = BIOME === 'forest'
     if (ICE) { mesaMat.roughness = 0.3; patchStandard(mesaMat, { ice: true }) }
     else if (LAVA) { mesaMat.roughness = 0.85; patchStandard(mesaMat, { lava: true }) }
+    else if (FOREST) { mesaMat.roughness = 0.8; mesaMat.flatShading = true; patchStandard(mesaMat, { forest: true, aur: AUR_T }) }
     else patchStandard(mesaMat, { strata: true })
     const spikeMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.18, metalness: 0, flatShading: true })
     patchStandard(spikeMat, { ice: true, spike: true, aur: AUR_T })
     this.spikeMat = spikeMat
     const r = rng(1234)
-    const kinds: [Kind, number, number][] = [
-      // (×4: the world now wraps every 72 km, so the 130 km sprint overlaps itself less.)
-      ['mesa', 680, 1300],
-      ['butte', 240, 900],
-      ['spire', 200, 600],
-    ]
+    const kinds: [Kind, number, number][] = BIOME === 'forest'
+      // VERDANT is a forest: groves everywhere, giant trees often, granite domes now and then.
+      ? [['mesa', 360, 1500], ['butte', 1000, 380], ['spire', 520, 420]]
+      : [
+          // (×4: the world now wraps every 72 km, so the 130 km sprint overlaps itself less.)
+          ['mesa', 680, 1300],
+          ['butte', 240, 900],
+          ['spire', 200, 600],
+        ]
     const all: Placed[] = []
     this.mesaMat = mesaMat
     for (const [kind, count, spacing] of kinds) {
       // One instanced mesh per shape archetype; items are dealt across them at random.
       const ws: Wrapped[] = []
-      for (let v = 0; v < (ICE ? ICE_VARIANTS : LAVA ? LAVA_VARIANTS : MESA_VARIANTS)[kind]; v++) {
+      for (let v = 0; v < (ICE ? ICE_VARIANTS : LAVA ? LAVA_VARIANTS : FOREST ? FOREST_VARIANTS : MESA_VARIANTS)[kind]; v++) {
         const seed = kind.length * 31 + 7 + v * 101
-        const { geo, prof } = ICE || LAVA ? landGeometry(kind, seed, v) : mesaGeometry(kind, seed, v)
+        const { geo, prof } = ICE || LAVA || FOREST ? landGeometry(kind, seed, v) : mesaGeometry(kind, seed, v)
         if (kind === 'spire' && v === 0) { this.spireGeo = geo; this.fixedProf = prof }
         ws.push(new Wrapped(geo, ICE && kind === 'spire' ? spikeMat : mesaMat, REBASE, 16500, 0.06, prof, true, null, 20000))
       }
@@ -813,6 +868,14 @@ export class World {
           // Ice comes in every size: small bergs to giants (skewed small, a few huge).
           const sc = 0.45 + 2.0 * Math.pow(r(), 2.2)
           rad *= sc; h *= 0.6 + 0.4 * sc
+        }
+        if (FOREST) {
+          // Domes broad and rounded; groves a few hundred metres across and 60-120 m tall; giant trees.
+          if (kind === 'mesa') { rad *= 1.0; h *= 0.75 }
+          else if (kind === 'butte') { rad *= 0.7; h = 80 + r() * 80 }
+          else { rad *= 0.55; h *= 0.75 }
+          const sc = 0.55 + 1.5 * Math.pow(r(), 2)
+          rad *= sc; h *= 0.7 + 0.3 * sc
         }
         if (LAVA) {
           // Massifs wide and low; cones broad (their slopes flare); stacks tall. Any size.

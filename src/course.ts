@@ -398,7 +398,68 @@ export const FAULTLINE: CourseDef = {
   sections: [[12, 'THE SWEEPERS'], [45, 'THE CROSSING'], [62, 'LINKED BENDS'], [80, 'LAST RUN']],
 }
 
-export const COURSES: CourseDef[] = [SPRINT, DRY_RIVER, DRAG, CIRCUIT, OVAL, CANYON, FROSTLINE, ICEFALL, CALDERA, FAULTLINE]
+/**
+ * Course 11: GREENWAY — the fourth world, VERDANT (docs/MAP-VERDANT.md): a rolling loop through
+ * meadows, past granite domes and through forest belts. Gentle (nothing under ~1.9 km), two laps.
+ */
+const greenPath = (u: number): [number, number] => {
+  const a = 2 * Math.PI * u
+  const r = 10500 + 1800 * Math.sin(2 * a + 0.6) + 1000 * Math.sin(4 * a + 1.9) + 380 * Math.sin(7 * a + 2.8)
+  return [r * Math.sin(a) * 1.1, r * Math.cos(a) - 10500]
+}
+export const GREENWAY: CourseDef = {
+  id: 'greenway',
+  clearance: 520,
+  // (Wider than the desert's 260: these worlds crowd the line with landforms.)
+  gateHalf: 340,
+  ribbons: true,
+  name: 'GREENWAY',
+  blurb: 'A NEW WORLD · MEADOWS · GRANITE DOMES · FOREST BELTS',
+  km: Math.round(loopLength(greenPath) / 100) / 10,
+  loop: greenPath,
+  aiPace: 0.3,
+  gateEvery: 5500,
+  laps: 2,
+  jumps: [0.1, 0.112],
+  rampH: 0.8,
+  whoops: [],
+  padEvery: 8500,
+  spireGap: () => null,
+  rockGateP: 0,
+  seed: 83,
+  sections: [],
+}
+
+/** Course 12: RIVERRUN — VERDANT's sprint: 95 km down a long green valley, sweepers and a slalom. */
+export const RIVERRUN: CourseDef = {
+  id: 'riverrun',
+  clearance: 520,
+  gateHalf: 340,
+  ribbons: true,
+  name: 'RIVERRUN',
+  blurb: 'SPRINT · DOWN THE VALLEY · RIVER CROSSINGS · A SLALOM',
+  km: 95,
+  xAt: (z) => {
+    const bump = (z0: number, L: number, h: number) => (z > z0 && z < z0 + L ? h * (1 - Math.cos((2 * Math.PI * (z - z0)) / L)) : 0)
+    // Sweepers (radius ~4 km), a slalom of four linked bends at 52-76 km, a slow wander between.
+    const sweep = bump(10000, 10000, 600) + bump(26000, 11000, -650) + bump(84000, 9000, 450)
+    const slalom = bump(52000, 6000, 380) + bump(58000, 6000, -380) + bump(64000, 6000, 380) + bump(70000, 6000, -380)
+    const wander = 1100 * Math.sin((2 * Math.PI * z) / 37000 + 0.9) - 1100 * Math.sin(0.9)
+    return ramp8(z) * (wander + sweep + slalom)
+  },
+  aiPace: 0,
+  gateEvery: 5000,
+  jumps: [0.4, 0.415],
+  rampH: 0.85,
+  whoops: [],
+  padEvery: 7000,
+  spireGap: () => null,
+  rockGateP: 0,
+  seed: 89,
+  sections: [[10, 'THE SWEEPERS'], [40, 'THE CROSSINGS'], [52, 'THE SLALOM'], [78, 'LAST RUN']],
+}
+
+export const COURSES: CourseDef[] = [SPRINT, DRY_RIVER, DRAG, CIRCUIT, OVAL, CANYON, FROSTLINE, ICEFALL, CALDERA, FAULTLINE, GREENWAY, RIVERRUN]
 
 /** The race's line as points (x, z) every ~200 m, start to finish — for previews. */
 export function centerline(def: CourseDef): { xs: number[]; zs: number[] } {

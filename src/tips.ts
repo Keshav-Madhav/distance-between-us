@@ -74,6 +74,10 @@ const TIPS: Tip[] = [
   { id: 'caldera-hook', where: 'caldera', text: 'The hook: three gates mark it. Brake early and turn in at the first.', when: (c) => c.t > 18 },
   { id: 'fault-save', where: 'faultline', text: 'A long sprint: save the afterburner for the straights between the sweepers.', when: (c) => c.t > 4 },
   { id: 'fault-crossing', where: 'faultline', text: 'The crossing: long lava flats. Hold it straight and flat out.', when: (c) => c.km > 43 && c.km < 47 },
+  { id: 'green-domes', where: 'greenway', text: 'Granite domes and forest belts line the course: the trees are solid, the meadow is fast.', when: (c) => c.t > 5 },
+  { id: 'green-lap', where: 'greenway', text: 'Gentle bends all the way: hold the afterburner through them if you dare.', when: (c) => c.t > 20 },
+  { id: 'river-cross', where: 'riverrun', text: 'River crossings ahead: water is as fast as grass. Hold it flat.', when: (c) => c.km > 36 && c.km < 41 },
+  { id: 'river-slalom', where: 'riverrun', text: 'The slalom: four linked bends. Turn in early and let it flow.', when: (c) => c.km > 48 && c.km < 53 },
   // ── any course: learned the moment it happens ──
   { id: 'any-wake', where: 'race', text: 'Slipstream: right behind a rival you go faster. Pull out to pass.', when: (c) => c.wake > 0.35 },
   { id: 'any-slide', where: 'race', text: 'Sliding. Ease off the steering, or countersteer to catch it.', when: (c) => c.drifting || Math.abs(c.slip) > 0.35 },

@@ -148,6 +148,7 @@ const WORLDS = [
   { id: 'desert', name: 'RED MESA', blurb: 'Sandstone, blue sky' },
   { id: 'ice', name: 'POLAR SHELF', blurb: 'Glaciers under aurora' },
   { id: 'lava', name: 'CINDER', blurb: 'Lava fields at dusk' },
+  { id: 'forest', name: 'VERDANT', blurb: 'Meadows and old forest' },
 ] as const
 let pickedWorld: Biome = biomeOf(courseDef.id)
 const bestKey = (id: string) => `dbu-best-${id}`
@@ -186,7 +187,10 @@ if (BIOME !== 'desert') {
   // Zones along the lap, so the course has places: a shard forest, a corridor between glaciers,
   // open polished ice. Each course its own order and lengths.
   type Zone = 'forest' | 'glacier' | 'open'
-  const ZONES: [number, Zone][] = tight
+  const ZONES: [number, Zone][] = BIOME === 'forest'
+    // VERDANT: mostly forest, a meadow to breathe, a run past the granite domes.
+    ? [[0.0, 'forest'], [0.22, 'open'], [0.32, 'forest'], [0.56, 'glacier'], [0.72, 'forest']]
+    : tight
     ? [[0.0, 'forest'], [0.28, 'glacier'], [0.5, 'open'], [0.62, 'forest'], [0.86, 'glacier']]
     : [[0.0, 'open'], [0.14, 'forest'], [0.36, 'glacier'], [0.62, 'open'], [0.76, 'forest'], [0.92, 'open']]
   const zoneAt = (i: number): Zone => {
@@ -238,7 +242,7 @@ if (BIOME !== 'desert') {
       const spike = roll < pSpike, sentinel = zone === 'forest' && roll > 0.94
       const sc = 0.4 + 1.6 * rnd()
       const r = sentinel ? 30 + rnd() * 15 : spike ? 6 + rnd() * 8 : (12 + rnd() * 12) * sc
-      const h = sentinel ? 120 + rnd() * 80 : spike ? (zone === 'forest' ? 45 + rnd() * 95 : 20 + rnd() * 40) : (10 + rnd() * 16) * sc
+      const h = sentinel ? 120 + rnd() * 80 : spike ? (zone === 'forest' ? 45 + rnd() * 95 : 20 + rnd() * 40) : BIOME === 'forest' ? r * (1.3 + rnd() * 0.8) : (10 + rnd() * 16) * sc
       // (Well clear of the edge lines at 250 m: a wide line must not be the end of a race.)
       const off = W + (sentinel ? 380 : 360 + Math.pow(rnd(), 1.5) * (zone === 'forest' ? 300 : 240))
       if (spike && zone === 'forest' && rnd() < 0.5) {
@@ -250,7 +254,7 @@ if (BIOME !== 'desert') {
         }
       } else place(j, side, off, {
         r, h, kind: spike || sentinel ? 'spire' : 'butte', v: Math.floor(rnd() * 2.999), yaw: rnd() * 6.28,
-        tilt: spike || sentinel ? (rnd() - 0.5) * 0.24 : BIOME === 'lava' ? 0 : (rnd() - 0.5) * 0.7, sink: spike || sentinel ? 0 : rnd() * 0.35,
+        tilt: BIOME === 'forest' ? 0 : spike || sentinel ? (rnd() - 0.5) * 0.24 : BIOME === 'lava' ? 0 : (rnd() - 0.5) * 0.7, sink: spike || sentinel ? 0 : rnd() * 0.35,
       }, 350 + W)
       const step = zone === 'forest' ? 90 + rnd() * 130 : zone === 'glacier' ? 140 + rnd() * 120 : 320 + rnd() * 300
       j += Math.max(1, Math.round(step / 40))
@@ -999,7 +1003,7 @@ function drawTrackPreview(d: (typeof COURSES)[number]): void {
   // Ground: warm sand, a 1 km grid (10 km lines stronger).
   const bg = g.createRadialGradient(W / 2, H / 2, 0, W / 2, H / 2, Math.max(W, H) * 0.7)
   // (FROSTLINE's map: snow-blue ground, not the desert's sand.)
-  if (biomeOf(d.id) === 'ice') { bg.addColorStop(0, '#3a4a62'); bg.addColorStop(1, '#141c2a') } else if (biomeOf(d.id) === 'lava') { bg.addColorStop(0, '#2a1e1c'); bg.addColorStop(1, '#0e0a0a') } else { bg.addColorStop(0, '#5a3a24'); bg.addColorStop(1, '#2a1a10') }
+  if (biomeOf(d.id) === 'ice') { bg.addColorStop(0, '#3a4a62'); bg.addColorStop(1, '#141c2a') } else if (biomeOf(d.id) === 'lava') { bg.addColorStop(0, '#2a1e1c'); bg.addColorStop(1, '#0e0a0a') } else if (biomeOf(d.id) === 'forest') { bg.addColorStop(0, '#2c3a22'); bg.addColorStop(1, '#121a0e') } else { bg.addColorStop(0, '#5a3a24'); bg.addColorStop(1, '#2a1a10') }
   g.fillStyle = compact ? '#17110f' : bg; g.fillRect(0, 0, W, H)
   g.setTransform(1, 0, 0, 1, 0, 0)
   if (rot) { g.translate(W / 2, H / 2); g.rotate(-Math.PI / 2); g.translate(-W / 2, -H / 2) }
@@ -1797,6 +1801,18 @@ function drawRacer(p: Player, alpha: number, dt: number, isMe: boolean): void {
       e.y = groundH(e.x, e.z) + 1 + Math.random() * 30
       e.vx = 14 + Math.random() * 6; e.vy = -2 - Math.random() * 2; e.vz = 6
       e.life = 2.5; e.size0 = 0.1; e.size1 = 0.1; e.r = 1.6; e.g = 1.7; e.b = 1.9; e.a = 0.9; e.streak = p.mach > 1.5 ? 1 : 0
+      fx.smoke.emit(e)
+    }
+  }
+  // VERDANT: pollen and seed fluff drifting in the sun.
+  if (isMe && BIOME === 'forest') {
+    for (let i = 0; i < 10; i++) {
+      const e = resetE()
+      const ahead = 25 + Math.random() * 235, side = (Math.random() - 0.5) * 180
+      e.x = tmp.x + p.fwd.x * ahead + p.right.x * side; e.z = tmp.z + p.fwd.z * ahead + p.right.z * side
+      e.y = groundH(e.x, e.z) + 1 + Math.random() * 20
+      e.vx = 3 + Math.random() * 2; e.vy = 0.4 * (Math.random() - 0.3); e.vz = 1.5
+      e.life = 2.6; e.size0 = 0.12; e.size1 = 0.12; e.r = 1.8; e.g = 1.75; e.b = 1.3; e.a = 0.75; e.streak = p.mach > 1.5 ? 1 : 0
       fx.smoke.emit(e)
     }
   }

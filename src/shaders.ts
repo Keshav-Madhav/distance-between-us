@@ -58,6 +58,8 @@ export interface PatchOpts {
   ice?: boolean
   /** Basalt (CINDER's columns, cones and stacks): dark rock, ash on the tops, glowing splits. */
   lava?: boolean
+  /** VERDANT: granite, bark and foliage by the aCrev mask; foliage sways (needs `aur` as the clock). */
+  forest?: boolean
   /** With ice: the shards (spikes) — no snow cap, glowing tips that breathe with the aurora clock. */
   spike?: boolean
   /** The aurora clock uniform (world.ts AUR_T), for the spike tips. */
@@ -71,11 +73,12 @@ export interface PatchOpts {
 export function patchStandard(mat: THREE.MeshStandardMaterial, opts: PatchOpts = {}): void {
   mat.fog = false
   // (three caches programs by onBeforeCompile's source text, the same for every patch: key it.)
-  mat.customProgramCacheKey = () => `patched-${opts.strata ? 'strata' : opts.lava ? 'lava' : opts.ice ? (opts.spike ? 'spike' : 'ice') : 'plain'}`
+  mat.customProgramCacheKey = () => `patched-${opts.strata ? 'strata' : opts.lava ? 'lava' : opts.forest ? 'forest' : opts.ice ? (opts.spike ? 'spike' : 'ice') : 'plain'}`
   mat.onBeforeCompile = (s) => {
     if (opts.strata) { s.uniforms.tRock = TEX.tRock; s.uniforms.tSand = TEX.tSand }
     if (opts.aur) s.uniforms.uAurT = opts.aur
-    if (opts.ice || opts.lava) {
+    if (opts.forest && opts.aur) s.uniforms.uWindT = opts.aur
+    if (opts.ice || opts.lava || opts.forest) {
       // The crevasse depth (a geometry attribute) and the instance's own origin (a per-glacier seed).
       s.vertexShader = s.vertexShader
         .replace('#include <common>', '#include <common>\nattribute float aCrev;\nvarying float vCrev;\nvarying vec2 vOrg;')
@@ -86,6 +89,18 @@ export function patchStandard(mat: THREE.MeshStandardMaterial, opts: PatchOpts =
         #else
           vOrg = vec2(0.0);
         #endif`)
+    }
+    if (opts.forest) {
+      // Foliage sways: more toward the top, each tree out of step (its position), a slow gust.
+      s.vertexShader = s.vertexShader
+        .replace('#include <common>', '#include <common>\nuniform float uWindT;')
+        .replace('vOrg = vec2(0.0);\n        #endif', `vOrg = vec2(0.0);
+        #endif
+        {
+          float sw = smoothstep(0.75, 1.0, aCrev) * max(transformed.y, 0.0);
+          float ph = uWindT * 1.3 + vOrg.x * 0.011 + vOrg.y * 0.017 + transformed.y * 2.5;
+          transformed.xz += vec2(0.85, 0.45) * (sin(ph) * 0.7 + sin(ph * 2.3) * 0.3) * 0.014 * sw * sw;
+        }`)
     }
     s.vertexShader = s.vertexShader
       .replace('#include <common>', '#include <common>\nvarying vec3 vFogW;\nvarying vec3 vWN;\nvarying float vBaseY;\nvarying float vHt;')
@@ -113,6 +128,40 @@ export function patchStandard(mat: THREE.MeshStandardMaterial, opts: PatchOpts =
     s.fragmentShader = s.fragmentShader
       .replace('#include <common>', `#include <common>\nvarying vec3 vFogW;\nvarying vec3 vWN;\nvarying float vBaseY;\nvarying float vHt;\nfloat gIceSnow = 0.0;\n${opts.strata ? 'uniform sampler2D tRock;\nuniform sampler2D tSand;' : ''}\n${SKY_GLSL}\n${NOISE_GLSL}`)
       .replace('#include <fog_fragment>', 'gl_FragColor.rgb = applyFog(gl_FragColor.rgb, vFogW);')
+    if (opts.forest) {
+      s.fragmentShader = s.fragmentShader.replace('#include <common>', `#include <common>\nvarying float vCrev;\nvarying vec2 vOrg;`)
+        .replace('#include <color_fragment>', `#include <color_fragment>
+        {
+          float hy = vFogW.y - vBaseY;
+          float t = hy / vHt;
+          float sd = hash12(floor(mod(vOrg, 72000.0) / 37.0));
+          float fh = hash12(floor(vWN.xz * 5.0 + 40.0) + floor(vFogW.xz / 7.0) + sd * 51.0);
+          vec3 c;
+          if (vCrev < 0.25) {
+            // Granite: pale grey, streaked, moss and grass on every gentle slope.
+            c = vec3(0.52, 0.5, 0.47) * (0.8 + 0.3 * fh);
+            c *= 0.85 + 0.15 * vnoise(vec2((vFogW.x + vFogW.z) * 0.02, vFogW.y * 0.004));
+            c = mix(c, vec3(0.16, 0.28, 0.08), smoothstep(0.55, 0.8, vWN.y + 0.15 * vnoise(vFogW.xz * 0.03)));
+          } else if (vCrev < 0.75) {
+            c = vec3(0.26, 0.17, 0.11) * (0.8 + 0.3 * fh); // bark
+          } else {
+            // Foliage: each tree its own green (deep pine to bright leaf), facets catching light, the
+            // top paler where the new growth is.
+            vec3 g0 = mix(vec3(0.06, 0.16, 0.07), vec3(0.2, 0.33, 0.08), sd);
+            c = g0 * (0.8 + 0.4 * fh);
+            c = mix(c, c * vec3(1.35, 1.3, 0.9), smoothstep(0.6, 1.0, fract(t * 3.0)) * 0.4);
+          }
+          c *= mix(0.7, 1.0, smoothstep(1.0, 18.0, hy));
+          diffuseColor.rgb = c;
+        }`)
+        .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
+        {
+          // Sun through the leaves at grazing angles; a little sky fill so shade is green, not black.
+          float rim = 1.0 - abs(dot(normalize(vViewPosition), normal));
+          float leaf = smoothstep(0.75, 1.0, vCrev);
+          totalEmissiveRadiance += diffuseColor.rgb * (0.22 + leaf * 0.25 * rim * rim);
+        }`)
+    }
     if (opts.lava) {
       s.fragmentShader = s.fragmentShader.replace('#include <common>', `#include <common>\nvarying float vCrev;\nvarying vec2 vOrg;`)
         .replace('#include <color_fragment>', `#include <color_fragment>
