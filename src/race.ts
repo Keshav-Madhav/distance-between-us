@@ -182,6 +182,18 @@ export class Race {
       this.gates(r)
       this.pads(r, dt)
     }
+    // Wakes: right behind a rival (40–300 m, within ~30 m across) you're in its turbulent slipstream.
+    for (const r of this.racers) {
+      let w = 0
+      for (const o of this.racers) {
+        if (o === r || o.p.dead || o.p.crashing) continue
+        const dx = o.p.pos.x - r.p.pos.x, dz = o.p.pos.z - r.p.pos.z
+        const ahead = dx * r.p.fwd.x + dz * r.p.fwd.z
+        const side = Math.abs(dx * r.p.right.x + dz * r.p.right.z)
+        if (ahead > 40 && ahead < 300 && side < 32) w = Math.max(w, (1 - side / 32) * (1 - (ahead - 40) / 260))
+      }
+      r.p.wake += (w - r.p.wake) * Math.min(1, dt * 4)
+    }
     for (let i = 0; i < this.racers.length; i++)
       for (let j = i + 1; j < this.racers.length; j++)
         bump(this.racers[i].p, this.racers[j].p, (a, b, sev, x, y, z) => this.ev.bumped(this.find(a), this.find(b), sev, x, y, z))

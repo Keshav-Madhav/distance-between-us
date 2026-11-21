@@ -39,12 +39,12 @@ export const CFG = {
     yawLow: 1.35,
     yawHigh: 0.78,
     /** Yaw torque at full stick (rad/s²) and yaw damping (1/s): full stick settles at ~torque/damp. */
-    steerTorque: 5.2,
+    steerTorque: 4.5,
     /** Extra steering authority at speed (×(1 + gain) by Mach 5). */
-    steerGain: 0.75,
+    steerGain: 0.55,
     yawDamp: 4.7,
     /** Weathervane torque pulling the nose back to the travel (needs grip). */
-    alignK: 2.2,
+    alignK: 2.7,
     /** Grip: lateral acceleration = (gripK + gripQ·v)·v + gripLow, shaped by the slip curve. */
     gripK: 0.8,
     gripQ: 0.00034,
@@ -55,6 +55,9 @@ export const CFG = {
     spinSlip: 1.15,
     /** Grip multiplier under the air brake (a trail-brake starts a drift). */
     driftBrakeGrip: 0.5,
+    /** Gusts: sideways buffeting at speed (m/s²) and a little yaw (rad/s²). */
+    gust: 55,
+    gustYaw: 0.35,
     /** Steering authority left while the afterburner burns. */
     burnSteer: 0.18,
     /** In the air: the share of grip and self-align the fins give (steering bends the path). */

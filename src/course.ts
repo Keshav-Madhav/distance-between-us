@@ -177,7 +177,7 @@ export class Course {
     const lightGeo = new THREE.BoxGeometry(0.8, 122, 2.2)
     lightGeo.translate(0, 74, 0)
     this.towerLights = new THREE.InstancedMesh(lightGeo, new THREE.MeshBasicMaterial({ color: 0xffffff }), K * 4)
-    const beamGeo = new THREE.BoxGeometry(GATE_HALF * 2 + 11, 9, 4)
+    const beamGeo = new THREE.BoxGeometry(GATE_HALF * 2 + 11, 5, 2.5)
     this.beamMesh = new THREE.InstancedMesh(beamGeo, new THREE.MeshBasicMaterial({ color: 0xffffff }), K)
     const m = new THREE.Matrix4(), q = new THREE.Quaternion(), s = new THREE.Vector3(1, 1, 1), v = new THREE.Vector3()
     const Y = new THREE.Vector3(0, 1, 0)
@@ -213,15 +213,15 @@ export class Course {
       fragmentShader: /* glsl */ `
         uniform float uTime; uniform vec3 uColor; uniform float uA; varying vec2 vUv; varying vec3 vW;
         void main() {
-          float scan = 0.55 + 0.45 * sin(vUv.y * 90.0 - uTime * 8.0);
-          float edge = smoothstep(0.0, 0.04, vUv.x) * smoothstep(1.0, 0.96, vUv.x);
-          float top = smoothstep(1.0, 0.85, vUv.y) * 0.6 + 0.4;
+          // Mostly see-through: thin scan lines and a bright frame read from kilometres away, and the
+          // whole curtain fades out as you close in, so whatever stands behind the gate shows early.
+          float scan = smoothstep(0.82, 1.0, sin(vUv.y * 70.0 - uTime * 6.0));
+          float edge = smoothstep(0.0, 0.04, vUv.x) * (1.0 - smoothstep(0.96, 1.0, vUv.x));
           float bottom = smoothstep(0.0, 0.25, vUv.y);
-          float frame = max(1.0 - smoothstep(0.0, 0.012, vUv.x), 1.0 - smoothstep(0.988, 1.0, vUv.x));
-          // Close to it, it fades (it would otherwise fill the screen for a frame).
+          float frame = max(1.0 - smoothstep(0.0, 0.01, vUv.x), 1.0 - smoothstep(0.99, 1.0, vUv.x));
           float d = length(vW - cameraPosition);
-          float near = smoothstep(40.0, 260.0, d);
-          gl_FragColor = vec4(uColor * (0.08 * scan * top * edge * bottom + frame * 0.6) * uA * near, 1.0);
+          float near = smoothstep(350.0, 1500.0, d);
+          gl_FragColor = vec4(uColor * (0.035 * scan * edge * bottom + frame * 0.5) * uA * near, 1.0);
         }`,
     })
     this.curtain = new THREE.Mesh(new THREE.PlaneGeometry(GATE_HALF * 2, 128), this.curtainMat)

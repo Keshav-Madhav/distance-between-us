@@ -16,7 +16,7 @@ import { Input } from './input'
 import { Post } from './post'
 import { groundH, SUN_DIR } from './terrain'
 import { loadTextures } from './textures'
-import { Course, JUMPS, LAPS, SPRINT_KM } from './course'
+import { Course, GATE_HALF, JUMPS, LAPS, SPRINT_KM } from './course'
 import { Race } from './race'
 import { ChaseCam } from './camera'
 import { Debris } from './debris'
@@ -1076,6 +1076,10 @@ function updateHud(dt: number, slow: boolean): void {
     al.style.display = 'block'
     al.textContent = deg < 6 ? 'ALIGNED' : `NOSE ${deg.toFixed(0)}° OFF · ${player.slip > 0 ? 'STEER RIGHT' : 'STEER LEFT'}`
     al.className = deg > 26 ? 'bad' : 'ok'
+  } else if (player.wake > 0.3 && !player.airborne) {
+    al.style.display = 'block'
+    al.textContent = `SLIPSTREAM ${'▮'.repeat(Math.ceil(player.wake * 5))}`
+    al.className = 'ok'
   } else al.style.display = 'none'
   // Grip gauge: how much of the grip you are using; past the line you are sliding, red is a spin.
   const gg = $('#grip')
@@ -1091,6 +1095,8 @@ function updateHud(dt: number, slow: boolean): void {
   bn.className = fighting ? 'fight' : ''
   bn.innerHTML = fighting ? 'RELEASE <b>SHIFT</b> TO TURN' : 'AFTERBURNER · <b>STEERING LOCKED</b>'
   $('#grip').classList.toggle('locked', player.burning)
+  // In a wake: the camera shakes with it.
+  if (player.wake > 0.15) cam.trauma = Math.max(cam.trauma, player.wake * 0.45)
   const dm = $('#drift')
   dm.style.opacity = player.drift > 0.02 ? '1' : '0'
   ;(dm.firstElementChild as HTMLElement).style.width = `${(player.drift / 2.6) * 100}%`
@@ -1118,8 +1124,8 @@ function updateHud(dt: number, slow: boolean): void {
         const gap = r.finished ? (r === rows[0] ? 'WINNER ' : '') + fmtLap(r.finishTime) : rows[0].finished ? `${(race.toGo(r) / 1000).toFixed(1)} KM` : r === rows[0] ? 'LEADER' : `+${((lead - race.progress(r)) / Math.max(800, player.speed)).toFixed(1)}`
         return `<div class="${r.ai ? '' : 'me'}" style="--c:#${new THREE.Color(r.color).getHexString()}"><span>${r.place}&nbsp;&nbsp;${r.name}</span><span class="g">${gap}</span></div>`
       }).join('')
-      drawMini()
     }
+    drawMini()
     $('#r-time').textContent = fmtLap(me.finished ? me.finishTime : race.clock + me.penalty)
     const [tx, tz] = course.tangent(me.idx)
     const along = player.vel.x * tx + player.vel.z * tz
@@ -1230,55 +1236,66 @@ function arrowTo(p: THREE.Vector3, label: string): void {
   ;(arrowEl.querySelector('.t') as HTMLElement).textContent = label
 }
 
-// Minimap for a sprint: a scrolling window of the line (8 km behind you to 22 km ahead, running left
-// to right), gates as ticks (next: a cyan ring, the one after: a faint ring), rivals as outlined dots,
-// you as an arrow — and along the bottom, the whole 130 km as a strip with everyone on it.
+// Map (top left): a wide top-down window of the course — 1.5 km behind you to 7 km ahead, the line
+// running left to right — with the track as a band of its real width, every spire to scale, gate bars,
+// rivals and you; along the bottom, the whole sprint as a strip with everyone on it.
 const miniCtx = mini.getContext('2d')!
 const MW = mini.width, MH = mini.height
-const WIN_BACK = 8000, WIN_AHEAD = 22000
-const mk = (MW - 40) / (WIN_BACK + WIN_AHEAD)
+const MAP_H = MH - 56
+const WIN_BACK = 1500, WIN_AHEAD = 7000
+const mk = (MW - 24) / (WIN_BACK + WIN_AHEAD)
 function drawMini(): void {
   const g = miniCtx
   g.clearRect(0, 0, MW, MH)
-  g.fillStyle = 'rgba(12,7,5,0.42)'
-  g.beginPath(); g.roundRect(2, 2, MW - 4, MH - 4, 18); g.fill()
-  g.strokeStyle = 'rgba(255,255,255,0.12)'; g.lineWidth = 2; g.stroke()
+  g.fillStyle = 'rgba(12,7,5,0.5)'
+  g.beginPath(); g.roundRect(2, 2, MW - 4, MH - 4, 20); g.fill()
+  g.strokeStyle = 'rgba(255,255,255,0.14)'; g.lineWidth = 2; g.stroke()
   const me = race.racers[0]
-  // Window: centred laterally on the line at the player's point.
-  const ci = me.idx
-  const cz = player.pos.z, cx = course.px[ci]
-  const mapH = MH - 54
-  const to = (x: number, z: number): [number, number] => [20 + (z - (cz - WIN_BACK)) * mk, 14 + mapH / 2 - (x - cx) * mk]
-  const i0 = Math.max(0, ci - Math.round(WIN_BACK / 40) - 5), i1 = Math.min(course.n - 1, ci + Math.round(WIN_AHEAD / 40) + 5)
+  const cz = player.pos.z
+  // Centred across on the stretch in view (not on you): the S-bends stay inside the panel.
+  const ia = Math.max(0, me.idx - Math.round(WIN_BACK / 40)), ib = Math.min(course.n - 1, me.idx + Math.round(WIN_AHEAD / 40))
+  let xlo = Infinity, xhi = -Infinity
+  for (let i = ia; i <= ib; i += 4) { xlo = Math.min(xlo, course.px[i]); xhi = Math.max(xhi, course.px[i]) }
+  xlo = Math.min(xlo, player.pos.x); xhi = Math.max(xhi, player.pos.x)
+  const cx = (xlo + xhi) / 2
+  // Zoom out if the stretch spreads wider across than the panel is tall (an S-bend on a diagonal).
+  const kk = Math.min(mk, (MAP_H - 36) / Math.max(1, xhi - xlo))
+  // True top-down (the course runs along +z, so +z is to the right; your right-hand side is down).
+  const to = (x: number, z: number): [number, number] => [12 + (z - (cz - WIN_BACK)) * kk, 8 + MAP_H / 2 - (x - cx) * kk]
+  const i0 = Math.max(0, me.idx - Math.round(WIN_BACK / 40) - 4), i1 = Math.min(course.n - 1, me.idx + Math.round((WIN_AHEAD * mk / kk) / 40) + 4)
   g.save()
-  g.beginPath(); g.rect(10, 8, MW - 20, mapH + 12); g.clip()
+  g.beginPath(); g.roundRect(8, 8, MW - 16, MAP_H, 14); g.clip()
+  // Kilometre ticks.
+  g.strokeStyle = 'rgba(255,255,255,0.06)'; g.lineWidth = 1.5
+  for (let km = Math.ceil((cz - WIN_BACK) / 1000); km * 1000 < cz + WIN_AHEAD * (mk / kk); km++) { const x = 12 + (km * 1000 - (cz - WIN_BACK)) * kk; g.beginPath(); g.moveTo(x, 8); g.lineTo(x, 8 + MAP_H); g.stroke() }
   const path = new Path2D()
-  for (let i = i0; i <= i1; i += 3) { const [x, y] = to(course.px[i], course.pz[i]); if (i === i0) path.moveTo(x, y); else path.lineTo(x, y) }
-  g.lineJoin = 'round'
-  g.strokeStyle = 'rgba(0,0,0,0.5)'; g.lineWidth = 14; g.stroke(path)
-  g.strokeStyle = 'rgba(255,170,110,0.25)'; g.lineWidth = 9; g.stroke(path)
-  g.strokeStyle = 'rgba(255,244,232,0.9)'; g.lineWidth = 3; g.stroke(path)
+  for (let i = i0; i <= i1; i++) { const [x, y] = to(course.px[i], course.pz[i]); if (i === i0) path.moveTo(x, y); else path.lineTo(x, y) }
+  g.lineJoin = 'round'; g.lineCap = 'round'
+  g.strokeStyle = 'rgba(255,190,140,0.16)'; g.lineWidth = 500 * kk; g.stroke(path)
+  g.strokeStyle = 'rgba(255,240,225,0.55)'; g.lineWidth = 2; g.setLineDash([10, 9]); g.stroke(path); g.setLineDash([])
   for (const rk of course.rocks) {
     if (rk.i < i0 || rk.i > i1) continue
     const [x, y] = to(rk.x, rk.z)
-    g.fillStyle = 'rgba(40,20,14,0.9)'; g.beginPath(); g.arc(x, y, 3, 0, Math.PI * 2); g.fill()
+    g.fillStyle = '#e0602e'; g.strokeStyle = 'rgba(20,6,2,0.85)'; g.lineWidth = 2.5
+    g.beginPath(); g.arc(x, y, Math.max(6, rk.r * 1.7 * kk), 0, Math.PI * 2); g.fill(); g.stroke()
   }
   course.cps.forEach((c, k) => {
     if (c.i < i0 || c.i > i1) return
-    const [x, y] = to(c.x, c.z)
+    const [ax, ay] = to(c.x + c.tz * GATE_HALF, c.z - c.tx * GATE_HALF)
+    const [bx, by] = to(c.x - c.tz * GATE_HALF, c.z + c.tx * GATE_HALF)
     const fin = k === 0 || k === course.cps.length - 1
-    g.strokeStyle = fin ? '#ff7a1a' : 'rgba(255,255,255,0.6)'
-    g.lineWidth = fin ? 4 : 2
-    g.beginPath(); g.moveTo(x, y - 11); g.lineTo(x, y + 11); g.stroke()
-    if (k === me.next) { g.strokeStyle = '#5fe6ff'; g.lineWidth = 4; g.shadowColor = '#5fe6ff'; g.shadowBlur = 12; g.beginPath(); g.arc(x, y, 13, 0, Math.PI * 2); g.stroke(); g.shadowBlur = 0 }
-    else if (k === me.next + 1) { g.strokeStyle = 'rgba(95,230,255,0.45)'; g.lineWidth = 2; g.beginPath(); g.arc(x, y, 9, 0, Math.PI * 2); g.stroke() }
+    g.strokeStyle = k === me.next ? '#5fe6ff' : k === me.next + 1 ? 'rgba(95,230,255,0.45)' : fin ? '#ff7a1a' : 'rgba(255,255,255,0.35)'
+    g.lineWidth = k === me.next ? 5 : 3
+    if (k === me.next) { g.shadowColor = '#5fe6ff'; g.shadowBlur = 12 }
+    g.beginPath(); g.moveTo(ax, ay); g.lineTo(bx, by); g.stroke()
+    g.shadowBlur = 0
   })
   for (const r of race.racers) {
     if (!r.ai || r.p.dead) continue
     const [x, y] = to(r.p.pos.x, r.p.pos.z)
     g.fillStyle = '#' + new THREE.Color(r.color).getHexString()
-    g.strokeStyle = 'rgba(0,0,0,0.7)'; g.lineWidth = 2.5
-    g.beginPath(); g.arc(x, y, 6, 0, Math.PI * 2); g.fill(); g.stroke()
+    g.strokeStyle = 'rgba(0,0,0,0.75)'; g.lineWidth = 2.5
+    g.beginPath(); g.arc(x, y, 7, 0, Math.PI * 2); g.fill(); g.stroke()
   }
   const [px, py] = to(player.pos.x, player.pos.z)
   g.translate(px, py); g.rotate(-player.heading - Math.PI / 2)
@@ -1286,16 +1303,15 @@ function drawMini(): void {
   g.fillStyle = '#ff6a1a'; g.strokeStyle = '#fff'; g.lineWidth = 2.5
   g.beginPath(); g.moveTo(0, 15); g.lineTo(9, -10); g.lineTo(0, -5); g.lineTo(-9, -10); g.closePath(); g.fill(); g.stroke()
   g.restore()
-  // The whole sprint: a strip, start to finish, with everyone on it.
-  const sy = MH - 22, sx0 = 24, sx1 = MW - 24
+  const sy = MH - 24, sx0 = 24, sx1 = MW - 24
   const span = course.finishI - course.startI
   const xAt = (i: number) => sx0 + ((Math.max(course.startI, Math.min(course.finishI, i)) - course.startI) / span) * (sx1 - sx0)
-  g.strokeStyle = 'rgba(255,255,255,0.25)'; g.lineWidth = 4; g.beginPath(); g.moveTo(sx0, sy); g.lineTo(sx1, sy); g.stroke()
-  g.strokeStyle = '#ff7a1a'; g.lineWidth = 4; g.beginPath(); g.moveTo(sx0, sy); g.lineTo(xAt(me.idx), sy); g.stroke()
-  for (const c of course.cps) { g.fillStyle = 'rgba(255,255,255,0.5)'; g.fillRect(xAt(c.i) - 1, sy - 5, 2, 10) }
+  g.strokeStyle = 'rgba(255,255,255,0.25)'; g.lineWidth = 5; g.lineCap = 'round'; g.beginPath(); g.moveTo(sx0, sy); g.lineTo(sx1, sy); g.stroke()
+  g.strokeStyle = '#ff7a1a'; g.beginPath(); g.moveTo(sx0, sy); g.lineTo(xAt(me.idx), sy); g.stroke()
+  for (const c of course.cps) { g.fillStyle = 'rgba(255,255,255,0.45)'; g.fillRect(xAt(c.i) - 1, sy - 6, 2, 12) }
   for (const r of race.racers) {
     g.fillStyle = r.ai ? '#' + new THREE.Color(r.color).getHexString() : '#ffffff'
-    g.beginPath(); g.arc(xAt(r.idx), sy, r.ai ? 4 : 6, 0, Math.PI * 2); g.fill()
+    g.beginPath(); g.arc(xAt(r.idx), sy, r.ai ? 5 : 7, 0, Math.PI * 2); g.fill()
   }
 }
 

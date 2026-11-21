@@ -87,6 +87,10 @@ export class Player {
   /** Drift boost charge (0 … 2.6; level 1 at 0.9, level 2 at 2). */
   drift = 0
   drifting = false
+  /** Wind clock and phase (each craft its own), and the wake it is in (0 … 1, set by the race). */
+  private windT = 0
+  private readonly windPh = Math.random() * 100
+  wake = 0
   /** Steering assist 0 … 1 (more grip, more self-align, automatic countersteer). */
   assist = 0.6
   bankV = 0
@@ -231,6 +235,8 @@ export class Player {
     // (In the air there is nothing to push against: the engines only hold speed.)
     if (this.airborne) k *= 0.35
     const before = this.speed
+    // Slipstream: in a rival's wake the air is thinner — a pull forward (and the buffeting above).
+    if (this.wake > 0) this.speed += 55 * this.wake * dt
     if (burning) this.speed += S.burnAccel * dt * (this.airborne ? 0.5 : 1)
     else this.speed += (target - this.speed) * (1 - Math.exp(-k * dt))
     this.speed -= Math.abs(this.yawRate) * S.turnBleed * this.speed * dt
@@ -293,7 +299,15 @@ export class Player {
       // you on the line you lit it on.
       const damp = this.spin > 0 ? 0.9 : H.yawDamp * (this.burning ? 2.2 : 1)
       this.steerWant = c.steer
-      this.yawRate += (-steer * auth * (this.burning ? H.burnSteer : 1) - damp * this.yawRate + align * (this.burning ? 0.4 : 1)) * dt
+      // Chaos: gusts at speed (smooth, never twitchy noise) and the wake of a rival just ahead (rough).
+      this.windT += dt
+      const fast = THREE.MathUtils.clamp((m - 2) / 4, 0, 1)
+      const n1 = Math.sin(this.windT * 0.83 + this.windPh) * 0.55 + Math.sin(this.windT * 2.1 + this.windPh * 2) * 0.3 + Math.sin(this.windT * 4.7 + this.windPh * 3) * 0.15
+      const n2 = Math.sin(this.windT * 1.37 + this.windPh * 5) * 0.6 + Math.sin(this.windT * 3.3 + this.windPh) * 0.4
+      const rough = this.wake > 0 ? Math.sin(this.windT * 23 + this.windPh) * 0.6 + Math.sin(this.windT * 37) * 0.4 : 0
+      this.side += (n1 * H.gust * fast + rough * 140 * this.wake) * dt * (this.airborne ? 1.5 : 1)
+      const gustYaw = (n2 * H.gustYaw * fast + rough * 0.9 * this.wake) * (this.airborne ? 1.5 : 1)
+      this.yawRate += (-steer * auth * (this.burning ? H.burnSteer : 1) - damp * this.yawRate + align * (this.burning ? 0.4 : 1) + gustYaw) * dt
       this.heading += this.yawRate * dt
       // Turning keeps the velocity: re-split it against the new heading (the slide is real).
       const lat0 = this.lateral + this.side
