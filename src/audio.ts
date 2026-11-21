@@ -24,6 +24,18 @@ const mtof = (m: number) => 440 * Math.pow(2, (m - 69) / 12)
 
 export type Section = 'title' | 'build' | 'drop' | 'break' | 'final' | 'outro'
 
+/** Recorded music (CC0, OpenGameArt — see CREDITS.md): a race track and its faster 'climax' take. */
+export const TRACKS: Record<string, { name: string; file: string; climax?: string }> = {
+  'neon-circuit': { name: 'NEON SIGN CIRCUIT', file: 'neon-circuit', climax: 'neon-circuit-climax' },
+  'hot-roadway': { name: 'HOT ROADWAY', file: 'hot-roadway', climax: 'hot-roadway-climax' },
+  'cool-highway': { name: 'COOL HIGHWAY', file: 'cool-highway', climax: 'cool-highway-climax' },
+  drive: { name: 'DRIVE', file: 'drive' },
+  hyperflight: { name: 'HYPERFLIGHT', file: 'hyperflight' },
+}
+/** Each course's own track (AUTO). */
+export const COURSE_TRACK: Record<string, string> = { sprint: 'neon-circuit', 'dry-river': 'hot-roadway', drag: 'cool-highway', circuit: 'drive' }
+const MENU_TRACK = 'empty-stretch'
+
 export interface RivalVoice { dist: number; closing: number; pan: number; mach: number }
 
 export class Sound {
@@ -88,6 +100,16 @@ export class Sound {
   private breathT = 0
   private lockBeepT = 0
   private scrapeG: GainNode | null = null
+  // Recorded layers (loaded after start): engine roar, wind, one-shots; and the music tracks.
+  private bufs = new Map<string, AudioBuffer | null>()
+  private engS: { src: AudioBufferSourceNode; g: GainNode } | null = null
+  private burnS: { src: AudioBufferSourceNode; g: GainNode } | null = null
+  private windS: { src: AudioBufferSourceNode; g: GainNode } | null = null
+  private trackBus!: GainNode
+  private playing: { id: string; src: AudioBufferSourceNode; g: GainNode } | null = null
+  /** 'auto' (the course's track), 'synth' (the old generated score), or a TRACKS id. */
+  musicChoice = 'auto'
+  private courseTrack = 'neon-circuit'
 
   start(): void {
     if (this.ctx) { void this.ctx.resume(); return }
@@ -307,7 +329,109 @@ export class Sound {
     this.padG.connect(this.music)
     this.padG.connect(this.verbIn)
     this.nextStep = ctx.currentTime + 0.1
+    this.trackBus = ctx.createGain(); this.trackBus.gain.value = 0.9
+    this.trackBus.connect(this.music)
+    void this.loadLayers()
   }
+
+  // ───────────────────────── recorded audio ─────────────────────────
+
+  /** Fetch + decode (cached; null if it failed — the synth carries on alone). */
+  private async load(name: string, dir = 'sfx'): Promise<AudioBuffer | null> {
+    const key = dir + '/' + name
+    if (this.bufs.has(key)) return this.bufs.get(key)!
+    this.bufs.set(key, null)
+    try {
+      const r = await fetch(`${import.meta.env.BASE_URL}${dir}/${name}.mp3`)
+      const b = await this.ctx!.decodeAudioData(await r.arrayBuffer())
+      this.bufs.set(key, b)
+      return b
+    } catch { return null }
+  }
+
+  /** Loop points inside the encoder's padding (leading/trailing near-silence): seamless loops. */
+  private bounds(b: AudioBuffer): [number, number] {
+    const d = b.getChannelData(0), th = 0.002
+    let a = 0, e = d.length - 1
+    while (a < d.length && Math.abs(d[a]) < th) a++
+    while (e > a && Math.abs(d[e]) < th) e--
+    return [a / b.sampleRate, (e + 1) / b.sampleRate]
+  }
+
+  private loopSrc(b: AudioBuffer, dest: AudioNode, gain: number): { src: AudioBufferSourceNode; g: GainNode } {
+    const ctx = this.ctx!
+    const src = ctx.createBufferSource(); src.buffer = b; src.loop = true
+    const [l0, l1] = this.bounds(b); src.loopStart = l0; src.loopEnd = l1
+    const g = ctx.createGain(); g.gain.value = gain
+    src.connect(g).connect(dest); src.start(ctx.currentTime, l0)
+    return { src, g }
+  }
+
+  private async loadLayers(): Promise<void> {
+    const ctx = this.ctx!
+    const eng = await this.load('engine-loop')
+    if (eng) {
+      // The recorded roar under the synth engine; a second, slower and darker copy is the burner.
+      this.engS = this.loopSrc(eng, this.eng, 0)
+      const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 1400
+      lp.connect(this.eng)
+      this.burnS = this.loopSrc(eng, lp, 0)
+    }
+    const wind = await this.load('wind-loop')
+    if (wind) this.windS = this.loopSrc(wind, this.eng, 0)
+    void this.load('whoosh'); void this.load('explosion')
+    this.refreshMusic()
+  }
+
+  /** A recorded one-shot (rate ±, panned). */
+  private sample(name: string, t: number, v: number, rate: number, out: AudioNode): void {
+    const b = this.bufs.get('sfx/' + name)
+    if (!b || !this.ctx) return
+    const src = this.ctx.createBufferSource(); src.buffer = b; src.playbackRate.value = rate
+    const g = this.ctx.createGain(); g.gain.value = v
+    src.connect(g).connect(out); g.connect(this.verbIn)
+    src.start(t)
+  }
+
+  /** Which course is loaded (its AUTO track). */
+  setCourse(id: string): void { this.courseTrack = COURSE_TRACK[id] ?? 'neon-circuit'; this.refreshMusic() }
+
+  /** The track the current section wants, faded in (1.6 s crossfade from whatever was playing). */
+  refreshMusic(): void {
+    if (!this.ctx || !this.trackBus) return
+    if (this.musicChoice === 'synth') { this.fadeTrack(null); return }
+    const id = this.musicChoice === 'auto' ? this.courseTrack : this.musicChoice
+    const tr = TRACKS[id] ?? TRACKS['neon-circuit']
+    const sec = this.section
+    const want = sec === 'title' || sec === 'outro' ? MENU_TRACK : sec === 'build' ? null : sec === 'final' && tr.climax ? tr.climax : tr.file
+    void this.playFile(want)
+  }
+
+  private wantFile: string | null = null
+  private async playFile(file: string | null): Promise<void> {
+    this.wantFile = file
+    if (file === (this.playing?.id ?? null)) return
+    if (!file) { this.fadeTrack(null); return }
+    const b = await this.load(file, 'music')
+    if (!b || !this.ctx) return
+    // (Only if still wanted: a slow load finishing after the section moved on used to win.)
+    if (this.wantFile !== file || this.playing?.id === file) return
+    this.fadeTrack({ id: file, ...this.loopSrc(b, this.trackBus, 0) })
+  }
+
+  private fadeTrack(next: { id: string; src: AudioBufferSourceNode; g: GainNode } | null): void {
+    const t = this.ctx!.currentTime
+    if (this.playing) {
+      const old = this.playing
+      old.g.gain.cancelScheduledValues(t); old.g.gain.setValueAtTime(old.g.gain.value, t); old.g.gain.linearRampToValueAtTime(0, t + 1.6)
+      old.src.stop(t + 1.7)
+    }
+    this.playing = next
+    if (next) { next.g.gain.setValueAtTime(0, t); next.g.gain.linearRampToValueAtTime(1, t + 1.6) }
+  }
+
+  /** Is a recorded track the score (the generated one stays silent)? */
+  private get tracksOn(): boolean { return this.musicChoice !== 'synth' }
 
   setVolumes(master: number, music: number, sfx: number): void {
     this.volume = { master, music, sfx }
@@ -328,6 +452,7 @@ export class Sound {
     this.section = s
     this.sectionT = 0
     if (!this.ctx) return
+    this.refreshMusic()
     const t = this.ctx.currentTime
     if (s === 'drop') {
       // The drop lands: a crash cymbal, a sub hit, the filter wide open.
@@ -373,7 +498,7 @@ export class Sound {
     this.toneA.frequency.setTargetAtTime(f0, t, k)
     this.toneB.frequency.setTargetAtTime(f0 * 1.006, t, k)
     this.toneF.frequency.setTargetAtTime(240 + 900 * s + 800 * boost, t, k)
-    this.toneG.gain.setTargetAtTime(live * (0.09 + 0.1 * boost), t, k)
+    this.toneG.gain.setTargetAtTime(live * (0.06 + 0.07 * boost), t, k)
     this.whine.frequency.setTargetAtTime(560 + 2700 * s * s, t, k)
     this.whine2.frequency.setTargetAtTime(1130 + 5200 * s * s, t, k)
     this.whineG.gain.setTargetAtTime(live * (0.004 + 0.042 * Math.min(1, s * s * s)), t, k)
@@ -382,6 +507,20 @@ export class Sound {
     this.burnRoarF.frequency.setTargetAtTime(600 + 140 * Math.min(10, mach), t, 0.2)
     this.crackleG.gain.setTargetAtTime(burn * 3.2 + live * boost * 0.4, t, 0.04)
     this.windG.gain.setTargetAtTime(0.04 + 0.5 * Math.pow(Math.min(1, s), 1.5), t, k)
+    // Recorded layers: the roar's pitch rides the speed; the burner is the same roar, deeper and fat.
+    if (this.engS) {
+      this.engS.src.playbackRate.setTargetAtTime(0.62 + 0.09 * Math.min(10, mach) + 0.08 * boost, t, 0.08)
+      // (Leads the engine now: at 0.22 it sat 7-10 dB under the synth tone, inaudible.)
+      this.engS.g.gain.setTargetAtTime(live * (0.55 + 0.6 * boost + 0.25 * Math.min(1, s)), t, 0.08)
+    }
+    if (this.burnS) {
+      this.burnS.src.playbackRate.setTargetAtTime(0.45 + 0.04 * Math.min(10, mach), t, 0.1)
+      this.burnS.g.gain.setTargetAtTime(burn * 1.4, t, burn ? 0.05 : 0.2)
+    }
+    if (this.windS) {
+      this.windS.src.playbackRate.setTargetAtTime(0.75 + 0.5 * Math.min(1, s), t, 0.2)
+      this.windS.g.gain.setTargetAtTime(live * 0.5 * Math.pow(Math.min(1.2, s), 1.4), t, 0.15)
+    }
     this.windF.frequency.setTargetAtTime(500 + 8500 * Math.min(1, s * s), t, k)
     this.brakeG.gain.setTargetAtTime(live * brake * 0.26, t, 0.03)
     this.breathT += dt * (0.75 + 0.6 * Math.min(1, s))
@@ -417,7 +556,9 @@ export class Sound {
     this.sectionT += dt
     this.intensity += ((this.section === 'title' || this.section === 'outro' ? 0.2 : Math.max(Math.min(1, mach / 5), heat)) - this.intensity) * Math.min(1, dt * 0.8)
     this.arpF.frequency.setTargetAtTime(600 + 5200 * this.intensity, t, 0.2)
-    this.padG.gain.setTargetAtTime(this.section === 'break' || this.section === 'outro' || this.section === 'title' ? 0.07 : 0.035, t, 0.5)
+    this.padG.gain.setTargetAtTime(this.tracksOn ? 0 : this.section === 'break' || this.section === 'outro' || this.section === 'title' ? 0.07 : 0.035, t, 0.5)
+    // The recorded track: quieter in a wreck (the filter does the rest), softer on the menu.
+    if (this.trackBus) this.trackBus.gain.setTargetAtTime(this.section === 'break' ? 0.55 : this.section === 'title' || this.section === 'outro' ? 0.7 : 0.9, t, 0.3)
     this.schedule()
   }
 
@@ -434,6 +575,7 @@ export class Sound {
   }
 
   private playStep(i: number, t: number): void {
+    if (this.tracksOn && this.section !== 'build') { this.bassG.gain.setTargetAtTime(0, t, 0.1); return }
     const s = i % 16
     const bar = Math.floor(i / 16) % 8
     const sec = this.section
@@ -592,6 +734,7 @@ export class Sound {
     const t = this.late(dist)
     const v = this.fall(dist) * Math.min(1.4, 0.6 + size * 0.3)
     const out = this.panned(pan)
+    this.sample('explosion', t, 0.9 * v, 0.8 + Math.random() * 0.25, out)
     this.thump(t, 90, 26, 1 + size * 0.2, 0.9 * v, out)
     this.burst(t, 1.3 + size * 0.3, 'lowpass', 2400, 110, 0.7 * v, 0.8, out)
     this.burst(t + 0.02, 0.45, 'bandpass', 3000, 800, 0.25 * v, 0.5, out)
@@ -607,6 +750,7 @@ export class Sound {
     const t = this.late(dist)
     const v = this.fall(dist) * (0.7 + sev * 0.4)
     const out = this.panned(pan)
+    this.sample('explosion', t, 0.75 * v, 0.9 + Math.random() * 0.2, out)
     this.thump(t, 110, 24, 1.3, 1.2 * v, out)
     this.burst(t, 0.7, 'bandpass', 2600, 300, 1.0 * v, 1.2, out)
     this.burst(t, 1.4, 'lowpass', 5000, 150, 0.8 * v, 0.7, out)
@@ -643,6 +787,7 @@ export class Sound {
     p.pan.setValueAtTime(Math.max(-1, Math.min(1, pan * 0.4)), t); p.pan.linearRampToValueAtTime(Math.max(-1, Math.min(1, pan)), t + 0.25)
     p.connect(this.sfx)
     this.burst(t, 0.5, 'bandpass', 2600, 300, 0.55 * level, 1.6, p, 0.05)
+    this.sample('whoosh', t, 0.5 * level, 1.1 + Math.random() * 0.4, p)
     this.dirty(t, 0.45, 300, 900, 120, 0.25 * level, p)
   }
 
@@ -688,6 +833,7 @@ export class Sound {
     if (!this.ctx) return
     const t = this.ctx.currentTime
     if (big) {
+      this.sample('explosion', t, 0.8, 0.85 + Math.random() * 0.2, this.sfx)
       this.thump(t, 80, 25, 1.0, 1.1)
       this.dirty(t, 1.2, 3000, 1200, 150, 0.8)
       this.burst(t, 0.5, 'highpass', 3000, 2000, 0.3)

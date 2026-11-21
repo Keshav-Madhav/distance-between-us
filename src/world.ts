@@ -3,7 +3,7 @@
 // boulders and mesas (both collide, against their true lumpy profile), the env map.
 import * as THREE from 'three'
 import { REBASE } from './config'
-import { groundH, MOUND_U, SUN_DIR } from './terrain'
+import { groundH, LIGHT, MOUND_U, SUN_DIR } from './terrain'
 import { FBMT_GLSL, NOISE_TEX, patchStandard, WORLD_GLSL } from './shaders'
 
 export function rng(seed: number): () => number {
@@ -57,14 +57,14 @@ function skyMaterial(ground: boolean): THREE.ShaderMaterial {
           float detail = fbm(cp * 0.0016 + 3.0);
           cov *= smoothstep(0.25, 0.55, detail + cov * 0.4);
           float lit = clamp(fbm(cp * 0.00032 + SUN_DIR.xz * 0.06) - base + 0.55, 0.0, 1.0);
-          vec3 cc = mix(vec3(0.62, 0.68, 0.8), vec3(1.9, 1.8, 1.65), lit);
+          vec3 cc = mix(vec3(0.62, 0.68, 0.8) * mix(vec3(1.0), SUN_TINT, 0.5), vec3(1.9, 1.8, 1.65) * SUN_TINT, lit);
           cc += vec3(1.0, 0.8, 0.55) * pow(s, 6.0) * 0.6;
           float fade = smoothstep(0.015, 0.16, d.y);
           // High cirrus, 9 km up: thin streaks drawn out along the wind, behind the cumulus.
           vec2 hp = d.xz / d.y * 9000.0 + uCloudOff * 1.7;
           float ci = fbmT(hp * vec2(0.00006, 0.00028) + 7.3) * 0.7 + fbmT(hp * 0.0011 + 2.1) * 0.3;
           float cir = smoothstep(0.5, 0.78, ci) * smoothstep(0.03, 0.25, d.y) * (1.0 - cov);
-          c = mix(c, vec3(1.45, 1.42, 1.38) + vec3(1.0, 0.8, 0.55) * pow(s, 8.0) * 0.5, cir * 0.42);
+          c = mix(c, vec3(1.45, 1.42, 1.38) * SUN_TINT + vec3(1.0, 0.8, 0.55) * pow(s, 8.0) * 0.5, cir * 0.42);
           c = mix(c, cc, cov * fade * 0.92);
         }
         // The sun: a hot disk (past bloom's threshold) and a wide glare.
@@ -286,7 +286,7 @@ function terrainMaterial(shared: GroundUniforms, snap: { value: THREE.Vector2 },
           float b = fbmT(cp * 0.00032) * 0.93;
           sun *= 1.0 - 0.6 * smoothstep(0.46, 0.68, b);
         }
-        vec3 col = alb * (vec3(1.0, 0.9, 0.78) * 2.4 * sun + skyColor(n) * 0.36 + vec3(0.5, 0.22, 0.1) * 0.2);
+        vec3 col = alb * (SUN_COL * sun + skyColor(n) * 0.36 + vec3(0.5, 0.22, 0.1) * 0.2);
         // Sand glints: a few grains in each patch catch the sun toward you (near the camera, in sun,
         // fading out with speed so they never strobe).
         float gd = (1.0 - smoothstep(30.0, 200.0, length(vW - cameraPosition))) * (1.0 - min(1.0, uSpeed * 1.2));
@@ -365,7 +365,7 @@ function pebbles(count: number, tile: number): THREE.InstancedMesh {
         if (n.y < 0.0) n = -n;
         vec3 alb = mix(vec3(0.3, 0.07, 0.03), vec3(0.55, 0.28, 0.14), vTint);
         float sun = max(dot(n, SUN_DIR), 0.0);
-        vec3 col = alb * (vec3(1.0, 0.9, 0.76) * 2.4 * sun + skyColor(n) * 0.35);
+        vec3 col = alb * (SUN_COL * sun + skyColor(n) * 0.35);
         gl_FragColor = vec4(applyFog(col, vW), 1.0);
       }`,
   })
@@ -637,7 +637,8 @@ export class World {
     this.wrapped.push(bw)
     this.group.add(bw.mesh)
 
-    this.sunLight = new THREE.DirectionalLight(0xfff0dc, 3.0)
+    // (The course's hour: the sun's colour and strength, from the same light as the sky.)
+    this.sunLight = new THREE.DirectionalLight(new THREE.Color(LIGHT.sunCol[0], LIGHT.sunCol[1], LIGHT.sunCol[2]).multiplyScalar(1 / 2.4), 3.0 * (LIGHT.sunCol[0] + LIGHT.sunCol[1] + LIGHT.sunCol[2]) / 6.43)
     this.sunLight.position.set(SUN_DIR[0], SUN_DIR[1], SUN_DIR[2])
     this.group.add(this.sunLight)
     this.group.add(this.sunLight.target)

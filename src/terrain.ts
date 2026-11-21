@@ -122,13 +122,34 @@ float groundH(vec2 p) {
 `
 
 /** The sky's colours, shared by the sky dome, the fog on everything, and the env map. */
+interface Light { zenith: number[]; horizon: number[]; haze: number[]; sunDir: number[]; fogK: number; sunCol: number[]; tint: number[] }
+/**
+ * Each course has its own hour: the light is chosen as the page loads (a course switch is a reload),
+ * before any shader compiles — the sky's colours are constants in the shaders.
+ */
+const LIGHTS: Record<string, Light> = {
+  // The Sprint: high noon.
+  noon: { zenith: [0.06, 0.24, 0.72], horizon: [0.42, 0.64, 0.92], haze: [0.98, 0.82, 0.62], sunDir: [0.36, 0.78, -0.52], fogK: 0.000062, sunCol: [2.4, 2.16, 1.87], tint: [1, 1, 1] },
+  // Dry River: late afternoon, warmer and lower.
+  afternoon: { zenith: [0.07, 0.2, 0.6], horizon: [0.55, 0.62, 0.78], haze: [1.0, 0.72, 0.48], sunDir: [0.55, 0.45, -0.7], fogK: 0.000066, sunCol: [2.45, 1.95, 1.45], tint: [1.02, 0.92, 0.8] },
+  // The Circuit: golden hour — a low sun, amber haze, long shadows.
+  golden: { zenith: [0.1, 0.15, 0.42], horizon: [0.9, 0.6, 0.42], haze: [1.0, 0.52, 0.28], sunDir: [0.62, 0.26, -0.74], fogK: 0.000074, sunCol: [2.5, 1.62, 0.95], tint: [1.06, 0.8, 0.6] },
+  // The Long Drag: dusk — the sun on the horizon, a violet sky, the land in shadow and glow.
+  dusk: { zenith: [0.05, 0.06, 0.2], horizon: [0.7, 0.38, 0.36], haze: [0.95, 0.42, 0.26], sunDir: [-0.66, 0.17, -0.73], fogK: 0.000082, sunCol: [2.1, 1.05, 0.6], tint: [1.0, 0.62, 0.5] },
+}
+const COURSE_LIGHT: Record<string, string> = { sprint: 'noon', 'dry-river': 'afternoon', circuit: 'golden', drag: 'dusk' }
+export const LIGHT: Light = (() => {
+  let id: string | null = null
+  try { id = new URLSearchParams(location.search).get('course') ?? localStorage.getItem('dbu-course') } catch { /* not a browser / storage blocked */ }
+  return LIGHTS[COURSE_LIGHT[id ?? 'sprint'] ?? 'noon'] ?? LIGHTS.noon
+})()
 export const SKY = {
-  zenith: [0.06, 0.24, 0.72],
-  horizon: [0.42, 0.64, 0.92],
-  haze: [0.98, 0.82, 0.62],
-  sunDir: [0.36, 0.78, -0.52],
+  zenith: LIGHT.zenith,
+  horizon: LIGHT.horizon,
+  haze: LIGHT.haze,
+  sunDir: LIGHT.sunDir,
   /** Fog density: 1 - exp(-(d·k)²). */
-  fogK: 0.000062,
+  fogK: LIGHT.fogK,
 }
 
 const v3 = (a: number[]) => `vec3(${a.map((n) => n.toFixed(4)).join(',')})`
@@ -145,6 +166,8 @@ const vec3 SKY_ZENITH = ${v3(SKY.zenith)};
 const vec3 SKY_HORIZON = ${v3(SKY.horizon)};
 const vec3 SKY_HAZE = ${v3(SKY.haze)};
 const vec3 SUN_DIR = ${v3(sd)};
+const vec3 SUN_COL = ${v3(LIGHT.sunCol)};
+const vec3 SUN_TINT = ${v3(LIGHT.tint)};
 vec3 skyColor(vec3 d) {
   float up = clamp(d.y, -0.2, 1.0);
   float sunAmt = max(dot(d, SUN_DIR), 0.0);

@@ -991,6 +991,9 @@ qSel.value = tierName
 qSel.onchange = () => { tierName = qSel.value as Tier | 'auto'; tier = tierName === 'auto' ? 'high' : tierName; renderScale = 1; applyTier() }
 const vols = () => sound.setVolumes(+$<HTMLInputElement>('#vm').value, +$<HTMLInputElement>('#vmu').value, +$<HTMLInputElement>('#vs').value)
 for (const id of ['#vm', '#vmu', '#vs']) $(id).oninput = vols
+// The soundtrack: AUTO plays each course's own track (and its climax take on the final stretch).
+sound.setCourse(course.def.id)
+$<HTMLSelectElement>('#mus').onchange = (e) => { sound.musicChoice = (e.target as HTMLSelectElement).value; sound.refreshMusic() }
 $<HTMLInputElement>('#rs').onchange = (e) => { CFG.camera.reduceShake = (e.target as HTMLInputElement).checked }
 // Graphics settings: applied live, remembered.
 const applyGraphics = () => {
