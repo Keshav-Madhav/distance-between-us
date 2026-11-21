@@ -135,9 +135,11 @@ const LIGHTS: Record<string, Light> = {
   // The Circuit: golden hour — a low sun, amber haze, long shadows.
   golden: { zenith: [0.1, 0.15, 0.42], horizon: [0.9, 0.6, 0.42], haze: [1.0, 0.52, 0.28], sunDir: [0.62, 0.26, -0.74], fogK: 0.000074, sunCol: [2.5, 1.62, 0.95], tint: [1.06, 0.8, 0.6] },
   // The Long Drag: dusk — the sun on the horizon, a violet sky, the land in shadow and glow.
+  // Canyon Run: dawn — cool blue-pink sky, a low sun from the east, rose light on the rock.
+  dawn: { zenith: [0.1, 0.18, 0.48], horizon: [0.78, 0.62, 0.7], haze: [0.95, 0.66, 0.6], sunDir: [-0.7, 0.3, 0.65], fogK: 0.00007, sunCol: [2.4, 1.75, 1.45], tint: [1.04, 0.86, 0.82] },
   dusk: { zenith: [0.05, 0.06, 0.2], horizon: [0.7, 0.38, 0.36], haze: [0.95, 0.42, 0.26], sunDir: [-0.66, 0.17, -0.73], fogK: 0.000082, sunCol: [2.1, 1.05, 0.6], tint: [1.0, 0.62, 0.5] },
 }
-const COURSE_LIGHT: Record<string, string> = { sprint: 'noon', 'dry-river': 'afternoon', circuit: 'golden', drag: 'dusk' }
+const COURSE_LIGHT: Record<string, string> = { sprint: 'noon', 'dry-river': 'afternoon', circuit: 'golden', drag: 'dusk', oval: 'noon', canyon: 'dawn' }
 export const LIGHT: Light = (() => {
   let id: string | null = null
   try { id = new URLSearchParams(location.search).get('course') ?? localStorage.getItem('dbu-course') } catch { /* not a browser / storage blocked */ }

@@ -67,7 +67,7 @@ const clearAt = (x: number, z: number, r: number) => {
   const B = course.box, m = 3000
   for (let ix = Math.ceil((B.x0 - m - x) / REBASE); ix <= Math.floor((B.x1 + m - x) / REBASE); ix++)
     for (let iz = Math.ceil((B.z0 - m - z) / REBASE); iz <= Math.floor((B.z1 + m - z) / REBASE); iz++)
-      if (course.distance(x + ix * REBASE, z + iz * REBASE) < 850 + r) return false
+      if (course.distance(x + ix * REBASE, z + iz * REBASE) < (course.def.clearance ?? 850) + r) return false
   return true
 }
 const world = new World(clearAt, (x, z, r) => course.distance(x, z) < 460 + r)

@@ -53,6 +53,8 @@ export interface CourseDef {
   rampR?: number
   /** Each jump on one half of the track, alternating sides: take it or go round (the drag race). */
   rampHalf?: boolean
+  /** How far mesas keep from the line (m, default 850): small → a canyon. */
+  clearance?: number
   /** Gate width (half, m) and tower height × (default 260, 1). */
   gateHalf?: number
   gateTall?: number
@@ -191,7 +193,68 @@ export const CIRCUIT: CourseDef = {
   sections: [],
 }
 
-export const COURSES: CourseDef[] = [SPRINT, DRY_RIVER, DRAG, CIRCUIT]
+/**
+ * Course 5: THE OVAL — two long straights (with slow S-bends you hold flat), joined by two tight
+ * 180° ends (radius 1.3 km: lift above ~Mach 5.5). Drafting on the straights, braking into the ends.
+ */
+const ovalPath = (() => {
+  const S = 32000, R = 1300, L = 2 * S + 2 * Math.PI * R
+  const sOff = (t: number) => 650 * Math.sin(2 * Math.PI * 3 * t) * Math.sin(Math.PI * t) ** 2
+  return (u: number): [number, number] => {
+    let s = (((u % 1) + 1) % 1) * L
+    if (s < S) { const t = s / S; return [-S / 2 + s, -R - sOff(t)] }
+    s -= S
+    if (s < Math.PI * R) { const a = -Math.PI / 2 + s / R; return [S / 2 + R * Math.cos(a), R * Math.sin(a)] }
+    s -= Math.PI * R
+    if (s < S) { const t = s / S; return [S / 2 - s, R + sOff(t)] }
+    s -= S
+    const a = Math.PI / 2 + s / R
+    return [-S / 2 + R * Math.cos(a), R * Math.sin(a)]
+  }
+})()
+export const OVAL: CourseDef = {
+  id: 'oval',
+  name: 'THE OVAL',
+  blurb: 'TWO STRAIGHTS · TWO TIGHT ENDS · DRAFT AND BRAKE',
+  km: Math.round(loopLength(ovalPath) / 100) / 10,
+  loop: ovalPath,
+  gateEvery: 6000,
+  jumps: [],
+  whoops: [],
+  padEvery: 10000,
+  spireGap: () => null,
+  rockGateP: 0,
+  seed: 21,
+  sections: [],
+}
+
+/**
+ * Course 6: CANYON RUN — a pinched kidney loop with the mesas let in close (380 m from the line):
+ * the rock walls stand right beside you through the bends. Two sets of jumps on the straighter side.
+ */
+const canyonPath = (u: number): [number, number] => {
+  const a = 2 * Math.PI * u
+  const r = 10500 + 2600 * Math.cos(2 * a + 0.3) + 700 * Math.sin(5 * a + 1.0) + 260 * Math.sin(11 * a + 2.0)
+  return [r * Math.sin(a), r * Math.cos(a) - 10500]
+}
+export const CANYON: CourseDef = {
+  id: 'canyon',
+  name: 'CANYON RUN',
+  blurb: 'A KIDNEY LOOP · ROCK WALLS CLOSE · DAWN',
+  km: Math.round(loopLength(canyonPath) / 100) / 10,
+  loop: canyonPath,
+  gateEvery: 5000,
+  jumps: [0.3, 0.33, 0.7, 0.73],
+  whoops: [],
+  padEvery: 8000,
+  spireGap: () => null,
+  rockGateP: 0,
+  seed: 31,
+  sections: [],
+  clearance: 380,
+}
+
+export const COURSES: CourseDef[] = [SPRINT, DRY_RIVER, DRAG, CIRCUIT, OVAL, CANYON]
 
 /** The race's line as points (x, z) every ~200 m, start to finish — for previews. */
 export function centerline(def: CourseDef): { xs: number[]; zs: number[] } {

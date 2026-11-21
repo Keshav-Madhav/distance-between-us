@@ -104,13 +104,14 @@
   #title .tabs button { flex: 1; padding: 12px 0; font-size: 13px; }
   #title .tabs button.on { background: rgba(255,106,26,0.25); border-color: var(--hot); color: #fff; }
   #title .sec { font-size: 10px; letter-spacing: 0.45em; opacity: 0.6; margin-top: 8px; }
-  #courses { display: flex; flex-direction: column; gap: 6px; }
-  #courses .c { display: grid; grid-template-columns: 1fr auto; padding: 10px 14px; border: 1px solid rgba(255,255,255,0.16); background: rgba(0,0,0,0.25); cursor: pointer; letter-spacing: 0.18em; font-size: 13px; transition: background 0.15s, border-color 0.15s; }
+  /* (Two columns, name + length: the map panel carries each course's description.) */
+  #courses { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  #courses .c { display: grid; grid-template-columns: 1fr; padding: 8px 12px; border: 1px solid rgba(255,255,255,0.16); background: rgba(0,0,0,0.25); cursor: pointer; letter-spacing: 0.18em; font-size: 13px; transition: background 0.15s, border-color 0.15s; }
   #courses .c:hover { background: rgba(255,255,255,0.08); }
   #courses .c.on { border-color: var(--hot); background: rgba(255,106,26,0.16); }
   #courses .c b { font-weight: 700; }
-  #courses .c small { grid-column: 1 / -1; opacity: 0.6; font-size: 10px; letter-spacing: 0.2em; margin-top: 3px; }
-  #courses .c .best { font-size: 11px; opacity: 0.8; align-self: center; }
+  #courses .c small { display: none; }
+  #courses .c .best { font-size: 10px; opacity: 0.7; margin-top: 2px; }
   #title .ship { display: flex; align-items: center; gap: 10px; }
   #title .ship .sn { flex: 1; text-align: center; padding: 8px 0; border: 1px solid rgba(255,255,255,0.16); background: rgba(0,0,0,0.25); }
   #title .ship .sn b { display: block; letter-spacing: 0.35em; font-size: 15px; }
