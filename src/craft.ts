@@ -16,7 +16,49 @@ export const MODELS = ['VANGUARD', 'BULWARK', 'LANCE', 'ARROW', 'BRUTE', 'NEEDLE
 const LOD_DIST = 260
 const NOZZLE_Z = -4.45
 
-export interface Paint { body: number; trim: number; number: string }
+export interface Paint {
+  body: number
+  trim: number
+  number: string
+  /** Pattern in the trim colour (LIVERIES), paint finish (FINISHES), exhaust colour (FLAMES). */
+  livery?: number
+  finish?: number
+  flame?: number
+}
+export const LIVERIES = ['SOLID', 'STRIPES', 'SPLIT', 'CHEVRON', 'NOSE', 'CAMO', 'PINSTRIPE'] as const
+export const FINISHES = ['GLOSS', 'MATTE', 'METALLIC', 'CHROME', 'PEARL'] as const
+export const FLAMES = ['AMBER', 'BLUE', 'GREEN', 'VIOLET', 'WHITE'] as const
+const FLAME_COLS: [[number, number, number], [number, number, number]][] = [
+  [[2.2, 1.5, 0.8], [2.0, 0.5, 0.1]],
+  [[1.3, 1.9, 2.6], [0.25, 0.6, 2.4]],
+  [[1.6, 2.4, 1.2], [0.3, 1.6, 0.35]],
+  [[2.2, 1.4, 2.6], [1.3, 0.3, 2.2]],
+  [[2.4, 2.4, 2.4], [1.1, 1.15, 1.4]],
+]
+const HOT_COLS: [number, number, number][] = [[1.5, 0.42, 0.1], [0.3, 0.7, 1.8], [0.4, 1.5, 0.4], [1.2, 0.35, 1.6], [1.6, 1.6, 1.7]]
+
+/** Liveries drawn on the paint in the ship's own space (x across, y up, z nose-forward). */
+function liveryPatch(m: THREE.MeshPhysicalMaterial, u: { uLiv: { value: number }; uLivC: { value: THREE.Color }; uLivC2: { value: THREE.Color } }): void {
+  const prev = m.onBeforeCompile.bind(m), prevKey = m.customProgramCacheKey.bind(m)
+  m.customProgramCacheKey = () => 'livery-' + prevKey()
+  m.onBeforeCompile = (sh, r) => {
+    prev(sh, r)
+    Object.assign(sh.uniforms, u)
+    sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vLivP;').replace('#include <begin_vertex>', '#include <begin_vertex>\nvLivP = position;')
+    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec3 vLivP;\nuniform float uLiv;\nuniform vec3 uLivC;\nuniform vec3 uLivC2;').replace('#include <color_fragment>', `#include <color_fragment>
+      {
+        vec3 q = vLivP; float ax = abs(q.x); float mk = 0.0; vec3 lc = uLivC;
+        int L = int(uLiv + 0.5);
+        if (L == 1) mk = (1.0 - smoothstep(0.1, 0.13, abs(ax - 0.34))) * smoothstep(0.15, 0.35, q.y);
+        else if (L == 2) { mk = 1.0 - smoothstep(0.08, 0.14, q.y); lc = uLivC2; }
+        else if (L == 3) mk = step(0.72, fract(q.z * 0.32 + ax * 0.42)) * step(-3.6, q.z);
+        else if (L == 4) mk = max(smoothstep(1.6, 1.75, q.z), smoothstep(2.9, 3.05, ax));
+        else if (L == 5) { vec3 c = floor(q * vec3(1.4, 2.2, 1.1)); float h = fract(sin(dot(c, vec3(12.9898, 78.233, 37.719))) * 43758.5453); mk = step(0.5, h); lc = uLivC2; }
+        else if (L == 6) mk = max(1.0 - smoothstep(0.03, 0.05, abs(q.y - 0.28)), (1.0 - smoothstep(0.025, 0.045, ax)) * smoothstep(0.3, 0.45, q.y));
+        diffuseColor.rgb = mix(diffuseColor.rgb, lc, mk);
+      }`)
+  }
+}
 
 const _soot = new THREE.Color(0x17110d)
 
@@ -174,6 +216,7 @@ export class Craft {
       glass: new THREE.MeshPhysicalMaterial({ color: 0x1a2c44, roughness: 0.04, metalness: 0.3, clearcoat: 1, envMap: env, envMapIntensity: 1.6, transparent: true, opacity: 0.62, depthWrite: false }),
     }
     for (const m of Object.values(mats)) patchStandard(m as THREE.MeshStandardMaterial)
+    liveryPatch(mats.paint as THREE.MeshPhysicalMaterial, this.livU)
     this.charMats = [mats.paint, mats.trim, mats.metal].map((m) => ({ m: m as THREE.MeshStandardMaterial, base: (m as THREE.MeshStandardMaterial).color.clone() }))
     this.glow = new THREE.MeshBasicMaterial({ color: new THREE.Color(0.3, 1.6, 3.2) })
     mats.glow = this.glow
@@ -186,6 +229,7 @@ export class Craft {
     this.innerMat = flameMaterial(new THREE.Color(2.6, 2.3, 2.0), new THREE.Color(1.3, 1.1, 1.6))
     this.setModel(model)
     this.lo.visible = false
+    this.setPaint(paint)
 
     // The vapour cone: a pale shell, flashed as each Mach number breaks.
     this.coneMat = new THREE.ShaderMaterial({
@@ -214,8 +258,32 @@ export class Craft {
   }
 
   /** Repaint live: body, team colour (trim, neon, number). */
+  private readonly livU = { uLiv: { value: 0 }, uLivC: { value: new THREE.Color() }, uLivC2: { value: new THREE.Color() } }
   setPaint(p: Paint): void {
     const m = this.mats
+    // Livery: the trim colour (split and camo use a darker body tone).
+    this.livU.uLiv.value = p.livery ?? 0
+    this.livU.uLivC.value.set(p.trim)
+    this.livU.uLivC2.value.set(p.body).multiplyScalar(0.45).lerp(new THREE.Color(0x15171b), 0.3)
+    if ((p.livery ?? 0) === 2) this.livU.uLivC2.value.set(p.trim).multiplyScalar(0.85)
+    // Finish.
+    const pm = m.paint as THREE.MeshPhysicalMaterial
+    const F = [
+      { r: 0.16, mt: 0.35, cc: 1, ccr: 0.04, env: 1.7, ir: 0 },
+      { r: 0.6, mt: 0.05, cc: 0, ccr: 0.5, env: 0.7, ir: 0 },
+      { r: 0.28, mt: 0.85, cc: 0.6, ccr: 0.1, env: 1.6, ir: 0 },
+      { r: 0.05, mt: 1, cc: 1, ccr: 0.02, env: 2.3, ir: 0 },
+      { r: 0.2, mt: 0.3, cc: 1, ccr: 0.05, env: 1.8, ir: 1 },
+    ][p.finish ?? 0] ?? { r: 0.16, mt: 0.35, cc: 1, ccr: 0.04, env: 1.7, ir: 0 }
+    const irChanged = (pm.iridescence > 0) !== (F.ir > 0)
+    pm.roughness = F.r; pm.metalness = F.mt; pm.clearcoat = F.cc; pm.clearcoatRoughness = F.ccr; pm.envMapIntensity = F.env
+    pm.iridescence = F.ir; pm.iridescenceIOR = 1.6; pm.iridescenceThicknessRange = [200, 600]
+    if (irChanged) pm.needsUpdate = true
+    // Exhaust.
+    const fl = FLAME_COLS[p.flame ?? 0] ?? FLAME_COLS[0]
+    this.flameMat.uniforms.uCore.value.setRGB(...fl[0]); this.flameMat.uniforms.uEdge.value.setRGB(...fl[1])
+    this.innerMat.uniforms.uCore.value.setRGB(...fl[0]).multiplyScalar(1.15); this.innerMat.uniforms.uEdge.value.setRGB(fl[0][0] * 0.6, fl[0][1] * 0.6, fl[0][2] * 0.7)
+    ;(m.hot as THREE.MeshBasicMaterial).color.setRGB(...(HOT_COLS[p.flame ?? 0] ?? HOT_COLS[0]))
     ;(m.paint as THREE.MeshStandardMaterial).color.set(p.body)
     ;(m.trim as THREE.MeshStandardMaterial).color.set(p.trim)
     ;(m.trim as THREE.MeshStandardMaterial).emissive.set(p.trim)

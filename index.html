@@ -362,6 +362,14 @@
   #lockwarn i { position: absolute; left: 0; top: 0; bottom: 0; width: 0; background: rgba(255,58,42,0.55); }
   #lockwarn b { position: relative; display: block; text-align: center; line-height: 22px; font-size: 12px; letter-spacing: 0.3em; color: #fff; }
   @keyframes lockblink { 50% { border-color: rgba(255,58,42,0.3); } }
+  #title .paints .opts { gap: 4px; }
+  #title .paints .opts button { padding: 5px 8px; font-size: 10px; letter-spacing: 0.12em; background: rgba(255,255,255,0.05); }
+  #title .paints .opts button.on { border-color: var(--hot); background: rgba(255,106,26,0.25); }
+  #title .paints { max-height: calc(100vh - 300px); overflow-y: auto; scrollbar-width: none; }
+  /* The paint drawer at the right edge: the ship you are painting stays in view. */
+  #title .paints { left: auto; right: 32px; top: 80px; bottom: auto; transform: translateX(24px); }
+  #title .paints.open { transform: none; }
+  @media (max-height: 800px) { #title .paints { top: 72px; bottom: auto; } }
 </style>
 </head>
 <body>
@@ -419,7 +427,7 @@
     <button id="ship-next" aria-label="next ship">▶</button>
     <button id="paint-btn" aria-expanded="false">PAINT</button>
   </div>
-  <aside class="paints" id="paint-drawer"><b>PAINT</b><div><small>Body</small><span id="sw-body"></span></div><div><small>Trim</small><span id="sw-trim"></span></div></aside>
+  <aside class="paints" id="paint-drawer"><b>PAINT</b><div><small>Body</small><span id="sw-body"></span></div><div><small>Trim</small><span id="sw-trim"></span></div><div><small>Livery</small><span id="sw-livery" class="opts"></span></div><div><small>Finish</small><span id="sw-finish" class="opts"></span></div><div><small>Exhaust</small><span id="sw-flame" class="opts"></span></div></aside>
   <footer class="plan">
     <canvas id="track" class="race-only" width="460" height="280"></canvas>
     <div class="info"><div class="ph"><b id="tp-name"></b><span id="tp-blurb"></span></div><div id="tp-stats"></div><div id="tp-info"></div></div>

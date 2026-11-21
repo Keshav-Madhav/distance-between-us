@@ -6,7 +6,7 @@ import * as THREE from 'three'
 import { FullScreenQuad } from 'three/addons/postprocessing/Pass.js'
 import { CFG, MACH, REBASE } from './config'
 import { World } from './world'
-import { primeModels, Craft, MODELS, type Paint } from './craft'
+import { primeModels, Craft, FINISHES, FLAMES, LIVERIES, MODELS, type Paint } from './craft'
 import { Fx, resetE } from './particles'
 import { Trail } from './trails'
 import { Player } from './player'
@@ -398,8 +398,8 @@ let shipPick = (() => { try { return Math.min(MODELS.length - 1, Math.max(0, +(l
 const BODY_COLORS = [0xeef1f4, 0x1b1d24, 0x16324a, 0x8a1c22, 0xd9c3a0, 0x1f3a2a, 0x2a1d44, 0xc9a227, 0x6b7380]
 const TRIM_COLORS = [0xff5a14, 0xff3fa4, 0x29d3ff, 0x7dff3a, 0xffc21a, 0xa96bff, 0xff3b30, 0xf2f2f2, 0x3dffc5]
 const myPaint: Paint = (() => {
-  try { const v = JSON.parse(localStorage.getItem('dbu-paint') || 'null'); if (v && typeof v.body === 'number' && typeof v.trim === 'number') return { body: v.body, trim: v.trim, number: '07' } } catch { /* fresh */ }
-  return { body: 0xeef1f4, trim: 0xff5a14, number: '07' }
+  try { const v = JSON.parse(localStorage.getItem('dbu-paint') || 'null'); if (v && typeof v.body === 'number' && typeof v.trim === 'number') return { body: v.body, trim: v.trim, number: '07', livery: v.livery ?? 1, finish: v.finish ?? 0, flame: v.flame ?? 0 } } catch { /* fresh */ }
+  return { body: 0xeef1f4, trim: 0xff5a14, number: '07', livery: 1, finish: 0, flame: 0 }
 })()
 const PAINTS: Paint[] = [
   myPaint,
@@ -416,6 +416,9 @@ const PAINTS: Paint[] = [
 // A bigger field (the drag race): paint the rest from their colours, dark and light bodies in turn.
 for (let i = PAINTS.length; i < race.racers.length; i++)
   PAINTS.push({ body: i % 2 ? 0x1c1e24 : 0xe6e8ec, trim: race.racers[i].color, number: String(40 + i * 3) })
+// The field in every style: each rival its own livery and finish.
+PAINTS.forEach((p, i) => { if (i > 0) { p.livery = (i * 3) % LIVERIES.length; p.finish = (i * 2) % FINISHES.length } })
+const savePaint = () => { try { localStorage.setItem('dbu-paint', JSON.stringify({ body: myPaint.body, trim: myPaint.trim, livery: myPaint.livery, finish: myPaint.finish, flame: myPaint.flame })) } catch { /* blocked */ } }
 interface Visual { craft: Craft; trail: Trail[]; vapour: Trail[]; lastDust: THREE.Vector3; heading: number; wasDead: boolean; wasHidden: boolean }
 const visuals = new Map<Player, Visual>()
 bootMark('race')
@@ -983,12 +986,23 @@ function showCourse(): void {
       el.onclick = () => {
         myPaint[key] = c
         myCraft.setPaint(myPaint)
-        try { localStorage.setItem('dbu-paint', JSON.stringify({ body: myPaint.body, trim: myPaint.trim })) } catch { /* blocked */ }
+        savePaint()
         showCourse()
       }
       box.append(el)
     }
     list.forEach((c, i) => (box.children[i] as HTMLElement).classList.toggle('on', c === myPaint[key]))
+  }
+  // Livery, finish, exhaust: rows of small named buttons.
+  for (const [id, names, key] of [['#sw-livery', LIVERIES, 'livery'], ['#sw-finish', FINISHES, 'finish'], ['#sw-flame', FLAMES, 'flame']] as const) {
+    const box = $(id)
+    if (!box.childElementCount) names.forEach((n, i) => {
+      const b = document.createElement('button')
+      b.type = 'button'; b.textContent = n
+      b.onclick = () => { myPaint[key] = i; myCraft.setPaint(myPaint); savePaint(); showCourse() }
+      box.append(b)
+    })
+    names.forEach((_n, i) => (box.children[i] as HTMLElement).classList.toggle('on', i === (myPaint[key] ?? 0)))
   }
   $('#start').textContent = swapPending ? `LOADING ${swapPending}…` : menuMode === 'hunt' ? 'START HUNT' : `START · ${COURSES[pickedCourse].name}`
   $('#ship-name').textContent = MODELS[shipPick]
