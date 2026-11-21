@@ -29,9 +29,10 @@ export const FLIGHT = {
   accel: 140,
   decel: 220,
   /** Pitch rate (rad/s) at corner speed (Mach 1.4–2.6), falling to `pitchFast` at Mach 5. */
-  pitchRate: 1.5,
-  pitchFast: 0.85,
-  rollRate: 3.6,
+  // (Calmer than the plan's 1.5 / 3.6: at those a key tap swung 120° a second — "too difficult".)
+  pitchRate: 1.05,
+  pitchFast: 0.7,
+  rollRate: 2.6,
   yawRate: 0.35,
   /** How fast the velocity swings onto the nose (1/s): low slides, high is rails. */
   follow: 5,
@@ -128,38 +129,40 @@ export class FlightCraft {
     // ── where to fly: an aim direction ──
     if (c.aim) this.aim.copy(c.aim)
     else {
-      // Keys / stick: a direction off the nose — turn about the world's up (so it does not depend on
-      // the roll), pitch about the wings.
+      // Keys / stick: a direction off the nose — turn about the world's up and pitch toward the
+      // world's up or down (so ↑/↓ mean dive and climb whatever the bank).
       const flat = _v.set(this.fwd.x, 0, this.fwd.z)
       if (flat.lengthSq() < 1e-6) flat.set(0, 0, 1)
       flat.normalize()
       const sideW = _w.set(-flat.z, 0, flat.x) // world right of the nose's heading
-      this.aim.copy(this.fwd).addScaledVector(sideW, c.turn * 0.7).addScaledVector(this.up, c.pitch * 0.7).normalize()
+      this.aim.copy(this.fwd).addScaledVector(sideW, c.turn * 0.45).addScaledVector(UP, c.pitch * 0.5).normalize()
     }
 
-    // ── the controller: bank toward the aim, pull to it, level the wings when close ──
-    const up = this.aim.dot(this.up), side = this.aim.dot(this.right), ahead = this.aim.dot(this.fwd)
-    const err = Math.acos(THREE.MathUtils.clamp(ahead, -1, 1))
+    // ── the controller: bank toward a sideways aim, pitch straight at a high or low one ──
+    // (It never rolls over to reach an aim below the nose — that bank-and-yank read as the controls
+    //  doing the opposite of what you asked.)
+    const up = this.aim.dot(this.up), side = this.aim.dot(this.right)
     const m = this.mach
     const corner = THREE.MathUtils.clamp((m - 2.6) / (5 - 2.6), 0, 1)
     const pitchMax = THREE.MathUtils.lerp(F.pitchRate, F.pitchFast, corner) * (c.brake ? 1.25 : 1)
-    let pitchCmd = THREE.MathUtils.clamp(4 * Math.asin(THREE.MathUtils.clamp(up, -1, 1)), -1, 1)
-    const yawCmd = THREE.MathUtils.clamp(4 * Math.asin(THREE.MathUtils.clamp(side, -1, 1)), -1, 1) * 0.25
-    // Roll: toward the bank that puts the aim straight "up" from the cockpit when the error is big;
-    // toward wings level (the world's up straight up) when it is small.
+    // Bank: how far the wings are from level (the world's up seen in the craft's frame).
+    const bank = Math.atan2(-UP.dot(this.right), UP.dot(this.up))
+    const inverted = UP.dot(this.up) < 0
     let rollCmd: number
     this.manualT = Math.max(0, this.manualT - dt)
     if (c.roll !== 0) { rollCmd = c.roll; this.manualT = 0.6 }
     else if (this.manualT > 0) rollCmd = 0
     else {
-      // Big error: the roll that puts the aim straight up from the cockpit (a delta). Small: roll out
-      // the bank (the world's up seen in the craft's frame).
-      const bank = Math.atan2(-UP.dot(this.right), UP.dot(this.up))
-      const dErr = err > 0.14 ? Math.atan2(side, Math.max(1e-3, up) + (err > 0.6 ? 0 : 0.15)) : -bank
-      rollCmd = THREE.MathUtils.clamp(dErr * 2.5, -1, 1)
-      // When banked toward the aim, pull harder (a coordinated turn).
-      if (err > 0.14) pitchCmd = Math.max(pitchCmd, Math.min(1, err * 2) * Math.cos(dErr))
+      // Target bank from the sideways part of the aim (up to ~75°), wings level when straight.
+      const want = THREE.MathUtils.clamp(Math.atan2(side, 0.35) * 0.85, -1.3, 1.3)
+      const target = Math.abs(side) < 0.02 ? 0 : want
+      const d = inverted ? -Math.atan2(Math.sin(bank), Math.cos(bank)) : target - bank
+      rollCmd = THREE.MathUtils.clamp(d * 2.2, -1, 1)
     }
+    // Pitch: at the aim's up/down in the cockpit frame, plus a pull while banked into a turn.
+    let pitchCmd = THREE.MathUtils.clamp(4 * Math.asin(THREE.MathUtils.clamp(up, -1, 1)) + Math.abs(side) * 2.2 * Math.abs(Math.sin(bank)), -1, 1)
+    if (inverted && c.roll === 0 && this.manualT <= 0) pitchCmd *= 0.3 // rolling upright first
+    const yawCmd = THREE.MathUtils.clamp(4 * Math.asin(THREE.MathUtils.clamp(side, -1, 1)), -1, 1) * 0.25
     // Rates ease in (snappy, not instant).
     const ease = 1 - Math.exp(-dt * 10)
     this.rates.x += (pitchCmd * pitchMax - this.rates.x) * ease

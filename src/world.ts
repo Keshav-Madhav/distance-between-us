@@ -885,6 +885,21 @@ export class World {
     this.group.add(mesh)
   }
 
+  /** The highest rock top within r of (x, z) (the ground if none): rings and flight clear it. */
+  topAt(x: number, z: number, r: number): number {
+    let top = groundH(x, z)
+    for (const w of this.wrapped) for (const it of w.items) {
+      if (it.grow < 0.03) continue
+      const reach = r + it.r * 1.8
+      if ((it.x - x) ** 2 + (it.z - z) ** 2 < reach * reach) top = Math.max(top, it.by + it.h * it.grow)
+    }
+    for (const it of this.fixed) {
+      const reach = r + it.r * 2
+      if ((it.x - x) ** 2 + (it.z - z) ** 2 < reach * reach) top = Math.max(top, it.by + it.h)
+    }
+    return top
+  }
+
   /** Everything standing at a fixed place (course spires, trackside landmarks): for pass-by sounds. */
   get landmarks(): readonly { x: number; z: number; r: number; h: number }[] { return this.fixed }
 

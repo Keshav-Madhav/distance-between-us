@@ -21,6 +21,7 @@ export class Rings {
   onPass: ((ring: Ring, i: number) => void) | null = null
   onMiss: ((ring: Ring, i: number) => void) | null = null
   onSet: (() => void) | null = null
+  private topAt: ((x: number, z: number, r: number) => number) | null = null
 
   constructor() {
     const geo = new THREE.TorusGeometry(1, 0.06, 10, 64)
@@ -32,7 +33,7 @@ export class Rings {
   }
 
   /** A new set of ten ahead of (x, z, heading). */
-  layout(x: number, z: number, heading: number, seed = 1): void {
+  layout(x: number, z: number, heading: number, seed = 1, topAt: ((x: number, z: number, r: number) => number) | null = null): void {
     let s = (seed * 9301 + 49297) >>> 0
     const rnd = () => { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296 }
     this.items.length = 0
@@ -40,13 +41,19 @@ export class Rings {
     for (let i = 0; i < N; i++) {
       // A slalom: each ring 2.4–3.6 km on, the heading wandering ±25°, heights from a skim (40 m)
       // to a climb (900 m).
-      h += (rnd() - 0.5) * 0.9
-      const d = 2400 + rnd() * 1200
+      // (Gentler than the first cut: a ring every ~4 s at Mach 3.4, bends of ±15°, heights changing
+      //  by at most ~400 m a ring — a slalom you can read, not a test.)
+      h += (rnd() - 0.5) * 0.5
+      const d = 3800 + rnd() * 1400
       const nx = Math.sin(h), nz = Math.cos(h)
       px += nx * d; pz += nz * d
-      const agl = i === 0 ? 60 : [40, 120, 300, 600, 900][Math.floor(rnd() * 5)]
-      this.items.push({ x: px, y: groundH(px, pz) + agl, z: pz, nx, ny: 0, nz, r: 70, state: 0 })
+      const prev = this.items.length ? this.items[this.items.length - 1].y - groundH(this.items[this.items.length - 1].x, this.items[this.items.length - 1].z) : 60
+      const agl = i === 0 ? 60 : THREE.MathUtils.clamp(prev + (rnd() - 0.45) * 800, 50, 900)
+      // Never inside or just over rock: 120 m clear of the highest top near it.
+      const y = Math.max(groundH(px, pz) + agl, topAt ? topAt(px, pz, 300) + 120 : 0)
+      this.items.push({ x: px, y, z: pz, nx, ny: 0, nz, r: 95, state: 0 })
     }
+    this.topAt = topAt
     this.next = 0
     this.mesh.visible = true
     this.draw(0)
@@ -76,7 +83,7 @@ export class Rings {
     if (this.next >= this.items.length) {
       this.sets++
       this.onSet?.()
-      this.layout(p.pos.x, p.pos.z, p.heading, this.sets + 1)
+      this.layout(p.pos.x, p.pos.z, p.heading, this.sets + 1, this.topAt)
     }
   }
 

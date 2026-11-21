@@ -41,8 +41,8 @@ check('speed within limits', c.mach >= 0.89 && c.mach <= 6.21, c.mach.toFixed(2)
 await set({ burner: true }); await p.waitForTimeout(6000); const e = (await sample()).e
 check('burner drains energy', e < 20, e.toFixed(0))
 // 7) Rings with the autopilot.
-await p.evaluate(() => { window.__g.flyForce(false); window.__g.autopilot(true) })
-await p.waitForTimeout(45000)
+await p.evaluate(() => { const g = window.__g, f = g.flight; f.reset(f.pos.x, f.pos.z, Math.atan2(f.fwd.x, f.fwd.z), 80, 2.4); g.rings.passed = 0; g.rings.missed = 0; g.rings.layout(f.pos.x, f.pos.z, Math.atan2(f.fwd.x, f.fwd.z), 3, (x, z, r) => g.world.topAt(x, z, r)); g.flyForce(false); g.autopilot(true) })
+for (let i = 0; i < 15; i++) { await p.waitForTimeout(3000); if (process.env.DBG) console.log(await p.evaluate(() => { const g = window.__g, f = g.flight, r = g.rings.items[g.rings.next]; return `n ${g.rings.next} p ${g.rings.passed} d ${(Math.hypot(r.x - f.pos.x, r.z - f.pos.z) / 1000).toFixed(1)} dy ${(r.y - f.pos.y).toFixed(0)} m ${f.mach.toFixed(2)} agl ${f.agl.toFixed(0)} hull ${f.hull.toFixed(0)} fy ${f.fwd.y.toFixed(2)}` })) }
 const r = await p.evaluate(() => ({ passed: window.__g.rings.passed, missed: window.__g.rings.missed }))
 check('autopilot flies the rings', r.passed >= 6, `${r.passed} passed, ${r.missed} missed`)
 await p.screenshot({ path: D + '6-rings.png' })

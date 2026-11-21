@@ -709,7 +709,7 @@ const flashEl = $('#flash')
 const warnEl = $('#warn')
 const hintsEl = $('#hints')
 const RACE_HINTS = hintsEl.innerHTML
-const FLY_HINTS = ['<b>MOUSE</b>AIM (CLICK TO CAPTURE · ESC RELEASES)', '<b>ARROWS · A D</b>PITCH · TURN (THE CRAFT BANKS ITSELF)', '<b>Q E</b>ROLL', '<b>W</b>THROTTLE', '<b>S</b>AIR BRAKE · TIGHTER TURNS', '<b>SHIFT</b>AFTERBURNER · SPENDS ENERGY', '<b>RINGS</b>FLY THROUGH THE GLOWING ONE'].map((h) => `<div>${h}</div>`).join('')
+const FLY_HINTS = ['<b>MOUSE</b>STEER TOWARD THE CURSOR', '<b>A D · ← →</b>TURN (THE CRAFT BANKS ITSELF)', '<b>↑ ↓</b>NOSE DOWN · PULL UP (INVERT IN SETTINGS)', '<b>W · S</b>THROTTLE · AIR BRAKE', '<b>Q E</b>ROLL', '<b>SHIFT</b>BOOST · SPENDS ENERGY', '<b>RINGS</b>FLY THROUGH THE GLOWING ONE'].map((h) => `<div>${h}</div>`).join('')
 const debugEl = $('#debug')
 const raceEl = $('#race')
 const standEl = $('#stand')
@@ -997,8 +997,6 @@ function menuStart(): void {
 }
 function setPaused(on: boolean): void {
   paused = on
-  if (on && document.pointerLockElement) document.exitPointerLock()
-  else if (!on && mode === 'hunt') { try { void renderer.domElement.requestPointerLock() } catch { /* no gesture */ } }
   $('#pause').classList.toggle('hide', !on)
   $('#pause').classList.remove('from-title')
   sound.suspend(on)
@@ -1011,9 +1009,9 @@ function toTitle(): void {
   spectate = false
   $('#over').classList.add('hide')
   mode = 'title'
+  document.body.classList.remove('flying')
   rings.hide()
   for (const id of ['#aimring', '#velmark', '#gmark']) $(id).style.display = 'none'
-  if (document.pointerLockElement) document.exitPointerLock()
   combat.enabled = false
   combat.reset()
   race.reset()
@@ -1104,6 +1102,7 @@ let runTop = 0
 let driftLvl = 0
 let secK = 0, pinUntil = 0
 function startRace(): void {
+  document.body.classList.remove('flying')
   rings.hide()
   for (const id of ['#aimring', '#velmark']) $(id).style.display = 'none'
   applyPending()
@@ -1159,10 +1158,10 @@ function startHunt(): void {
   flight.reset(player.pos.x, player.pos.z, player.heading, 40, 2)
   flight.syncTo(player)
   fcam.snap()
-  rings.layout(flight.pos.x, flight.pos.z, player.heading, 1)
+  rings.layout(flight.pos.x, flight.pos.z, player.heading, 1, (x, z, r) => world.topAt(x, z, r))
   rings.passed = 0; rings.missed = 0; rings.sets = 0
-  try { void renderer.domElement.requestPointerLock() } catch { /* not allowed here */ }
   hintsEl.innerHTML = FLY_HINTS
+  document.body.classList.add('flying')
   hintsEl.style.opacity = '0.85'
   setTimeout(() => (hintsEl.style.opacity = '0'), 10000)
   resetVisuals()
@@ -1273,6 +1272,7 @@ for (const id of ['#vm', '#vmu', '#vs']) $(id).oninput = vols
 sound.setCourse(course.def.id)
 $<HTMLSelectElement>('#mus').onchange = (e) => { sound.musicChoice = (e.target as HTMLSelectElement).value; sound.refreshMusic() }
 $<HTMLInputElement>('#rs').onchange = (e) => { CFG.camera.reduceShake = (e.target as HTMLInputElement).checked }
+$<HTMLInputElement>('#invp').onchange = (e) => { invertPitch = (e.target as HTMLInputElement).checked }
 // Graphics settings: applied live, remembered.
 const applyGraphics = () => {
   settings.scale = +$<HTMLInputElement>('#g-scale').value / 100
@@ -1378,6 +1378,7 @@ function rebase(): void {
   player.shift(dx, dz)
   combat.shift(dx, dz)
   flight.shift(dx, dz)
+  rings.shift(dx, dz)
   fx.shift(dx, dz)
   wreckage.shift(dx, dz)
   shock.shift(dx, dz)
@@ -1429,23 +1430,27 @@ function simStep(): void {
   }
 }
 
-/** HUNT's controls into the flight: keys and stick (turn with auto-bank, pitch, roll), or the mouse
- *  (pointer locked: it moves an aim direction in the world, kept within 50° of the nose). */
-const mouseAim = new THREE.Vector3(0, 0, 1)
+/** HUNT's controls, like other flying games:
+ *  mouse — steer toward the cursor (centred: straight on; held off to one side: keep turning);
+ *  keys — W/S throttle and air brake, A/D or ←/→ turn (the craft banks itself), ↑/↓ pitch
+ *  (↑ = nose down, as on a stick; "Invert flight pitch" in settings), Q/E roll, Shift boost;
+ *  pad — left stick fly, right stick roll, triggers throttle / brake, X boost. */
+let invertPitch = false
 let fTurn = 0, fPitch = 0
+const mouseRay = new THREE.Vector3()
 function readFlight(): void {
   const k = (c: string) => input.isDown(c)
   fc.throttle = k('KeyW'); fc.brake = k('KeyS'); fc.burner = k('ShiftLeft') || k('ShiftRight')
   fc.roll = (k('KeyE') ? 1 : 0) - (k('KeyQ') ? 1 : 0)
   let turn = (k('KeyD') || k('ArrowRight') ? 1 : 0) - (k('KeyA') || k('ArrowLeft') ? 1 : 0)
-  let pitch = (k('ArrowUp') ? 1 : 0) - (k('ArrowDown') ? 1 : 0)
+  let pitch = ((k('ArrowDown') ? 1 : 0) - (k('ArrowUp') ? 1 : 0)) * (invertPitch ? -1 : 1)
   const pads = navigator.getGamepads ? navigator.getGamepads() : []
   for (const p of pads) {
     if (!p) continue
     const dz = (v: number) => (Math.abs(v) < 0.12 ? 0 : (v - Math.sign(v) * 0.12) / 0.88)
     const ax = dz(p.axes[0] ?? 0), ay = dz(p.axes[1] ?? 0)
     if (ax) turn = ax
-    if (ay) pitch = -ay
+    if (ay) pitch = ay * (invertPitch ? -1 : 1) // stick back (down on the pad's y) pulls up
     if ((p.buttons[7]?.value ?? 0) > 0.3) fc.throttle = true
     if ((p.buttons[6]?.value ?? 0) > 0.3) fc.brake = true
     if (p.buttons[2]?.pressed) fc.burner = true
@@ -1456,21 +1461,19 @@ function readFlight(): void {
   fTurn += THREE.MathUtils.clamp(turn - fTurn, -STEP * 6, STEP * 6)
   fPitch += THREE.MathUtils.clamp(pitch - fPitch, -STEP * 6, STEP * 6)
   fc.turn = fTurn; fc.pitch = fPitch
-  // The mouse: used while locked and moved in the last 2 s, and no keys are steering.
-  const mouseLive = !!document.pointerLockElement && performance.now() / 1000 - input.mouseAt < 2 && turn === 0 && pitch === 0
+  // The mouse: when it moved in the last 3 s and no key or stick is steering, the craft flies toward
+  // the point under the cursor (a ray from the camera). Near the middle: straight on.
+  const mouseLive = performance.now() / 1000 - input.mouseAt < 3 && turn === 0 && pitch === 0 && !paused
   if (mouseLive) {
-    const sens = 0.0022
-    mouseAim.applyAxisAngle(UP_W, -input.mouseDX * sens)
-    const side = tmp2.crossVectors(mouseAim, UP_W).normalize()
-    if (side.lengthSq() > 0.5) mouseAim.applyAxisAngle(side, -input.mouseDY * sens)
-    mouseAim.normalize()
-    const ang = mouseAim.angleTo(flight.fwd)
-    if (ang > 0.87) mouseAim.lerp(flight.fwd, 1 - 0.87 / ang).normalize()
-    fc.aim = mouseAim
-  } else { mouseAim.copy(flight.fwd); fc.aim = null }
-  input.mouseDX = 0; input.mouseDY = 0
+    let nx = (input.mouseX / innerWidth) * 2 - 1, ny = -((input.mouseY / innerHeight) * 2 - 1)
+    const r = Math.hypot(nx, ny), dead = 0.04
+    if (r < dead) { nx = 0; ny = 0 } else { const k2 = (r - dead) / (1 - dead) / r; nx *= k2; ny *= k2 }
+    mouseRay.set(nx, ny, 0.5).unproject(camera).sub(camera.position).normalize()
+    // Pure aim straight ahead when centred: the nose, not the camera's slightly-down look.
+    if (nx === 0 && ny === 0) mouseRay.copy(flight.fwd)
+    fc.aim = mouseRay
+  } else fc.aim = null
 }
-const UP_W = new THREE.Vector3(0, 1, 0)
 const tmp2 = new THREE.Vector3()
 /** HUNT autopilot (tests): fly at the next ring, throttle on. */
 function huntAutopilot(): void {
@@ -1478,9 +1481,15 @@ function huntAutopilot(): void {
   fc.throttle = true; fc.brake = false; fc.burner = false; fc.roll = 0; fc.pitch = 0; fc.turn = 0
   if (!r) { fc.aim = null; return }
   autoAim.set(r.x - flight.pos.x, r.y - flight.pos.y, r.z - flight.pos.z).normalize()
+  // Rock ahead at this height in the next ~1.5 km: climb over it.
+  for (const d of [400, 900, 1500]) {
+    const x = flight.pos.x + flight.fwd.x * d, z = flight.pos.z + flight.fwd.z * d
+    if (world.topAt(x, z, 120) > flight.pos.y + flight.fwd.y * d - 60) { autoAim.copy(flight.fwd).addScaledVector(UP_A, 0.8).normalize(); break }
+  }
   fc.aim = autoAim
 }
 const autoAim = new THREE.Vector3()
+const UP_A = new THREE.Vector3(0, 1, 0)
 /** Tests drive the flight controls directly (tools/flight.mjs). */
 let flyForced = false
 
@@ -2110,7 +2119,9 @@ function updateHud(dt: number, slow: boolean): void {
       if (on) { el.style.left = `${(proj.x * 0.5 + 0.5) * innerWidth}px`; el.style.top = `${(-proj.y * 0.5 + 0.5) * innerHeight}px` }
       return on
     }
-    place($('#aimring'), tmp2.copy(flight.pos).addScaledVector(flight.aim, 600))
+    // The aim ring: on the cursor when the mouse is steering, else where the keys are taking the nose.
+    if (fc.aim && performance.now() / 1000 - input.mouseAt < 3) { const ar = $('#aimring'); ar.style.display = 'block'; ar.style.left = `${input.mouseX}px`; ar.style.top = `${input.mouseY}px` }
+    else place($('#aimring'), tmp2.copy(flight.pos).addScaledVector(flight.aim, 600))
     if (flight.vel.lengthSq() > 1) place($('#velmark'), tmp2.copy(flight.vel).normalize().multiplyScalar(600).add(flight.pos))
     const nr = rings.items[rings.next]
     const gmEl = $('#gmark')
@@ -2379,8 +2390,6 @@ addEventListener('keydown', (e) => {
   }
 })
 addEventListener('mousedown', () => sound.start())
-// HUNT: a click on the view captures the mouse for aiming (Esc releases it).
-renderer.domElement.addEventListener('click', () => { if (mode === 'hunt' && !paused && !document.pointerLockElement) { try { void renderer.domElement.requestPointerLock() } catch { /* refused */ } } })
 document.addEventListener('visibilitychange', () => { sound.suspend(document.hidden); last = performance.now() })
 canvas.addEventListener('webglcontextlost', (e) => { e.preventDefault(); paused = true })
 canvas.addEventListener('webglcontextrestored', () => { paused = false; last = performance.now() })
