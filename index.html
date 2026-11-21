@@ -197,21 +197,27 @@
   .modes div { font-size: 15px; letter-spacing: 0.35em; }
   .modes b { color: var(--hot); }
 
-  /* ── the menu, v2: a flight plan down the left (mode, world, course, craft, launch); the worlds as
-     horizon strips (each world's sky meeting its ground), the picked one open, the rest folded. ── */
-  #title { background: linear-gradient(90deg, rgba(8,5,4,0.88) 0%, rgba(8,5,4,0.66) 26%, rgba(8,5,4,0) 46%); }
-  #title .menu { width: min(430px, 36vw); padding: 4vh 0 2vh 3.4vw; gap: 6px; height: 100%; box-sizing: border-box; overflow-y: auto; scrollbar-width: none; }
-  #title h1 { font-size: clamp(24px, 2.6vw, 40px); letter-spacing: 0.1em; line-height: 0.92; margin-bottom: 6px; }
-  #title .sec { font-size: 12px; letter-spacing: 0.06em; opacity: 0.5; margin-top: 10px; margin-bottom: 0; }
-  #title .tabs { gap: 26px; border-bottom: 1px solid rgba(255,255,255,0.12); }
-  #title .tabs button { flex: 0 0 auto; background: none; border: none; border-bottom: 2px solid transparent; margin-bottom: -1px; padding: 8px 0 10px; font-size: 15px; letter-spacing: 0.3em; opacity: 0.45; }
-  #title .tabs button:hover { background: none; opacity: 0.8; }
-  #title .tabs button.on { background: none; opacity: 1; border-color: transparent; border-bottom-color: var(--hot); }
+  /* ── the menu, v3: the ship gets the stage. A slim top bar (title, mode, settings), worlds and
+     courses down the left, the craft picker under the ship, paint in a drawer, and a flight-plan bar
+     along the bottom: map, the course in numbers, and START — the one big action. ── */
+  #title { display: block; padding: 0; text-align: left; background:
+    linear-gradient(90deg, rgba(8,5,4,0.84) 0%, rgba(8,5,4,0.66) 22%, rgba(8,5,4,0) 36%),
+    linear-gradient(0deg, rgba(8,5,4,0.9) 0, rgba(8,5,4,0.5) 170px, rgba(8,5,4,0) 280px); }
+  #title .topbar { position: absolute; left: 32px; right: 32px; top: 24px; display: flex; align-items: center; gap: 32px; }
+  #title .topbar h1 { margin: 0; font-size: 18px; letter-spacing: 0.24em; line-height: 1; white-space: nowrap; text-align: left; }
+  #title .tabs { display: flex; gap: 2px; padding: 3px; border: 1px solid rgba(255,255,255,0.14); background: rgba(0,0,0,0.35); }
+  #title .tabs button { flex: 0 0 auto; padding: 7px 20px; border: none; background: none; font-size: 12px; letter-spacing: 0.26em; opacity: 0.65; margin: 0; }
+  #title .tabs button:hover { opacity: 1; background: rgba(255,255,255,0.08); }
+  #title .tabs button.on { background: var(--hot); color: #1a0d06; font-weight: 700; opacity: 1; }
+  #open-settings { margin-left: auto; padding: 9px 18px; font-size: 12px; letter-spacing: 0.22em; background: rgba(0,0,0,0.35); }
+  #title .menu { position: absolute; left: 32px; top: 80px; bottom: 200px; width: 340px; padding: 0; gap: 8px; display: flex; flex-direction: column; overflow-y: auto; scrollbar-width: none; }
   #title .menu > * { flex-shrink: 0; }
-  #worlds { display: flex; gap: 6px; height: clamp(84px, 12vh, 124px); }
-  #worlds .w { flex: 1 1 0; min-width: 0; padding: 0; transition: flex-grow 0.38s cubic-bezier(0.2, 0.8, 0.2, 1), filter 0.2s, border-color 0.2s; filter: saturate(0.55) brightness(0.62); border: 1px solid rgba(255,255,255,0.12); }
-  #worlds .w:hover { filter: saturate(0.8) brightness(0.85); }
-  #worlds .w.on { flex-grow: 3.6; filter: none; border-color: var(--hot); box-shadow: none; }
+  #title .sec { font-size: 11px; letter-spacing: 0.24em; text-transform: uppercase; opacity: 0.72; margin: 8px 0 0; }
+  #title .sec:first-child { margin-top: 0; }
+  #worlds { display: flex; gap: 6px; height: clamp(84px, 12vh, 112px); }
+  #worlds .w { position: relative; overflow: hidden; flex: 1 1 0; min-width: 0; padding: 0; cursor: pointer; border: 1px solid rgba(255,255,255,0.16); transition: flex-grow 0.38s cubic-bezier(0.2, 0.8, 0.2, 1), filter 0.2s, border-color 0.2s; filter: saturate(0.7) brightness(0.8); }
+  #worlds .w:hover { filter: none; }
+  #worlds .w.on { flex-grow: 3.4; filter: none; border-color: var(--hot); }
   #worlds .w .hz { position: absolute; left: 0; right: 0; top: 57%; height: 1px; background: rgba(255,255,255,0.55); }
   #worlds .w .sun { position: absolute; border-radius: 50%; }
   #worlds .w[data-w=desert] { background: linear-gradient(180deg, #2f6fcf 0%, #7fb0e6 50%, #d9b48a 57%, #b45a2c 58%, #6e2d16 100%); }
@@ -220,38 +226,72 @@
   #worlds .w[data-w=ice] .sun { left: 8%; right: 8%; top: 10%; height: 34%; border-radius: 40%; background: radial-gradient(ellipse at 50% 100%, rgba(80,255,160,0.55), rgba(170,80,230,0.18) 55%, rgba(0,0,0,0) 72%); filter: blur(2px); }
   #worlds .w[data-w=lava] { background: linear-gradient(180deg, #120c0d 0%, #3b1a12 32%, #a3401a 52%, #ff8a2a 56.5%, #1a1112 58%, #0b0808 100%); }
   #worlds .w[data-w=lava] .sun { width: 18px; height: 18px; left: 30%; top: calc(57% - 9px); background: #ff5a1e; box-shadow: 0 0 22px 8px rgba(255,90,30,0.7); clip-path: inset(0 0 50% 0); }
-  #worlds .w b { position: absolute; left: 12px; bottom: 26px; font-size: 18px; letter-spacing: 0.16em; white-space: nowrap; text-shadow: 0 1px 8px rgba(0,0,0,0.8); transition: opacity 0.2s; }
-  #worlds .w small { position: absolute; left: 12px; bottom: 10px; margin: 0; font-size: 11px; letter-spacing: 0.06em; white-space: nowrap; opacity: 0.9; text-shadow: 0 1px 6px rgba(0,0,0,0.9); }
-  #worlds .w:not(.on) b { left: 50%; bottom: 50%; transform: translate(-50%, 50%) rotate(-90deg); font-size: 12px; letter-spacing: 0.2em; }
+  #worlds .w b { position: absolute; left: 12px; bottom: 38px; font-size: 17px; letter-spacing: 0.16em; white-space: nowrap; text-shadow: 0 1px 8px rgba(0,0,0,0.85); }
+  #worlds .w small { position: absolute; left: 12px; right: 10px; bottom: 9px; margin: 0; font-size: 11px; letter-spacing: 0.04em; line-height: 1.3; text-shadow: 0 1px 6px rgba(0,0,0,0.9); }
+  #worlds .w:not(.on) b { left: 50%; bottom: 50%; transform: translate(-50%, 50%) rotate(-90deg); font-size: 10px; letter-spacing: 0.16em; opacity: 0.9; }
   #worlds .w:not(.on) small { display: none; }
-  #courses { display: flex; flex-direction: column; gap: 0; border-top: 1px solid rgba(255,255,255,0.1); }
-  #courses .c { position: relative; display: grid; grid-template-columns: 1fr auto; align-items: baseline; padding: clamp(6px, 1vh, 10px) 12px clamp(6px, 1vh, 10px) 16px; border: none; border-bottom: 1px solid rgba(255,255,255,0.08); background: none; font-size: 14px; letter-spacing: 0.16em; }
-  #courses .c:hover { background: rgba(255,255,255,0.05); }
-  #courses .c.on { border-color: rgba(255,255,255,0.08); background: linear-gradient(90deg, rgba(255,106,26,0.22), rgba(255,106,26,0) 85%); }
-  #courses .c.on::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: var(--hot); }
-  #courses .c .best { margin: 0; font-size: 12px; letter-spacing: 0.06em; opacity: 0.65; font-variant-numeric: tabular-nums; }
-  #courses .c small { display: none; grid-column: 1 / -1; margin-top: 5px; font-size: 12px; letter-spacing: 0.02em; line-height: 1.45; opacity: 0.75; }
-  #courses .c.on small { display: block; }
-  #title .ship .sn { border: none; background: none; }
-  #title .ship .sn b { font-size: 20px; letter-spacing: 0.3em; }
-  #title .ship .sn small { font-size: 11px; letter-spacing: 0.06em; opacity: 0.6; }
-  #title .ship button { border-color: rgba(255,255,255,0.16); background: none; padding: 10px 14px; }
-  #title .row { margin-top: 12px; }
-  #title .row .big { font-size: 15px; letter-spacing: 0.22em; padding: 15px 20px; }
-  #title .keys { font-size: 11px; letter-spacing: 0.06em; opacity: 0.45; }
-  #title .huntinfo { font-size: 13px; letter-spacing: 0.02em; line-height: 1.5; opacity: 0.8; }
-  #title .paints small { font-size: 12px; letter-spacing: 0.04em; opacity: 0.5; }
-  #title .preview { background: rgba(8,5,4,0.62); border-color: rgba(255,255,255,0.1); }
-  #title .preview .ph b { font-size: 22px; letter-spacing: 0.18em; }
-  #title .preview .ph span { display: block; margin-top: 4px; font-size: 12px; letter-spacing: 0.02em; opacity: 0.7; }
-  #tp-stats small { letter-spacing: 0.04em !important; text-transform: none; font-size: 11px !important; }
-  #tp-info { letter-spacing: 0.04em !important; font-size: 11px !important; }
-  /* The launch row stays in reach: pinned to the column's foot when the list runs long. */
-  #title .row { position: sticky; bottom: 0; padding: 10px 0 4px; background: linear-gradient(180deg, rgba(8,5,4,0) 0%, rgba(8,5,4,0.92) 30%); }
-  @media (max-height: 820px) { #title .keys { display: none; } #title .ship .sn b { font-size: 17px; } #title .paints { gap: 3px; } }
-  #worlds .w:not(.on) b { font-size: 10px; letter-spacing: 0.14em; }
-  @media (prefers-reduced-motion: reduce) { #worlds .w { transition: none; } }
-  #title button:focus-visible, #worlds .w:focus-visible, #courses .c:focus-visible { outline: 2px solid var(--ice); outline-offset: 2px; }
+  #courses { display: flex; flex-direction: column; border-top: 1px solid rgba(255,255,255,0.12); }
+  #courses .c { position: relative; display: grid; grid-template-columns: 1fr auto; align-items: baseline; padding: 9px 12px 9px 16px; border: 1px solid transparent; border-bottom-color: rgba(255,255,255,0.1); background: none; cursor: pointer; font-size: 14px; letter-spacing: 0.16em; }
+  #courses .c:hover { background: rgba(255,255,255,0.06); }
+  #courses .c.on { border-color: rgba(255,106,26,0.7); background: linear-gradient(90deg, rgba(255,106,26,0.24), rgba(255,106,26,0.04)); }
+  #courses .c.on::before { content: ''; position: absolute; left: -1px; top: -1px; bottom: -1px; width: 3px; background: var(--hot); }
+  #courses .c b { font-weight: 700; }
+  #courses .c .best { margin: 0; font-size: 12px; letter-spacing: 0.06em; opacity: 0.82; font-variant-numeric: tabular-nums; }
+  #courses .c small { display: none; }
+  #title .huntinfo { padding: 16px; border: 1px solid rgba(255,255,255,0.14); background: rgba(8,5,4,0.55); font-size: 14px; line-height: 1.55; letter-spacing: 0.02em; }
+  #title .huntinfo b { display: block; font-size: 20px; letter-spacing: 0.2em; color: var(--hot); margin-bottom: 6px; }
+  #title .huntinfo p { margin: 0 0 10px; }
+  #title .huntinfo .soon { opacity: 0.6; font-size: 12px; margin: 0; }
+  #title .shipbar { position: absolute; left: 404px; right: 32px; bottom: 206px; display: flex; align-items: center; justify-content: center; gap: 14px; }
+  #title .shipbar .sn { min-width: 260px; text-align: center; text-shadow: 0 2px 12px rgba(0,0,0,0.8); }
+  #title .shipbar .sn b { display: block; font-size: 22px; letter-spacing: 0.32em; }
+  #title .shipbar .sn small { font-size: 12px; letter-spacing: 0.04em; opacity: 0.75; }
+  #title .shipbar button { background: rgba(0,0,0,0.4); padding: 10px 14px; }
+  #paint-btn { margin-left: 8px; letter-spacing: 0.2em; }
+  #paint-btn[aria-expanded=true] { border-color: var(--hot); background: rgba(255,106,26,0.2); }
+  #title .paints { position: absolute; right: 32px; top: 80px; width: 300px; box-sizing: border-box; padding: 16px; display: flex; flex-direction: column; gap: 12px; background: rgba(8,5,4,0.78); border: 1px solid rgba(255,255,255,0.14); transform: translateX(calc(100% + 40px)); opacity: 0; pointer-events: none; transition: transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1), opacity 0.2s; }
+  #title .paints.open { transform: none; opacity: 1; pointer-events: auto; }
+  #title .paints > b { font-size: 12px; letter-spacing: 0.24em; }
+  #title .paints > div { display: flex; flex-direction: column; gap: 6px; }
+  #title .paints small { width: auto; font-size: 11px; letter-spacing: 0.2em; text-transform: uppercase; opacity: 0.72; }
+  #title .paints span { display: flex; flex-wrap: wrap; gap: 8px; }
+  #title .paints i { width: 22px; height: 22px; border-radius: 50%; cursor: pointer; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.25); }
+  #title .paints i:hover { transform: scale(1.12); }
+  #title .paints i.on { outline: 2px solid #fff; outline-offset: 2px; }
+  #title .plan { position: absolute; left: 32px; right: 32px; bottom: 34px; height: 150px; display: grid; grid-template-columns: 240px 1fr 300px; gap: 22px; align-items: stretch; padding: 12px; background: rgba(8,5,4,0.66); border: 1px solid rgba(255,255,255,0.12); box-sizing: border-box; }
+  #title.hunt .plan { grid-template-columns: 1fr 300px; }
+  #title .plan { grid-template-rows: minmax(0, 1fr); }
+  #title .plan #track { width: 100%; height: 100%; margin: 0; border-radius: 4px; min-height: 0; flex: none; }
+  #title .plan .info { display: flex; flex-direction: column; justify-content: center; min-width: 0; gap: 8px; }
+  #title .plan .ph b { display: block; font-size: 24px; letter-spacing: 0.18em; color: var(--hot); }
+  #title .plan .ph span { display: block; margin-top: 2px; font-size: 13px; letter-spacing: 0.02em; opacity: 0.8; }
+  #title .plan #tp-stats { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 10px; margin: 0; }
+  #title .plan #tp-stats div { border-left: 2px solid rgba(255,255,255,0.18); padding-left: 8px; }
+  #title .plan #tp-stats b { font-size: 16px; letter-spacing: 0.04em; }
+  #title .plan #tp-stats small { font-size: 11px; letter-spacing: 0.04em; opacity: 0.7; }
+  #title .plan #tp-info { font-size: 11px; letter-spacing: 0.04em; opacity: 0.7; margin: 0; }
+  #title .plan #start { align-self: center; height: 72px; padding: 0 18px; font-size: 16px; letter-spacing: 0.2em; }
+  #title .keys { position: absolute; left: 32px; right: 32px; bottom: 9px; margin: 0; font-size: 11px; letter-spacing: 0.06em; opacity: 0.55; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  @media (max-height: 800px) {
+    #title .plan { height: 124px; bottom: 30px; grid-template-columns: 200px 1fr 260px; }
+    #title .menu { bottom: 168px; top: 72px; }
+    #title .shipbar { bottom: 170px; }
+    #title .plan #tp-info { display: none; }
+    #title .plan .ph b { font-size: 20px; }
+    #courses .c { padding: 7px 12px 7px 16px; }
+  }
+  @media (max-width: 1150px) { #title .plan #tp-stats { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px 10px; } #title .plan #tp-info { display: none; } }
+  @media (prefers-reduced-motion: reduce) { #worlds .w, #title .paints { transition: none; } }
+  #title button:focus-visible, #worlds .w:focus-visible, #courses .c:focus-visible, #title .paints i:focus-visible { outline: 2px solid var(--ice); outline-offset: 2px; }
+  /* Settings from the menu: a sheet down the right, the menu still visible beside it. */
+  #pause { justify-content: safe center; padding: 40px 0; box-sizing: border-box; }
+  #pause.from-title { left: auto; width: min(440px, 100vw); align-items: stretch; justify-content: flex-start; padding: 72px 28px 28px; text-align: left; background: rgba(8,5,4,0.94); border-left: 1px solid rgba(255,255,255,0.12); transition: opacity 0.25s, transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1); }
+  #pause.from-title.hide { transform: translateX(48px); }
+  #pause.from-title h2 { position: absolute; top: 24px; left: 28px; margin: 0; font-size: 18px; letter-spacing: 0.24em; }
+  #pause.from-title #p-close { position: absolute; top: 16px; right: 20px; margin: 0; padding: 8px 14px; font-size: 12px; font-weight: 400; letter-spacing: 0.2em; color: var(--ink); background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.25); }
+  #pause.from-title #p-close:hover { border-color: var(--hot); }
+  #pause.from-title label, #pause.from-title .sub { width: auto; }
+  #pause.from-title label { font-size: 12px; letter-spacing: 0.16em; padding: 3px 0; }
 </style>
 </head>
 <body>
@@ -288,21 +328,31 @@
   <div id="mach"><div id="grip"><i></i><b></b><span>GRIP</span></div><div class="lab">MACH</div><div class="num">0.00</div><div class="kms">0.00 KM/S</div><div id="bar"><i></i><i></i><i></i><i></i><i></i><i></i></div><div id="drift"><i></i><b style="left:34.6%"></b><b style="left:76.9%"></b></div></div>
 </div>
 <div id="title" class="screen hide">
+  <header class="topbar">
+    <h1>THE DISTANCE BETWEEN <span>US</span></h1>
+    <div class="tabs" role="tablist"><button data-mode="race" class="on">RACE</button><button data-mode="hunt">HUNT</button></div>
+    <button id="open-settings" aria-label="Settings">Settings</button>
+  </header>
   <div class="menu">
-    <h1>THE DISTANCE<br/>BETWEEN <span>US</span></h1>
-    <div class="tabs"><button data-mode="race" class="on">RACE</button><button data-mode="hunt">HUNT</button></div>
     <div class="sec race-only">World</div>
     <div id="worlds" class="race-only"></div>
     <div class="sec race-only">Course</div>
     <div id="courses" class="race-only"></div>
-    <div class="hunt-only huntinfo">Drones come in waves, then a walker. Shoot them down at speed; the score multiplies with your Mach.</div>
-    <div class="sec">Craft</div>
-    <div class="ship"><button id="ship-prev" aria-label="previous ship">◀</button><div class="sn"><b id="ship-name"></b><small id="ship-desc"></small></div><button id="ship-next" aria-label="next ship">▶</button></div>
-    <div class="paints"><div><small>Body</small><span id="sw-body"></span></div><div><small>Trim</small><span id="sw-trim"></span></div></div>
-    <div class="row"><button id="start" class="big">START</button><button id="open-settings">SETTINGS</button></div>
-    <div class="keys">Enter starts. Drag or use the arrows to turn the view.<br/>W throttle, Shift afterburner, A/D steer, Q/E strafe, S brake, R back to the last gate, Esc pause.</div>
+    <div class="hunt-only huntinfo"><b>How it plays</b><p>Drones come at you in waves across the open ground. Shoot them down at speed: every kill scores more the faster you fly.</p><p class="soon">A full rework is planned: real flight off the ground, new weapons and enemies.</p></div>
   </div>
-  <div class="preview race-only"><div class="ph"><b id="tp-name"></b><span id="tp-blurb"></span></div><canvas id="track" width="560" height="760"></canvas><div id="tp-stats"></div><div id="tp-info"></div></div>
+  <div class="shipbar">
+    <button id="ship-prev" aria-label="previous ship">◀</button>
+    <div class="sn"><b id="ship-name"></b><small id="ship-desc"></small></div>
+    <button id="ship-next" aria-label="next ship">▶</button>
+    <button id="paint-btn" aria-expanded="false">Paint</button>
+  </div>
+  <aside class="paints" id="paint-drawer"><b>Paint</b><div><small>Body</small><span id="sw-body"></span></div><div><small>Trim</small><span id="sw-trim"></span></div></aside>
+  <footer class="plan">
+    <canvas id="track" class="race-only" width="460" height="280"></canvas>
+    <div class="info"><div class="ph"><b id="tp-name"></b><span id="tp-blurb"></span></div><div id="tp-stats"></div><div id="tp-info"></div></div>
+    <button id="start" class="big">START</button>
+  </footer>
+  <div class="keys">Enter starts · drag or arrows turn the view · W throttle · Shift afterburner · A/D steer · Q/E strafe · S brake · R last gate · Esc pause</div>
 </div>
 <div id="over" class="screen hide">
   <h2 id="over-h">SIGNAL LOST</h2>
@@ -313,7 +363,7 @@
 </div>
 <div id="pause" class="screen hide">
   <div class="btns" id="pause-btns"><button id="p-resume" class="big">RESUME</button><button id="p-restart">RESTART</button><button id="p-menu">MENU</button></div>
-  <button id="p-close" class="big">CLOSE</button>
+  <button id="p-close" class="big">✕ CLOSE</button>
   <h2>SETTINGS</h2>
   <label>QUALITY <select id="q"><option value="auto">AUTO</option><option value="low">LOW</option><option value="medium">MEDIUM</option><option value="high">HIGH</option><option value="ultra">ULTRA</option></select></label>
   <label>MASTER <input id="vm" type="range" min="0" max="1" step="0.05" value="0.8" /></label>

@@ -890,6 +890,9 @@ export class World {
     this.group.add(mesh)
   }
 
+  /** Everything standing at a fixed place (course spires, trackside landmarks): for pass-by sounds. */
+  get landmarks(): readonly { x: number; z: number; r: number; h: number }[] { return this.fixed }
+
   /** Ice landmarks placed by the course itself, close beside the line (the polar world's set pieces). */
   addHeroes(list: { x: number; z: number; r: number; h: number; kind: 'mesa' | 'butte' | 'spire'; v: number; yaw: number; tilt?: number; sink?: number }[]): void {
     const groups = new Map<string, typeof list>()

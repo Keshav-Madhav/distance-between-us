@@ -11,6 +11,7 @@ for (const [w, h] of [[1440, 900], [1280, 720]]) {
   for (const c of ['circuit', 'icefall', 'caldera']) {
     await p.goto(`http://localhost:${process.env.PORT ?? 5417}/?course=${c}`); await p.waitForFunction('window.__g && window.__g.ready', null, { timeout: 120000 }); await p.waitForTimeout(2500)
     await p.screenshot({ path: `${D}${w}-${c}.png` })
+    if (c === 'caldera') { await p.click('#paint-btn'); await p.waitForTimeout(500); await p.screenshot({ path: `${D}${w}-paint.png` }); await p.click('#paint-btn') }
   }
   await p.click('.tabs button[data-mode=hunt]'); await p.waitForTimeout(600)
   await p.screenshot({ path: `${D}${w}-hunt.png` })

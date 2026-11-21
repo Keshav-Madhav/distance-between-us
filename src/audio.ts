@@ -11,6 +11,7 @@
 //
 // Distant sounds arrive late (343 m/s) — you can outrun an explosion's sound.
 
+import { BIOME } from './terrain'
 const BPM = 170
 const STEP = 60 / BPM / 4
 const ROOTS = [45, 41, 48, 43, 45, 41, 38, 40]
@@ -332,6 +333,57 @@ export class Sound {
     this.trackBus = ctx.createGain(); this.trackBus.gain.value = 0.9
     this.trackBus.connect(this.music)
     void this.loadLayers()
+    this.startAmbience()
+  }
+
+  // ── the world's own air ──
+  // POLAR SHELF: a cold howl (two narrow bands of wind, slowly wandering) and ice creaking now and
+  // then. CINDER: a deep rumble under everything, the fizz of lava, the odd distant bloop. Quiet:
+  // a bed under the engine, louder when you slow down.
+  private ambG: GainNode | null = null
+  private ambT = 0
+  private startAmbience(): void {
+    if (BIOME === 'desert' || !this.ctx) return
+    const ctx = this.ctx
+    const g = ctx.createGain(); g.gain.value = 0
+    g.connect(this.sfx); g.connect(this.verbIn)
+    this.ambG = g
+    const src = (buf: AudioBuffer, rate = 1) => { const s = ctx.createBufferSource(); s.buffer = buf; s.loop = true; s.playbackRate.value = rate; s.start(0, Math.random() * buf.duration); return s }
+    const lfo = (param: AudioParam, hz: number, depth: number) => { const o = ctx.createOscillator(); o.frequency.value = hz; const d = ctx.createGain(); d.gain.value = depth; o.connect(d).connect(param); o.start() }
+    if (BIOME === 'ice') {
+      for (const [f, q, v, hz] of [[520, 9, 0.5, 0.07], [880, 12, 0.3, 0.11]] as const) {
+        const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = f; bp.Q.value = q
+        const vg = ctx.createGain(); vg.gain.value = v
+        lfo(bp.frequency, hz, f * 0.35); lfo(vg.gain, hz * 0.7, v * 0.6)
+        src(this.noise).connect(bp).connect(vg).connect(g)
+      }
+    } else {
+      const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 95
+      const rg = ctx.createGain(); rg.gain.value = 1.4
+      lfo(rg.gain, 0.09, 0.6)
+      src(this.brown).connect(lp).connect(rg).connect(g)
+      const hp = ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 2200
+      const fz = ctx.createGain(); fz.gain.value = 0.12
+      src(this.crackle, 0.6).connect(hp).connect(fz).connect(g)
+    }
+  }
+  /** Ambient events and level: called from update. */
+  private ambience(dt: number, s: number): void {
+    if (!this.ambG || !this.ctx) return
+    const t = this.ctx.currentTime
+    this.ambG.gain.setTargetAtTime(0.11 * (1 - 0.6 * Math.min(1, s)), t, 0.5)
+    this.ambT -= dt
+    if (this.ambT > 0) return
+    this.ambT = 1.5 + Math.random() * 3.5
+    const pan = this.ctx.createStereoPanner(); pan.pan.value = Math.random() * 1.6 - 0.8; pan.connect(this.ambG)
+    if (BIOME === 'ice') {
+      // A creak: a low groan sliding down, then a sharp crack.
+      this.burst(t, 0.6, 'bandpass', 160 + Math.random() * 80, 70, 0.9, 6, pan, 0.08)
+      if (Math.random() < 0.5) this.burst(t + 0.5, 0.12, 'highpass', 2500, 1500, 0.6, 0.7, pan)
+    } else {
+      // A bloop: a slow low pop of gas through the lava.
+      this.burst(t, 0.45, 'lowpass', 260 + Math.random() * 120, 60, 1.1, 3, pan, 0.03)
+    }
   }
 
   // ───────────────────────── recorded audio ─────────────────────────
@@ -494,6 +546,7 @@ export class Sound {
     if (!ctx) return
     const t = ctx.currentTime
     const s = Math.min(mach / 6, 1.2)
+    this.ambience(dt, s)
     const k = 0.06
     const live = alive ? 1 : 0
     const burn = burning && alive ? 1 : 0

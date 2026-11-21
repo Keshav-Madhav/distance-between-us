@@ -128,9 +128,9 @@ const course = new Course(courseDef)
 let pickedCourse = COURSES.indexOf(courseDef)
 // Worlds first, then the courses in that world.
 const WORLDS = [
-  { id: 'desert', name: 'RED MESA', blurb: 'Sandstone under blue sky' },
-  { id: 'ice', name: 'POLAR SHELF', blurb: 'Glaciers, aurora, night' },
-  { id: 'lava', name: 'CINDER', blurb: 'Basalt and lava at dusk' },
+  { id: 'desert', name: 'RED MESA', blurb: 'Sandstone, blue sky' },
+  { id: 'ice', name: 'POLAR SHELF', blurb: 'Glaciers under aurora' },
+  { id: 'lava', name: 'CINDER', blurb: 'Lava fields at dusk' },
 ] as const
 let pickedWorld: Biome = biomeOf(courseDef.id)
 const bestKey = (id: string) => `dbu-best-${id}`
@@ -297,6 +297,7 @@ let crashBreak = 0
 const rivalVoices: import('./audio').RivalVoice[] = []
 const camRight = new THREE.Vector3()
 const passSide = new Map<object, number>()
+let whooshCool = 0
 
 const shake = (t: number) => { cam.trauma = Math.min(1, cam.trauma + t) }
 const huntObs: import('./world').Obstacle[] = []
@@ -795,11 +796,18 @@ function showCourse(): void {
     }
     list.forEach((c, i) => (box.children[i] as HTMLElement).classList.toggle('on', c === myPaint[key]))
   }
-  $('#start').textContent = swapPending ? `Loading ${swapPending}…` : menuMode === 'hunt' ? 'Start hunt' : `Start ${COURSES[pickedCourse].name}`
+  $('#start').textContent = swapPending ? `LOADING ${swapPending}…` : menuMode === 'hunt' ? 'START HUNT' : `START · ${COURSES[pickedCourse].name}`
   $('#ship-name').textContent = MODELS[shipPick]
   $('#ship-desc').textContent = SHIP_DESC[shipPick]
   $('#ship-desc').title = 'Every craft handles the same: the choice is looks.'
-  drawTrackPreview(COURSES[pickedCourse])
+  if (menuMode === 'hunt') {
+    // The bar carries the hunt's own plan: what it is, and how it scores.
+    $('#tp-name').textContent = 'HUNT'
+    $('#tp-blurb').textContent = 'Waves of drones over open ground. Kills score more the faster you fly.'
+    const cell = (v: string, l: string) => `<div><b>${v}</b><small>${l}</small></div>`
+    $('#tp-stats').innerHTML = cell('Space', 'Fire missiles') + cell('Lock', 'Hold on a target') + cell('× Mach', 'Score multiplier') + cell('Hull', 'Heals when unhurt') + cell(BIOME === 'desert' ? 'RED MESA' : BIOME === 'ice' ? 'POLAR' : 'CINDER', 'World') + cell('Endless', 'Until wrecked')
+    $('#tp-info').textContent = ''
+  } else drawTrackPreview(COURSES[pickedCourse])
 }
 /** The whole course, start at the bottom, finish at the top; across exaggerated so bends read. */
 /** The menu's course map: drawn once per course into an offscreen layer (true scale on a gridded
@@ -813,7 +821,11 @@ function drawTrackPreview(d: (typeof COURSES)[number]): void {
   cv.width = Math.max(100, Math.round(cv.clientWidth * dpr)); cv.height = Math.max(100, Math.round(cv.clientHeight * dpr))
   trackBg.width = cv.width; trackBg.height = cv.height
   const g = trackBg.getContext('2d')!
-  const W = cv.width, H = cv.height, M = 26 * dpr, u = dpr
+  const W = cv.width, H = cv.height
+  // Compact (the menu's flight-plan tile): thinner strokes, no labels; a tall course turned on its
+  // side to fill a wide tile.
+  const compact = H < 300 * dpr
+  const M = (compact ? 9 : 26) * dpr, u = dpr * (compact ? 0.6 : 1)
   // The line, and the distance along it.
   const { xs, zs } = centerline(d)
   const N = xs.length, arc = [0]
@@ -821,16 +833,19 @@ function drawTrackPreview(d: (typeof COURSES)[number]): void {
   const L = arc[N - 1]
   let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity
   for (let i = 0; i < N; i++) { x0 = Math.min(x0, xs[i]); x1 = Math.max(x1, xs[i]); z0 = Math.min(z0, zs[i]); z1 = Math.max(z1, zs[i]) }
-  const k = Math.min((W - 2 * M) / Math.max(1, x1 - x0), (H - 2 * M) / Math.max(1, z1 - z0))
+  const rot = compact && z1 - z0 > (x1 - x0) * 1.15 && W > H
+  const k = rot ? Math.min((H - 2 * M) / Math.max(1, x1 - x0), (W - 2 * M) / Math.max(1, z1 - z0)) : Math.min((W - 2 * M) / Math.max(1, x1 - x0), (H - 2 * M) / Math.max(1, z1 - z0))
   const PX = (x: number) => W / 2 + (x - (x0 + x1) / 2) * k, PY = (z: number) => H / 2 - (z - (z0 + z1) / 2) * k
   // Ground: warm sand, a 1 km grid (10 km lines stronger).
   const bg = g.createRadialGradient(W / 2, H / 2, 0, W / 2, H / 2, Math.max(W, H) * 0.7)
   // (FROSTLINE's map: snow-blue ground, not the desert's sand.)
   if (biomeOf(d.id) === 'ice') { bg.addColorStop(0, '#3a4a62'); bg.addColorStop(1, '#141c2a') } else if (biomeOf(d.id) === 'lava') { bg.addColorStop(0, '#2a1e1c'); bg.addColorStop(1, '#0e0a0a') } else { bg.addColorStop(0, '#5a3a24'); bg.addColorStop(1, '#2a1a10') }
   g.fillStyle = bg; g.fillRect(0, 0, W, H)
+  g.setTransform(1, 0, 0, 1, 0, 0)
+  if (rot) { g.translate(W / 2, H / 2); g.rotate(-Math.PI / 2); g.translate(-W / 2, -H / 2) }
   const gx0 = Math.floor(((x0 + x1) / 2 - W / 2 / k) / 1000) * 1000, gz0 = Math.floor(((z0 + z1) / 2 - H / 2 / k) / 1000) * 1000
-  for (let gx = gx0; PX(gx) < W; gx += 1000) { const major = Math.round(gx / 1000) % 10 === 0; if (!major && k * 1000 < 6 * u) continue; g.strokeStyle = major ? 'rgba(255,220,180,0.14)' : 'rgba(255,220,180,0.05)'; g.lineWidth = u; g.beginPath(); g.moveTo(PX(gx), 0); g.lineTo(PX(gx), H); g.stroke() }
-  for (let gz = gz0; PY(gz) > 0; gz += 1000) { const major = Math.round(gz / 1000) % 10 === 0; if (!major && k * 1000 < 6 * u) continue; g.strokeStyle = major ? 'rgba(255,220,180,0.14)' : 'rgba(255,220,180,0.05)'; g.lineWidth = u; g.beginPath(); g.moveTo(0, PY(gz)); g.lineTo(W, PY(gz)); g.stroke() }
+  if (!compact) for (let gx = gx0; PX(gx) < W; gx += 1000) { const major = Math.round(gx / 1000) % 10 === 0; if (!major && k * 1000 < 6 * u) continue; g.strokeStyle = major ? 'rgba(255,220,180,0.14)' : 'rgba(255,220,180,0.05)'; g.lineWidth = u; g.beginPath(); g.moveTo(PX(gx), 0); g.lineTo(PX(gx), H); g.stroke() }
+  if (!compact) for (let gz = gz0; PY(gz) > 0; gz += 1000) { const major = Math.round(gz / 1000) % 10 === 0; if (!major && k * 1000 < 6 * u) continue; g.strokeStyle = major ? 'rgba(255,220,180,0.14)' : 'rgba(255,220,180,0.05)'; g.lineWidth = u; g.beginPath(); g.moveTo(0, PY(gz)); g.lineTo(W, PY(gz)); g.stroke() }
   // Curvature at each point (three-point), for the colouring and the stats.
   const kap = new Float64Array(N)
   for (let i = 1; i < N - 1; i++) {
@@ -870,6 +885,7 @@ function drawTrackPreview(d: (typeof COURSES)[number]): void {
   for (let s = d.gateEvery; s < L - 100; s += d.gateEvery) { const [px, py] = at(s); g.fillStyle = '#5fe6ff'; g.beginPath(); g.arc(px, py, 3.6 * u, 0, Math.PI * 2); g.fill(); g.strokeStyle = 'rgba(0,0,0,0.6)'; g.lineWidth = 1.2 * u; g.stroke() }
   g.fillStyle = '#ff8a3d'
   for (const f of d.jumps) { const [px, py] = at(f * L); g.beginPath(); g.moveTo(px + 8 * u, py); g.lineTo(px + 17 * u, py - 5 * u); g.lineTo(px + 17 * u, py + 5 * u); g.fill() }
+  if (!compact) {
   // Km marks beside the line.
   g.font = `600 ${Math.round(9 * dpr)}px "Chakra Petch", system-ui, sans-serif`; g.textBaseline = 'middle'; g.fillStyle = 'rgba(255,240,225,0.55)'
   const step = L > 150000 ? 50000 : L > 60000 ? 20000 : 10000
@@ -888,8 +904,13 @@ function drawTrackPreview(d: (typeof COURSES)[number]): void {
   g.fillStyle = 'rgba(255,240,225,0.8)'; g.fillRect(M * 0.5, sy0, sb * k, 2 * u)
   g.fillRect(M * 0.5, sy0 - 4 * u, 1.5 * u, 6 * u); g.fillRect(M * 0.5 + sb * k - 1.5 * u, sy0 - 4 * u, 1.5 * u, 6 * u)
   g.fillText(`${sb / 1000} KM`, M * 0.5 + sb * k + 6 * u, sy0)
-  // For the live dot.
-  trackPath = { x: xs.map(PX), y: zs.map(PY), arc, L, u, loop: !!d.loop }
+  }
+  g.setTransform(1, 0, 0, 1, 0, 0)
+  // For the live dot (turned with the drawing: (dx, dy) → (dy, −dx) about the centre).
+  const tx = xs.map(PX), ty = zs.map(PY)
+  trackPath = rot
+    ? { x: ty.map((y) => W / 2 + (y - H / 2)), y: tx.map((x) => H / 2 - (x - W / 2)), arc, L, u, loop: !!d.loop }
+    : { x: tx, y: ty, arc, L, u, loop: !!d.loop }
   // Header and stats.
   $('#tp-name').textContent = d.name
   $('#tp-blurb').textContent = d.blurb.split(' · ').map((t) => t.toLowerCase()).join(', ').replace(/^./, (c) => c.toUpperCase())
@@ -902,7 +923,7 @@ function drawTrackPreview(d: (typeof COURSES)[number]): void {
   $('#tp-stats').innerHTML = cell(`${d.km} km`, d.loop ? ((d.laps ?? 1) > 1 ? `Loop, ${d.laps} laps` : 'Loop') : 'Sprint') + cell(String(gates), 'Gates') + cell(String(d.racers ?? 10), 'Racers') +
     cell(`${Math.round((turning / L) * 100)}%`, 'Turning') + cell(rmin > 20000 ? '—' : `${(rmin / 1000).toFixed(1)} km`, 'Tightest bend') + cell(d.jumps.length ? String(d.jumps.length) : spires ? `~${spires}` : '0', d.jumps.length ? 'Jumps' : 'Spires')
   const best = bestOf(d.id)
-  $('#tp-info').innerHTML = `${best !== null ? 'Your best: ' + fmtLap(best) : 'No time set yet.'}<br/><span style="color:#fff4ea">━</span> straight <span style="color:#ffd29a">━</span> sweeper <span style="color:#ff8a3d">━</span> bend <span style="color:#ff3b30">━</span> hairpin <span style="color:#5fe6ff">●</span> gate`
+  $('#tp-info').innerHTML = best !== null ? `Your best: ${fmtLap(best)}` : 'No time set yet.'
   animTrackPreview(performance.now())
 }
 /** The live layer: a dot lapping the course with a fading tail. */
@@ -974,9 +995,14 @@ function toTitle(): void {
 for (const b of $('#title').querySelectorAll<HTMLButtonElement>('.tabs button')) b.onclick = () => { menuMode = b.dataset.mode as 'race' | 'hunt'; showCourse() }
 $('#ship-prev').onclick = () => pickShip(-1)
 $('#ship-next').onclick = () => pickShip(1)
+$('#paint-btn').onclick = () => {
+  const d = $('#paint-drawer'), open = !d.classList.contains('open')
+  d.classList.toggle('open', open)
+  $('#paint-btn').setAttribute('aria-expanded', String(open))
+}
 $('#start').onclick = () => { sound.start(); menuStart() }
 $('#open-settings').onclick = () => { $('#pause').classList.remove('hide'); $('#pause').classList.add('from-title') }
-$('#p-close').onclick = () => { $('#pause').classList.add('hide'); $('#pause').classList.remove('from-title') }
+$('#p-close').onclick = () => { $('#pause').classList.add('hide'); setTimeout(() => { if ($('#pause').classList.contains('hide')) $('#pause').classList.remove('from-title') }, 320) }
 $('#p-resume').onclick = () => setPaused(false)
 $('#p-restart').onclick = () => { setPaused(false); if (mode === 'hunt') startHunt(); else startRace() }
 $('#p-menu').onclick = () => toTitle()
@@ -1800,6 +1826,26 @@ function frame(now: number): void {
         const lat = (rk.x - player.pos.x) * player.right.x + (rk.z - player.pos.z) * player.right.z
         const close = Math.abs(lat) - rk.r
         if (close < 160) { sound.whoosh(Math.min(1, 50 / Math.max(close, 8)) * Math.min(1, player.mach / 3), lat > 0 ? 0.8 : -0.8); if (close < 40) shake(0.12) }
+      }
+    }
+    // The trackside landmarks (ice, basalt): each one a whoosh as it rips past, fainter the further
+    // off it stands; a few per second at most (a shard forest is a rush, not a machine gun).
+    whooshCool -= realDt
+    if (player.mach > 1.2 && BIOME !== 'desert') {
+      for (const lm of world.landmarks) {
+        const dx = lm.x - player.pos.x, dz = lm.z - player.pos.z
+        if (dx * dx + dz * dz > 1200 * 1200) { passSide.delete(lm); continue }
+        const ahead = dx * player.fwd.x + dz * player.fwd.z
+        const was = passSide.get(lm) ?? ahead
+        passSide.set(lm, ahead)
+        if (was > 0 && ahead <= 0 && whooshCool <= 0) {
+          const lat = dx * player.right.x + dz * player.right.z
+          const close = Math.max(8, Math.abs(lat) - lm.r)
+          if (close < 700) {
+            const lvl = Math.min(1, 80 / close) * Math.min(1, lm.h / 60) * Math.min(1, player.mach / 4)
+            if (lvl > 0.06) { sound.whoosh(lvl, lat > 0 ? 0.85 : -0.85); whooshCool = 0.09 }
+          }
+        }
       }
     }
     for (const r of race.racers) {
