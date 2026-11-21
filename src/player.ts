@@ -77,6 +77,8 @@ export class Player {
   capMach = CFG.speed.burnCap
   /** × the burner's soft limit (AI skill spread; a racer well behind gets a little). */
   burnMul = 1
+  /** How much a slipstream does for this craft (the player's is much bigger). */
+  draftMul = 1
   /** 0 … 1 = within grip, > 1 = sliding (for the gauge). */
   gripLoad = 0
   /** 0 … 1: how close the slide is to a spin-out. */
@@ -246,10 +248,10 @@ export class Player {
     if (this.airborne) k *= 0.35
     const before = this.speed
     // Slipstream: in a rival's wake the air is thinner — a pull forward (and the buffeting above).
-    if (this.wake > 0) this.speed += 110 * this.wake * dt
+    if (this.wake > 0) this.speed += 110 * this.draftMul * this.wake * dt
     // The burner's push fades as you near its soft limit (thin air, not a wall); in a slipstream the
     // limit rises — that is how you close on someone faster.
-    const soft = S.burnSoft * this.burnMul * (1 + 0.22 * this.wake)
+    const soft = S.burnSoft * this.burnMul * (1 + 0.22 * this.draftMul * this.wake)
     if (burning) this.speed += S.burnAccel * dt * (this.airborne ? 0.5 : 1) * Math.max(0, 1 - (m / soft) ** 2)
     if (!burning || this.speed < target) this.speed += (target - this.speed) * (1 - Math.exp(-k * dt))
     this.speed -= Math.abs(this.yawRate) * S.turnBleed * this.speed * dt

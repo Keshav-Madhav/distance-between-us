@@ -142,6 +142,7 @@ export class Race {
       r.p.maxMach = r.ai ? 4.7 + r.skill * 1.3 : CFG.speed.boostMach
       // The drag race tops out around Mach 11 (flat out with the burner); elsewhere the usual ceiling.
       r.p.burnMul = 1
+      r.p.draftMul = r.ai ? 1 : 1.7
     })
     this.state = 'grid'
     this.clock = 0
@@ -219,7 +220,8 @@ export class Race {
         const ahead = dx * r.p.fwd.x + dz * r.p.fwd.z
         const side = Math.abs(dx * r.p.right.x + dz * r.p.right.z)
         // (The wake stretches with speed: 300 m is 80 ms at Mach 11 — it could hardly be held.)
-        const len = 300 + r.p.speed * 0.3, wid = 38
+        // (Yours is far easier to catch and hold: twice as wide, half again as long.)
+        const len = (300 + r.p.speed * 0.3) * (r.ai ? 1 : 1.5), wid = r.ai ? 38 : 80
         if (ahead > 30 && ahead < len && side < wid) w = Math.max(w, (1 - side / wid) * (1 - (ahead - 30) / (len - 30)))
       }
       r.p.wake += (w - r.p.wake) * Math.min(1, dt * 4)
@@ -232,6 +234,9 @@ export class Race {
     for (const r of this.racers) { r.prog = this.progress(r); this.order.push(r) }
     this.order.sort((a, b) => b.prog - a.prog)
     for (let i = 0; i < this.order.length; i++) this.order[i].place = i + 1
+    // Your catch-up: behind the leader, the burner's soft limit rises with the gap (+1% a km, up to 6%).
+    const me = this.racers[0], lead = this.order[0]
+    me.p.burnMul = 1 + THREE.MathUtils.clamp((lead.prog - me.prog) / 100000, 0, 0.06)
     if (this.racers[0].finished && this.state === 'racing') this.state = 'done'
   }
 
