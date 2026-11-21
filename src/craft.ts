@@ -157,10 +157,11 @@ export class Craft {
     this.root.add(this.body)
     this.body.add(this.hi, this.lo)
     const mats: Record<string, THREE.Material> = {
-      paint: new THREE.MeshPhysicalMaterial({ color: paint.body, roughness: 0.3, metalness: 0.15, clearcoat: 1, clearcoatRoughness: 0.14, envMap: env, envMapIntensity: 1.1 }),
-      trim: new THREE.MeshStandardMaterial({ color: paint.trim, roughness: 0.35, metalness: 0.25, emissive: paint.trim, emissiveIntensity: 0.18, envMap: env }),
-      carbon: new THREE.MeshStandardMaterial({ color: 0x15171b, roughness: 0.45, metalness: 0.65, envMap: env }),
-      metal: new THREE.MeshStandardMaterial({ color: 0x8a8f98, roughness: 0.25, metalness: 1, envMap: env }),
+      // (Shell surfaces double-sided: an open loft end can never show as a see-through hole.)
+      paint: new THREE.MeshPhysicalMaterial({ side: THREE.DoubleSide, color: paint.body, roughness: 0.3, metalness: 0.15, clearcoat: 1, clearcoatRoughness: 0.14, envMap: env, envMapIntensity: 1.1 }),
+      trim: new THREE.MeshStandardMaterial({ side: THREE.DoubleSide, color: paint.trim, roughness: 0.35, metalness: 0.25, emissive: paint.trim, emissiveIntensity: 0.18, envMap: env }),
+      carbon: new THREE.MeshStandardMaterial({ side: THREE.DoubleSide, color: 0x15171b, roughness: 0.45, metalness: 0.65, envMap: env }),
+      metal: new THREE.MeshStandardMaterial({ side: THREE.DoubleSide, color: 0x8a8f98, roughness: 0.25, metalness: 1, envMap: env }),
       // (Tinted and see-through: the pilot shows inside.)
       glass: new THREE.MeshPhysicalMaterial({ color: 0x1a2c44, roughness: 0.04, metalness: 0.3, clearcoat: 1, envMap: env, envMapIntensity: 1.6, transparent: true, opacity: 0.62, depthWrite: false }),
     }
@@ -228,7 +229,8 @@ export class Craft {
       const plane = new THREE.Mesh(new THREE.PlaneGeometry(N.size, N.size), this.numMat)
       plane.position.set(sgn * N.pos[0], N.pos[1], N.pos[2])
       plane.rotation.set(0, sgn * N.rotY, 0, 'YXZ')
-      plane.rotateX(sgn * N.tilt)
+      // (tilt = the fin's outward lean; the same sign both sides — sgn·tilt sank the right one into its fin.)
+      plane.rotateX(N.tilt)
       this.hi.add(plane)
     }
     const L = new Builder()

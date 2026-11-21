@@ -120,10 +120,31 @@ export function mirrorX(g: THREE.BufferGeometry): THREE.BufferGeometry {
   for (let i = 0; i < p.count; i++) p.setX(i, -p.getX(i))
   const n = m.attributes.normal as THREE.BufferAttribute | undefined
   if (n) for (let i = 0; i < n.count; i++) n.setX(i, -n.getX(i))
-  const ix = m.index!
-  for (let i = 0; i < ix.count; i += 3) { const a = ix.getX(i + 1); ix.setX(i + 1, ix.getX(i + 2)); ix.setX(i + 2, a) }
+  const ix = m.index
+  if (ix) for (let i = 0; i < ix.count; i += 3) { const a = ix.getX(i + 1); ix.setX(i + 1, ix.getX(i + 2)); ix.setX(i + 2, a) }
+  else {
+    // Non-indexed (extrusions): swap the 2nd and 3rd vertex of every triangle, in every attribute.
+    for (const att of Object.values(m.attributes) as THREE.BufferAttribute[]) {
+      const n = att.itemSize, arr = att.array as Float32Array
+      for (let t = 0; t + 2 < att.count; t += 3) for (let k = 0; k < n; k++) { const a = arr[(t + 1) * n + k]; arr[(t + 1) * n + k] = arr[(t + 2) * n + k]; arr[(t + 2) * n + k] = a }
+    }
+  }
   return m
 }
+
+export /** One engine, closed: a rounded front cap, the outer wall, a rolled lip, the inner wall down to a
+ *  throat plate — no open tube to see through. Built along +z with its rear lip at z = 0. */
+function nacelle(r: number): THREE.BufferGeometry {
+  const P = (a: number, b: number) => new THREE.Vector2(a * r / 0.6, b)
+  const prof = [
+    P(0.0, 2.12), P(0.22, 2.1), P(0.4, 2.03), P(0.5, 1.9), P(0.53, 1.7), P(0.56, 1.0), P(0.6, 0.2),
+    P(0.625, 0.08), P(0.62, -0.02), P(0.585, -0.06), P(0.55, -0.03), P(0.52, 0.12), P(0.48, 0.42), P(0.0, 0.44),
+  ]
+  const g = new THREE.LatheGeometry(prof, 48)
+  g.rotateX(Math.PI / 2)
+  return g
+}
+
 
 export const X = new THREE.Vector3(1, 0, 0)
 export const Y = new THREE.Vector3(0, 1, 0)

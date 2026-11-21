@@ -45,7 +45,7 @@ const views: [number, number, number, number, number, number][] = [
   [-6, 2.6, -9, 0, 0.7, -1], // 6: close rear
   [18, 10, 26, 0, 0.6, 0], // three-quarter front
   [-16, 8, -28, 0, 0.6, 0], // three-quarter rear
-  [0, 48, 0.01, 0, 0, 0], // top
+  [0, 22, 0.01, 0, 0, 0], // top
   [24, 1.2, 0, 0, 0.6, 0], // side
   [0, 2.4, 22, 0, 0.6, 0], // front
   [-10, 2.2, -2, 0, 1.0, -2.5], // 7: close left side, aft
