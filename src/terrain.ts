@@ -153,7 +153,7 @@ const LIGHTS: Record<string, Light> = {
   golden: { zenith: [0.1, 0.15, 0.42], horizon: [0.9, 0.6, 0.42], haze: [1.0, 0.52, 0.28], sunDir: [0.62, 0.26, -0.74], fogK: 0.000074, sunCol: [2.5, 1.62, 0.95], tint: [1.06, 0.8, 0.6] },
   // The Long Drag: dusk — the sun on the horizon, a violet sky, the land in shadow and glow.
   // Frostline: polar twilight — the sun just over the horizon, deep blue overhead, rose haze.
-  polar: { zenith: [0.012, 0.025, 0.075], horizon: [0.22, 0.28, 0.46], haze: [0.78, 0.48, 0.52], sunDir: [0.6, 0.04, -0.8], fogK: 0.00006, sunCol: [1.5, 0.95, 0.8], tint: [0.85, 0.8, 1.0] },
+  polar: { zenith: [0.006, 0.014, 0.05], horizon: [0.17, 0.21, 0.38], haze: [0.78, 0.48, 0.52], sunDir: [0.6, 0.04, -0.8], fogK: 0.00006, sunCol: [1.5, 0.95, 0.8], tint: [0.85, 0.8, 1.0] },
   // Canyon Run: dawn — cool blue-pink sky, a low sun from the east, rose light on the rock.
   dawn: { zenith: [0.1, 0.18, 0.48], horizon: [0.78, 0.62, 0.7], haze: [0.95, 0.66, 0.6], sunDir: [-0.7, 0.3, 0.65], fogK: 0.00007, sunCol: [2.4, 1.75, 1.45], tint: [1.04, 0.86, 0.82] },
   dusk: { zenith: [0.05, 0.06, 0.2], horizon: [0.7, 0.38, 0.36], haze: [0.95, 0.42, 0.26], sunDir: [-0.66, 0.17, -0.73], fogK: 0.000082, sunCol: [2.1, 1.05, 0.6], tint: [1.0, 0.62, 0.5] },
@@ -194,16 +194,19 @@ vec3 aurora(vec3 d) {
   vec3 acc = vec3(0.0);
   for (int k = 0; k < 3; k++) {
     float fk = float(k);
-    float base = 0.16 + fk * 0.12 + 0.05 * sin(az * (3.0 + fk) + t * (1.0 + fk * 0.6)) + 0.025 * sin(az * 9.0 - t * 2.1 + fk * 2.0);
+    // The curtain's foot snakes across the sky (several bends, drifting), never a ruler line.
+    float base = 0.15 + fk * 0.11 + 0.06 * sin(az * (2.0 + fk) + t * (1.0 + fk * 0.6)) + 0.035 * sin(az * 5.3 - t * 1.3 + fk * 2.0) + 0.015 * sin(az * 13.0 + t * 2.1 + fk);
     float above = d.y - base;
-    float curtain = smoothstep(-0.004, 0.01, above) * exp(-max(above, 0.0) * (3.5 + fk * 2.0));
-    // (Soft, uneven rays — regular ones read as a barcode of stage lights.)
-    float rays = 0.35 + 0.65 * abs(sin(az * 90.0 + 4.0 * sin(az * 5.0 + t) + t * 2.0) * sin(az * 37.0 - t + fk));
+    // A feathered foot, a slow fade upward.
+    float curtain = smoothstep(-0.02, 0.03, above) * exp(-max(above, 0.0) * (3.5 + fk * 2.0));
+    // Rays at uneven spacing: a warped phase, so they bunch and thin like real folds.
+    float ph = az * 53.0 + 7.0 * sin(az * 3.7 + t + fk) + 3.0 * sin(az * 11.3 - t * 0.7);
+    float rays = 0.3 + 0.7 * pow(abs(sin(ph) * sin(az * 29.0 - t + fk * 1.3 + 2.0 * sin(az * 6.1))), 0.7);
     float dens = smoothstep(0.35, 0.95, 0.5 + 0.5 * sin(az * 2.3 + t * 0.7 + fk * 1.7) * sin(az * 1.1 - t * 0.45 + fk));
     vec3 col = mix(vec3(0.1, 1.0, 0.45), vec3(0.75, 0.22, 0.95), smoothstep(0.08, 0.35, above));
     acc += col * curtain * rays * dens * (1.0 - fk * 0.3);
   }
-  return acc * 1.8 * smoothstep(0.015, 0.06, d.y);
+  return acc * 1.1 * smoothstep(0.015, 0.06, d.y);
 }
 #endif
 vec3 skyColor(vec3 d) {

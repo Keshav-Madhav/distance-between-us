@@ -56,6 +56,10 @@ export interface PatchOpts {
   strata?: boolean
   /** Glacial ice (FROSTLINE's glaciers, seracs and spikes): blue, layered, snow-capped, lit from within. */
   ice?: boolean
+  /** With ice: the shards (spikes) — no snow cap, glowing tips that breathe with the aurora clock. */
+  spike?: boolean
+  /** The aurora clock uniform (world.ts AUR_T), for the spike tips. */
+  aur?: { value: number }
 }
 
 /**
@@ -65,9 +69,22 @@ export interface PatchOpts {
 export function patchStandard(mat: THREE.MeshStandardMaterial, opts: PatchOpts = {}): void {
   mat.fog = false
   // (three caches programs by onBeforeCompile's source text, the same for every patch: key it.)
-  mat.customProgramCacheKey = () => `patched-${opts.strata ? 'strata' : opts.ice ? 'ice' : 'plain'}`
+  mat.customProgramCacheKey = () => `patched-${opts.strata ? 'strata' : opts.ice ? (opts.spike ? 'spike' : 'ice') : 'plain'}`
   mat.onBeforeCompile = (s) => {
     if (opts.strata) { s.uniforms.tRock = TEX.tRock; s.uniforms.tSand = TEX.tSand }
+    if (opts.aur) s.uniforms.uAurT = opts.aur
+    if (opts.ice) {
+      // The crevasse depth (a geometry attribute) and the instance's own origin (a per-glacier seed).
+      s.vertexShader = s.vertexShader
+        .replace('#include <common>', '#include <common>\nattribute float aCrev;\nvarying float vCrev;\nvarying vec2 vOrg;')
+        .replace('#include <begin_vertex>', `#include <begin_vertex>
+        vCrev = aCrev;
+        #ifdef USE_INSTANCING
+          vOrg = instanceMatrix[3].xz;
+        #else
+          vOrg = vec2(0.0);
+        #endif`)
+    }
     s.vertexShader = s.vertexShader
       .replace('#include <common>', '#include <common>\nvarying vec3 vFogW;\nvarying vec3 vWN;\nvarying float vBaseY;\nvarying float vHt;')
       .replace(
@@ -95,32 +112,44 @@ export function patchStandard(mat: THREE.MeshStandardMaterial, opts: PatchOpts =
       .replace('#include <common>', `#include <common>\nvarying vec3 vFogW;\nvarying vec3 vWN;\nvarying float vBaseY;\nvarying float vHt;\nfloat gIceSnow = 0.0;\n${opts.strata ? 'uniform sampler2D tRock;\nuniform sampler2D tSand;' : ''}\n${SKY_GLSL}\n${NOISE_GLSL}`)
       .replace('#include <fog_fragment>', 'gl_FragColor.rgb = applyFog(gl_FragColor.rgb, vFogW);')
     if (opts.ice) {
+      s.fragmentShader = s.fragmentShader.replace('#include <common>', `#include <common>\nvarying float vCrev;\nvarying vec2 vOrg;\n${opts.spike ? '#define ICE_SPIKE' : ''}`)
       s.fragmentShader = s.fragmentShader.replace(
         '#include <color_fragment>',
         `#include <color_fragment>
         {
           float hy = vFogW.y - vBaseY;
           float t = hy / vHt;
-          vec3 deep = vec3(0.05, 0.24, 0.5), pale = vec3(0.55, 0.82, 0.97);
-          // Old ice is deep blue low down, younger ice paler toward the top.
+          // Each glacier its own: a seed from where it stands sets its layers' period and dip.
+          float sd = hash12(floor(mod(vOrg, 72000.0) / 37.0));
+          float sd2 = hash12(floor(mod(vOrg, 72000.0) / 37.0) + 17.3);
+          vec2 dipDir = vec2(cos(sd * 6.28), sin(sd * 6.28));
+          float yL = vFogW.y + 30.0 * vnoise(vFogW.xz * 0.006 + sd * 40.0) + dot(vFogW.xz - vOrg, dipDir) * (0.05 + 0.2 * sd2);
+          vec3 deep = vec3(0.02, 0.1, 0.27), pale = vec3(0.5, 0.78, 0.96);
           float n1 = vnoise(vec2((vFogW.x + vFogW.z) * 0.015, vFogW.y * 0.012));
-          vec3 c = mix(deep, pale, clamp(0.15 + 0.6 * t + 0.35 * n1, 0.0, 1.0));
-          // Annual layers: pale bands and darker dusty ones, wavy across the face.
-          float lay = fract((vFogW.y + 9.0 * vnoise(vFogW.xz * 0.006)) / 13.0);
-          c = mix(c, vec3(0.86, 0.95, 1.0), smoothstep(0.82, 0.88, lay) * (1.0 - smoothstep(0.92, 0.98, lay)) * 0.7);
-          c *= 1.0 - 0.28 * smoothstep(0.4, 0.45, lay) * (1.0 - smoothstep(0.49, 0.54, lay));
+          vec3 c = mix(deep, pale, clamp(0.05 + 0.65 * t + 0.35 * n1 + 0.15 * (sd2 - 0.5), 0.0, 1.0));
+          // Annual layers: pale bands and darker dusty ones, folded and dipping per glacier.
+          float lay = fract(yL / (8.0 + 12.0 * sd));
+          c = mix(c, vec3(0.86, 0.95, 1.0), smoothstep(0.82, 0.88, lay) * (1.0 - smoothstep(0.92, 0.98, lay)) * 0.6);
+          c *= 1.0 - 0.3 * smoothstep(0.4, 0.45, lay) * (1.0 - smoothstep(0.49, 0.54, lay)) * (0.5 + sd2);
           // Meltwater streaks running down the faces.
           float st = vnoise(vec2((vFogW.x - vFogW.z) * 0.05, vFogW.y * 0.0025));
           c = mix(c, deep * 0.7, smoothstep(0.6, 0.86, st) * 0.55);
-          c = mix(c, vec3(0.75, 0.92, 1.0), (1.0 - smoothstep(0.0, 0.1, st)) * 0.4);
-          // Snow on every top and gentle face, a cornice over the rim (dripping down the streaks),
-          // drifts banked against the foot, and frost on the spike tips.
+          c = mix(c, vec3(0.75, 0.92, 1.0), (1.0 - smoothstep(0.0, 0.1, st)) * 0.35);
+          // Crevasse slots: dark, deep blue.
+          c = mix(c, deep * 0.45, smoothstep(0.15, 0.7, vCrev));
           float wob = vnoise(vFogW.xz * 0.03 + vFogW.y * 0.02);
           float snow = smoothstep(0.42, 0.68, vWN.y + 0.12 * wob);
+          #ifdef ICE_SPIKE
+          // Shards: snow only banked at the foot; paler, glassier toward the tips.
+          snow = (1.0 - smoothstep(0.03, 0.08 + 0.05 * clamp(wob, 0.0, 1.0), t)) * 0.9;
+          c = mix(c, vec3(0.62, 0.88, 1.0), smoothstep(0.35, 1.0, t) * 0.7);
+          #else
+          // A cornice over the rim (dripping down the streaks), drifts banked against the foot.
           float e0 = 0.8 - 0.1 * clamp(st, 0.0, 1.0) - 0.05 * clamp(wob, 0.0, 1.0);
-          snow = max(snow, smoothstep(e0, e0 + 0.06, t));
+          snow = max(snow, smoothstep(e0, e0 + 0.06, t) * (1.0 - smoothstep(0.3, 0.8, vCrev)));
           snow = max(snow, (1.0 - smoothstep(0.05, 0.12 + 0.08 * clamp(wob, 0.0, 1.0), t)) * 0.95);
-          c *= mix(0.75, 1.0, smoothstep(2.0, 30.0, hy));
+          #endif
+          c *= mix(0.6, 1.0, smoothstep(2.0, 30.0, hy));
           c = mix(c, vec3(1.15, 1.18, 1.25), snow);
           gIceSnow = snow;
           diffuseColor.rgb = c;
@@ -133,6 +162,14 @@ export function patchStandard(mat: THREE.MeshStandardMaterial, opts: PatchOpts =
           float sn = gIceSnow;
           float rim = 1.0 - abs(dot(normalize(vViewPosition), normal));
           totalEmissiveRadiance += (1.0 - sn) * vec3(0.03, 0.14, 0.28) * (0.6 + 0.9 * rim * rim) + sn * vec3(0.16, 0.17, 0.2);
+          #ifdef ICE_SPIKE
+          {
+            // Tips lit from within, breathing slowly with the aurora (each cluster out of step).
+            float tt = (vFogW.y - vBaseY) / vHt;
+            float br = 0.65 + 0.35 * sin(uAurT * 0.6 + hash12(floor(mod(vOrg, 72000.0) / 37.0)) * 6.28);
+            totalEmissiveRadiance += vec3(0.25, 0.75, 0.7) * smoothstep(0.55, 1.05, tt) * br * (0.5 + rim);
+          }
+          #endif
         }`,
       )
     }

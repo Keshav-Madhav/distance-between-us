@@ -80,6 +80,35 @@ const clearAt = (x: number, z: number, r: number) => {
 }
 const world = new World(clearAt, (x, z, r) => course.distance(x, z) < 460 + r)
 world.addFixed(course.rocks)
+// The polar world's set pieces: glaciers, seracs and spike fields placed close beside the line
+// (150–400 m off its edge), so the race threads past the ice instead of seeing it on the horizon.
+if (BIOME === 'ice') {
+  let sd = (course.def.seed * 9301 + 49297) >>> 0
+  const rnd = () => { sd = (sd * 1664525 + 1013904223) >>> 0; return sd / 4294967296 }
+  const tight = course.def.id === 'icefall'
+  const laps = course.def.laps ?? 1
+  const lapEnd = course.startI + Math.floor((course.finishI - course.startI) / laps)
+  const heroes: Parameters<typeof world.addHeroes>[0] = []
+  let i = course.startI + Math.round(1800 / 40)
+  while (i < lapEnd - 40) {
+    const roll = rnd()
+    const kind: 'mesa' | 'butte' | 'spire' = tight ? (roll < 0.45 ? 'spire' : roll < 0.75 ? 'butte' : 'mesa') : (roll < 0.5 ? 'mesa' : roll < 0.8 ? 'spire' : 'butte')
+    const v = Math.floor(rnd() * 3.999) % (kind === 'mesa' ? 4 : 3)
+    let r: number, h: number, ext: number
+    if (kind === 'mesa') { r = 220 + rnd() * 300; h = 130 + rnd() * 140; ext = 1.6 }
+    else if (kind === 'butte') { r = 110 + rnd() * 110; h = 70 + rnd() * 80; ext = 1.4 }
+    else { r = 40 + rnd() * 35; h = 260 + rnd() * 240; ext = 2.0 }
+    const gap = 150 + rnd() * 250
+    const side = rnd() < 0.5 ? -1 : 1
+    const [tx, tz] = course.tangent(i)
+    const lat = side * (gap + r * ext)
+    const x = course.px[i] + tz * lat, z = course.pz[i] - tx * lat
+    // Only where the nearest line is this one (a loop can bend back toward it).
+    if (course.distance(x, z) > gap * 0.9 + r * ext * 0.95) heroes.push({ x, z, r, h, kind, v, yaw: rnd() * 6.28 })
+    i += Math.round((tight ? 2200 + rnd() * 1300 : 3200 + rnd() * 1800) / 40)
+  }
+  world.addHeroes(heroes)
+}
 scene.add(world.group)
 scene.add(course.group)
 const env = world.makeEnv(renderer)
@@ -587,7 +616,11 @@ function showCourse(): void {
       try { last = localStorage.getItem('dbu-course-' + w.id) } catch { /* blocked */ }
       const i = COURSES.findIndex((c) => c.id === last && biomeOf(c.id) === w.id)
       pickedCourse = i >= 0 ? i : COURSES.findIndex((c) => biomeOf(c.id) === w.id)
-      showCourse()
+      // A world is built at page load (its sky, ground and ice compile in): reload into it, so the
+      // menu behind you is the world you picked.
+      try { localStorage.setItem('dbu-course', COURSES[pickedCourse].id) } catch { /* blocked */ }
+      const u = new URL(location.href); u.searchParams.delete('course'); location.href = u.toString()
+      return
     }
     const n = COURSES.filter((c) => biomeOf(c.id) === w.id).length
     el.innerHTML = `<b>${w.name}</b><small>${w.blurb} · ${n} ${n === 1 ? 'COURSE' : 'COURSES'}</small>`

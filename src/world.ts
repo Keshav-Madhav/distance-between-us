@@ -302,9 +302,11 @@ function terrainMaterial(shared: GroundUniforms, snap: { value: THREE.Vector2 },
         // dry riverbeds frozen: black-teal ice with white cracks.
         {
           float lumS = dot(sandT, vec3(0.333));
-          vec3 snow = vec3(0.84, 0.89, 0.97) * (0.8 + 0.4 * lumS) * (0.94 + 0.12 * fbmT(p * 0.0011 + 3.1));
-          vec3 rockI = vec3(0.17, 0.19, 0.24) * (0.8 + 0.4 * dot(grav, vec3(0.333)));
-          alb = mix(snow, rockI, gm * 0.65);
+          // (Ripple contrast fades with distance: far sastrugi only made moire.)
+          float rk = mix(0.36, 0.08, smoothstep(120.0, 1200.0, length(vW - cameraPosition)));
+          vec3 snow = vec3(0.84, 0.89, 0.97) * (1.0 - rk * 0.5 + rk * lumS) * (0.94 + 0.12 * fbmT(p * 0.0011 + 3.1));
+          vec3 rockI = vec3(0.26, 0.29, 0.36) * (0.85 + 0.3 * dot(grav, vec3(0.333)));
+          alb = mix(snow, rockI, gm * 0.5);
           float cr = smoothstep(0.014, 0.0, abs(fbmT(p * 0.012) - 0.47)) + 0.6 * smoothstep(0.009, 0.0, abs(fbmT(p * 0.05 + 4.0) - 0.47));
           vec3 ice = mix(vec3(0.05, 0.11, 0.16), vec3(0.72, 0.86, 0.95), min(1.0, cr));
           alb = mix(alb, ice, river);
@@ -659,7 +661,8 @@ export class World {
   private readonly rings: { mesh: THREE.Mesh; snap: { value: THREE.Vector2 }; step: number }[] = []
   private readonly wrapped: Wrapped[] = []
   /** Fixed rocks (the course's spires): not wrapped, always there. */
-  private readonly fixed: { x: number; z: number; r: number; h: number; yaw: number; by: number }[] = []
+  private readonly fixed: { x: number; z: number; r: number; h: number; yaw: number; by: number; prof: Profile }[] = []
+  private spikeMat: THREE.MeshStandardMaterial | null = null
   private fixedProf: Profile = () => 1
   private spireGeo: THREE.BufferGeometry | null = null
   private mesaMat: THREE.Material | null = null
@@ -697,6 +700,9 @@ export class World {
     const ICE = BIOME === 'ice'
     if (ICE) { mesaMat.roughness = 0.3; patchStandard(mesaMat, { ice: true }) }
     else patchStandard(mesaMat, { strata: true })
+    const spikeMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.18, metalness: 0, flatShading: true })
+    patchStandard(spikeMat, { ice: true, spike: true, aur: AUR_T })
+    this.spikeMat = spikeMat
     const r = rng(1234)
     const kinds: [Kind, number, number][] = [
       // (×4: the world now wraps every 72 km, so the 130 km sprint overlaps itself less.)
@@ -713,7 +719,7 @@ export class World {
         const seed = kind.length * 31 + 7 + v * 101
         const { geo, prof } = ICE ? iceGeometry(kind, seed, v) : mesaGeometry(kind, seed, v)
         if (kind === 'spire' && v === 0) { this.spireGeo = geo; this.fixedProf = prof }
-        ws.push(new Wrapped(geo, mesaMat, REBASE, 16500, 0.06, prof, true, null, 20000))
+        ws.push(new Wrapped(geo, ICE && kind === 'spire' ? spikeMat : mesaMat, REBASE, 16500, 0.06, prof, true, null, 20000))
       }
       let placed = 0, tries = 0
       while (placed < count && tries++ < count * 80) {
@@ -733,6 +739,10 @@ export class World {
         if (ICE) {
           if (kind === 'mesa') { rad *= 1.15; h *= 0.75 }
           else if (kind === 'spire') { rad *= 0.8; h *= 1.25 }
+          else { rad *= 1.35; h *= 0.55 } // seracs: squat blocks, not towers
+          // Ice comes in every size: small bergs to giants (skewed small, a few huge).
+          const sc = 0.45 + 2.0 * Math.pow(r(), 2.2)
+          rad *= sc; h *= 0.6 + 0.4 * sc
         }
         if (!clear(sx, sz, rad * (ICE && kind === 'spire' ? 2.4 : 1.6))) continue
         let ok = true
@@ -793,12 +803,30 @@ export class World {
     list.forEach((o, i) => {
       const yaw = (i * 2.399) % 6.283
       const by = groundH(o.x, o.z) - 0.06 * o.h - 3
-      this.fixed.push({ ...o, yaw, by })
+      this.fixed.push({ ...o, yaw, by, prof: this.fixedProf })
       mesh.setMatrixAt(i, m.compose(v.set(o.x, by, o.z), q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), yaw), sc.set(o.r, o.h, o.r)))
     })
     mesh.count = list.length
     mesh.frustumCulled = false
     this.group.add(mesh)
+  }
+
+  /** Ice landmarks placed by the course itself, close beside the line (the polar world's set pieces). */
+  addHeroes(list: { x: number; z: number; r: number; h: number; kind: 'mesa' | 'butte' | 'spire'; v: number; yaw: number }[]): void {
+    const groups = new Map<string, typeof list>()
+    for (const o of list) { const k = o.kind + o.v; if (!groups.has(k)) groups.set(k, []); groups.get(k)!.push(o) }
+    const m = new THREE.Matrix4(), q = new THREE.Quaternion(), v = new THREE.Vector3(), sc = new THREE.Vector3(), up = new THREE.Vector3(0, 1, 0)
+    for (const g of groups.values()) {
+      const { geo, prof } = iceGeometry(g[0].kind, g[0].kind.length * 31 + 7 + g[0].v * 101, g[0].v)
+      const mesh = new THREE.InstancedMesh(geo, g[0].kind === 'spire' ? this.spikeMat! : this.mesaMat!, g.length)
+      g.forEach((o, i) => {
+        const by = groundH(o.x, o.z) - 0.06 * o.h - 3
+        this.fixed.push({ x: o.x, z: o.z, r: o.r, h: o.h, yaw: o.yaw, by, prof })
+        mesh.setMatrixAt(i, m.compose(v.set(o.x, by, o.z), q.setFromAxisAngle(up, o.yaw), sc.set(o.r, o.h, o.r)))
+      })
+      mesh.frustumCulled = false
+      this.group.add(mesh)
+    }
   }
 
   /** How far the mesas are drawn (m): they rise from the haze between 82% and 100% of it. */
@@ -870,7 +898,7 @@ export class World {
       const t = (y - it.by) / it.h
       if (t > 0.98) continue
       const c = Math.cos(it.yaw), s = Math.sin(it.yaw)
-      const cr = it.r * this.fixedProf(Math.atan2(dx * s + dz * c, dx * c - dz * s), Math.max(0, t)) * 0.97
+      const cr = it.r * it.prof(Math.atan2(dx * s + dz * c, dx * c - dz * s), Math.max(0, t)) * 0.97
       let o = out[n]
       if (!o) out[n] = o = { x: 0, z: 0, cr: 0, big: false }
       o.x = it.x; o.z = it.z; o.cr = cr; o.big = true
