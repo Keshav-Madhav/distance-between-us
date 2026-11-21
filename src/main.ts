@@ -13,6 +13,7 @@ import { Player } from './player'
 import { Combat } from './combat'
 import { FlightCam, FlightCraft, type FlightControls } from './flight'
 import { Rings } from './rings'
+import { Tips } from './tips'
 import { CANNON, Cannon, interceptT, Missiles, Rounds, segDist, type Target } from './hunt/weapons'
 import { DART, Darts } from './hunt/enemies'
 import { Sound } from './audio'
@@ -344,6 +345,7 @@ const race = new Race(course, player, {
   },
   missedGate(r) {
     if (r.p !== player) return
+    missedCount++
     warn('MISSED GATE', 'SPEED LOST')
     sound.missed()
     sound.crash(false)
@@ -770,6 +772,26 @@ function die(): void {
 
 // ───────────────────────── HUD ─────────────────────────
 const hud = $('#hud')
+// Tips (src/tips.ts): one quiet line at the moment it matters, once each.
+const tips = new Tips($('#tip'))
+let missedCount = 0, burnHeld = 0
+const tipCtx: import('./tips').TipCtx = { mode: 'title', course: '', t: 0, km: 0, mach: 0, burning: false, burnHeld: 0, wake: 0, drifting: false, slip: 0, spin: false, airborne: false, hull: 100, missed: 0, place: 1, lap: 1, dartNear: false, darts: 0, kills: 0, overheat: false, agl: 0 }
+function updateTips(dt: number): void {
+  const c = tipCtx
+  if (mode === 'title') { tips.hide(); return }
+  if (paused || overlay || player.dead || (mode === 'race' && race.state === 'grid')) return
+  burnHeld = player.burning ? burnHeld + dt : 0
+  const me = race.racers[0]
+  const lapI = (course.finishI - course.startI) / (course.def.laps ?? 1)
+  c.mode = mode; c.course = course.def.id; c.t = runTime
+  c.km = mode === 'race' ? (((me.idx - course.startI) % lapI) * 40) / 1000 : 0
+  c.lap = mode === 'race' ? 1 + Math.floor(Math.max(0, me.idx - course.startI) / lapI) : 1
+  c.mach = player.mach; c.burning = player.burning; c.burnHeld = burnHeld; c.wake = player.wake
+  c.drifting = player.drifting; c.slip = player.slip; c.spin = player.spin > 0; c.airborne = player.airborne && player.airTime > 0.3
+  c.hull = player.hull; c.missed = missedCount; c.place = me.place
+  c.dartNear = mode === 'hunt' && !!noseTarget(); c.darts = darts.alive; c.kills = kills; c.overheat = cannon.lockout > 0; c.agl = flight.agl
+  tips.update(dt, c)
+}
 const machNum = $('#mach .num')
 const kmsEl = $('#mach .kms')
 const barCells = Array.from(document.querySelectorAll<HTMLElement>('#bar i'))
@@ -1178,6 +1200,7 @@ let runTop = 0
 let driftLvl = 0
 let secK = 0, pinUntil = 0
 function startRace(): void {
+  missedCount = 0
   document.body.classList.remove('flying')
   rings.hide()
   rounds.clear(); missiles.reset(); darts.clear()
@@ -1212,7 +1235,8 @@ function startRace(): void {
   scoreEl.style.display = 'none'
   reticle.style.display = 'none'
   hintsEl.innerHTML = RACE_HINTS
-  hintsEl.style.opacity = '0.85'
+  // (With tips on, the controls arrive one at a time as tips: the full list only when they are off.)
+  hintsEl.style.opacity = tips.enabled ? '0' : '0.85'
   setTimeout(() => (hintsEl.style.opacity = '0'), 9000)
 }
 
@@ -1240,7 +1264,7 @@ function startHunt(): void {
   rounds.clear(); cannon.reset(); missiles.reset(); darts.clear(); waveT = 3; huntWave = 0; kills = 0
   hintsEl.innerHTML = FLY_HINTS
   document.body.classList.add('flying')
-  hintsEl.style.opacity = '0.85'
+  hintsEl.style.opacity = tips.enabled ? '0' : '0.85'
   setTimeout(() => (hintsEl.style.opacity = '0'), 10000)
   resetVisuals()
   for (const r of race.racers) if (r.ai) visuals.get(r.p)!.craft.root.visible = false
@@ -1351,6 +1375,8 @@ sound.setCourse(course.def.id)
 $<HTMLSelectElement>('#mus').onchange = (e) => { sound.musicChoice = (e.target as HTMLSelectElement).value; sound.refreshMusic() }
 $<HTMLInputElement>('#rs').onchange = (e) => { CFG.camera.reduceShake = (e.target as HTMLInputElement).checked }
 $<HTMLInputElement>('#invp').onchange = (e) => { invertPitch = (e.target as HTMLInputElement).checked }
+$<HTMLInputElement>('#tipson').onchange = (e) => { tips.enabled = (e.target as HTMLInputElement).checked; if (!tips.enabled) tips.hide() }
+$('#tipsreset').onclick = () => { tips.reset(); pop('TIPS RESET') }
 // Graphics settings: applied live, remembered.
 const applyGraphics = () => {
   settings.scale = +$<HTMLInputElement>('#g-scale').value / 100
@@ -1934,6 +1960,7 @@ function frame(now: number): void {
   sound.slide(mode === 'title' || player.airborne ? 0 : player.drifting ? 0.4 + Math.min(0.6, Math.abs(player.slip)) : 0, player.drift / 2.6, player.spin > 0 ? player.yawRate : 0)
 
   world.update(camera.position, time)
+  updateTips(realDt)
   const G = world.ground
   G.uCraft.value.copy(renderPos)
   const agl = Math.max(0, renderPos.y - groundH(renderPos.x, renderPos.z))
