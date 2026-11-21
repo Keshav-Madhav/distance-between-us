@@ -7,9 +7,9 @@
 import * as THREE from 'three'
 import { BIOME, groundH, setMounds } from './terrain'
 /** The next-gate light: cyan in the desert, amber on the ice (cyan vanished against a cold sky). */
-const NEXT = BIOME === 'ice' ? [5, 2.2, 0.5] : [0.6, 3.2, 5]
-const AFTER = BIOME === 'ice' ? [2.4, 1.1, 0.3] : [0.4, 1.6, 2.4]
-const CURT = BIOME === 'ice' ? [2.2, 1.0, 0.25] : [0.2, 1.4, 2.0]
+const NEXT = BIOME === 'ice' ? [3, 1.3, 0.3] : [0.6, 3.2, 5]
+const AFTER = BIOME === 'ice' ? [1.4, 0.65, 0.18] : [0.4, 1.6, 2.4]
+const CURT = BIOME === 'ice' ? [1.3, 0.6, 0.15] : [0.2, 1.4, 2.0]
 import { patchStandard, SKY_FOG_ONLY } from './shaders'
 
 const STEP = 40

@@ -208,7 +208,9 @@ vec3 aurora(vec3 d) {
     vec3 col = mix(vec3(0.1, 1.0, 0.45), vec3(0.75, 0.22, 0.95), smoothstep(0.08, 0.35, above));
     acc += col * curtain * rays * dens * (1.0 - fk * 0.3);
   }
-  return acc * 0.8 * smoothstep(0.05, 0.16, d.y);
+  // Dimmer, and stronger in some stretches than others (it comes and goes along the course).
+  float swell = 0.55 + 0.45 * sin(cameraPosition.x * 0.00011 + 1.3) * sin(cameraPosition.z * 0.00009 + 0.4);
+  return acc * 0.56 * swell * smoothstep(0.05, 0.16, d.y);
 }
 #endif
 vec3 skyColor(vec3 d) {

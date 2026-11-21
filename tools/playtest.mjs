@@ -1,7 +1,7 @@
 // A playtest through the real keyboard (the same input path a player uses), recorded to video.
 // A small bot looks at the game ~10×/s and presses W / Shift / A / D / S like a player would:
 // a timed launch, lining up the next gate, stepping round spires, afterburner on clear straights,
-// a brake-drift in the S-bends. Logs events; screenshots every 10 s; the video lands in shots/run8/video/.
+// a brake-drift in the S-bends. Logs events; screenshots every 10 s; the video lands in ${OUT}/video/.
 //   node tools/playtest.mjs [seconds]
 import { chromium } from 'playwright-core'
 import { mkdirSync } from 'node:fs'
@@ -9,17 +9,18 @@ import { mkdirSync } from 'node:fs'
 const SECS = +(process.argv[2] ?? 150)
 // ANALOG=1: steer through a virtual analog stick (the AI brain's exact steer) instead of keys.
 const ANALOG = !!process.env.ANALOG
-mkdirSync('shots/run8/video', { recursive: true })
-mkdirSync('shots/run8/play', { recursive: true })
+const OUT = process.env.OUT ?? 'shots/run8'
+mkdirSync(`${OUT}/video`, { recursive: true })
+mkdirSync(`${OUT}/play`, { recursive: true })
 const browser = await chromium.launch({ channel: 'chrome', headless: true, args: ['--mute-audio', '--use-gl=angle', '--ignore-gpu-blocklist'] })
-const ctx = await browser.newContext({ viewport: { width: 1280, height: 720 }, recordVideo: { dir: 'shots/run8/video', size: { width: 1280, height: 720 } } })
+const ctx = await browser.newContext({ viewport: { width: 1280, height: 720 }, recordVideo: { dir: `${OUT}/video`, size: { width: 1280, height: 720 } } })
 const page = await ctx.newPage()
 const errors = []
 page.on('pageerror', (e) => errors.push(e.message))
 page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()) })
-await page.goto('http://localhost:4417/'); await page.waitForFunction('window.__g && window.__g.ready')
+await page.goto('http://localhost:4417/' + (process.env.COURSE ? '?course=' + process.env.COURSE : '')); await page.waitForFunction('window.__g && window.__g.ready')
 await page.waitForTimeout(2500)
-await page.screenshot({ path: 'shots/run8/play/00-title.png' })
+await page.screenshot({ path: `${OUT}/play/00-title.png` })
 await page.keyboard.press('Enter')
 
 const held = new Set()
@@ -83,15 +84,17 @@ while ((Date.now() - t0) / 1000 < SECS) {
   const clear = s.rockAhead > s.speed * 2.5 && s.bend < 0.05 && Math.abs(err) < 0.05 && s.mach < 8
   await hold('Shift', clear && !s.air)
   if (!drifted && s.bend > 0.12 && s.mach > 3 && !s.air) { await hold('s', true); await page.waitForTimeout(700); await hold('s', false); drifted = true; log.push(`${el.toFixed(0)}s brake-drift`) }
+  if (s.crashing && !globalThis.__wasC) log.push(`  CRASH at ${el.toFixed(1)}s lat ${s.lat.toFixed(0)} m mach ${s.mach.toFixed(1)} air ${s.air} hull ${Math.round(s.hull)}`)
+  globalThis.__wasC = s.crashing
   if (el - lastLog > 5) {
     lastLog = el
-    log.push(`${el.toFixed(0)}s P${s.place} gate ${s.passed}/${s.K} M${s.mach.toFixed(2)} hull ${Math.round(s.hull)} ${s.burning ? 'BURN' : ''} ${s.air ? 'AIR' : ''} ${s.crashing ? 'CRASH' : ''} ${s.wake > 0.2 ? 'WAKE' : ''} toGo ${(s.toGo / 1000).toFixed(1)}km`)
+  log.push(`${el.toFixed(0)}s P${s.place} gate ${s.passed}/${s.K} M${s.mach.toFixed(2)} hull ${Math.round(s.hull)} ${s.burning ? 'BURN' : ''} ${s.air ? 'AIR' : ''} ${s.crashing ? 'CRASH' : ''} ${s.wake > 0.2 ? 'WAKE' : ''} toGo ${(s.toGo / 1000).toFixed(1)}km`)
   }
-  if (el - lastShot > 10) { lastShot = el; await page.screenshot({ path: `shots/run8/play/${String(Math.round(el)).padStart(3, '0')}.png` }) }
+  if (el - lastShot > 10) { lastShot = el; await page.screenshot({ path: `${OUT}/play/${String(Math.round(el)).padStart(3, '0')}.png` }) }
   await page.waitForTimeout(60)
 }
 await page.waitForTimeout(5000)
-await page.screenshot({ path: 'shots/run8/play/zz-end.png' })
+await page.screenshot({ path: `${OUT}/play/zz-end.png` })
 console.log(log.join('\n'))
 console.log(await page.evaluate(() => window.__g.race.racers.map((r) => `${r.name} passed=${r.passed}/${window.__g.course.cps.length} next=${r.next} fin=${r.finished} idx=${r.idx}/${window.__g.course.finishI} dead=${r.p.dead} crash=${r.p.crashing} mach=${r.p.mach.toFixed(1)}`).join('\n')))
 console.log(errors.length ? 'ERRORS:\n' + [...new Set(errors)].slice(0, 10).join('\n') : 'no errors')

@@ -95,45 +95,69 @@ if (BIOME === 'ice') {
     const k = Math.abs(a[0] * b[1] - a[1] * b[0]) / 480 // 1 / radius
     return Math.min(260, k * 300000)
   }
-  let i = course.startI + Math.round(1800 / 40)
-  while (i < lapEnd - 40) {
-    const roll = rnd()
-    const kind: 'mesa' | 'butte' | 'spire' = tight ? (roll < 0.45 ? 'spire' : roll < 0.75 ? 'butte' : 'mesa') : (roll < 0.5 ? 'mesa' : roll < 0.8 ? 'spire' : 'butte')
-    const v = Math.floor(rnd() * 3.999) % (kind === 'mesa' ? 4 : 3)
-    let r: number, h: number, ext: number
-    if (kind === 'mesa') { r = 220 + rnd() * 300; h = 130 + rnd() * 140; ext = 1.6 }
-    else if (kind === 'butte') { r = 110 + rnd() * 110; h = 70 + rnd() * 80; ext = 1.4 }
-    else { r = 40 + rnd() * 35; h = 260 + rnd() * 240; ext = 2.0 }
-    // (From the centre line: the edge pylons stand at 250 m; set pieces start just past them.)
-    const gap = 270 + rnd() * (tight ? 90 : 200)
-    const side = rnd() < 0.5 ? -1 : 1
+  // Zones along the lap, so the course has places: a shard forest, a corridor between glaciers,
+  // open polished ice. Each course its own order and lengths.
+  type Zone = 'forest' | 'glacier' | 'open'
+  const ZONES: [number, Zone][] = tight
+    ? [[0.0, 'forest'], [0.28, 'glacier'], [0.5, 'open'], [0.62, 'forest'], [0.86, 'glacier']]
+    : [[0.0, 'open'], [0.14, 'forest'], [0.36, 'glacier'], [0.62, 'open'], [0.76, 'forest'], [0.92, 'open']]
+  const zoneAt = (i: number): Zone => {
+    const f = (i - course.startI) / (lapEnd - course.startI)
+    let z: Zone = ZONES[0][1]
+    for (const [at, name] of ZONES) if (f >= at) z = name
+    return z
+  }
+  const place = (i: number, side: number, off: number, o: Omit<(typeof heroes)[number], 'x' | 'z'>, minD: number) => {
     const [tx, tz] = course.tangent(i)
-    const lat = side * (gap + r * ext + bendOut(i))
+    const lat = side * (off + bendOut(i))
     const x = course.px[i] + tz * lat, z = course.pz[i] - tx * lat
     // Only where the nearest line is this one (a loop can bend back toward it).
-    if (course.distance(x, z) > gap * 0.9 + r * ext * 0.95) heroes.push({ x, z, r, h, kind, v, yaw: rnd() * 6.28 })
-    i += Math.round((tight ? 2200 + rnd() * 1300 : 3200 + rnd() * 1800) / 40)
+    if (course.distance(x, z) > minD) heroes.push({ x, z, ...o })
   }
-  // The near field: small shard clusters and broken blocks lining the course just outside the
-  // pylons, every 40-90 m a side, so the ice streams past at speed (the sense of flying through it).
+  // Set pieces.
+  let i = course.startI + Math.round(1200 / 40)
+  while (i < lapEnd - 40) {
+    const zone = zoneAt(i)
+    const side = rnd() < 0.5 ? -1 : 1
+    if (zone === 'glacier') {
+      // Glaciers close on both sides: a corridor of ice walls.
+      for (const sd2 of [side, -side]) {
+        const r = 170 + rnd() * 170, h = 120 + rnd() * 130, gap = 290 + rnd() * 60
+        place(i + Math.round(rnd() * 6), sd2, gap + r * 1.6, { r, h, kind: 'mesa', v: Math.floor(rnd() * 3.999), yaw: rnd() * 6.28 }, gap * 0.9 + r * 1.5)
+      }
+      i += Math.round((900 + rnd() * 600) / 40)
+    } else if (zone === 'forest') {
+      const big = rnd() < 0.3
+      const r = big ? 90 + rnd() * 60 : 40 + rnd() * 35, h = big ? 90 + rnd() * 60 : 260 + rnd() * 240
+      const gap = 290 + rnd() * 120
+      place(i, side, gap + r * (big ? 1.4 : 2.0), { r, h, kind: big ? 'butte' : 'spire', v: Math.floor(rnd() * 2.999), yaw: rnd() * 6.28 }, gap * 0.9 + r * 1.3)
+      i += Math.round((1300 + rnd() * 900) / 40)
+    } else {
+      // Open ice: now and then one far glacier, standing alone.
+      const r = 260 + rnd() * 260, gap = 700 + rnd() * 600
+      place(i, side, gap + r * 1.6, { r, h: 140 + rnd() * 120, kind: 'mesa', v: Math.floor(rnd() * 3.999), yaw: rnd() * 6.28 }, gap * 0.8)
+      i += Math.round((4000 + rnd() * 3000) / 40)
+    }
+  }
+  // The near field, just past the pylons (250 m): dense in the forest, broken blocks and stubby
+  // shards along the glaciers, sparse on the open ice.
   for (const side of [-1, 1]) {
     let j = course.startI + Math.round(rnd() * 3)
     while (j < lapEnd - 10) {
-      // Mostly shard clusters tall enough to rise past the horizon as they whip by; now and then a
-      // sentinel spire right at the pylons; broken blocks between, any size, tilted, half sunk.
+      const zone = zoneAt(j)
       const roll = rnd()
-      const spike = roll < 0.62, sentinel = roll > 0.955
+      const pSpike = zone === 'forest' ? 0.75 : zone === 'glacier' ? 0.35 : 0.3
+      const spike = roll < pSpike, sentinel = zone === 'forest' && roll > 0.94
       const sc = 0.4 + 1.6 * rnd()
-      const r = sentinel ? 14 + rnd() * 10 : spike ? 6 + rnd() * 8 : (12 + rnd() * 12) * sc
-      const h = sentinel ? 110 + rnd() * 90 : spike ? 45 + rnd() * 95 : (10 + rnd() * 16) * sc
-      const lat = side * ((sentinel ? 330 : 330 + Math.pow(rnd(), 1.5) * 170) + bendOut(j))
-      const [tx, tz] = course.tangent(j)
-      const x = course.px[j] + tz * lat, z = course.pz[j] - tx * lat
-      if (course.distance(x, z) > 320) heroes.push({
-        x, z, r, h, kind: spike || sentinel ? 'spire' : 'butte', v: Math.floor(rnd() * 2.999), yaw: rnd() * 6.28,
+      const r = sentinel ? 30 + rnd() * 15 : spike ? 6 + rnd() * 8 : (12 + rnd() * 12) * sc
+      const h = sentinel ? 120 + rnd() * 80 : spike ? (zone === 'forest' ? 45 + rnd() * 95 : 20 + rnd() * 40) : (10 + rnd() * 16) * sc
+      const off = sentinel ? 305 : 300 + Math.pow(rnd(), 1.5) * (zone === 'forest' ? 150 : 220)
+      place(j, side, off, {
+        r, h, kind: spike || sentinel ? 'spire' : 'butte', v: Math.floor(rnd() * 2.999), yaw: rnd() * 6.28,
         tilt: spike || sentinel ? 0 : (rnd() - 0.5) * 0.7, sink: spike || sentinel ? 0 : rnd() * 0.35,
-      })
-      j += Math.max(1, Math.round((40 + rnd() * 50) / 40))
+      }, 292)
+      const step = zone === 'forest' ? 25 + rnd() * 30 : zone === 'glacier' ? 60 + rnd() * 60 : 160 + rnd() * 220
+      j += Math.max(1, Math.round(step / 40))
     }
   }
   world.addHeroes(heroes)

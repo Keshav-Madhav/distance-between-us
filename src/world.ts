@@ -307,13 +307,19 @@ function terrainMaterial(shared: GroundUniforms, snap: { value: THREE.Vector2 },
         {
           float lumS = dot(sandT, vec3(0.333));
           // (Ripple contrast fades with distance: far sastrugi only made moire.)
-          float rk = mix(0.15, 0.04, smoothstep(120.0, 1200.0, length(vW - cameraPosition)));
+          float rk = mix(0.15, 0.02, smoothstep(80.0, 700.0, length(vW - cameraPosition))) * (1.0 - min(0.8, uSpeed));
           // Sastrugi: long wind-carved ridges, all one way, sharp on the lee side.
           vec2 wd = vec2(0.8, 0.6);
           float along = dot(p, wd), across = dot(p, vec2(-wd.y, wd.x));
           float sg = fract(across / (7.0 + 5.0 * fbmT(p * 0.002)) + 0.4 * fbmT(vec2(along * 0.004, across * 0.01)));
           float sas = smoothstep(0.0, 0.7, sg) * (1.0 - smoothstep(0.7, 0.78, sg)) * smoothstep(0.35, 0.7, fbmT(vec2(along * 0.0015, across * 0.004) + 7.0));
-          sas *= 1.0 - smoothstep(300.0, 2500.0, length(vW - cameraPosition));
+          // A second set crossing at an angle where the wind veered.
+          vec2 wd2 = vec2(0.26, 0.97);
+          float sg2 = fract(dot(p, vec2(-wd2.y, wd2.x)) / (9.0 + 6.0 * fbmT(p * 0.0017 + 3.0)) + 0.5 * fbmT(p * 0.003));
+          float sas2 = smoothstep(0.0, 0.7, sg2) * (1.0 - smoothstep(0.7, 0.78, sg2)) * smoothstep(0.55, 0.8, fbmT(p * 0.0012 + 2.0));
+          sas = max(sas, sas2);
+          // (Fine ridges shimmer into stripes far off and at speed: they fade with both.)
+          sas *= (1.0 - smoothstep(150.0, 900.0, length(vW - cameraPosition))) * (1.0 - min(1.0, uSpeed * 0.9));
           vec3 snow = vec3(0.84, 0.89, 0.97) * (1.0 - rk * 0.5 + rk * lumS) * (1.0 - 0.12 * sas) * (0.94 + 0.12 * fbmT(p * 0.0011 + 3.1));
           vec3 rockI = vec3(0.26, 0.29, 0.36) * (0.85 + 0.3 * dot(grav, vec3(0.333)));
           alb = mix(snow, rockI, gm * 0.5);
@@ -675,7 +681,7 @@ export class World {
   private readonly rings: { mesh: THREE.Mesh; snap: { value: THREE.Vector2 }; step: number }[] = []
   private readonly wrapped: Wrapped[] = []
   /** Fixed rocks (the course's spires): not wrapped, always there. */
-  private readonly fixed: { x: number; z: number; r: number; h: number; yaw: number; by: number; prof: Profile }[] = []
+  private readonly fixed: { x: number; z: number; r: number; h: number; yaw: number; by: number; prof: Profile; big?: boolean }[] = []
   private spikeMat: THREE.MeshStandardMaterial | null = null
   private fixedProf: Profile = () => 1
   private spireGeo: THREE.BufferGeometry | null = null
@@ -841,7 +847,8 @@ export class World {
       g.forEach((o, i) => {
         // (Small blocks may lie tilted or half sunk: toppled pieces, not a row of identical boxes.)
         const by = groundH(o.x, o.z) - (0.06 + (o.sink ?? 0)) * o.h - 3
-        this.fixed.push({ x: o.x, z: o.z, r: o.r, h: o.h, yaw: o.yaw, by, prof })
+        // (Trackside shards and blocks glance you off, no crash: a wide drift must not end a race.)
+        this.fixed.push({ x: o.x, z: o.z, r: o.r, h: o.h, yaw: o.yaw, by, prof, big: o.r >= 60 })
         q.setFromEuler(e.set(o.tilt ?? 0, o.yaw, (o.tilt ?? 0) * 0.6, 'YXZ'))
         mesh.setMatrixAt(i, m.compose(v.set(o.x, by, o.z), q, sc.set(o.r, o.h, o.r)))
       })
@@ -922,7 +929,7 @@ export class World {
       const cr = it.r * it.prof(Math.atan2(dx * s + dz * c, dx * c - dz * s), Math.max(0, t)) * 0.97
       let o = out[n]
       if (!o) out[n] = o = { x: 0, z: 0, cr: 0, big: false }
-      o.x = it.x; o.z = it.z; o.cr = cr; o.big = true
+      o.x = it.x; o.z = it.z; o.cr = cr; o.big = it.big ?? true
       n++
     }
     return n

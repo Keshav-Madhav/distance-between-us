@@ -149,7 +149,12 @@ export function patchStandard(mat: THREE.MeshStandardMaterial, opts: PatchOpts =
           // Shards: snow only banked at the foot; paler, glassier toward the tips.
           // Shards: deep blue at the root to pale glassy tips, snow on up-facing ledges and banked
           // at the foot.
-          c = mix(deep * 1.4, vec3(0.6, 0.9, 1.0), smoothstep(0.05, 0.95, t)) * (0.92 + 0.16 * hash12(floor(vWN.xz * 6.0 + 50.0) + sd * 91.0));
+          // Each cluster its own ice: white-blue, grey-teal or deep cyan.
+          vec3 pa = sd < 0.34 ? vec3(0.55, 0.7, 0.86) : sd < 0.67 ? vec3(0.32, 0.5, 0.56) : vec3(0.1, 0.42, 0.62);
+          vec3 pb = sd < 0.34 ? vec3(0.86, 0.94, 1.0) : sd < 0.67 ? vec3(0.62, 0.78, 0.8) : vec3(0.45, 0.85, 0.98);
+          c = mix(pa * 0.55, pb, smoothstep(0.05, 0.95, t)) * (0.9 + 0.2 * hash12(floor(vWN.xz * 6.0 + 50.0) + sd * 91.0));
+          // Frost-white tips.
+          c = mix(c, vec3(0.95, 0.98, 1.0), smoothstep(0.82, 0.98, t) * 0.8);
           snow = max(smoothstep(0.55, 0.8, vWN.y), (1.0 - smoothstep(0.03, 0.08 + 0.05 * clamp(wob, 0.0, 1.0), t)) * 0.9);
           #else
           // A cornice over the rim (dripping down the streaks), drifts banked against the foot.
@@ -159,7 +164,7 @@ export function patchStandard(mat: THREE.MeshStandardMaterial, opts: PatchOpts =
           #endif
           c *= mix(0.6, 1.0, smoothstep(2.0, 30.0, hy));
           // Pulled toward grey, so the ice sits in the lilac air instead of shouting cobalt.
-          c = mix(vec3(dot(c, vec3(0.3, 0.45, 0.25))), c, 0.75);
+          c = mix(vec3(dot(c, vec3(0.3, 0.45, 0.25))), c, 0.6);
           c = mix(c, vec3(1.15, 1.18, 1.25), snow);
           gIceSnow = snow;
           diffuseColor.rgb = c;
@@ -177,9 +182,9 @@ export function patchStandard(mat: THREE.MeshStandardMaterial, opts: PatchOpts =
             // Tips lit from within, breathing slowly with the aurora (each cluster out of step).
             float tt = (vFogW.y - vBaseY) / vHt;
             float br = 0.65 + 0.35 * sin(uAurT * 0.6 + hash12(floor(mod(vOrg, 72000.0) / 37.0)) * 6.28);
-            totalEmissiveRadiance += vec3(0.3, 0.9, 0.85) * smoothstep(0.45, 1.0, tt) * br * (0.9 + 1.5 * rim);
+            totalEmissiveRadiance += vec3(0.3, 0.9, 0.85) * smoothstep(0.75, 1.05, tt) * br * (0.4 + 0.8 * rim);
             // Light inside the shard, and a few facets catching it as a bright vertical streak.
-            totalEmissiveRadiance += (1.0 - sn) * vec3(0.04, 0.12, 0.16) * (1.0 + rim);
+            totalEmissiveRadiance += (1.0 - sn) * vec3(0.02, 0.06, 0.08) * (1.0 + rim);
             float fh = hash12(floor(vWN.xz * 6.0 + 50.0) + floor(mod(vOrg, 72000.0) / 37.0));
             totalEmissiveRadiance += (1.0 - sn) * vec3(0.55, 0.85, 1.0) * pow(fh, 8.0) * 0.9 * (0.4 + 0.6 * tt);
           }
