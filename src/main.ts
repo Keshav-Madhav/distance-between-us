@@ -15,7 +15,7 @@ import { Walker } from './walker'
 import { Sound } from './audio'
 import { Input } from './input'
 import { Post } from './post'
-import { BIOME, biomeOf, DUST, groundH, SUN_DIR } from './terrain'
+import { BIOME, biomeOf, type Biome, DUST, groundH, SUN_DIR } from './terrain'
 /** Shadows are cast along the sun, but never stretched past a ~17° sun (a sun on the horizon threw them 100 m off). */
 const SHADOW_Y = Math.max(SUN_DIR[1], 0.3)
 import { loadTextures } from './textures'
@@ -65,8 +65,9 @@ let pickedCourse = COURSES.indexOf(courseDef)
 const WORLDS = [
   { id: 'desert', name: 'RED MESA', blurb: 'SANDSTONE' },
   { id: 'ice', name: 'POLAR SHELF', blurb: 'GLACIERS' },
+  { id: 'lava', name: 'CINDER', blurb: 'LAVA FIELDS' },
 ] as const
-let pickedWorld: 'desert' | 'ice' = biomeOf(courseDef.id)
+let pickedWorld: Biome = biomeOf(courseDef.id)
 const bestKey = (id: string) => `dbu-best-${id}`
 const bestOf = (id: string): number | null => { try { const v = localStorage.getItem(bestKey(id)); return v ? +v : null } catch { return null } }
 // Mesas clear of the course corridor — tested at every wrapped copy of each one that falls along the
@@ -82,10 +83,11 @@ const world = new World(clearAt, (x, z, r) => course.distance(x, z) < 460 + r)
 world.addFixed(course.rocks)
 // The polar world's set pieces: glaciers, seracs and spike fields placed close beside the line
 // (150–400 m off its edge), so the race threads past the ice instead of seeing it on the horizon.
-if (BIOME === 'ice') {
+if (BIOME !== 'desert') {
   let sd = (course.def.seed * 9301 + 49297) >>> 0
   const rnd = () => { sd = (sd * 1664525 + 1013904223) >>> 0; return sd / 4294967296 }
-  const tight = course.def.id === 'icefall'
+  const tight = course.def.id === 'icefall' || course.def.id === 'faultline'
+  const MESA_N = BIOME === 'lava' ? 3 : 4
   const laps = course.def.laps ?? 1
   const lapEnd = course.startI + Math.floor((course.finishI - course.startI) / laps)
   const heroes: Parameters<typeof world.addHeroes>[0] = []
@@ -122,20 +124,20 @@ if (BIOME === 'ice') {
     if (zone === 'glacier') {
       // Glaciers close on both sides: a corridor of ice walls.
       for (const sd2 of [side, -side]) {
-        const r = 170 + rnd() * 170, h = 120 + rnd() * 130, gap = 290 + rnd() * 60
-        place(i + Math.round(rnd() * 6), sd2, gap + r * 1.6, { r, h, kind: 'mesa', v: Math.floor(rnd() * 3.999), yaw: rnd() * 6.28 }, gap * 0.9 + r * 1.5)
+        const r = 170 + rnd() * 170, h = 120 + rnd() * 130, gap = 340 + rnd() * 80
+        place(i + Math.round(rnd() * 6), sd2, gap + r * 1.6, { r, h, kind: 'mesa', v: Math.floor(rnd() * MESA_N), yaw: rnd() * 6.28 }, gap * 0.9 + r * 1.5)
       }
       i += Math.round((900 + rnd() * 600) / 40)
     } else if (zone === 'forest') {
       const big = rnd() < 0.3
       const r = big ? 90 + rnd() * 60 : 40 + rnd() * 35, h = big ? 90 + rnd() * 60 : 260 + rnd() * 240
-      const gap = 290 + rnd() * 120
+      const gap = 380 + rnd() * 160
       place(i, side, gap + r * (big ? 1.4 : 2.0), { r, h, kind: big ? 'butte' : 'spire', v: Math.floor(rnd() * 2.999), yaw: rnd() * 6.28 }, gap * 0.9 + r * 1.3)
       i += Math.round((1300 + rnd() * 900) / 40)
     } else {
       // Open ice: now and then one far glacier, standing alone.
       const r = 260 + rnd() * 260, gap = 700 + rnd() * 600
-      place(i, side, gap + r * 1.6, { r, h: 140 + rnd() * 120, kind: 'mesa', v: Math.floor(rnd() * 3.999), yaw: rnd() * 6.28 }, gap * 0.8)
+      place(i, side, gap + r * 1.6, { r, h: 140 + rnd() * 120, kind: 'mesa', v: Math.floor(rnd() * MESA_N), yaw: rnd() * 6.28 }, gap * 0.8)
       i += Math.round((4000 + rnd() * 3000) / 40)
     }
   }
@@ -151,19 +153,20 @@ if (BIOME === 'ice') {
       const sc = 0.4 + 1.6 * rnd()
       const r = sentinel ? 30 + rnd() * 15 : spike ? 6 + rnd() * 8 : (12 + rnd() * 12) * sc
       const h = sentinel ? 120 + rnd() * 80 : spike ? (zone === 'forest' ? 45 + rnd() * 95 : 20 + rnd() * 40) : (10 + rnd() * 16) * sc
-      const off = sentinel ? 305 : 300 + Math.pow(rnd(), 1.5) * (zone === 'forest' ? 300 : 220)
+      // (Well clear of the edge lines at 250 m: a wide line must not be the end of a race.)
+      const off = sentinel ? 380 : 360 + Math.pow(rnd(), 1.5) * (zone === 'forest' ? 300 : 240)
       if (spike && zone === 'forest' && rnd() < 0.5) {
         // A group: 3-7 shards falling away in height from the tallest, leaning their own ways.
         const k = 3 + Math.floor(rnd() * 5)
         for (let q = 0; q < k; q++) {
           const fall = 1 - q / (k + 1)
-          place(Math.min(lapEnd - 1, j + (q % 3)), side, off + (rnd() - 0.3) * 60 * q, { r: r * (0.6 + 0.4 * fall), h: h * fall, kind: 'spire', v: Math.floor(rnd() * 2.999), yaw: rnd() * 6.28, tilt: (rnd() - 0.5) * 0.24 }, 292)
+          place(Math.min(lapEnd - 1, j + (q % 3)), side, off + rnd() * 60 * q, { r: r * (0.6 + 0.4 * fall), h: h * fall, kind: 'spire', v: Math.floor(rnd() * 2.999), yaw: rnd() * 6.28, tilt: (rnd() - 0.5) * 0.24 }, 350)
         }
       } else place(j, side, off, {
         r, h, kind: spike || sentinel ? 'spire' : 'butte', v: Math.floor(rnd() * 2.999), yaw: rnd() * 6.28,
-        tilt: spike || sentinel ? (rnd() - 0.5) * 0.24 : (rnd() - 0.5) * 0.7, sink: spike || sentinel ? 0 : rnd() * 0.35,
-      }, 292)
-      const step = zone === 'forest' ? 40 + rnd() * 80 : zone === 'glacier' ? 60 + rnd() * 60 : 160 + rnd() * 220
+        tilt: spike || sentinel ? (rnd() - 0.5) * 0.24 : BIOME === 'lava' ? 0 : (rnd() - 0.5) * 0.7, sink: spike || sentinel ? 0 : rnd() * 0.35,
+      }, 350)
+      const step = zone === 'forest' ? 90 + rnd() * 130 : zone === 'glacier' ? 140 + rnd() * 120 : 320 + rnd() * 300
       j += Math.max(1, Math.round(step / 40))
     }
   }
@@ -746,7 +749,7 @@ function drawTrackPreview(d: (typeof COURSES)[number]): void {
   // Ground: warm sand, a 1 km grid (10 km lines stronger).
   const bg = g.createRadialGradient(W / 2, H / 2, 0, W / 2, H / 2, Math.max(W, H) * 0.7)
   // (FROSTLINE's map: snow-blue ground, not the desert's sand.)
-  if (biomeOf(d.id) === 'ice') { bg.addColorStop(0, '#3a4a62'); bg.addColorStop(1, '#141c2a') } else { bg.addColorStop(0, '#5a3a24'); bg.addColorStop(1, '#2a1a10') }
+  if (biomeOf(d.id) === 'ice') { bg.addColorStop(0, '#3a4a62'); bg.addColorStop(1, '#141c2a') } else if (biomeOf(d.id) === 'lava') { bg.addColorStop(0, '#2a1e1c'); bg.addColorStop(1, '#0e0a0a') } else { bg.addColorStop(0, '#5a3a24'); bg.addColorStop(1, '#2a1a10') }
   g.fillStyle = bg; g.fillRect(0, 0, W, H)
   const gx0 = Math.floor(((x0 + x1) / 2 - W / 2 / k) / 1000) * 1000, gz0 = Math.floor(((z0 + z1) / 2 - H / 2 / k) / 1000) * 1000
   for (let gx = gx0; PX(gx) < W; gx += 1000) { const major = Math.round(gx / 1000) % 10 === 0; if (!major && k * 1000 < 6 * u) continue; g.strokeStyle = major ? 'rgba(255,220,180,0.14)' : 'rgba(255,220,180,0.05)'; g.lineWidth = u; g.beginPath(); g.moveTo(PX(gx), 0); g.lineTo(PX(gx), H); g.stroke() }
@@ -1422,6 +1425,18 @@ function drawRacer(p: Player, alpha: number, dt: number, isMe: boolean): void {
       e.vx = 14 + Math.random() * 6; e.vy = -2 - Math.random() * 2; e.vz = 6
       e.life = 2.5; e.size0 = 0.1; e.size1 = 0.1; e.r = 1.6; e.g = 1.7; e.b = 1.9; e.a = 0.9; e.streak = p.mach > 1.5 ? 1 : 0
       fx.smoke.emit(e)
+    }
+  }
+  // CINDER: embers rising through the air around you, glowing, drifting with the heat.
+  if (isMe && BIOME === 'lava') {
+    for (let i = 0; i < 14; i++) {
+      const e = resetE()
+      const ahead = 25 + Math.random() * 235, side = (Math.random() - 0.5) * 180
+      e.x = tmp.x + p.fwd.x * ahead + p.right.x * side; e.z = tmp.z + p.fwd.z * ahead + p.right.z * side
+      e.y = groundH(e.x, e.z) + Math.random() * 25
+      e.vx = 4 * (Math.random() - 0.5); e.vy = 3 + Math.random() * 5; e.vz = 4 * (Math.random() - 0.5)
+      e.life = 2.2; e.size0 = 0.14; e.size1 = 0.05; e.r = 4.5; e.g = 1.3; e.b = 0.25; e.a = 1; e.streak = p.mach > 1.5 ? 1 : 0
+      fx.glow.emit(e)
     }
   }
   // Speed cues: sand wisps hanging low in the air ahead, which rush past at your speed.

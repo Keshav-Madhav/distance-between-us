@@ -179,7 +179,7 @@ export class ChaseCam {
     // Spinning: pull back and up so the whirl reads (the camera holds the travel, the craft turns).
     const spinA = this.spinA += ((p.spin > 0 ? 1 : p.recover > 0 ? 0.5 : 0) - this.spinA) * Math.min(1, dt * 4)
     const dist = this.dist.step(C.distBase + s * 0.9 + p.boost * C.distBoost * 0.6 + g * 1.6 + air * 2.5 + spinA * 7 + (p.drifting ? Math.min(2, Math.abs(dt0) * 4) : 0), dt)
-    const h = this.height.step(C.height - s * 0.5 + air * 2.2 + p.brake * 0.4 + spinA * 3.5, dt)
+    const h = this.height.step(C.height - s * 0.25 + air * 2.2 + p.brake * 0.4 + spinA * 3.5, dt)
     const fx = Math.sin(yaw), fz = Math.cos(yaw)
     _pos.set(at.x - fx * dist, at.y + h, at.z - fz * dist)
     // Never inside rock: walk the camera in toward the craft until it is clear.
@@ -202,10 +202,10 @@ export class ChaseCam {
     _pos.z += this.kick[2].step(0, dt)
 
     // Look ahead along the motion, into the turn.
-    const ly = this.lookY.step(1.2 - air * 2.5 + (p.airborne ? p.vy * 0.03 : 0), dt)
+    const ly = this.lookY.step(0.4 - air * 2.5 + (p.airborne ? p.vy * 0.03 : 0), dt)
     const vx = hv > 30 ? p.vel.x / hv : Math.sin(heading)
     const vz = hv > 30 ? p.vel.z / hv : Math.cos(heading)
-    _look.set(at.x + vx * 32 * (1 - spinA * 0.7), at.y + ly, at.z + vz * 32 * (1 - spinA * 0.7))
+    _look.set(at.x + vx * 44 * (1 - spinA * 0.7), at.y + ly, at.z + vz * 44 * (1 - spinA * 0.7))
     _tmp.set(-Math.cos(heading), 0, Math.sin(heading))
     // (Not in a spin: at 8 rad/s of yaw this aimed 80 m off to the side and lost the craft.)
     _look.addScaledVector(_tmp, -THREE.MathUtils.clamp(p.yawRate, -1.5, 1.5) * 10 * (1 - spinA))

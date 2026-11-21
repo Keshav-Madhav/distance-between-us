@@ -5,6 +5,10 @@ import * as THREE from 'three'
 import { REBASE } from './config'
 import { BIOME, groundH, LIGHT, MOUND_U, SUN_DIR } from './terrain'
 import { ICE_VARIANTS, iceGeometry } from './ice'
+import { LAVA_VARIANTS, lavaGeometry } from './lava'
+
+/** The world's own landform shapes (ice or basalt) — the desert's mesas come from mesaGeometry. */
+const landGeometry = (kind: 'mesa' | 'butte' | 'spire', seed: number, v: number) => BIOME === 'lava' ? lavaGeometry(kind, seed, v) : iceGeometry(kind, seed, v)
 import { FBMT_GLSL, NOISE_TEX, patchStandard, WORLD_GLSL } from './shaders'
 
 export function rng(seed: number): () => number {
@@ -51,7 +55,7 @@ function skyMaterial(ground: boolean): THREE.ShaderMaterial {
         vec3 d = normalize(vDir);
         vec3 c = skyColor(d);
         float s = max(dot(d, SUN_DIR), 0.0);
-        ${ground ? 'c = mix(c, vec3(0.62, 0.3, 0.13), 1.0 - smoothstep(-0.08, 0.0, d.y));' : ''}
+        ${ground ? `c = mix(c, ${BIOME === 'lava' ? 'vec3(0.06, 0.04, 0.035)' : BIOME === 'ice' ? 'vec3(0.6, 0.66, 0.8)' : 'vec3(0.62, 0.3, 0.13)'}, 1.0 - smoothstep(-0.08, 0.0, d.y));` : ''}
         // Fair-weather cumulus on a plane 2.6 km up: fbm coverage, lit tops, grey-blue bases,
         // thinned toward the horizon where they would alias.
         if (d.y > 0.015) {
@@ -61,11 +65,18 @@ function skyMaterial(ground: boolean): THREE.ShaderMaterial {
           #ifdef BIOME_ICE
           cov *= 0.08; // (a clear twilight: barely any cloud, so the aurora and stars show)
           #endif
+          #ifdef BIOME_LAVA
+          cov = min(1.0, cov * 1.4 + 0.1); // (an ash sky)
+          #endif
           float detail = fbm(cp * 0.0016 + 3.0);
           cov *= smoothstep(0.25, 0.55, detail + cov * 0.4);
           float lit = clamp(fbm(cp * 0.00032 + SUN_DIR.xz * 0.06) - base + 0.55, 0.0, 1.0);
           vec3 cc = mix(vec3(0.62, 0.68, 0.8) * mix(vec3(1.0), SUN_TINT, 0.5), vec3(1.9, 1.8, 1.65) * SUN_TINT, lit);
           cc += vec3(1.0, 0.8, 0.55) * pow(s, 6.0) * 0.6;
+          #ifdef BIOME_LAVA
+          // Ash clouds: dark, lit from below by the lava's glow toward the horizon.
+          cc = mix(vec3(0.05, 0.04, 0.045), vec3(0.5, 0.15, 0.05), (1.0 - smoothstep(0.02, 0.35, d.y)) * (0.4 + 0.6 * lit));
+          #endif
           float fade = smoothstep(0.015, 0.16, d.y);
           // High cirrus, 9 km up: thin streaks drawn out along the wind, behind the cumulus.
           vec2 hp = d.xz / d.y * 9000.0 + uCloudOff * 1.7;
@@ -90,7 +101,9 @@ function skyMaterial(ground: boolean): THREE.ShaderMaterial {
         }
         #endif
         // The sun: a hot disk (past bloom's threshold) and a wide glare.
-        #ifdef BIOME_ICE
+        #if defined(BIOME_LAVA)
+        c += vec3(1.0, 0.4, 0.2) * (smoothstep(0.99955, 0.9998, s) * 6.0 + pow(s, 900.0) * 1.5 + pow(s, 30.0) * 0.15 + pow(s, 4.0) * 0.06);
+        #elif defined(BIOME_ICE)
         c += vec3(1.0, 0.75, 0.6) * (smoothstep(0.99955, 0.9998, s) * 12.0 + pow(s, 900.0) * 2.0 + pow(s, 30.0) * 0.15 + pow(s, 4.0) * 0.05);
         #else
         c += vec3(1.0, 0.9, 0.75) * (smoothstep(0.99955, 0.9998, s) * 40.0 + pow(s, 900.0) * 4.0 + pow(s, 30.0) * 0.4 + pow(s, 4.0) * 0.1);
@@ -155,6 +168,9 @@ function mountains(): THREE.Mesh {
         vec3 rock = mix(vec3(0.42, 0.2, 0.14), vec3(0.34, 0.42, 0.6), vT.x);
         #ifdef BIOME_ICE
         rock = mix(vec3(0.62, 0.68, 0.82), vec3(0.28, 0.36, 0.55), vT.x);
+        #endif
+        #ifdef BIOME_LAVA
+        rock = mix(vec3(0.07, 0.055, 0.055), vec3(0.16, 0.08, 0.07), vT.x);
         #endif
         float sunSide = max(dot(normalize(vec3(d.x, 0.0, d.z)), normalize(vec3(SUN_DIR.x, 0.0, SUN_DIR.z))), 0.0);
         rock *= 0.8 + 0.5 * sunSide;
@@ -275,7 +291,7 @@ function terrainMaterial(shared: GroundUniforms, snap: { value: THREE.Vector2 },
 
         // (At Mach speeds fine texture detail sweeps past faster than the frame rate and strobes —
         // the "flashing". The mip level is pushed up with speed: the ground blurs like the motion does.)
-        float bias = uSpeed * 0.75;
+        float bias = uSpeed * 0.5;
         mat2 rot = mat2(0.8, -0.6, 0.6, 0.8);
         vec3 s1 = texture2D(tSand, p / 26.0, bias).rgb;
         // Up close, bump the light from the sand texture itself (ripples and grains catch the sun).
@@ -333,20 +349,34 @@ function terrainMaterial(shared: GroundUniforms, snap: { value: THREE.Vector2 },
         }
         #endif
 
+        #ifdef BIOME_LAVA
+        // CINDER: black basalt sand, grey ash drifts where the gravel was, crusted banks to the lava.
+        {
+          float lumS = dot(sandT, vec3(0.333));
+          vec3 basalt = vec3(0.085, 0.078, 0.08) * (0.7 + 0.6 * lumS) * (0.88 + 0.24 * fbmT(p * 0.0011 + 3.1));
+          vec3 ashG = vec3(0.34, 0.31, 0.3) * (0.85 + 0.3 * dot(grav, vec3(0.333)));
+          alb = mix(basalt, ashG, gm * 0.7);
+          alb = mix(alb, vec3(0.04, 0.025, 0.02), smoothstep(0.1, 0.32, river));
+        }
+        #endif
         // The racing line, worn: packed and darker, the ripples gone, scorched lanes down it.
         vec2 tuv = (p - uTrackBox.xy) / uTrackBox.zw;
         if (uTrackOn > 0.01 && tuv.x > 0.0 && tuv.y > 0.0 && tuv.x < 1.0 && tuv.y < 1.0) {
           vec2 wr = texture2D(tTrack, tuv).rg;
           float pack = smoothstep(0.05, 0.8, wr.r) * uTrackOn;
-          #ifdef BIOME_ICE
+          #if defined(BIOME_ICE)
           alb = mix(alb, alb * vec3(0.8, 0.86, 0.97), pack * 0.8);
+          #elif defined(BIOME_LAVA)
+          alb = mix(alb, vec3(0.2, 0.185, 0.18), pack * 0.75); // packed ash: a grey road on black sand
           #else
           alb = mix(alb, mix(s2, vec3(dot(s2, vec3(0.33))), 0.25) * vec3(0.86, 0.74, 0.68), pack * 0.7);
           #endif
           float streak = wr.g * (0.75 + 0.25 * vnoise(p * 0.05)) * uTrackOn;
           alb *= 1.0 - 0.55 * smoothstep(0.05, 0.6, streak);
-          #ifdef BIOME_ICE
+          #if defined(BIOME_ICE)
           alb = mix(alb, vec3(0.45, 0.55, 0.7), smoothstep(0.45, 0.9, streak) * 0.35);
+          #elif defined(BIOME_LAVA)
+          alb = mix(alb, vec3(0.03, 0.02, 0.02), smoothstep(0.45, 0.9, streak) * 0.35);
           #else
           alb = mix(alb, vec3(0.16, 0.08, 0.05), smoothstep(0.45, 0.9, streak) * 0.35);
           #endif
@@ -371,6 +401,23 @@ function terrainMaterial(shared: GroundUniforms, snap: { value: THREE.Vector2 },
           float fr = pow(1.0 - max(dot(Vw, n), 0.0), 4.0);
           vec3 refl = skyColor(Rw) * 0.9 + aurora(Rw) * 0.9;
           col = mix(col, refl, river * (0.35 + 0.6 * fr));
+        }
+        #endif
+        #ifdef BIOME_LAVA
+        // The lava: flowing, glowing, crusting over in plates; and its glow on the sand beside it.
+        col += alb * vec3(0.16, 0.12, 0.12);
+        if (river > 0.01) {
+          float fl = fbmT(p * 0.0035 + vec2(uTime * 0.012, uTime * 0.008));
+          float crust = smoothstep(0.5, 0.62, fbmT(p * 0.018 + vec2(uTime * 0.03, uTime * 0.01)));
+          // Where the course crosses, the flow has cooled to a black crust with glowing cracks (a wide
+          // blur of the course's wear map marks the corridor): you race over it, not through fire.
+          vec2 tl = (p - uTrackBox.xy) / uTrackBox.zw;
+          float lane = (uTrackOn > 0.01 && tl.x > 0.0 && tl.y > 0.0 && tl.x < 1.0 && tl.y < 1.0) ? max(smoothstep(0.003, 0.03, texture2D(tTrack, tl, 6.0).r), smoothstep(0.02, 0.1, texture2D(tTrack, tl, 3.0).r)) : 0.0;
+          float cracks = smoothstep(0.03, 0.0, abs(fbmT(p * 0.02) - 0.5)) + 0.5 * smoothstep(0.02, 0.0, abs(fbmT(p * 0.06 + 3.0) - 0.5));
+          crust = mix(crust, 1.0 - min(1.0, cracks) * 0.6, lane);
+          vec3 hot = mix(vec3(2.4, 0.5, 0.07), vec3(3.4, 1.45, 0.3), fl) * (1.0 - 0.93 * crust);
+          col = mix(col, hot, smoothstep(0.3, 0.72, river));
+          col += vec3(0.5, 0.13, 0.03) * 0.5 * smoothstep(0.12, 0.32, river) * (1.0 - smoothstep(0.32, 0.72, river));
         }
         #endif
         // Sand glints: a few grains in each patch catch the sun toward you (near the camera, in sun,
@@ -452,6 +499,9 @@ function pebbles(count: number, tile: number): THREE.InstancedMesh {
         vec3 alb = mix(vec3(0.3, 0.07, 0.03), vec3(0.55, 0.28, 0.14), vTint);
         #ifdef BIOME_ICE
         alb = mix(vec3(0.42, 0.48, 0.6), vec3(0.75, 0.82, 0.94), vTint);
+        #endif
+        #ifdef BIOME_LAVA
+        alb = mix(vec3(0.05, 0.045, 0.045), vec3(0.2, 0.17, 0.16), vTint);
         #endif
         float sun = max(dot(n, SUN_DIR), 0.0);
         vec3 col = alb * (SUN_COL * sun + skyColor(n) * 0.35);
@@ -717,8 +767,9 @@ export class World {
     this.group.add(pebbles(1800, 1500))
 
     const mesaMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.92, metalness: 0, flatShading: true })
-    const ICE = BIOME === 'ice'
+    const ICE = BIOME === 'ice', LAVA = BIOME === 'lava'
     if (ICE) { mesaMat.roughness = 0.3; patchStandard(mesaMat, { ice: true }) }
+    else if (LAVA) { mesaMat.roughness = 0.85; patchStandard(mesaMat, { lava: true }) }
     else patchStandard(mesaMat, { strata: true })
     const spikeMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.18, metalness: 0, flatShading: true })
     patchStandard(spikeMat, { ice: true, spike: true, aur: AUR_T })
@@ -735,9 +786,9 @@ export class World {
     for (const [kind, count, spacing] of kinds) {
       // One instanced mesh per shape archetype; items are dealt across them at random.
       const ws: Wrapped[] = []
-      for (let v = 0; v < (ICE ? ICE_VARIANTS : MESA_VARIANTS)[kind]; v++) {
+      for (let v = 0; v < (ICE ? ICE_VARIANTS : LAVA ? LAVA_VARIANTS : MESA_VARIANTS)[kind]; v++) {
         const seed = kind.length * 31 + 7 + v * 101
-        const { geo, prof } = ICE ? iceGeometry(kind, seed, v) : mesaGeometry(kind, seed, v)
+        const { geo, prof } = ICE || LAVA ? landGeometry(kind, seed, v) : mesaGeometry(kind, seed, v)
         if (kind === 'spire' && v === 0) { this.spireGeo = geo; this.fixedProf = prof }
         ws.push(new Wrapped(geo, ICE && kind === 'spire' ? spikeMat : mesaMat, REBASE, 16500, 0.06, prof, true, null, 20000))
       }
@@ -762,6 +813,14 @@ export class World {
           else { rad *= 1.35; h *= 0.55 } // seracs: squat blocks, not towers
           // Ice comes in every size: small bergs to giants (skewed small, a few huge).
           const sc = 0.45 + 2.0 * Math.pow(r(), 2.2)
+          rad *= sc; h *= 0.6 + 0.4 * sc
+        }
+        if (LAVA) {
+          // Massifs wide and low; cones broad (their slopes flare); stacks tall. Any size.
+          if (kind === 'mesa') { rad *= 1.1; h *= 0.55 }
+          else if (kind === 'butte') { rad *= 1.8; h *= 0.9 }
+          else { rad *= 0.6; h *= 1.1 }
+          const sc = 0.5 + 1.8 * Math.pow(r(), 2)
           rad *= sc; h *= 0.6 + 0.4 * sc
         }
         if (!clear(sx, sz, rad * (ICE && kind === 'spire' ? 2.4 : 1.6))) continue
@@ -837,13 +896,13 @@ export class World {
     // Grouped by shape and by 5 km cell, each group its own culled mesh (thousands of small shards
     // line a course; only the cells in view are drawn).
     for (const o of list) { const k = `${o.kind}${o.v}:${Math.floor(o.x / 5000)},${Math.floor(o.z / 5000)}`; if (!groups.has(k)) groups.set(k, []); groups.get(k)!.push(o) }
-    const shapes = new Map<string, ReturnType<typeof iceGeometry>>()
+    const shapes = new Map<string, ReturnType<typeof landGeometry>>()
     const m = new THREE.Matrix4(), q = new THREE.Quaternion(), v = new THREE.Vector3(), sc = new THREE.Vector3(), e = new THREE.Euler()
     for (const g of groups.values()) {
       const sk = g[0].kind + g[0].v
-      if (!shapes.has(sk)) shapes.set(sk, iceGeometry(g[0].kind, g[0].kind.length * 31 + 7 + g[0].v * 101, g[0].v))
+      if (!shapes.has(sk)) shapes.set(sk, landGeometry(g[0].kind, g[0].kind.length * 31 + 7 + g[0].v * 101, g[0].v))
       const { geo, prof } = shapes.get(sk)!
-      const mesh = new THREE.InstancedMesh(geo, g[0].kind === 'spire' ? this.spikeMat! : this.mesaMat!, g.length)
+      const mesh = new THREE.InstancedMesh(geo, g[0].kind === 'spire' && BIOME === 'ice' ? this.spikeMat! : this.mesaMat!, g.length)
       g.forEach((o, i) => {
         // (Small blocks may lie tilted or half sunk: toppled pieces, not a row of identical boxes.)
         const by = groundH(o.x, o.z) - (0.06 + (o.sink ?? 0)) * o.h - 3

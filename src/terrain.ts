@@ -5,12 +5,15 @@ const COURSE_ID: string = (() => {
   try { return new URLSearchParams(location.search).get('course') ?? localStorage.getItem('dbu-course') ?? 'sprint' } catch { return 'sprint' }
 })()
 /** The world: the desert, or FROSTLINE's arctic plateau (docs/MAP-FROSTLINE.md). */
-const COURSE_BIOME: Record<string, 'desert' | 'ice'> = { frostline: 'ice', icefall: 'ice' }
+export type Biome = 'desert' | 'ice' | 'lava'
+const COURSE_BIOME: Record<string, Biome> = { frostline: 'ice', icefall: 'ice', caldera: 'lava', faultline: 'lava' }
 /** Which world a course is in. */
-export const biomeOf = (id: string): 'desert' | 'ice' => COURSE_BIOME[id] ?? 'desert'
-export const BIOME: 'desert' | 'ice' = COURSE_BIOME[COURSE_ID] ?? 'desert'
-/** Dust / spray colour for the particles (sand, or snow). */
-export const DUST: [number, number, number] = BIOME === 'ice' ? [0.8, 0.86, 0.96] : [0.8, 0.42, 0.21]
+export const biomeOf = (id: string): Biome => COURSE_BIOME[id] ?? 'desert'
+export const BIOME: Biome = COURSE_BIOME[COURSE_ID] ?? 'desert'
+/** Dust / spray colour for the particles (sand, snow, or ash). */
+export const DUST: [number, number, number] = BIOME === 'ice' ? [0.8, 0.86, 0.96] : BIOME === 'lava' ? [0.32, 0.27, 0.26] : [0.8, 0.42, 0.21]
+/** The GLSL define naming the world (every world shader gets it). */
+const BIOME_DEF = BIOME === 'ice' ? '#ifndef BIOME_ICE\n#define BIOME_ICE\n#endif' : BIOME === 'lava' ? '#ifndef BIOME_LAVA\n#define BIOME_LAVA\n#endif' : ''
 // The ground, as one formula run in two places: here in JS (the craft hovers on it, rocks and mesas
 // sit on it) and in GLSL (the terrain mesh is displaced by it). The two must stay identical.
 //
@@ -54,6 +57,8 @@ export function riverAt(x: number, z: number): number {
   const m = 0.5 + 0.5 * Math.sin(k(4, -3, x, z) + 0.7) * Math.cos(k(2, 5, x, z) + 0.2)
   // (Wide, shallow banks: steep ones were ramps at Mach 6.)
   // (FROSTLINE: about four times as wide, and more of them — frozen lakes you are on for seconds.)
+  // (CINDER: lava rivers, a little wider than the desert's dry beds.)
+  if (BIOME === 'lava') return (1 - smooth(0.04, 0.36, Math.abs(c))) * smooth(0.25, 0.5, m)
   return BIOME === 'ice' ? (1 - smooth(0.1, 0.62, Math.abs(c))) * smooth(0.15, 0.4, m) : (1 - smooth(0.03, 0.3, Math.abs(c))) * smooth(0.3, 0.55, m)
 }
 
@@ -103,7 +108,7 @@ const glslWaves = WAVES.map(
 ).join('\n  ')
 
 /** GLSL: groundH(vec2 xz) and riverAt(vec2 xz), the same as above. */
-export const TERRAIN_GLSL = /* glsl */ `${BIOME === 'ice' ? '#ifndef BIOME_ICE\n#define BIOME_ICE\n#endif' : ''}
+export const TERRAIN_GLSL = /* glsl */ `${BIOME_DEF}
 #ifndef TAU
 #define TAU 6.283185307
 #endif
@@ -112,8 +117,10 @@ export const TERRAIN_GLSL = /* glsl */ `${BIOME === 'ice' ? '#ifndef BIOME_ICE\n
 float riverAt(vec2 p) {
   float c = sin(KW(7.0, 17.0) + 0.4 + 0.9 * sin(KW(23.0, -5.0) + 2.0) + 0.5 * sin(KW(-13.0, 29.0) + 1.0));
   float m = 0.5 + 0.5 * sin(KW(4.0, -3.0) + 0.7) * cos(KW(2.0, 5.0) + 0.2);
-  #ifdef BIOME_ICE
+  #if defined(BIOME_ICE)
   return (1.0 - smoothstep(0.1, 0.62, abs(c))) * smoothstep(0.15, 0.4, m);
+  #elif defined(BIOME_LAVA)
+  return (1.0 - smoothstep(0.04, 0.36, abs(c))) * smoothstep(0.25, 0.5, m);
   #else
   return (1.0 - smoothstep(0.03, 0.3, abs(c))) * smoothstep(0.3, 0.55, m);
   #endif
@@ -153,12 +160,14 @@ const LIGHTS: Record<string, Light> = {
   golden: { zenith: [0.1, 0.15, 0.42], horizon: [0.9, 0.6, 0.42], haze: [1.0, 0.52, 0.28], sunDir: [0.62, 0.26, -0.74], fogK: 0.000074, sunCol: [2.5, 1.62, 0.95], tint: [1.06, 0.8, 0.6] },
   // The Long Drag: dusk — the sun on the horizon, a violet sky, the land in shadow and glow.
   // Frostline: polar twilight — the sun just over the horizon, deep blue overhead, rose haze.
+  // CINDER: volcanic dusk — a smoky red sky, a low bloody sun, ash haze.
+  ember: { zenith: [0.02, 0.018, 0.03], horizon: [0.3, 0.12, 0.07], haze: [0.85, 0.32, 0.12], sunDir: [-0.55, 0.05, 0.84], fogK: 0.000075, sunCol: [1.7, 0.75, 0.42], tint: [1.0, 0.62, 0.5] },
   polar: { zenith: [0.006, 0.014, 0.05], horizon: [0.17, 0.21, 0.38], haze: [0.78, 0.48, 0.52], sunDir: [0.6, 0.04, -0.8], fogK: 0.00006, sunCol: [1.5, 0.95, 0.8], tint: [0.85, 0.8, 1.0] },
   // Canyon Run: dawn — cool blue-pink sky, a low sun from the east, rose light on the rock.
   dawn: { zenith: [0.1, 0.18, 0.48], horizon: [0.78, 0.62, 0.7], haze: [0.95, 0.66, 0.6], sunDir: [-0.7, 0.3, 0.65], fogK: 0.00007, sunCol: [2.4, 1.75, 1.45], tint: [1.04, 0.86, 0.82] },
   dusk: { zenith: [0.05, 0.06, 0.2], horizon: [0.7, 0.38, 0.36], haze: [0.95, 0.42, 0.26], sunDir: [-0.66, 0.17, -0.73], fogK: 0.000082, sunCol: [2.1, 1.05, 0.6], tint: [1.0, 0.62, 0.5] },
 }
-const COURSE_LIGHT: Record<string, string> = { sprint: 'noon', 'dry-river': 'afternoon', circuit: 'golden', drag: 'dusk', oval: 'noon', canyon: 'dawn', frostline: 'polar', icefall: 'polar' }
+const COURSE_LIGHT: Record<string, string> = { sprint: 'noon', 'dry-river': 'afternoon', circuit: 'golden', drag: 'dusk', oval: 'noon', canyon: 'dawn', frostline: 'polar', icefall: 'polar', caldera: 'ember', faultline: 'ember' }
 export const LIGHT: Light = LIGHTS[COURSE_LIGHT[COURSE_ID] ?? 'noon'] ?? LIGHTS.noon
 export const SKY = {
   zenith: LIGHT.zenith,
@@ -178,7 +187,7 @@ const sd = (() => {
 export const SUN_DIR = sd
 
 /** GLSL: skyColor(dir) and applyFog(col, worldPos). Needs cameraPosition. */
-export const SKY_GLSL = /* glsl */ `${BIOME === 'ice' ? '#ifndef BIOME_ICE\n#define BIOME_ICE\n#endif' : ''}
+export const SKY_GLSL = /* glsl */ `${BIOME_DEF}
 const vec3 SKY_ZENITH = ${v3(SKY.zenith)};
 const vec3 SKY_HORIZON = ${v3(SKY.horizon)};
 const vec3 SKY_HAZE = ${v3(SKY.haze)};

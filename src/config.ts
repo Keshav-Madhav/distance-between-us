@@ -80,7 +80,7 @@ export const CFG = {
     fovMax: 98,
     distBase: 10.5,
     distBoost: 2.5,
-    height: 3.0,
+    height: 4.3,
     /** Heading lag (1/s): the whip on turns. */
     yawFollow: 6.5,
     rollFollow: 0.22,

@@ -22,6 +22,10 @@ export const LAPS = 1
  */
 export interface CourseDef {
   id: string
+  /** Glowing ground lines down both edges and dashes down the middle (the route at a glance). */
+  ribbons?: boolean
+  /** Loops: bends tighter than this (m) get three gates through them (default 1800). */
+  tightR?: number
   name: string
   /** One line for the course card. */
   blurb: string
@@ -274,6 +278,7 @@ const frostPath = (u: number): [number, number] => {
 }
 export const FROSTLINE: CourseDef = {
   id: 'frostline',
+  ribbons: true,
   name: 'FROSTLINE',
   blurb: 'A NEW WORLD · FROZEN LAKES · AURORA · FLOWING LOOP',
   km: Math.round(loopLength(frostPath) / 100) / 10,
@@ -303,6 +308,7 @@ const icefallPath = (u: number): [number, number] => {
 }
 export const ICEFALL: CourseDef = {
   id: 'icefall',
+  ribbons: true,
   name: 'ICEFALL',
   blurb: 'THREAD THE GLACIERS · SPIKE FIELDS · TIGHT',
   km: Math.round(loopLength(icefallPath) / 100) / 10,
@@ -325,7 +331,65 @@ export const ICEFALL: CourseDef = {
   clearance: 380,
 }
 
-export const COURSES: CourseDef[] = [SPRINT, DRY_RIVER, DRAG, CIRCUIT, OVAL, CANYON, FROSTLINE, ICEFALL]
+/**
+ * Course 9: CALDERA — the third world, CINDER (volcanic badlands at dusk). A great loop round a
+ * collapsed volcano: broad sweepers past basalt massifs and cinder cones, lava rivers to cross, and
+ * one hard hook (~1.5 km radius) laid out with three gates.
+ */
+const calderaPath = (u: number): [number, number] => {
+  const a = 2 * Math.PI * u
+  const r = 11000 + 2400 * Math.sin(2 * a + 1) + 1300 * Math.sin(3 * a + 2.2) + 380 * Math.sin(7 * a + 0.4)
+  return [r * Math.sin(a) * 1.05, r * Math.cos(a) - 11000]
+}
+export const CALDERA: CourseDef = {
+  id: 'caldera',
+  ribbons: true,
+  name: 'CALDERA',
+  blurb: 'A NEW WORLD · LAVA RIVERS · BASALT · ONE HARD HOOK',
+  km: Math.round(loopLength(calderaPath) / 100) / 10,
+  loop: calderaPath,
+  gateEvery: 5500,
+  laps: 2,
+  aiPace: 0.6,
+  jumps: [0.12, 0.132],
+  rampH: 0.8,
+  whoops: [],
+  padEvery: 8500,
+  spireGap: () => null,
+  rockGateP: 0,
+  seed: 67,
+  sections: [],
+}
+
+/**
+ * Course 10: FAULTLINE — CINDER's sprint: 110 km down a rift, point to point. Long sweepers, a lava
+ * crossing run, two linked bends, no spires on the line.
+ */
+export const FAULTLINE: CourseDef = {
+  id: 'faultline',
+  ribbons: true,
+  name: 'FAULTLINE',
+  blurb: 'SPRINT · DOWN THE RIFT · EMBERS · NO PILLARS',
+  km: 110,
+  xAt: (z) => {
+    const bump = (z0: number, L: number, h: number) => (z > z0 && z < z0 + L ? h * (1 - Math.cos((2 * Math.PI * (z - z0)) / L)) : 0)
+    // Sweepers (radius ~3.5 km), a linked pair at 62-78 km, a slow wander between.
+    const sweep = bump(12000, 9000, 520) + bump(30000, 10000, -600) + bump(62000, 8000, 450) + bump(70000, 8000, -450) + bump(92000, 9000, 500)
+    const wander = 1200 * Math.sin((2 * Math.PI * z) / 41000 + 0.3) - 1200 * Math.sin(0.3)
+    return ramp8(z) * (wander + sweep)
+  },
+  gateEvery: 5000,
+  jumps: [0.45, 0.465],
+  rampH: 0.9,
+  whoops: [],
+  padEvery: 7000,
+  spireGap: () => null,
+  rockGateP: 0,
+  seed: 71,
+  sections: [[12, 'THE SWEEPERS'], [45, 'THE CROSSING'], [62, 'LINKED BENDS'], [80, 'LAST RUN']],
+}
+
+export const COURSES: CourseDef[] = [SPRINT, DRY_RIVER, DRAG, CIRCUIT, OVAL, CANYON, FROSTLINE, ICEFALL, CALDERA, FAULTLINE]
 
 /** The race's line as points (x, z) every ~200 m, start to finish — for previews. */
 export function centerline(def: CourseDef): { xs: number[]; zs: number[] } {
@@ -435,9 +499,35 @@ export class Course {
     const raceLen = (finishI - startI) * STEP
 
     // Gates: the start, one every ~5 km, the finish.
-    const K = Math.round(raceLen / def.gateEvery) + 1
-    for (let k = 0; k < K; k++) {
-      const i = k === K - 1 ? finishI : startI + Math.round((k * raceLen) / (K - 1) / STEP)
+    const K0 = Math.round(raceLen / def.gateEvery) + 1
+    let gi: number[] = []
+    for (let k = 0; k < K0; k++) gi.push(k === K0 - 1 ? finishI : startI + Math.round((k * raceLen) / (K0 - 1) / STEP))
+    // The tight turns of a loop each get three gates through them — entry, apex, exit — so the
+    // bend is laid out in front of you; the regular gates near them stand aside.
+    if (def.loop) {
+      const tightR = def.tightR ?? 1800
+      const W = 8
+      const radiusAt = (i: number) => {
+        const [ax, az] = this.tangent(i - W), [bx, bz] = this.tangent(i + W)
+        const dh = Math.abs(Math.atan2(ax * bz - az * bx, ax * bx + az * bz))
+        return dh > 1e-6 ? (2 * W * STEP) / dh : Infinity
+      }
+      const apexes: number[] = []
+      for (let i = startI + 60; i < finishI - 60; i++) {
+        const r0 = radiusAt(i)
+        if (r0 >= tightR || r0 > radiusAt(i - 1) || r0 > radiusAt(i + 1)) continue
+        if (apexes.length && i - apexes[apexes.length - 1] < 3000 / STEP) continue
+        apexes.push(i)
+      }
+      for (const a of apexes) {
+        const span = Math.round(Math.min(1300, radiusAt(a) * 0.75) / STEP)
+        gi = gi.filter((i, k) => k === 0 || i === finishI || Math.abs(i - a) > span + 1500 / STEP)
+        gi.push(a - span, a, a + span)
+      }
+      gi.sort((a, b) => a - b)
+    }
+    const K = gi.length
+    for (const i of gi) {
       const [tx, tz] = this.tangent(i)
       this.cps.push({ x: this.px[i], z: this.pz[i], tx, tz, i })
     }
@@ -514,7 +604,7 @@ export class Course {
     // ── gates ──
     const dark = new THREE.MeshStandardMaterial({ color: 0x24262b, roughness: 0.45, metalness: 0.8 })
     // (Polar night: no warm desert bounce for metal to mirror — it went pure black. Painted, sky-lit.)
-    if (BIOME === 'ice') { dark.color.set(0x9aa6be); dark.metalness = 0; dark.roughness = 0.55; dark.emissive.set(0x23324c) }
+    if (BIOME !== 'desert') { dark.color.set(0x9aa6be); dark.metalness = 0; dark.roughness = 0.55; dark.emissive.set(0x23324c) }
     patchStandard(dark)
     // Square towers (faces along the track), a lit strip pair on each inner face.
     const towerGeo = new THREE.BoxGeometry(11, 140, 11)
@@ -629,6 +719,61 @@ export class Course {
       }
     }
     for (const im of [pylons, tips]) { im.frustumCulled = false; im.count = pi; this.group.add(im) }
+
+    // ── route ribbons ──
+    // Two glowing lines on the ground at the edges (amber left, white right, like the pylon tips) and
+    // dashes down the middle: where the course goes reads at a glance, and the dashes stream past.
+    if (def.ribbons) {
+      const laps = def.laps ?? 1
+      const i0 = def.loop ? Math.max(0, startI - 40) : 0
+      const i1 = def.loop ? Math.min(n - 1, startI + Math.round((finishI - startI) / laps) + 40) : n - 1
+      const pos: number[] = [], uv: number[] = [], col: number[] = [], idx: number[] = []
+      const strip = (lat: number, w: number, c: [number, number, number], dash: boolean) => {
+        const base = pos.length / 3
+        let along = 0
+        for (let i = i0; i <= i1; i++) {
+          const [tx, tz] = this.tangent(i)
+          for (const e of [-1, 1]) {
+            const l = lat + e * w / 2
+            const x = this.px[i] + tz * l, z = this.pz[i] - tx * l
+            pos.push(x, groundH(x, z) + 0.35, z)
+            uv.push(e * 0.5 + 0.5, dash ? along / 80 : -1)
+            col.push(...c)
+          }
+          if (i > i0) { const a = base + (i - i0 - 1) * 2; idx.push(a, a + 2, a + 1, a + 1, a + 2, a + 3) }
+          along += STEP
+        }
+      }
+      strip(-GATE_HALF + 10, 7, [2.2, 0.75, 0.2], false)
+      strip(GATE_HALF - 10, 7, [1.6, 1.8, 2.1], false)
+      strip(0, 2.2, [0.9, 1.1, 1.4], true)
+      const g = new THREE.BufferGeometry()
+      g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3))
+      g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2))
+      g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3))
+      g.setIndex(idx)
+      const mat = new THREE.ShaderMaterial({
+        transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+        vertexShader: 'attribute vec3 color; varying vec2 vUv; varying vec3 vC; varying vec3 vW; void main(){ vUv = uv; vC = color; vW = position; gl_Position = projectionMatrix * viewMatrix * vec4(position,1.0); }',
+        fragmentShader: /* glsl */ `
+          varying vec2 vUv; varying vec3 vC; varying vec3 vW;
+          ${SKY_FOG_ONLY}
+          void main() {
+            float x = abs(vUv.x - 0.5) * 2.0;
+            float a = 1.0 - smoothstep(0.35, 1.0, x);
+            // The middle line: 30 m dashes every 80 m.
+            if (vUv.y >= 0.0) a *= step(fract(vUv.y), 0.375);
+            // (Thin lines far off alias into flicker: they fade out with distance as well as the fog.)
+            float d = length(vW - cameraPosition);
+            a *= (1.0 - fogAmount(vW)) * (1.0 - smoothstep(2500.0, 6000.0, d));
+            gl_FragColor = vec4(vC * a * 0.55, 1.0);
+          }`,
+      })
+      const mesh = new THREE.Mesh(g, mat)
+      mesh.frustumCulled = false
+      mesh.renderOrder = 1
+      this.group.add(mesh)
+    }
 
     // ── boost pads ──
     this.padMat = new THREE.ShaderMaterial({

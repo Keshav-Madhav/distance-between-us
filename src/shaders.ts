@@ -56,6 +56,8 @@ export interface PatchOpts {
   strata?: boolean
   /** Glacial ice (FROSTLINE's glaciers, seracs and spikes): blue, layered, snow-capped, lit from within. */
   ice?: boolean
+  /** Basalt (CINDER's columns, cones and stacks): dark rock, ash on the tops, glowing splits. */
+  lava?: boolean
   /** With ice: the shards (spikes) — no snow cap, glowing tips that breathe with the aurora clock. */
   spike?: boolean
   /** The aurora clock uniform (world.ts AUR_T), for the spike tips. */
@@ -69,11 +71,11 @@ export interface PatchOpts {
 export function patchStandard(mat: THREE.MeshStandardMaterial, opts: PatchOpts = {}): void {
   mat.fog = false
   // (three caches programs by onBeforeCompile's source text, the same for every patch: key it.)
-  mat.customProgramCacheKey = () => `patched-${opts.strata ? 'strata' : opts.ice ? (opts.spike ? 'spike' : 'ice') : 'plain'}`
+  mat.customProgramCacheKey = () => `patched-${opts.strata ? 'strata' : opts.lava ? 'lava' : opts.ice ? (opts.spike ? 'spike' : 'ice') : 'plain'}`
   mat.onBeforeCompile = (s) => {
     if (opts.strata) { s.uniforms.tRock = TEX.tRock; s.uniforms.tSand = TEX.tSand }
     if (opts.aur) s.uniforms.uAurT = opts.aur
-    if (opts.ice) {
+    if (opts.ice || opts.lava) {
       // The crevasse depth (a geometry attribute) and the instance's own origin (a per-glacier seed).
       s.vertexShader = s.vertexShader
         .replace('#include <common>', '#include <common>\nattribute float aCrev;\nvarying float vCrev;\nvarying vec2 vOrg;')
@@ -111,6 +113,37 @@ export function patchStandard(mat: THREE.MeshStandardMaterial, opts: PatchOpts =
     s.fragmentShader = s.fragmentShader
       .replace('#include <common>', `#include <common>\nvarying vec3 vFogW;\nvarying vec3 vWN;\nvarying float vBaseY;\nvarying float vHt;\nfloat gIceSnow = 0.0;\n${opts.strata ? 'uniform sampler2D tRock;\nuniform sampler2D tSand;' : ''}\n${SKY_GLSL}\n${NOISE_GLSL}`)
       .replace('#include <fog_fragment>', 'gl_FragColor.rgb = applyFog(gl_FragColor.rgb, vFogW);')
+    if (opts.lava) {
+      s.fragmentShader = s.fragmentShader.replace('#include <common>', `#include <common>\nvarying float vCrev;\nvarying vec2 vOrg;`)
+        .replace('#include <color_fragment>', `#include <color_fragment>
+        {
+          float hy = vFogW.y - vBaseY;
+          float t = hy / vHt;
+          float sd = hash12(floor(mod(vOrg, 72000.0) / 37.0));
+          // Basalt: near-black, each column face its own shade, faint cooling bands across it.
+          float fh = hash12(floor(vWN.xz * 5.0 + 40.0) + floor(vFogW.xz / 9.0) + sd * 51.0);
+          vec3 c = vec3(0.2, 0.18, 0.18) * (0.7 + 0.6 * fh);
+          c *= 0.9 + 0.1 * sin(vFogW.y * 0.9 + vnoise(vFogW.xz * 0.05) * 6.0);
+          // Rust and sulphur streaks on some faces.
+          c = mix(c, vec3(0.32, 0.14, 0.06), smoothstep(0.7, 0.9, vnoise(vec2((vFogW.x + vFogW.z) * 0.03, vFogW.y * 0.01))) * 0.5);
+          // Ash settles on every top and ledge.
+          float ash = smoothstep(0.55, 0.8, vWN.y + 0.15 * vnoise(vFogW.xz * 0.04));
+          c = mix(c, vec3(0.5, 0.46, 0.44), ash * (1.0 - vCrev));
+          c *= mix(0.65, 1.0, smoothstep(1.0, 20.0, hy));
+          diffuseColor.rgb = c;
+        }`)
+        .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
+        {
+          // Molten where the rock splits (vCrev), breathing; and the lava's red light from below.
+          float pulse = 0.8 + 0.2 * sin(vFogW.x * 0.01 + vFogW.z * 0.013 + vFogW.y * 0.05);
+          totalEmissiveRadiance += vec3(3.2, 0.9, 0.18) * smoothstep(0.72, 1.0, vCrev) * pulse;
+          float hy2 = vFogW.y - vBaseY;
+          totalEmissiveRadiance += vec3(0.3, 0.08, 0.02) * (1.0 - smoothstep(0.0, 60.0, hy2)) * (0.4 + 0.6 * (1.0 - max(vWN.y, 0.0)));
+          // Fill: the glowing sky and the lava fields light the shadow side warm (no black cut-outs).
+          float rim2 = 1.0 - abs(dot(normalize(vViewPosition), normal));
+          totalEmissiveRadiance += diffuseColor.rgb * vec3(0.55, 0.32, 0.25) + vec3(0.12, 0.04, 0.02) * rim2 * rim2;
+        }`)
+    }
     if (opts.ice) {
       s.fragmentShader = s.fragmentShader.replace('#include <common>', `#include <common>\nvarying float vCrev;\nvarying vec2 vOrg;\n${opts.spike ? '#define ICE_SPIKE' : ''}`)
       s.fragmentShader = s.fragmentShader.replace(
