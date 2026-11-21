@@ -128,10 +128,14 @@
   #title .huntinfo { font-size: 11px; letter-spacing: 0.18em; opacity: 0.75; line-height: 1.8; padding: 12px 14px; border: 1px solid rgba(255,255,255,0.16); background: rgba(0,0,0,0.25); }
   #title.hunt .race-only { display: none; }
   #title:not(.hunt) .hunt-only { display: none; }
-  #title .preview { position: absolute; right: 3vw; top: 4vh; bottom: 4vh; width: min(320px, 24vw); display: flex; flex-direction: column; padding: 14px; background: rgba(10,5,3,0.55); border: 1px solid rgba(255,255,255,0.14); backdrop-filter: blur(3px); }
+  #title .preview { position: absolute; right: 3vw; top: 4vh; bottom: 4vh; width: min(400px, 30vw); display: flex; flex-direction: column; padding: 14px; background: rgba(10,5,3,0.55); border: 1px solid rgba(255,255,255,0.14); backdrop-filter: blur(3px); }
   #title .preview .ph b { display: block; letter-spacing: 0.3em; font-size: 14px; color: var(--hot); }
   #title .preview .ph span { font-size: 10px; letter-spacing: 0.2em; opacity: 0.7; }
-  #track { flex: 1; min-height: 0; width: 100%; display: block; margin-top: 10px; }
+  #track { flex: 1; min-height: 0; width: 100%; display: block; margin-top: 10px; border-radius: 6px; }
+  #tp-stats { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px 10px; margin-top: 12px; }
+  #tp-stats div { border-left: 2px solid rgba(255,255,255,0.18); padding-left: 8px; }
+  #tp-stats b { display: block; font-size: 15px; letter-spacing: 0.08em; }
+  #tp-stats small { font-size: 9px; letter-spacing: 0.25em; opacity: 0.6; }
   #tp-info { font-size: 10px; letter-spacing: 0.15em; line-height: 1.8; opacity: 0.8; margin-top: 8px; }
   #over .btns, #pause .btns { display: flex; gap: 10px; margin-top: 26px; }
   #pause .btns { margin: 0 0 20px; }
@@ -230,7 +234,7 @@
     <div class="row"><button id="start" class="big">START</button><button id="open-settings">SETTINGS</button></div>
     <div class="keys">ENTER START · ARROWS OR DRAG TURN THE VIEW<br/>W THROTTLE · SHIFT AFTERBURNER · A/D STEER · Q/E STRAFE · S BRAKE · R LAST GATE · ESC PAUSE</div>
   </div>
-  <div class="preview race-only"><div class="ph"><b id="tp-name"></b><span id="tp-meta"></span></div><canvas id="track" width="560" height="760"></canvas><div id="tp-info"></div></div>
+  <div class="preview race-only"><div class="ph"><b id="tp-name"></b><span id="tp-blurb"></span></div><canvas id="track" width="560" height="760"></canvas><div id="tp-stats"></div><div id="tp-info"></div></div>
 </div>
 <div id="over" class="screen hide">
   <h2 id="over-h">SIGNAL LOST</h2>

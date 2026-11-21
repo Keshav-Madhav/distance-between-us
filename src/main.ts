@@ -600,73 +600,128 @@ function showCourse(): void {
   drawTrackPreview(COURSES[pickedCourse])
 }
 /** The whole course, start at the bottom, finish at the top; across exaggerated so bends read. */
+/** The menu's course map: drawn once per course into an offscreen layer (true scale on a gridded
+ *  sand ground, the line coloured by how hard it turns, gates, jumps, arrows, km marks, a scale
+ *  bar); a dot laps it live on top (animTrackPreview). */
+const trackBg = document.createElement('canvas')
+let trackPath: { x: number[]; y: number[]; arc: number[]; L: number; u: number; loop: boolean } | null = null
 function drawTrackPreview(d: (typeof COURSES)[number]): void {
-  const cv = $<HTMLCanvasElement>('#track'), g = cv.getContext('2d')!
-  // Sized to its box (the panel runs the full height), at device pixels: never stretched.
+  const cv = $<HTMLCanvasElement>('#track')
   const dpr = Math.min(2, devicePixelRatio)
   cv.width = Math.max(100, Math.round(cv.clientWidth * dpr)); cv.height = Math.max(100, Math.round(cv.clientHeight * dpr))
-  const W = cv.width, H = cv.height, M = 30 * dpr
-  g.setTransform(1, 0, 0, 1, 0, 0)
-  const u = dpr
-  g.clearRect(0, 0, W, H)
-  // The line as points (any shape: a sprint up the page, a loop), and the distance along it.
+  trackBg.width = cv.width; trackBg.height = cv.height
+  const g = trackBg.getContext('2d')!
+  const W = cv.width, H = cv.height, M = 26 * dpr, u = dpr
+  // The line, and the distance along it.
   const { xs, zs } = centerline(d)
   const N = xs.length, arc = [0]
   for (let i = 1; i < N; i++) arc.push(arc[i - 1] + Math.hypot(xs[i] - xs[i - 1], zs[i] - zs[i - 1]))
   const L = arc[N - 1]
   let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity
   for (let i = 0; i < N; i++) { x0 = Math.min(x0, xs[i]); x1 = Math.max(x1, xs[i]); z0 = Math.min(z0, zs[i]); z1 = Math.max(z1, zs[i]) }
-  // True scale, fitted (one metre is one metre both ways — no warp).
   const k = Math.min((W - 2 * M) / Math.max(1, x1 - x0), (H - 2 * M) / Math.max(1, z1 - z0))
-  const P = (x: number, z: number): [number, number] => [W / 2 + (x - (x0 + x1) / 2) * k, H / 2 - (z - (z0 + z1) / 2) * k]
-  const at = (s: number): [number, number] => {
+  const PX = (x: number) => W / 2 + (x - (x0 + x1) / 2) * k, PY = (z: number) => H / 2 - (z - (z0 + z1) / 2) * k
+  // Ground: warm sand, a 1 km grid (10 km lines stronger).
+  const bg = g.createRadialGradient(W / 2, H / 2, 0, W / 2, H / 2, Math.max(W, H) * 0.7)
+  bg.addColorStop(0, '#5a3a24'); bg.addColorStop(1, '#2a1a10')
+  g.fillStyle = bg; g.fillRect(0, 0, W, H)
+  const gx0 = Math.floor(((x0 + x1) / 2 - W / 2 / k) / 1000) * 1000, gz0 = Math.floor(((z0 + z1) / 2 - H / 2 / k) / 1000) * 1000
+  for (let gx = gx0; PX(gx) < W; gx += 1000) { const major = Math.round(gx / 1000) % 10 === 0; if (!major && k * 1000 < 6 * u) continue; g.strokeStyle = major ? 'rgba(255,220,180,0.14)' : 'rgba(255,220,180,0.05)'; g.lineWidth = u; g.beginPath(); g.moveTo(PX(gx), 0); g.lineTo(PX(gx), H); g.stroke() }
+  for (let gz = gz0; PY(gz) > 0; gz += 1000) { const major = Math.round(gz / 1000) % 10 === 0; if (!major && k * 1000 < 6 * u) continue; g.strokeStyle = major ? 'rgba(255,220,180,0.14)' : 'rgba(255,220,180,0.05)'; g.lineWidth = u; g.beginPath(); g.moveTo(0, PY(gz)); g.lineTo(W, PY(gz)); g.stroke() }
+  // Curvature at each point (three-point), for the colouring and the stats.
+  const kap = new Float64Array(N)
+  for (let i = 1; i < N - 1; i++) {
+    const ax = xs[i] - xs[i - 1], az = zs[i] - zs[i - 1], bx = xs[i + 1] - xs[i], bz = zs[i + 1] - zs[i], cx = xs[i + 1] - xs[i - 1], cz = zs[i + 1] - zs[i - 1]
+    kap[i] = (2 * Math.abs(ax * bz - az * bx)) / Math.max(1e-6, Math.hypot(ax, az) * Math.hypot(bx, bz) * Math.hypot(cx, cz))
+  }
+  // Spire stretches (open courses): a dim band.
+  if (!d.loop) {
+    g.strokeStyle = 'rgba(255,255,255,0.08)'; g.lineWidth = 22 * u; g.lineCap = 'butt'
+    for (let i = 1; i < N; i++) if (zs[i] > 4000 && d.spireGap(zs[i] / 1000)) { g.beginPath(); g.moveTo(PX(xs[i - 1]), PY(zs[i - 1])); g.lineTo(PX(xs[i]), PY(zs[i])); g.stroke() }
+  }
+  // The line: a dark under-stroke, a glow, then coloured by turn (white straight → amber → red).
+  g.lineJoin = 'round'; g.lineCap = 'round'
+  const path = () => { g.beginPath(); for (let i = 0; i < N; i++) { if (i) g.lineTo(PX(xs[i]), PY(zs[i])); else g.moveTo(PX(xs[i]), PY(zs[i])) } }
+  path(); g.strokeStyle = 'rgba(0,0,0,0.55)'; g.lineWidth = 8 * u; g.stroke()
+  path(); g.strokeStyle = 'rgba(255,190,120,0.18)'; g.lineWidth = 14 * u; g.stroke()
+  g.lineWidth = 4 * u
+  for (let i = 1; i < N; i++) {
+    const r = 1 / Math.max(1e-7, Math.max(kap[i], kap[i - 1]))
+    g.strokeStyle = r < 1250 ? '#ff3b30' : r < 2500 ? '#ff8a3d' : r < 6000 ? '#ffd29a' : '#fff4ea'
+    g.beginPath(); g.moveTo(PX(xs[i - 1]), PY(zs[i - 1])); g.lineTo(PX(xs[i]), PY(zs[i])); g.stroke()
+  }
+  const at = (s: number): [number, number, number] => {
     let i = 1
     while (i < N - 1 && arc[i] < s) i++
     const t = Math.min(1, Math.max(0, (s - arc[i - 1]) / Math.max(1e-6, arc[i] - arc[i - 1])))
-    return P(xs[i - 1] + (xs[i] - xs[i - 1]) * t, zs[i - 1] + (zs[i] - zs[i - 1]) * t)
+    const x = xs[i - 1] + (xs[i] - xs[i - 1]) * t, z = zs[i - 1] + (zs[i] - zs[i - 1]) * t
+    return [PX(x), PY(z), Math.atan2(-(zs[i] - zs[i - 1]), xs[i] - xs[i - 1])]
   }
-  // Spires (open courses): a grey band where they stand.
-  if (!d.loop) {
-    g.fillStyle = 'rgba(255,255,255,0.07)'
-    for (let i = 0; i < N; i++) if (zs[i] > 4000 && d.spireGap(zs[i] / 1000)) { const [px, py] = P(xs[i], zs[i]); g.fillRect(px - 20 * u, py - 200 * k, 40 * u, 200 * k + 1) }
+  // Direction arrows along the way.
+  g.fillStyle = 'rgba(255,255,255,0.75)'
+  for (let s = L * 0.08; s < L * 0.95; s += L / (d.loop ? 9 : 6)) {
+    const [px, py, an] = at(s)
+    g.beginPath(); g.moveTo(px + Math.cos(an) * 7 * u, py + Math.sin(an) * 7 * u); g.lineTo(px + Math.cos(an + 2.4) * 6 * u, py + Math.sin(an + 2.4) * 6 * u); g.lineTo(px + Math.cos(an - 2.4) * 6 * u, py + Math.sin(an - 2.4) * 6 * u); g.fill()
   }
-  // The line.
-  g.lineJoin = 'round'; g.lineCap = 'round'
-  g.strokeStyle = 'rgba(255,240,225,0.9)'; g.lineWidth = 4 * u
-  g.beginPath()
-  for (let i = 0; i < N; i++) { const [px, py] = P(xs[i], zs[i]); if (i) g.lineTo(px, py); else g.moveTo(px, py) }
-  g.stroke()
-  // Tight bends (true curvature, three-point): red.
-  g.strokeStyle = '#ff3b30'; g.lineWidth = 6 * u
-  for (let i = 1; i < N - 1; i++) {
-    const ax = xs[i] - xs[i - 1], az = zs[i] - zs[i - 1], bx = xs[i + 1] - xs[i], bz = zs[i + 1] - zs[i]
-    const cx = xs[i + 1] - xs[i - 1], cz = zs[i + 1] - zs[i - 1]
-    const kap = (2 * Math.abs(ax * bz - az * bx)) / Math.max(1e-6, Math.hypot(ax, az) * Math.hypot(bx, bz) * Math.hypot(cx, cz))
-    if (kap > 1 / 1700) { const [a1, a2] = P(xs[i - 1], zs[i - 1]), [b1, b2] = P(xs[i + 1], zs[i + 1]); g.beginPath(); g.moveTo(a1, a2); g.lineTo(b1, b2); g.stroke() }
-  }
-  // Gates: dots on the line.
-  g.fillStyle = '#5fe6ff'
-  for (let s = d.gateEvery; s < L - 100; s += d.gateEvery) { const [px, py] = at(s); g.beginPath(); g.arc(px, py, 4 * u, 0, Math.PI * 2); g.fill() }
-  // Jumps: orange triangles beside the line.
+  // Gates: cyan dots ringed; jumps: orange triangles.
+  for (let s = d.gateEvery; s < L - 100; s += d.gateEvery) { const [px, py] = at(s); g.fillStyle = '#5fe6ff'; g.beginPath(); g.arc(px, py, 3.6 * u, 0, Math.PI * 2); g.fill(); g.strokeStyle = 'rgba(0,0,0,0.6)'; g.lineWidth = 1.2 * u; g.stroke() }
   g.fillStyle = '#ff8a3d'
-  for (const f of d.jumps) { const [px, py] = at(f * L); g.beginPath(); g.moveTo(px + 9 * u, py); g.lineTo(px + 19 * u, py - 6 * u); g.lineTo(px + 19 * u, py + 6 * u); g.fill() }
-  // Start (green) and finish (chequered; on a loop, the same line).
-  const [sx, sy] = P(xs[0], zs[0]), [fx, fy] = P(xs[N - 1], zs[N - 1])
-  for (let i = 0; i < 8; i++) { g.fillStyle = i % 2 ? '#111' : '#fff'; g.fillRect(fx - 16 * u + i * 4 * u, fy - 7 * u, 4 * u, 3 * u); g.fillStyle = i % 2 ? '#fff' : '#111'; g.fillRect(fx - 16 * u + i * 4 * u, fy - 4 * u, 4 * u, 3 * u) }
-  g.fillStyle = '#7dff3a'; g.fillRect(sx - 16 * u, sy + 1 * u, 32 * u, 4 * u)
-  // Direction of travel on a loop: an arrow a little way after the start.
-  if (d.loop) {
-    const [ax, ay] = at(L * 0.04), [bx, by] = at(L * 0.055)
-    const an = Math.atan2(by - ay, bx - ax)
-    g.fillStyle = '#7dff3a'; g.beginPath(); g.moveTo(bx + Math.cos(an) * 9 * u, by + Math.sin(an) * 9 * u); g.lineTo(bx + Math.cos(an + 2.5) * 9 * u, by + Math.sin(an + 2.5) * 9 * u); g.lineTo(bx + Math.cos(an - 2.5) * 9 * u, by + Math.sin(an - 2.5) * 9 * u); g.fill()
-  }
+  for (const f of d.jumps) { const [px, py] = at(f * L); g.beginPath(); g.moveTo(px + 8 * u, py); g.lineTo(px + 17 * u, py - 5 * u); g.lineTo(px + 17 * u, py + 5 * u); g.fill() }
+  // Km marks beside the line.
+  g.font = `600 ${Math.round(9 * dpr)}px "Chakra Petch", system-ui, sans-serif`; g.textBaseline = 'middle'; g.fillStyle = 'rgba(255,240,225,0.55)'
+  const step = L > 150000 ? 50000 : L > 60000 ? 20000 : 10000
+  for (let s = step; s < L - step * 0.4; s += step) { const [px, py] = at(s); g.fillText(`${Math.round(s / 1000)}`, px + 9 * u, py - 8 * u) }
   // Section names (open courses).
-  g.font = `600 ${Math.round(11 * dpr)}px "Chakra Petch", system-ui, sans-serif`; g.textBaseline = 'middle'
-  if (d.xAt) for (const [zk, name] of d.sections) { const [px, py] = P(d.xAt(zk * 1000), zk * 1000); g.fillStyle = 'rgba(255,255,255,0.85)'; g.fillText(name, Math.min(W - 110 * dpr, px + 26 * dpr), py) }
+  g.font = `600 ${Math.round(10 * dpr)}px "Chakra Petch", system-ui, sans-serif`; g.fillStyle = 'rgba(255,255,255,0.85)'
+  if (d.xAt) for (const [zk, name] of d.sections) g.fillText(name, Math.min(W - 100 * dpr, PX(d.xAt(zk * 1000)) + 22 * dpr), PY(zk * 1000))
+  // Start (green bar + flag) and finish (chequered).
+  const fx = PX(xs[N - 1]), fy = PY(zs[N - 1])
+  for (let i = 0; i < 8; i++) { g.fillStyle = i % 2 ? '#111' : '#fff'; g.fillRect(fx - 16 * u + i * 4 * u, fy - 8 * u, 4 * u, 3 * u); g.fillStyle = i % 2 ? '#fff' : '#111'; g.fillRect(fx - 16 * u + i * 4 * u, fy - 5 * u, 4 * u, 3 * u) }
+  g.fillStyle = '#7dff3a'; g.fillRect(PX(xs[0]) - 16 * u, PY(zs[0]) + 2 * u, 32 * u, 4 * u)
+  // Scale bar.
+  const sb = [1000, 2000, 5000, 10000, 20000, 50000].find((m) => m * k > 60 * u) ?? 50000
+  // (Top-left: at the bottom it ran into the start line.)
+  const sy0 = M * 0.6
+  g.fillStyle = 'rgba(255,240,225,0.8)'; g.fillRect(M * 0.5, sy0, sb * k, 2 * u)
+  g.fillRect(M * 0.5, sy0 - 4 * u, 1.5 * u, 6 * u); g.fillRect(M * 0.5 + sb * k - 1.5 * u, sy0 - 4 * u, 1.5 * u, 6 * u)
+  g.fillText(`${sb / 1000} KM`, M * 0.5 + sb * k + 6 * u, sy0)
+  // For the live dot.
+  trackPath = { x: xs.map(PX), y: zs.map(PY), arc, L, u, loop: !!d.loop }
+  // Header and stats.
   $('#tp-name').textContent = d.name
+  $('#tp-blurb').textContent = d.blurb
+  let turning = 0, rmin = Infinity
+  for (let i = 1; i < N - 1; i++) { const r = 1 / Math.max(1e-7, kap[i]); if (r < 6000) turning += arc[i + 1] - arc[i]; rmin = Math.min(rmin, r) }
+  const spires = d.loop ? 0 : (() => { let n = 0; for (let i = 1; i < N; i++) if (zs[i] > 4000) { const gp = d.spireGap(zs[i] / 1000); if (gp) n += (arc[i] - arc[i - 1]) / ((gp[0] + gp[1]) / 2) } return Math.round(n) })()
+  const cell = (v: string, l: string) => `<div><b>${v}</b><small>${l}</small></div>`
+  $('#tp-stats').innerHTML = cell(`${d.km} KM`, d.loop ? 'LOOP' : 'SPRINT') + cell(String(Math.round(d.km * 1000 / d.gateEvery) + 1), 'GATES') + cell(String(d.racers ?? 10), 'RACERS') +
+    cell(`${Math.round((turning / L) * 100)}%`, 'TURNING') + cell(rmin > 20000 ? '—' : `${(rmin / 1000).toFixed(1)} KM`, 'TIGHTEST') + cell(d.jumps.length ? String(d.jumps.length) : spires ? `~${spires}` : '0', d.jumps.length ? 'JUMPS' : 'SPIRES')
   const best = bestOf(d.id)
-  $('#tp-meta').textContent = `${d.km} KM${d.loop ? ' LOOP' : ''} · ${Math.round(d.km * 1000 / d.gateEvery) + 1} GATES · ${d.jumps.length} JUMPS · ${d.racers ?? 10} RACERS`
-  $('#tp-info').innerHTML = `${best !== null ? 'YOUR BEST ' + fmtLap(best) : 'NO TIME SET YET'}${d === course.def ? '' : ' · LOADS ON START'}<br/><span style="color:#5fe6ff">●</span> GATES &nbsp;<span style="color:#ff8a3d">▶</span> JUMPS &nbsp;<span style="color:#ff3b30">━</span> HAIRPINS${d.loop ? '' : ' &nbsp;░ SPIRES'}`
+  $('#tp-info').innerHTML = `${best !== null ? 'YOUR BEST ' + fmtLap(best) : 'NO TIME SET YET'}${d === course.def ? '' : ' · LOADS ON START'}<br/><span style="color:#fff4ea">━</span> STRAIGHT <span style="color:#ffd29a">━</span> SWEEPER <span style="color:#ff8a3d">━</span> BEND <span style="color:#ff3b30">━</span> HAIRPIN <span style="color:#5fe6ff">●</span> GATE`
+  animTrackPreview(performance.now())
+}
+/** The live layer: a dot lapping the course with a fading tail. */
+function animTrackPreview(now: number): void {
+  if (!trackPath) return
+  const cv = $<HTMLCanvasElement>('#track'), g = cv.getContext('2d')!
+  g.drawImage(trackBg, 0, 0)
+  const { x, y, arc, L, u } = trackPath
+  const at = (s: number): [number, number] => {
+    let lo = 0, hi = arc.length - 1
+    while (hi - lo > 1) { const m = (lo + hi) >> 1; if (arc[m] < s) lo = m; else hi = m }
+    const t = Math.min(1, Math.max(0, (s - arc[lo]) / Math.max(1e-6, arc[hi] - arc[lo])))
+    return [x[lo] + (x[hi] - x[lo]) * t, y[lo] + (y[hi] - y[lo]) * t]
+  }
+  const period = 9000, s = ((now % period) / period) * L
+  for (let j = 14; j >= 0; j--) {
+    const sj = s - j * L * 0.004
+    if (sj < 0) continue
+    const [px, py] = at(sj)
+    g.fillStyle = `rgba(255,${120 + j * 6},40,${(1 - j / 15) * 0.8})`
+    g.beginPath(); g.arc(px, py, (5 - j * 0.25) * u, 0, Math.PI * 2); g.fill()
+  }
+  const [px, py] = at(s)
+  g.fillStyle = '#fff'; g.beginPath(); g.arc(px, py, 3 * u, 0, Math.PI * 2); g.fill()
 }
 function pickShip(delta: number): void {
   shipPick = (shipPick + delta + MODELS.length) % MODELS.length
@@ -882,6 +937,7 @@ function resize(): void {
   camera.updateProjectionMatrix()
 }
 addEventListener('resize', resize)
+addEventListener('resize', () => { if (mode === 'title') drawTrackPreview(COURSES[pickedCourse]) })
 applyTier()
 
 // (Declared up here: applyGraphics() resets it during boot, before the frame-pacing code below.)
@@ -1364,6 +1420,7 @@ function frame(now: number): void {
   myCraft.setCone(mode === 'title' ? 0 : Math.max(coneA, nearMach1), time)
 
   if (mode === 'title') {
+    if (!$('#title').classList.contains('hunt')) animTrackPreview(now)
     // A fixed orbit round the ship as it flies (← → and ↑ ↓, or drag, turn it): locked to the ship,
     // so the desert streams past at Mach 4.
     void attractYaw
