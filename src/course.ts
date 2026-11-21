@@ -24,7 +24,7 @@ export interface CourseDef {
   id: string
   /** Glowing ground lines down both edges and dashes down the middle (the route at a glance). */
   ribbons?: boolean
-  /** Loops: bends tighter than this (m) get three gates through them (default 1800). */
+  /** Loops: bends tighter than this (m) get three gates through them (default 1400). */
   tightR?: number
   name: string
   /** One line for the course card. */
@@ -278,6 +278,8 @@ const frostPath = (u: number): [number, number] => {
 }
 export const FROSTLINE: CourseDef = {
   id: 'frostline',
+  // (Wider than the desert's 260: these worlds crowd the line with landforms.)
+  gateHalf: 340,
   ribbons: true,
   name: 'FROSTLINE',
   blurb: 'A NEW WORLD · FROZEN LAKES · AURORA · FLOWING LOOP',
@@ -308,6 +310,8 @@ const icefallPath = (u: number): [number, number] => {
 }
 export const ICEFALL: CourseDef = {
   id: 'icefall',
+  // (Wider than the desert's 260: these worlds crowd the line with landforms.)
+  gateHalf: 340,
   ribbons: true,
   name: 'ICEFALL',
   blurb: 'THREAD THE GLACIERS · SPIKE FIELDS · TIGHT',
@@ -343,6 +347,8 @@ const calderaPath = (u: number): [number, number] => {
 }
 export const CALDERA: CourseDef = {
   id: 'caldera',
+  // (Wider than the desert's 260: these worlds crowd the line with landforms.)
+  gateHalf: 340,
   ribbons: true,
   name: 'CALDERA',
   blurb: 'A NEW WORLD · LAVA RIVERS · BASALT · ONE HARD HOOK',
@@ -367,6 +373,8 @@ export const CALDERA: CourseDef = {
  */
 export const FAULTLINE: CourseDef = {
   id: 'faultline',
+  // (Wider than the desert's 260: these worlds crowd the line with landforms.)
+  gateHalf: 340,
   ribbons: true,
   name: 'FAULTLINE',
   blurb: 'SPRINT · DOWN THE RIFT · EMBERS · NO PILLARS',
@@ -505,7 +513,7 @@ export class Course {
     // The tight turns of a loop each get three gates through them — entry, apex, exit — so the
     // bend is laid out in front of you; the regular gates near them stand aside.
     if (def.loop) {
-      const tightR = def.tightR ?? 1800
+      const tightR = def.tightR ?? 1400
       const W = 8
       const radiusAt = (i: number) => {
         const [ax, az] = this.tangent(i - W), [bx, bz] = this.tangent(i + W)
@@ -709,7 +717,8 @@ export class Course {
     for (let i = 0; i < n; i += pylonEvery) {
       const [tx, tz] = this.tangent(i)
       for (const side of [-1, 1]) {
-        const x = this.px[i] + tz * 250 * side, z = this.pz[i] - tx * 250 * side
+        const edge = Math.min(this.gateHalf - 10, 250 + Math.max(0, this.gateHalf - 260))
+        const x = this.px[i] + tz * edge * side, z = this.pz[i] - tx * edge * side
         m.compose(v.set(x, groundH(x, z) - 0.3, z), q.identity(), s)
         pylons.setMatrixAt(pi, m)
         tips.setMatrixAt(pi, m)
@@ -744,8 +753,8 @@ export class Course {
           along += STEP
         }
       }
-      strip(-GATE_HALF + 10, 7, [2.2, 0.75, 0.2], false)
-      strip(GATE_HALF - 10, 7, [1.6, 1.8, 2.1], false)
+      strip(-this.gateHalf + 10, 7, [2.2, 0.75, 0.2], false)
+      strip(this.gateHalf - 10, 7, [1.6, 1.8, 2.1], false)
       strip(0, 2.2, [0.9, 1.1, 1.4], true)
       const g = new THREE.BufferGeometry()
       g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3))

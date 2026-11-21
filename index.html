@@ -196,6 +196,62 @@
   .modes { margin-top: 6vh; display: flex; gap: 36px; justify-content: center; }
   .modes div { font-size: 15px; letter-spacing: 0.35em; }
   .modes b { color: var(--hot); }
+
+  /* ── the menu, v2: a flight plan down the left (mode, world, course, craft, launch); the worlds as
+     horizon strips (each world's sky meeting its ground), the picked one open, the rest folded. ── */
+  #title { background: linear-gradient(90deg, rgba(8,5,4,0.88) 0%, rgba(8,5,4,0.66) 26%, rgba(8,5,4,0) 46%); }
+  #title .menu { width: min(430px, 36vw); padding: 4vh 0 2vh 3.4vw; gap: 6px; height: 100%; box-sizing: border-box; overflow-y: auto; scrollbar-width: none; }
+  #title h1 { font-size: clamp(24px, 2.6vw, 40px); letter-spacing: 0.1em; line-height: 0.92; margin-bottom: 6px; }
+  #title .sec { font-size: 12px; letter-spacing: 0.06em; opacity: 0.5; margin-top: 10px; margin-bottom: 0; }
+  #title .tabs { gap: 26px; border-bottom: 1px solid rgba(255,255,255,0.12); }
+  #title .tabs button { flex: 0 0 auto; background: none; border: none; border-bottom: 2px solid transparent; margin-bottom: -1px; padding: 8px 0 10px; font-size: 15px; letter-spacing: 0.3em; opacity: 0.45; }
+  #title .tabs button:hover { background: none; opacity: 0.8; }
+  #title .tabs button.on { background: none; opacity: 1; border-color: transparent; border-bottom-color: var(--hot); }
+  #title .menu > * { flex-shrink: 0; }
+  #worlds { display: flex; gap: 6px; height: clamp(84px, 12vh, 124px); }
+  #worlds .w { flex: 1 1 0; min-width: 0; padding: 0; transition: flex-grow 0.38s cubic-bezier(0.2, 0.8, 0.2, 1), filter 0.2s, border-color 0.2s; filter: saturate(0.55) brightness(0.62); border: 1px solid rgba(255,255,255,0.12); }
+  #worlds .w:hover { filter: saturate(0.8) brightness(0.85); }
+  #worlds .w.on { flex-grow: 3.6; filter: none; border-color: var(--hot); box-shadow: none; }
+  #worlds .w .hz { position: absolute; left: 0; right: 0; top: 57%; height: 1px; background: rgba(255,255,255,0.55); }
+  #worlds .w .sun { position: absolute; border-radius: 50%; }
+  #worlds .w[data-w=desert] { background: linear-gradient(180deg, #2f6fcf 0%, #7fb0e6 50%, #d9b48a 57%, #b45a2c 58%, #6e2d16 100%); }
+  #worlds .w[data-w=desert] .sun { width: 14px; height: 14px; right: 22%; top: 16%; background: #fffbe8; box-shadow: 0 0 18px 6px rgba(255,250,220,0.75); }
+  #worlds .w[data-w=ice] { background: linear-gradient(180deg, #05081a 0%, #16224a 30%, #4a4f8a 50%, #c9a3b4 56.5%, #dfe6f5 57.5%, #8ea2c8 100%); }
+  #worlds .w[data-w=ice] .sun { left: 8%; right: 8%; top: 10%; height: 34%; border-radius: 40%; background: radial-gradient(ellipse at 50% 100%, rgba(80,255,160,0.55), rgba(170,80,230,0.18) 55%, rgba(0,0,0,0) 72%); filter: blur(2px); }
+  #worlds .w[data-w=lava] { background: linear-gradient(180deg, #120c0d 0%, #3b1a12 32%, #a3401a 52%, #ff8a2a 56.5%, #1a1112 58%, #0b0808 100%); }
+  #worlds .w[data-w=lava] .sun { width: 18px; height: 18px; left: 30%; top: calc(57% - 9px); background: #ff5a1e; box-shadow: 0 0 22px 8px rgba(255,90,30,0.7); clip-path: inset(0 0 50% 0); }
+  #worlds .w b { position: absolute; left: 12px; bottom: 26px; font-size: 18px; letter-spacing: 0.16em; white-space: nowrap; text-shadow: 0 1px 8px rgba(0,0,0,0.8); transition: opacity 0.2s; }
+  #worlds .w small { position: absolute; left: 12px; bottom: 10px; margin: 0; font-size: 11px; letter-spacing: 0.06em; white-space: nowrap; opacity: 0.9; text-shadow: 0 1px 6px rgba(0,0,0,0.9); }
+  #worlds .w:not(.on) b { left: 50%; bottom: 50%; transform: translate(-50%, 50%) rotate(-90deg); font-size: 12px; letter-spacing: 0.2em; }
+  #worlds .w:not(.on) small { display: none; }
+  #courses { display: flex; flex-direction: column; gap: 0; border-top: 1px solid rgba(255,255,255,0.1); }
+  #courses .c { position: relative; display: grid; grid-template-columns: 1fr auto; align-items: baseline; padding: clamp(6px, 1vh, 10px) 12px clamp(6px, 1vh, 10px) 16px; border: none; border-bottom: 1px solid rgba(255,255,255,0.08); background: none; font-size: 14px; letter-spacing: 0.16em; }
+  #courses .c:hover { background: rgba(255,255,255,0.05); }
+  #courses .c.on { border-color: rgba(255,255,255,0.08); background: linear-gradient(90deg, rgba(255,106,26,0.22), rgba(255,106,26,0) 85%); }
+  #courses .c.on::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: var(--hot); }
+  #courses .c .best { margin: 0; font-size: 12px; letter-spacing: 0.06em; opacity: 0.65; font-variant-numeric: tabular-nums; }
+  #courses .c small { display: none; grid-column: 1 / -1; margin-top: 5px; font-size: 12px; letter-spacing: 0.02em; line-height: 1.45; opacity: 0.75; }
+  #courses .c.on small { display: block; }
+  #title .ship .sn { border: none; background: none; }
+  #title .ship .sn b { font-size: 20px; letter-spacing: 0.3em; }
+  #title .ship .sn small { font-size: 11px; letter-spacing: 0.06em; opacity: 0.6; }
+  #title .ship button { border-color: rgba(255,255,255,0.16); background: none; padding: 10px 14px; }
+  #title .row { margin-top: 12px; }
+  #title .row .big { font-size: 15px; letter-spacing: 0.22em; padding: 15px 20px; }
+  #title .keys { font-size: 11px; letter-spacing: 0.06em; opacity: 0.45; }
+  #title .huntinfo { font-size: 13px; letter-spacing: 0.02em; line-height: 1.5; opacity: 0.8; }
+  #title .paints small { font-size: 12px; letter-spacing: 0.04em; opacity: 0.5; }
+  #title .preview { background: rgba(8,5,4,0.62); border-color: rgba(255,255,255,0.1); }
+  #title .preview .ph b { font-size: 22px; letter-spacing: 0.18em; }
+  #title .preview .ph span { display: block; margin-top: 4px; font-size: 12px; letter-spacing: 0.02em; opacity: 0.7; }
+  #tp-stats small { letter-spacing: 0.04em !important; text-transform: none; font-size: 11px !important; }
+  #tp-info { letter-spacing: 0.04em !important; font-size: 11px !important; }
+  /* The launch row stays in reach: pinned to the column's foot when the list runs long. */
+  #title .row { position: sticky; bottom: 0; padding: 10px 0 4px; background: linear-gradient(180deg, rgba(8,5,4,0) 0%, rgba(8,5,4,0.92) 30%); }
+  @media (max-height: 820px) { #title .keys { display: none; } #title .ship .sn b { font-size: 17px; } #title .paints { gap: 3px; } }
+  #worlds .w:not(.on) b { font-size: 10px; letter-spacing: 0.14em; }
+  @media (prefers-reduced-motion: reduce) { #worlds .w { transition: none; } }
+  #title button:focus-visible, #worlds .w:focus-visible, #courses .c:focus-visible { outline: 2px solid var(--ice); outline-offset: 2px; }
 </style>
 </head>
 <body>
@@ -235,16 +291,16 @@
   <div class="menu">
     <h1>THE DISTANCE<br/>BETWEEN <span>US</span></h1>
     <div class="tabs"><button data-mode="race" class="on">RACE</button><button data-mode="hunt">HUNT</button></div>
-    <div class="sec race-only">WORLD</div>
+    <div class="sec race-only">World</div>
     <div id="worlds" class="race-only"></div>
-    <div class="sec race-only">COURSE</div>
+    <div class="sec race-only">Course</div>
     <div id="courses" class="race-only"></div>
-    <div class="hunt-only huntinfo">THE OLD COMBAT SANDBOX: DRONES IN WAVES, A WALKER, OPEN DESERT. SURVIVE AND SCORE.</div>
-    <div class="sec">SHIP</div>
+    <div class="hunt-only huntinfo">Drones come in waves, then a walker. Shoot them down at speed; the score multiplies with your Mach.</div>
+    <div class="sec">Craft</div>
     <div class="ship"><button id="ship-prev" aria-label="previous ship">◀</button><div class="sn"><b id="ship-name"></b><small id="ship-desc"></small></div><button id="ship-next" aria-label="next ship">▶</button></div>
-    <div class="paints"><div><small>BODY</small><span id="sw-body"></span></div><div><small>TEAM</small><span id="sw-trim"></span></div></div>
+    <div class="paints"><div><small>Body</small><span id="sw-body"></span></div><div><small>Trim</small><span id="sw-trim"></span></div></div>
     <div class="row"><button id="start" class="big">START</button><button id="open-settings">SETTINGS</button></div>
-    <div class="keys">ENTER START · ARROWS OR DRAG TURN THE VIEW<br/>W THROTTLE · SHIFT AFTERBURNER · A/D STEER · Q/E STRAFE · S BRAKE · R LAST GATE · ESC PAUSE</div>
+    <div class="keys">Enter starts. Drag or use the arrows to turn the view.<br/>W throttle, Shift afterburner, A/D steer, Q/E strafe, S brake, R back to the last gate, Esc pause.</div>
   </div>
   <div class="preview race-only"><div class="ph"><b id="tp-name"></b><span id="tp-blurb"></span></div><canvas id="track" width="560" height="760"></canvas><div id="tp-stats"></div><div id="tp-info"></div></div>
 </div>

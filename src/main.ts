@@ -63,9 +63,9 @@ const course = new Course(courseDef)
 let pickedCourse = COURSES.indexOf(courseDef)
 // Worlds first, then the courses in that world.
 const WORLDS = [
-  { id: 'desert', name: 'RED MESA', blurb: 'SANDSTONE' },
-  { id: 'ice', name: 'POLAR SHELF', blurb: 'GLACIERS' },
-  { id: 'lava', name: 'CINDER', blurb: 'LAVA FIELDS' },
+  { id: 'desert', name: 'RED MESA', blurb: 'Sandstone under blue sky' },
+  { id: 'ice', name: 'POLAR SHELF', blurb: 'Glaciers, aurora, night' },
+  { id: 'lava', name: 'CINDER', blurb: 'Basalt and lava at dusk' },
 ] as const
 let pickedWorld: Biome = biomeOf(courseDef.id)
 const bestKey = (id: string) => `dbu-best-${id}`
@@ -88,6 +88,8 @@ if (BIOME !== 'desert') {
   const rnd = () => { sd = (sd * 1664525 + 1013904223) >>> 0; return sd / 4294967296 }
   const tight = course.def.id === 'icefall' || course.def.id === 'faultline'
   const MESA_N = BIOME === 'lava' ? 3 : 4
+  // Everything set back by how much wider than the desert's 260 m this course is.
+  const W = course.gateHalf - 260
   const laps = course.def.laps ?? 1
   const lapEnd = course.startI + Math.floor((course.finishI - course.startI) / laps)
   const heroes: Parameters<typeof world.addHeroes>[0] = []
@@ -124,14 +126,14 @@ if (BIOME !== 'desert') {
     if (zone === 'glacier') {
       // Glaciers close on both sides: a corridor of ice walls.
       for (const sd2 of [side, -side]) {
-        const r = 170 + rnd() * 170, h = 120 + rnd() * 130, gap = 340 + rnd() * 80
+        const r = 170 + rnd() * 170, h = 120 + rnd() * 130, gap = 340 + W + rnd() * 80
         place(i + Math.round(rnd() * 6), sd2, gap + r * 1.6, { r, h, kind: 'mesa', v: Math.floor(rnd() * MESA_N), yaw: rnd() * 6.28 }, gap * 0.9 + r * 1.5)
       }
       i += Math.round((900 + rnd() * 600) / 40)
     } else if (zone === 'forest') {
       const big = rnd() < 0.3
       const r = big ? 90 + rnd() * 60 : 40 + rnd() * 35, h = big ? 90 + rnd() * 60 : 260 + rnd() * 240
-      const gap = 380 + rnd() * 160
+      const gap = 380 + W + rnd() * 160
       place(i, side, gap + r * (big ? 1.4 : 2.0), { r, h, kind: big ? 'butte' : 'spire', v: Math.floor(rnd() * 2.999), yaw: rnd() * 6.28 }, gap * 0.9 + r * 1.3)
       i += Math.round((1300 + rnd() * 900) / 40)
     } else {
@@ -154,18 +156,18 @@ if (BIOME !== 'desert') {
       const r = sentinel ? 30 + rnd() * 15 : spike ? 6 + rnd() * 8 : (12 + rnd() * 12) * sc
       const h = sentinel ? 120 + rnd() * 80 : spike ? (zone === 'forest' ? 45 + rnd() * 95 : 20 + rnd() * 40) : (10 + rnd() * 16) * sc
       // (Well clear of the edge lines at 250 m: a wide line must not be the end of a race.)
-      const off = sentinel ? 380 : 360 + Math.pow(rnd(), 1.5) * (zone === 'forest' ? 300 : 240)
+      const off = W + (sentinel ? 380 : 360 + Math.pow(rnd(), 1.5) * (zone === 'forest' ? 300 : 240))
       if (spike && zone === 'forest' && rnd() < 0.5) {
         // A group: 3-7 shards falling away in height from the tallest, leaning their own ways.
         const k = 3 + Math.floor(rnd() * 5)
         for (let q = 0; q < k; q++) {
           const fall = 1 - q / (k + 1)
-          place(Math.min(lapEnd - 1, j + (q % 3)), side, off + rnd() * 60 * q, { r: r * (0.6 + 0.4 * fall), h: h * fall, kind: 'spire', v: Math.floor(rnd() * 2.999), yaw: rnd() * 6.28, tilt: (rnd() - 0.5) * 0.24 }, 350)
+          place(Math.min(lapEnd - 1, j + (q % 3)), side, off + rnd() * 60 * q, { r: r * (0.6 + 0.4 * fall), h: h * fall, kind: 'spire', v: Math.floor(rnd() * 2.999), yaw: rnd() * 6.28, tilt: (rnd() - 0.5) * 0.24 }, 350 + W)
         }
       } else place(j, side, off, {
         r, h, kind: spike || sentinel ? 'spire' : 'butte', v: Math.floor(rnd() * 2.999), yaw: rnd() * 6.28,
         tilt: spike || sentinel ? (rnd() - 0.5) * 0.24 : BIOME === 'lava' ? 0 : (rnd() - 0.5) * 0.7, sink: spike || sentinel ? 0 : rnd() * 0.35,
-      }, 350)
+      }, 350 + W)
       const step = zone === 'forest' ? 90 + rnd() * 130 : zone === 'glacier' ? 140 + rnd() * 120 : 320 + rnd() * 300
       j += Math.max(1, Math.round(step / 40))
     }
@@ -661,7 +663,7 @@ let countT = 0
 // Mouse first (keys too): RACE / HUNT tabs, a course card per course with the whole layout drawn
 // beside it, the ship picker (the ship on screen changes as you pick), START, SETTINGS.
 let menuMode: 'race' | 'hunt' = 'race'
-const SHIP_DESC = ['CLASSIC · BALANCED LINES', 'CLASSIC · HEAVY, SIDE PODS', 'CLASSIC · NEEDLE NOSE, CANARDS', 'LOFTED · TWIN-FIN ARROW', 'LOFTED · WIDE AND HEAVY', 'LOFTED · LONG, ONE TALL FIN']
+const SHIP_DESC = ['Classic hull, balanced lines', 'Classic hull, heavy, side pods', 'Classic hull, needle nose and canards', 'Lofted hull, twin-fin arrow', 'Lofted hull, wide and heavy', 'Lofted hull, long, one tall fin']
 function showCourse(): void {
   const title = $('#title')
   title.classList.toggle('hunt', menuMode === 'hunt')
@@ -686,7 +688,9 @@ function showCourse(): void {
       return
     }
     const n = COURSES.filter((c) => biomeOf(c.id) === w.id).length
-    el.innerHTML = `<b>${w.name}</b><small>${w.blurb} · ${n} ${n === 1 ? 'COURSE' : 'COURSES'}</small>`
+    el.tabIndex = 0
+    el.onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); el.click() } }
+    el.innerHTML = `<i class="sun"></i><i class="hz"></i><b>${w.name}</b><small>${w.blurb}, ${n} ${n === 1 ? 'course' : 'courses'}</small>`
     worlds.append(el)
   }
   for (const el of worlds.children) (el as HTMLElement).classList.toggle('on', (el as HTMLElement).dataset.w === pickedWorld)
@@ -694,6 +698,8 @@ function showCourse(): void {
   if (!cards.childElementCount) COURSES.forEach((_d, i) => {
     const el = document.createElement('div')
     el.className = 'c'
+    el.tabIndex = 0
+    el.onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); el.click() } }
     el.onclick = () => { pickedCourse = i; showCourse() }
     cards.append(el)
   })
@@ -701,7 +707,11 @@ function showCourse(): void {
     const el = cards.children[i] as HTMLElement, b = bestOf(d.id)
     el.classList.toggle('on', i === pickedCourse)
     el.style.display = biomeOf(d.id) === pickedWorld ? '' : 'none'
-    el.innerHTML = `<b>${d.name}</b><span class="best">${b !== null ? fmtLap(b) : d.km + ' KM'}</span><small>${d.blurb}</small>`
+    // (Blurbs are written as tags in capitals: shown as a sentence.)
+    const words = d.blurb.split(' · ').map((t) => t.toLowerCase())
+    const line = words.join(', ').replace(/^./, (c) => c.toUpperCase()) + '.'
+    const laps = d.laps && d.laps > 1 ? `, ${d.laps} laps` : ''
+    el.innerHTML = `<b>${d.name}</b><span class="best">${b !== null ? 'best ' + fmtLap(b) : d.km + ' km' + laps}</span><small>${line}</small>`
   })
   // Paint swatches (built once; the picked ones ringed).
   for (const [id, list, key] of [['#sw-body', BODY_COLORS, 'body'], ['#sw-trim', TRIM_COLORS, 'trim']] as const) {
@@ -720,8 +730,10 @@ function showCourse(): void {
     }
     list.forEach((c, i) => (box.children[i] as HTMLElement).classList.toggle('on', c === myPaint[key]))
   }
+  $('#start').textContent = menuMode === 'hunt' ? 'Start hunt' : `Start ${COURSES[pickedCourse].name}`
   $('#ship-name').textContent = MODELS[shipPick]
-  $('#ship-desc').textContent = SHIP_DESC[shipPick] + ' · LOOKS ONLY'
+  $('#ship-desc').textContent = SHIP_DESC[shipPick]
+  $('#ship-desc').title = 'Every craft handles the same: the choice is looks.'
   drawTrackPreview(COURSES[pickedCourse])
 }
 /** The whole course, start at the bottom, finish at the top; across exaggerated so bends read. */
@@ -815,15 +827,17 @@ function drawTrackPreview(d: (typeof COURSES)[number]): void {
   trackPath = { x: xs.map(PX), y: zs.map(PY), arc, L, u, loop: !!d.loop }
   // Header and stats.
   $('#tp-name').textContent = d.name
-  $('#tp-blurb').textContent = d.blurb
+  $('#tp-blurb').textContent = d.blurb.split(' · ').map((t) => t.toLowerCase()).join(', ').replace(/^./, (c) => c.toUpperCase())
   let turning = 0, rmin = Infinity
   for (let i = 1; i < N - 1; i++) { const r = 1 / Math.max(1e-7, kap[i]); if (r < 6000) turning += arc[i + 1] - arc[i]; rmin = Math.min(rmin, r) }
   const spires = d.loop ? 0 : (() => { let n = 0; for (let i = 1; i < N; i++) if (zs[i] > 4000) { const gp = d.spireGap(zs[i] / 1000); if (gp) n += (arc[i] - arc[i - 1]) / ((gp[0] + gp[1]) / 2) } return Math.round(n) })()
   const cell = (v: string, l: string) => `<div><b>${v}</b><small>${l}</small></div>`
-  $('#tp-stats').innerHTML = cell(`${d.km} KM`, d.loop ? ((d.laps ?? 1) > 1 ? `LOOP · ${d.laps} LAPS` : 'LOOP') : 'SPRINT') + cell(String(Math.round(d.km * 1000 / d.gateEvery) + 1), 'GATES') + cell(String(d.racers ?? 10), 'RACERS') +
-    cell(`${Math.round((turning / L) * 100)}%`, 'TURNING') + cell(rmin > 20000 ? '—' : `${(rmin / 1000).toFixed(1)} KM`, 'TIGHTEST') + cell(d.jumps.length ? String(d.jumps.length) : spires ? `~${spires}` : '0', d.jumps.length ? 'JUMPS' : 'SPIRES')
+  // (Gates for the whole race, as the race screen counts them: the loaded course knows exactly.)
+  const gates = d === course.def ? course.cps.length : Math.round((d.km * 1000 * (d.laps ?? 1)) / d.gateEvery) + 1
+  $('#tp-stats').innerHTML = cell(`${d.km} km`, d.loop ? ((d.laps ?? 1) > 1 ? `Loop, ${d.laps} laps` : 'Loop') : 'Sprint') + cell(String(gates), 'Gates') + cell(String(d.racers ?? 10), 'Racers') +
+    cell(`${Math.round((turning / L) * 100)}%`, 'Turning') + cell(rmin > 20000 ? '—' : `${(rmin / 1000).toFixed(1)} km`, 'Tightest bend') + cell(d.jumps.length ? String(d.jumps.length) : spires ? `~${spires}` : '0', d.jumps.length ? 'Jumps' : 'Spires')
   const best = bestOf(d.id)
-  $('#tp-info').innerHTML = `${best !== null ? 'YOUR BEST ' + fmtLap(best) : 'NO TIME SET YET'}${d === course.def ? '' : ' · LOADS ON START'}<br/><span style="color:#fff4ea">━</span> STRAIGHT <span style="color:#ffd29a">━</span> SWEEPER <span style="color:#ff8a3d">━</span> BEND <span style="color:#ff3b30">━</span> HAIRPIN <span style="color:#5fe6ff">●</span> GATE`
+  $('#tp-info').innerHTML = `${best !== null ? 'Your best: ' + fmtLap(best) : 'No time set yet.'}<br/><span style="color:#fff4ea">━</span> straight <span style="color:#ffd29a">━</span> sweeper <span style="color:#ff8a3d">━</span> bend <span style="color:#ff3b30">━</span> hairpin <span style="color:#5fe6ff">●</span> gate`
   animTrackPreview(performance.now())
 }
 /** The live layer: a dot lapping the course with a fading tail. */

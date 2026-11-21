@@ -156,16 +156,16 @@ const LIGHTS: Record<string, Light> = {
   noon: { zenith: [0.06, 0.24, 0.72], horizon: [0.42, 0.64, 0.92], haze: [0.98, 0.82, 0.62], sunDir: [0.36, 0.78, -0.52], fogK: 0.000062, sunCol: [2.4, 2.16, 1.87], tint: [1, 1, 1] },
   // Dry River: late afternoon, warmer and lower.
   afternoon: { zenith: [0.07, 0.2, 0.6], horizon: [0.55, 0.62, 0.78], haze: [1.0, 0.72, 0.48], sunDir: [0.55, 0.45, -0.7], fogK: 0.000066, sunCol: [2.45, 1.95, 1.45], tint: [1.02, 0.92, 0.8] },
-  // The Circuit: golden hour — a low sun, amber haze, long shadows.
-  golden: { zenith: [0.1, 0.15, 0.42], horizon: [0.9, 0.6, 0.42], haze: [1.0, 0.52, 0.28], sunDir: [0.62, 0.26, -0.74], fogK: 0.000074, sunCol: [2.5, 1.62, 0.95], tint: [1.06, 0.8, 0.6] },
-  // The Long Drag: dusk — the sun on the horizon, a violet sky, the land in shadow and glow.
+  // The Circuit: a low sun under a clear blue sky (RED MESA keeps blue skies: sunset is CINDER's).
+  golden: { zenith: [0.07, 0.25, 0.7], horizon: [0.58, 0.68, 0.86], haze: [1.0, 0.74, 0.52], sunDir: [0.62, 0.3, -0.74], fogK: 0.00007, sunCol: [2.5, 2.0, 1.5], tint: [1.03, 0.94, 0.84] },
+  // The Long Drag: late day, the sun low but the sky still blue.
   // Frostline: polar twilight — the sun just over the horizon, deep blue overhead, rose haze.
   // CINDER: volcanic dusk — a smoky red sky, a low bloody sun, ash haze.
   ember: { zenith: [0.02, 0.018, 0.03], horizon: [0.3, 0.12, 0.07], haze: [0.85, 0.32, 0.12], sunDir: [-0.55, 0.05, 0.84], fogK: 0.000075, sunCol: [1.7, 0.75, 0.42], tint: [1.0, 0.62, 0.5] },
   polar: { zenith: [0.006, 0.014, 0.05], horizon: [0.17, 0.21, 0.38], haze: [0.78, 0.48, 0.52], sunDir: [0.6, 0.04, -0.8], fogK: 0.00006, sunCol: [1.5, 0.95, 0.8], tint: [0.85, 0.8, 1.0] },
   // Canyon Run: dawn — cool blue-pink sky, a low sun from the east, rose light on the rock.
-  dawn: { zenith: [0.1, 0.18, 0.48], horizon: [0.78, 0.62, 0.7], haze: [0.95, 0.66, 0.6], sunDir: [-0.7, 0.3, 0.65], fogK: 0.00007, sunCol: [2.4, 1.75, 1.45], tint: [1.04, 0.86, 0.82] },
-  dusk: { zenith: [0.05, 0.06, 0.2], horizon: [0.7, 0.38, 0.36], haze: [0.95, 0.42, 0.26], sunDir: [-0.66, 0.17, -0.73], fogK: 0.000082, sunCol: [2.1, 1.05, 0.6], tint: [1.0, 0.62, 0.5] },
+  dawn: { zenith: [0.07, 0.24, 0.68], horizon: [0.6, 0.7, 0.9], haze: [0.96, 0.8, 0.72], sunDir: [-0.7, 0.32, 0.65], fogK: 0.000068, sunCol: [2.4, 2.05, 1.75], tint: [1.0, 0.94, 0.9] },
+  dusk: { zenith: [0.05, 0.17, 0.52], horizon: [0.55, 0.62, 0.82], haze: [0.96, 0.66, 0.48], sunDir: [-0.66, 0.24, -0.73], fogK: 0.000072, sunCol: [2.35, 1.8, 1.3], tint: [1.0, 0.9, 0.8] },
 }
 const COURSE_LIGHT: Record<string, string> = { sprint: 'noon', 'dry-river': 'afternoon', circuit: 'golden', drag: 'dusk', oval: 'noon', canyon: 'dawn', frostline: 'polar', icefall: 'polar', caldera: 'ember', faultline: 'ember' }
 export const LIGHT: Light = LIGHTS[COURSE_LIGHT[COURSE_ID] ?? 'noon'] ?? LIGHTS.noon

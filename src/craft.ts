@@ -158,10 +158,10 @@ export class Craft {
     this.body.add(this.hi, this.lo)
     const mats: Record<string, THREE.Material> = {
       // (Shell surfaces double-sided: an open loft end can never show as a see-through hole.)
-      paint: new THREE.MeshPhysicalMaterial({ side: THREE.DoubleSide, color: paint.body, roughness: 0.3, metalness: 0.15, clearcoat: 1, clearcoatRoughness: 0.14, envMap: env, envMapIntensity: 1.1 }),
-      trim: new THREE.MeshStandardMaterial({ side: THREE.DoubleSide, color: paint.trim, roughness: 0.35, metalness: 0.25, emissive: paint.trim, emissiveIntensity: 0.18, envMap: env }),
-      carbon: new THREE.MeshStandardMaterial({ side: THREE.DoubleSide, color: 0x15171b, roughness: 0.45, metalness: 0.65, envMap: env }),
-      metal: new THREE.MeshStandardMaterial({ side: THREE.DoubleSide, color: 0x8a8f98, roughness: 0.25, metalness: 1, envMap: env }),
+      paint: new THREE.MeshPhysicalMaterial({ side: THREE.DoubleSide, color: paint.body, roughness: 0.16, metalness: 0.35, clearcoat: 1, clearcoatRoughness: 0.04, envMap: env, envMapIntensity: 1.7 }),
+      trim: new THREE.MeshStandardMaterial({ side: THREE.DoubleSide, color: paint.trim, roughness: 0.2, metalness: 0.45, emissive: paint.trim, emissiveIntensity: 0.18, envMap: env, envMapIntensity: 1.5 }),
+      carbon: new THREE.MeshStandardMaterial({ side: THREE.DoubleSide, color: 0x15171b, roughness: 0.3, metalness: 0.75, envMap: env, envMapIntensity: 1.3 }),
+      metal: new THREE.MeshStandardMaterial({ side: THREE.DoubleSide, color: 0x9aa0a8, roughness: 0.12, metalness: 1, envMap: env, envMapIntensity: 1.5 }),
       // (Tinted and see-through: the pilot shows inside.)
       glass: new THREE.MeshPhysicalMaterial({ color: 0x1a2c44, roughness: 0.04, metalness: 0.3, clearcoat: 1, envMap: env, envMapIntensity: 1.6, transparent: true, opacity: 0.62, depthWrite: false }),
     }
