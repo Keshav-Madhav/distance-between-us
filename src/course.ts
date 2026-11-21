@@ -292,7 +292,35 @@ export const FROSTLINE: CourseDef = {
   sections: [],
 }
 
-export const COURSES: CourseDef[] = [SPRINT, DRY_RIVER, DRAG, CIRCUIT, OVAL, CANYON, FROSTLINE]
+/**
+ * Course 8: ICEFALL — the polar world's technical loop: a lobed course that threads close between
+ * the glaciers and spike fields (clearance like CANYON), tighter bends than FROSTLINE.
+ */
+const icefallPath = (u: number): [number, number] => {
+  const a = 2 * Math.PI * u
+  const r = 9000 + 2100 * Math.sin(2 * a + 0.3) + 850 * Math.sin(5 * a + 1.1) + 240 * Math.sin(9 * a + 2.6)
+  return [r * Math.sin(a), r * Math.cos(a) * 0.92 - 9000]
+}
+export const ICEFALL: CourseDef = {
+  id: 'icefall',
+  name: 'ICEFALL',
+  blurb: 'THREAD THE GLACIERS · SPIKE FIELDS · TIGHT',
+  km: Math.round(loopLength(icefallPath) / 100) / 10,
+  loop: icefallPath,
+  gateEvery: 4500,
+  laps: 2,
+  aiPace: 0.4,
+  jumps: [0.16, 0.175],
+  whoops: [],
+  padEvery: 8000,
+  spireGap: () => null,
+  rockGateP: 0,
+  seed: 53,
+  sections: [],
+  clearance: 380,
+}
+
+export const COURSES: CourseDef[] = [SPRINT, DRY_RIVER, DRAG, CIRCUIT, OVAL, CANYON, FROSTLINE, ICEFALL]
 
 /** The race's line as points (x, z) every ~200 m, start to finish — for previews. */
 export function centerline(def: CourseDef): { xs: number[]; zs: number[] } {

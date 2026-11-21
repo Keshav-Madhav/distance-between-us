@@ -5,7 +5,9 @@ const COURSE_ID: string = (() => {
   try { return new URLSearchParams(location.search).get('course') ?? localStorage.getItem('dbu-course') ?? 'sprint' } catch { return 'sprint' }
 })()
 /** The world: the desert, or FROSTLINE's arctic plateau (docs/MAP-FROSTLINE.md). */
-const COURSE_BIOME: Record<string, 'desert' | 'ice'> = { frostline: 'ice' }
+const COURSE_BIOME: Record<string, 'desert' | 'ice'> = { frostline: 'ice', icefall: 'ice' }
+/** Which world a course is in. */
+export const biomeOf = (id: string): 'desert' | 'ice' => COURSE_BIOME[id] ?? 'desert'
 export const BIOME: 'desert' | 'ice' = COURSE_BIOME[COURSE_ID] ?? 'desert'
 /** Dust / spray colour for the particles (sand, or snow). */
 export const DUST: [number, number, number] = BIOME === 'ice' ? [0.8, 0.86, 0.96] : [0.8, 0.42, 0.21]
@@ -156,7 +158,7 @@ const LIGHTS: Record<string, Light> = {
   dawn: { zenith: [0.1, 0.18, 0.48], horizon: [0.78, 0.62, 0.7], haze: [0.95, 0.66, 0.6], sunDir: [-0.7, 0.3, 0.65], fogK: 0.00007, sunCol: [2.4, 1.75, 1.45], tint: [1.04, 0.86, 0.82] },
   dusk: { zenith: [0.05, 0.06, 0.2], horizon: [0.7, 0.38, 0.36], haze: [0.95, 0.42, 0.26], sunDir: [-0.66, 0.17, -0.73], fogK: 0.000082, sunCol: [2.1, 1.05, 0.6], tint: [1.0, 0.62, 0.5] },
 }
-const COURSE_LIGHT: Record<string, string> = { sprint: 'noon', 'dry-river': 'afternoon', circuit: 'golden', drag: 'dusk', oval: 'noon', canyon: 'dawn', frostline: 'polar' }
+const COURSE_LIGHT: Record<string, string> = { sprint: 'noon', 'dry-river': 'afternoon', circuit: 'golden', drag: 'dusk', oval: 'noon', canyon: 'dawn', frostline: 'polar', icefall: 'polar' }
 export const LIGHT: Light = LIGHTS[COURSE_LIGHT[COURSE_ID] ?? 'noon'] ?? LIGHTS.noon
 export const SKY = {
   zenith: LIGHT.zenith,

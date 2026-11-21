@@ -3,7 +3,8 @@
 // boulders and mesas (both collide, against their true lumpy profile), the env map.
 import * as THREE from 'three'
 import { REBASE } from './config'
-import { groundH, LIGHT, MOUND_U, SUN_DIR } from './terrain'
+import { BIOME, groundH, LIGHT, MOUND_U, SUN_DIR } from './terrain'
+import { ICE_VARIANTS, iceGeometry } from './ice'
 import { FBMT_GLSL, NOISE_TEX, patchStandard, WORLD_GLSL } from './shaders'
 
 export function rng(seed: number): () => number {
@@ -457,36 +458,91 @@ function pebbles(count: number, tile: number): THREE.InstancedMesh {
 type Kind = 'mesa' | 'butte' | 'spire'
 type Profile = (th: number, t: number) => number
 
-function mesaGeometry(kind: Kind, seed: number): { geo: THREE.BufferGeometry; prof: Profile } {
+/** Shape archetypes per kind, so no two neighbours read as the same rock. */
+export const MESA_VARIANTS: Record<Kind, number> = { mesa: 6, butte: 4, spire: 3 }
+
+/** Angular distance, wrapped to [0, π]. */
+const angGap = (a: number, b: number) => { const d = Math.abs(((a - b) % 6.2832 + 6.2832) % 6.2832); return Math.min(d, 6.2832 - d) }
+
+function mesaGeometry(kind: Kind, seed: number, v = 0): { geo: THREE.BufferGeometry; prof: Profile } {
   const r = rng(seed)
-  const radial = kind === 'spire' ? 16 : 26
-  const g = new THREE.CylinderGeometry(1, 1, 1.08, radial, kind === 'spire' ? 12 : 16, false)
+  const radial = kind === 'spire' ? 16 : 28
+  const g = new THREE.CylinderGeometry(1, 1, 1.08, radial, kind === 'spire' ? 14 : 26, false)
   g.translate(0, 0.46, 0)
+  // Ruggedness: how much the outline wanders (eroded variants are rougher).
+  const rough = kind === 'mesa' ? [1.3, 1.0, 0.7, 1.1, 1.9, 1.0][v] : kind === 'butte' ? [1, 1.4, 0.9, 1.2][v] : [1, 0.8, 1.2][v]
   const harm: [number, number][] = []
-  for (let i = 2; i <= 8; i++) harm.push([((0.16 / i) * (0.4 + r())) * (kind === 'mesa' ? 1.3 : 1), r() * 6.28])
+  for (let i = 2; i <= 9; i++) harm.push([((0.16 / i) * (0.4 + r())) * rough, r() * 6.28])
+  // Elongation: a strong second harmonic stretches the outline into a ridge or a peanut.
+  const elong = kind === 'mesa' ? [0, 0, 0.34, 0.06, 0.08, 0.26][v] : kind === 'butte' ? [0, 0, 0.12, 0.2][v] : 0
+  const eph = r() * 6.28
   const ledge = 0.45 + r() * 0.3
+  const phi = r() * 6.28 // facing of a notch / low shoulder
+  const t1 = 0.3 + r() * 0.12, t2 = 0.6 + r() * 0.12 // tier heights
   const f: Profile = (th, t) => {
-    let k = 1
+    let k = 1 + elong * Math.cos(2 * th + eph)
     for (let i = 0; i < harm.length; i++) k += harm[i][0] * Math.sin((i + 2) * th + harm[i][1])
     k *= 1 + 0.04 * Math.sin(17 * th + 3 * t)
-    const tal = 1 - smooth(0, kind === 'spire' ? 0.2 : 0.34, t)
-    k *= 1 + (kind === 'spire' ? 0.7 : 0.55) * tal * tal
     if (kind === 'spire') {
-      k *= 1 - 0.38 * smooth(0.1, 0.85, t)
-      k *= 1 + 0.45 * smooth(0.86, 0.9, t)
+      const tal = 1 - smooth(0, 0.2, t)
+      k *= 1 + 0.7 * tal * tal
+      if (v === 0) { // hoodoo: neck, capstone
+        k *= 1 - 0.38 * smooth(0.1, 0.85, t)
+        k *= 1 + 0.45 * smooth(0.86, 0.9, t)
+      } else if (v === 1) { // needle: tapers to a point-ish crown
+        k *= 1 - 0.62 * smooth(0.05, 1, t)
+      } else { // stacked: two necks, two caps
+        k *= 1 - 0.32 * smooth(0.08, 0.42, t)
+        k *= 1 + 0.3 * smooth(0.44, 0.48, t)
+        k *= 1 - 0.36 * smooth(0.5, 0.84, t)
+        k *= 1 + 0.38 * smooth(0.86, 0.9, t)
+      }
+      return k
+    }
+    const skirt = kind === 'mesa' ? [0.55, 0.45, 0.5, 0.55, 0.95, 0.5][v] : [0.55, 0.4, 0.6, 0.5][v]
+    const tal = 1 - smooth(0, kind === 'mesa' && v === 4 ? 0.5 : 0.34, t)
+    k *= 1 + skirt * tal * tal
+    const step = (at: number, d: number) => { k *= 1 - d * smooth(at - 0.015, at + 0.015, t) }
+    if (kind === 'mesa') {
+      if (v === 0) { step(ledge, 0.08); step(0.95, 0.05) }
+      else if (v === 1) { step(t1, 0.2); step(t2, 0.24); step(0.95, 0.06) } // wedding cake
+      else if (v === 2) { step(ledge, 0.05); step(0.95, 0.04) } // long ridge
+      else if (v === 3) { // horseshoe: a deep bay bitten out of one side
+        k *= 1 - 0.5 * Math.exp(-Math.pow(angGap(th, phi) / 0.55, 2)) * (0.7 + 0.3 * smooth(0.2, 0.6, t))
+        step(ledge, 0.06); step(0.95, 0.05)
+      } else if (v === 4) { // eroded: tapering walls to a small crown
+        k *= 1 - 0.3 * smooth(0.25, 1, t)
+        step(0.95, 0.08)
+      } else { // split level: one half drops away at mid height
+        const side = 0.5 + 0.5 * Math.cos(th - phi)
+        k *= 1 - 0.55 * smooth(0.5, 0.56, t) * smooth(0.35, 0.75, side)
+        step(0.95, 0.05)
+      }
     } else {
-      k *= 1 - 0.08 * smooth(ledge - 0.02, ledge + 0.02, t)
-      k *= 1 - 0.05 * smooth(0.93, 0.97, t)
+      if (v === 0) { step(ledge, 0.08); step(0.95, 0.05) }
+      else if (v === 1) { // chimney with an overhanging caprock
+        k *= 1 - 0.22 * smooth(0.15, 0.8, t)
+        k *= 1 + 0.22 * smooth(0.84, 0.88, t)
+      } else if (v === 2) { step(t1 + 0.05, 0.28); step(0.95, 0.05) } // two tiers
+      else { // shoulder: a low bench on one side
+        const side = 0.5 + 0.5 * Math.cos(th - phi)
+        k *= 1 - 0.45 * smooth(0.38, 0.44, t) * smooth(0.4, 0.8, side)
+        step(0.95, 0.05)
+      }
     }
     return k
   }
   const p = g.attributes.position as THREE.BufferAttribute
+  // A gently uneven crown: tilt + a dip, so flat tops are not all billiard tables.
+  const tilt = kind === 'spire' ? 0 : 0.03 + r() * 0.05, tph = r() * 6.28
   for (let i = 0; i < p.count; i++) {
     const x = p.getX(i)
     const z = p.getZ(i)
-    if (Math.hypot(x, z) < 1e-4) continue
+    let y = p.getY(i)
+    if (y > 0.99 && tilt) y += tilt * (x * Math.cos(tph) + z * Math.sin(tph)) - 0.02 * Math.cos(3 * Math.atan2(z, x) + tph)
+    if (Math.hypot(x, z) < 1e-4) { p.setY(i, y); continue }
     const k = f(Math.atan2(z, x), Math.max(0, p.getY(i)))
-    p.setXYZ(i, x * k, p.getY(i), z * k)
+    p.setXYZ(i, x * k, y, z * k)
   }
   const geo = g.toNonIndexed()
   geo.computeVertexNormals()
@@ -638,7 +694,9 @@ export class World {
     this.group.add(pebbles(1800, 1500))
 
     const mesaMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.92, metalness: 0, flatShading: true })
-    patchStandard(mesaMat, { strata: true })
+    const ICE = BIOME === 'ice'
+    if (ICE) { mesaMat.roughness = 0.3; patchStandard(mesaMat, { ice: true }) }
+    else patchStandard(mesaMat, { strata: true })
     const r = rng(1234)
     const kinds: [Kind, number, number][] = [
       // (×4: the world now wraps every 72 km, so the 130 km sprint overlaps itself less.)
@@ -649,20 +707,34 @@ export class World {
     const all: Placed[] = []
     this.mesaMat = mesaMat
     for (const [kind, count, spacing] of kinds) {
-      const { geo, prof } = mesaGeometry(kind, kind.length * 31 + 7)
-      if (kind === 'spire') { this.spireGeo = geo; this.fixedProf = prof }
-      const w = new Wrapped(geo, mesaMat, REBASE, 16500, 0.06, prof, true, null, 20000)
-      let tries = 0
-      while (w.items.length < count && tries++ < count * 80) {
+      // One instanced mesh per shape archetype; items are dealt across them at random.
+      const ws: Wrapped[] = []
+      for (let v = 0; v < (ICE ? ICE_VARIANTS : MESA_VARIANTS)[kind]; v++) {
+        const seed = kind.length * 31 + 7 + v * 101
+        const { geo, prof } = ICE ? iceGeometry(kind, seed, v) : mesaGeometry(kind, seed, v)
+        if (kind === 'spire' && v === 0) { this.spireGeo = geo; this.fixedProf = prof }
+        ws.push(new Wrapped(geo, mesaMat, REBASE, 16500, 0.06, prof, true, null, 20000))
+      }
+      let placed = 0, tries = 0
+      while (placed < count && tries++ < count * 80) {
         const ox = r() * REBASE
         const oz = r() * REBASE
         const sx = ((ox + REBASE / 2) % REBASE) - REBASE / 2
         const sz = ((oz + REBASE / 2) % REBASE) - REBASE / 2
+        const v = Math.floor(r() * ws.length)
         let rad: number, h: number
-        if (kind === 'mesa') { rad = 160 + r() * 520; h = 110 + r() * 260 }
-        else if (kind === 'butte') { rad = 90 + r() * 160; h = 160 + r() * 140 }
-        else { rad = 35 + r() * 50; h = 140 + r() * 170 }
-        if (!clear(sx, sz, rad * 1.6)) continue
+        if (kind === 'mesa') {
+          rad = 160 + r() * 520; h = 110 + r() * 260
+          if (v === 1) h *= 1.25 // tiers need height to read
+          if (v === 2) rad *= 1.15
+          if (v === 4) h *= 0.8
+        } else if (kind === 'butte') { rad = 90 + r() * 160; h = 160 + r() * 140; if (v === 1) { rad *= 0.8; h *= 1.2 } }
+        else { rad = 35 + r() * 50; h = 140 + r() * 170; if (v === 2) h *= 1.15 }
+        if (ICE) {
+          if (kind === 'mesa') { rad *= 1.15; h *= 0.75 }
+          else if (kind === 'spire') { rad *= 0.8; h *= 1.25 }
+        }
+        if (!clear(sx, sz, rad * (ICE && kind === 'spire' ? 2.4 : 1.6))) continue
         let ok = true
         for (const o of all) {
           let dx = Math.abs(o.ox - ox); dx = Math.min(dx, REBASE - dx)
@@ -671,12 +743,15 @@ export class World {
         }
         if (!ok) continue
         const it: Placed = { ox, oz, r: rad, h, yaw: r() * 6.28, x: 0, z: 0, by: 0, grow: 1 }
-        w.items.push(it)
+        ws[v].items.push(it)
         all.push(it)
+        placed++
       }
-      w.finish()
-      this.wrapped.push(w)
-      this.group.add(w.mesh)
+      for (const w of ws) {
+        w.finish()
+        this.wrapped.push(w)
+        this.group.add(w.mesh)
+      }
     }
 
     // Boulders: knee-to-roof high.

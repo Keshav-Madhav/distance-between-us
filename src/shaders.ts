@@ -54,6 +54,8 @@ export const TEX = {
 export interface PatchOpts {
   /** Red-rock strata coloured by world height (mesas). */
   strata?: boolean
+  /** Glacial ice (FROSTLINE's glaciers, seracs and spikes): blue, layered, snow-capped, lit from within. */
+  ice?: boolean
 }
 
 /**
@@ -63,11 +65,11 @@ export interface PatchOpts {
 export function patchStandard(mat: THREE.MeshStandardMaterial, opts: PatchOpts = {}): void {
   mat.fog = false
   // (three caches programs by onBeforeCompile's source text, the same for every patch: key it.)
-  mat.customProgramCacheKey = () => `patched-${opts.strata ? 'strata' : 'plain'}`
+  mat.customProgramCacheKey = () => `patched-${opts.strata ? 'strata' : opts.ice ? 'ice' : 'plain'}`
   mat.onBeforeCompile = (s) => {
     if (opts.strata) { s.uniforms.tRock = TEX.tRock; s.uniforms.tSand = TEX.tSand }
     s.vertexShader = s.vertexShader
-      .replace('#include <common>', '#include <common>\nvarying vec3 vFogW;\nvarying vec3 vWN;\nvarying float vBaseY;')
+      .replace('#include <common>', '#include <common>\nvarying vec3 vFogW;\nvarying vec3 vWN;\nvarying float vBaseY;\nvarying float vHt;')
       .replace(
         '#include <project_vertex>',
         `#include <project_vertex>
@@ -75,19 +77,65 @@ export function patchStandard(mat: THREE.MeshStandardMaterial, opts: PatchOpts =
         vec3 wn = objectNormal;
         #ifdef USE_INSTANCING
           fw = instanceMatrix * fw;
-          wn = mat3(instanceMatrix) * wn;
+          // Non-uniform instance scale: normals take the inverse scale (tall thin shards stay steep).
+          mat3 iMx = mat3(instanceMatrix);
+          wn = iMx * (wn / vec3(dot(iMx[0], iMx[0]), dot(iMx[1], iMx[1]), dot(iMx[2], iMx[2])));
         #endif
         vFogW = (modelMatrix * fw).xyz;
         vWN = normalize(mat3(modelMatrix) * wn);
         #ifdef USE_INSTANCING
           vBaseY = (modelMatrix * instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0)).y;
+          vHt = max(1.0, length(instanceMatrix[1].xyz));
         #else
+          vHt = 1.0;
           vBaseY = (modelMatrix * vec4(0.0, 0.0, 0.0, 1.0)).y;
         #endif`,
       )
     s.fragmentShader = s.fragmentShader
-      .replace('#include <common>', `#include <common>\nvarying vec3 vFogW;\nvarying vec3 vWN;\nvarying float vBaseY;\n${opts.strata ? 'uniform sampler2D tRock;\nuniform sampler2D tSand;' : ''}\n${SKY_GLSL}\n${NOISE_GLSL}`)
+      .replace('#include <common>', `#include <common>\nvarying vec3 vFogW;\nvarying vec3 vWN;\nvarying float vBaseY;\nvarying float vHt;\nfloat gIceSnow = 0.0;\n${opts.strata ? 'uniform sampler2D tRock;\nuniform sampler2D tSand;' : ''}\n${SKY_GLSL}\n${NOISE_GLSL}`)
       .replace('#include <fog_fragment>', 'gl_FragColor.rgb = applyFog(gl_FragColor.rgb, vFogW);')
+    if (opts.ice) {
+      s.fragmentShader = s.fragmentShader.replace(
+        '#include <color_fragment>',
+        `#include <color_fragment>
+        {
+          float hy = vFogW.y - vBaseY;
+          float t = hy / vHt;
+          vec3 deep = vec3(0.05, 0.24, 0.5), pale = vec3(0.55, 0.82, 0.97);
+          // Old ice is deep blue low down, younger ice paler toward the top.
+          float n1 = vnoise(vec2((vFogW.x + vFogW.z) * 0.015, vFogW.y * 0.012));
+          vec3 c = mix(deep, pale, clamp(0.15 + 0.6 * t + 0.35 * n1, 0.0, 1.0));
+          // Annual layers: pale bands and darker dusty ones, wavy across the face.
+          float lay = fract((vFogW.y + 9.0 * vnoise(vFogW.xz * 0.006)) / 13.0);
+          c = mix(c, vec3(0.86, 0.95, 1.0), smoothstep(0.82, 0.88, lay) * (1.0 - smoothstep(0.92, 0.98, lay)) * 0.7);
+          c *= 1.0 - 0.28 * smoothstep(0.4, 0.45, lay) * (1.0 - smoothstep(0.49, 0.54, lay));
+          // Meltwater streaks running down the faces.
+          float st = vnoise(vec2((vFogW.x - vFogW.z) * 0.05, vFogW.y * 0.0025));
+          c = mix(c, deep * 0.7, smoothstep(0.6, 0.86, st) * 0.55);
+          c = mix(c, vec3(0.75, 0.92, 1.0), (1.0 - smoothstep(0.0, 0.1, st)) * 0.4);
+          // Snow on every top and gentle face, a cornice over the rim (dripping down the streaks),
+          // drifts banked against the foot, and frost on the spike tips.
+          float wob = vnoise(vFogW.xz * 0.03 + vFogW.y * 0.02);
+          float snow = smoothstep(0.42, 0.68, vWN.y + 0.12 * wob);
+          float e0 = 0.8 - 0.1 * clamp(st, 0.0, 1.0) - 0.05 * clamp(wob, 0.0, 1.0);
+          snow = max(snow, smoothstep(e0, e0 + 0.06, t));
+          snow = max(snow, (1.0 - smoothstep(0.05, 0.12 + 0.08 * clamp(wob, 0.0, 1.0), t)) * 0.95);
+          c *= mix(0.75, 1.0, smoothstep(2.0, 30.0, hy));
+          c = mix(c, vec3(1.15, 1.18, 1.25), snow);
+          gIceSnow = snow;
+          diffuseColor.rgb = c;
+        }`,
+      ).replace(
+        '#include <emissivemap_fragment>',
+        `#include <emissivemap_fragment>
+        {
+          // Light through the ice: walls glow faintly blue, strongest at grazing angles.
+          float sn = gIceSnow;
+          float rim = 1.0 - abs(dot(normalize(vViewPosition), normal));
+          totalEmissiveRadiance += (1.0 - sn) * vec3(0.03, 0.14, 0.28) * (0.6 + 0.9 * rim * rim) + sn * vec3(0.16, 0.17, 0.2);
+        }`,
+      )
+    }
     if (opts.strata) {
       s.fragmentShader = s.fragmentShader.replace(
         '#include <color_fragment>',

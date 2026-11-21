@@ -9,8 +9,12 @@ The brief: "very elaborate and visually very good but still not too hard."
   (wind-carved ridges). Gravel patches become exposed dark rock.
 - **Frozen lakes:** the dry riverbeds become black-teal glossy ice with white crack lines. The ice
   reflects the sky, so the aurora shows in it.
-- **Ice cliffs:** the mesas become blue-grey rock with snow on every flat and gentle surface and
-  icy blue bands.
+- **Glaciers and ice spikes** (src/ice.ts), in the slots the desert uses for mesas, buttes and
+  hoodoos. Glaciers come in four shapes: a tabular sheet, a sloping tongue, a broken serac top and
+  a tiered icefall. Seracs come in three: a tilted slab, a saddle and a peaked tower. Spike clusters
+  come in three: one main spike with satellites, a dense cluster and an outward-leaning crown.
+  They are shaded as layered blue ice that is lit from within, with a snow cornice dripping over
+  each rim and drifts banked against the foot.
 - **Mountains:** the far ring is white-capped and blue in the haze.
 - **Sky:** deep twilight blue fading to a teal-rose horizon, with a low sun just above it, stars
   overhead, and **aurora curtains**: green ribbons with magenta crowns, rippling slowly.
@@ -22,6 +26,12 @@ The brief: "very elaborate and visually very good but still not too hard."
 - About 80 km, one lap, on a loop that crosses the frozen lakes.
 - Wide sweepers (nothing under ~1.5 km radius): flowing, fast, forgiving.
 - No spires. One pair of gentle snow-drift jumps.
+
+## The second course — ICEFALL
+
+- About 60 km, two laps, on a lobed loop with a tightest bend of 1.3 km.
+- It runs close to the ice (the same clearance as CANYON RUN).
+- The menu picks the world first (RED MESA / POLAR SHELF), then a course within it.
 
 ## How it's built
 

@@ -15,7 +15,7 @@ import { Walker } from './walker'
 import { Sound } from './audio'
 import { Input } from './input'
 import { Post } from './post'
-import { BIOME, DUST, groundH, SUN_DIR } from './terrain'
+import { BIOME, biomeOf, DUST, groundH, SUN_DIR } from './terrain'
 /** Shadows are cast along the sun, but never stretched past a ~17° sun (a sun on the horizon threw them 100 m off). */
 const SHADOW_Y = Math.max(SUN_DIR[1], 0.3)
 import { loadTextures } from './textures'
@@ -61,6 +61,12 @@ const courseDef = (() => {
 })()
 const course = new Course(courseDef)
 let pickedCourse = COURSES.indexOf(courseDef)
+// Worlds first, then the courses in that world.
+const WORLDS = [
+  { id: 'desert', name: 'RED MESA', blurb: 'SANDSTONE' },
+  { id: 'ice', name: 'POLAR SHELF', blurb: 'GLACIERS' },
+] as const
+let pickedWorld: 'desert' | 'ice' = biomeOf(courseDef.id)
 const bestKey = (id: string) => `dbu-best-${id}`
 const bestOf = (id: string): number | null => { try { const v = localStorage.getItem(bestKey(id)); return v ? +v : null } catch { return null } }
 // Mesas clear of the course corridor — tested at every wrapped copy of each one that falls along the
@@ -568,6 +574,26 @@ function showCourse(): void {
   const title = $('#title')
   title.classList.toggle('hunt', menuMode === 'hunt')
   for (const b of title.querySelectorAll<HTMLButtonElement>('.tabs button')) b.classList.toggle('on', b.dataset.mode === menuMode)
+  const worlds = $('#worlds')
+  if (!worlds.childElementCount) for (const w of WORLDS) {
+    const el = document.createElement('div')
+    el.className = 'w'
+    el.dataset.w = w.id
+    el.onclick = () => {
+      if (pickedWorld === w.id) return
+      pickedWorld = w.id
+      // Back to the course last raced in that world, else its first.
+      let last: string | null = null
+      try { last = localStorage.getItem('dbu-course-' + w.id) } catch { /* blocked */ }
+      const i = COURSES.findIndex((c) => c.id === last && biomeOf(c.id) === w.id)
+      pickedCourse = i >= 0 ? i : COURSES.findIndex((c) => biomeOf(c.id) === w.id)
+      showCourse()
+    }
+    const n = COURSES.filter((c) => biomeOf(c.id) === w.id).length
+    el.innerHTML = `<b>${w.name}</b><small>${w.blurb} · ${n} ${n === 1 ? 'COURSE' : 'COURSES'}</small>`
+    worlds.append(el)
+  }
+  for (const el of worlds.children) (el as HTMLElement).classList.toggle('on', (el as HTMLElement).dataset.w === pickedWorld)
   const cards = $('#courses')
   if (!cards.childElementCount) COURSES.forEach((_d, i) => {
     const el = document.createElement('div')
@@ -578,6 +604,7 @@ function showCourse(): void {
   COURSES.forEach((d, i) => {
     const el = cards.children[i] as HTMLElement, b = bestOf(d.id)
     el.classList.toggle('on', i === pickedCourse)
+    el.style.display = biomeOf(d.id) === pickedWorld ? '' : 'none'
     el.innerHTML = `<b>${d.name}</b><span class="best">${b !== null ? fmtLap(b) : d.km + ' KM'}</span><small>${d.blurb}</small>`
   })
   // Paint swatches (built once; the picked ones ringed).
@@ -626,7 +653,7 @@ function drawTrackPreview(d: (typeof COURSES)[number]): void {
   // Ground: warm sand, a 1 km grid (10 km lines stronger).
   const bg = g.createRadialGradient(W / 2, H / 2, 0, W / 2, H / 2, Math.max(W, H) * 0.7)
   // (FROSTLINE's map: snow-blue ground, not the desert's sand.)
-  if (d.id === 'frostline') { bg.addColorStop(0, '#3a4a62'); bg.addColorStop(1, '#141c2a') } else { bg.addColorStop(0, '#5a3a24'); bg.addColorStop(1, '#2a1a10') }
+  if (biomeOf(d.id) === 'ice') { bg.addColorStop(0, '#3a4a62'); bg.addColorStop(1, '#141c2a') } else { bg.addColorStop(0, '#5a3a24'); bg.addColorStop(1, '#2a1a10') }
   g.fillStyle = bg; g.fillRect(0, 0, W, H)
   const gx0 = Math.floor(((x0 + x1) / 2 - W / 2 / k) / 1000) * 1000, gz0 = Math.floor(((z0 + z1) / 2 - H / 2 / k) / 1000) * 1000
   for (let gx = gx0; PX(gx) < W; gx += 1000) { const major = Math.round(gx / 1000) % 10 === 0; if (!major && k * 1000 < 6 * u) continue; g.strokeStyle = major ? 'rgba(255,220,180,0.14)' : 'rgba(255,220,180,0.05)'; g.lineWidth = u; g.beginPath(); g.moveTo(PX(gx), 0); g.lineTo(PX(gx), H); g.stroke() }
@@ -734,6 +761,7 @@ function pickShip(delta: number): void {
 }
 function menuStart(): void {
   if (menuMode === 'hunt') { startHunt(); return }
+  try { localStorage.setItem('dbu-course-' + biomeOf(COURSES[pickedCourse].id), COURSES[pickedCourse].id) } catch { /* blocked */ }
   if (COURSES[pickedCourse] !== course.def) {
     try { localStorage.setItem('dbu-course', COURSES[pickedCourse].id); sessionStorage.setItem('dbu-go', '1') } catch { /* blocked */ }
     const u = new URL(location.href); u.searchParams.delete('course'); location.href = u.toString()
