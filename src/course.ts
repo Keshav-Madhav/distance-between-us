@@ -124,9 +124,9 @@ export const DRAG: CourseDef = {
   // Straight, with a breath of a curve so it is not a ruler line.
   xAt: (z) => ramp8(z) * 700 * Math.sin((2 * Math.PI * z) / 95000),
   gateEvery: 20000,
-  // Ramps every ~11 km, each on one side.
-  // Sixteen ramps, each on one half of the track (alternating), so taking one is a choice.
-  jumps: [0.05, 0.1, 0.16, 0.21, 0.27, 0.33, 0.38, 0.44, 0.5, 0.55, 0.61, 0.67, 0.72, 0.78, 0.84, 0.9],
+  // Three ramps, each on one side.
+  // Three ramps in the whole race, each on one half of the track ("too annoying" at sixteen).
+  jumps: [0.25, 0.55, 0.85],
   whoops: [],
   padEvery: 12000,
   spireGap: () => null,
