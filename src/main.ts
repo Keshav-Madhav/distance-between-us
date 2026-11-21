@@ -6,7 +6,7 @@ import * as THREE from 'three'
 import { FullScreenQuad } from 'three/addons/postprocessing/Pass.js'
 import { CFG, MACH, REBASE } from './config'
 import { World } from './world'
-import { Craft, type Paint } from './craft'
+import { Craft, MODELS, type Paint } from './craft'
 import { Fx, resetE } from './particles'
 import { Trail } from './trails'
 import { Player } from './player'
@@ -196,6 +196,7 @@ const race = new Race(course, player, {
   },
 })
 
+let shipPick = (() => { try { return Math.min(MODELS.length - 1, Math.max(0, +(localStorage.getItem('dbu-ship') ?? 0) || 0)) } catch { return 0 } })()
 const PAINTS: Paint[] = [
   { body: 0xeef1f4, trim: 0xff5a14, number: '07' },
   { body: 0x1b1d24, trim: 0xff3fa4, number: '11' },
@@ -214,7 +215,8 @@ for (let i = PAINTS.length; i < race.racers.length; i++)
 interface Visual { craft: Craft; trail: Trail[]; vapour: Trail[]; lastDust: THREE.Vector3; heading: number; wasDead: boolean; wasHidden: boolean }
 const visuals = new Map<Player, Visual>()
 race.racers.forEach((r, i) => {
-  const craft = new Craft(env, PAINTS[i], i === 0 ? 0 : i % 3)
+  // Your ship: the one picked on the title (saved); the field: a spread of all six.
+  const craft = new Craft(env, PAINTS[i], i === 0 ? shipPick : (i * 7) % MODELS.length)
   scene.add(craft.root)
   const trail: Trail[] = []
   const nT = r.ai ? 1 : 3
