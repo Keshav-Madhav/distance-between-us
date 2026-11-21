@@ -208,6 +208,9 @@ const PAINTS: Paint[] = [
   { body: 0x102a26, trim: 0x3dffc5, number: '66' },
   { body: 0x2b2d33, trim: 0xd8d8e8, number: '00' },
 ]
+// A bigger field (the drag race): paint the rest from their colours, dark and light bodies in turn.
+for (let i = PAINTS.length; i < race.racers.length; i++)
+  PAINTS.push({ body: i % 2 ? 0x1c1e24 : 0xe6e8ec, trim: race.racers[i].color, number: String(40 + i * 3) })
 interface Visual { craft: Craft; trail: Trail[]; vapour: Trail[]; lastDust: THREE.Vector3; heading: number; wasDead: boolean; wasHidden: boolean }
 const visuals = new Map<Player, Visual>()
 race.racers.forEach((r, i) => {
@@ -1162,7 +1165,7 @@ function frame(now: number): void {
   const me = race.racers[0]
   course.update(mode === 'race' ? me.next : -1, time, false)
   course.group.visible = mode !== 'hunt'
-  world.ground.uTrackOn.value = mode === 'hunt' ? 0 : 1
+  world.ground.uTrackOn.value = mode === 'hunt' ? 0 : course.def.wear ?? 1
 
   if (mode === 'hunt') combat.render(alpha, realDt, time)
   combat.group.visible = mode === 'hunt'
@@ -1330,15 +1333,21 @@ function updateHud(dt: number, slow: boolean): void {
       // (Places are 0 until the race has ticked once: nothing to list yet.)
       for (const r of race.racers) if (r.place >= 1) standRows[r.place - 1] = r
       const top = standRows[0], lead = top ? race.progress(top) : 0
-      for (let k = 0; top && k < race.racers.length; k++) {
+      // Ten rows at most: with a bigger field, the top three and the six around you.
+      const N = race.racers.length, myP = race.racers[0].place
+      let shown = 0
+      for (let k = 0; top && k < N && shown < standEls.length; k++) {
         if (!standRows[k]) continue
-        const r = standRows[k], row = standEls[k]
+        if (N > standEls.length && k >= 3 && Math.abs(k + 1 - myP) > 3 && !(myP <= 7 && k < 10)) continue
+        const r = standRows[k], row = standEls[shown++]
+        row.el.style.display = ''
         const gap = r.finished ? (r === top ? 'WINNER ' : '') + fmtLap(r.finishTime) : top.finished ? `${(race.toGo(r) / 1000).toFixed(1)} KM` : r === top ? 'LEADER' : `+${((lead - race.progress(r)) / Math.max(800, player.speed)).toFixed(1)}`
         const name = `${r.place}\u00a0\u00a0${r.name}`
         if (row.who !== r) { row.who = r; row.el.className = r.ai ? '' : 'me'; row.el.style.setProperty('--c', hex(r.color)) }
         if (row.name.textContent !== name) row.name.textContent = name
         if (row.gap.textContent !== gap) row.gap.textContent = gap
       }
+      for (let k = shown; k < standEls.length; k++) standEls[k].el.style.display = 'none'
     }
     drawMini()
     // Section banners as you enter each (course 2), and a warning ~3 s before a hairpin.

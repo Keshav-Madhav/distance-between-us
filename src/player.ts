@@ -73,6 +73,10 @@ export class Player {
   topMach = 0
   /** Speed multiplier ceiling (AI skill / rubber band). */
   maxMach = CFG.speed.boostMach
+  /** The afterburner's ceiling (Mach): the drag race sets its own. */
+  capMach = CFG.speed.burnCap
+  /** Ride a ramp's face up to its crest instead of re-landing on it (the drag race's ramps). */
+  rampRide = false
   /** 0 … 1 = within grip, > 1 = sliding (for the gauge). */
   gripLoad = 0
   /** 0 … 1: how close the slide is to a spin-out. */
@@ -348,7 +352,7 @@ export class Player {
       // of it; a slide scrubs.)
       this.speed = Math.sqrt(this.speed * this.speed + dl * dl * (ab < peak * 1.4 ? 0.85 : 0.3))
       if (ab > peak && !this.airborne) this.speed *= 1 - Math.min(0.4, (ab - peak) * 0.28) * dt
-      this.speed = Math.min(this.speed, S.burnCap * MACH)
+      this.speed = Math.min(this.speed, this.capMach * MACH)
       this.slip = beta
       // Grip load for the gauge: 1 = at the limit (the peak slip angle, or the turn rate grip can hold).
       const omegaMax = H.gripK * (1 + A * 0.2) + H.gripQ * hs0 + H.gripLow / Math.max(hs0, 50)
@@ -407,7 +411,12 @@ export class Player {
       this.airTime += dt
       this.vy -= (GRAVITY + (c.brake && this.tumble <= 0 ? 120 : 0)) * dt
       this.pos.y += this.vy * dt
-      if (this.pos.y <= ride) {
+      // On a ramp's rising face at Mach 10 the ground climbs ~1 km/s against a ~75 m/s launch: it
+      // re-landed the next frame. Riding the face to the crest makes the launch real.
+      if (this.rampRide && this.pos.y <= ride && this.airTime < 0.8 && slope > 0.01) {
+        this.pos.y = ride
+        this.vy = Math.max(this.vy, Math.min(slope * hs, 20 + 5 * m))
+      } else if (this.pos.y <= ride) {
         const terrainVy = slope * hs
         // (Against a rising slope at Mach speeds the raw number is hundreds of m/s: it is felt —
         // squash, dust, thump — but never damages. Landings are safe while in control.)

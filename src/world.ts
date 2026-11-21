@@ -265,11 +265,11 @@ function terrainMaterial(shared: GroundUniforms, snap: { value: THREE.Vector2 },
 
         // The racing line, worn: packed and darker, the ripples gone, scorched lanes down it.
         vec2 tuv = (p - uTrackBox.xy) / uTrackBox.zw;
-        if (uTrackOn > 0.5 && tuv.x > 0.0 && tuv.y > 0.0 && tuv.x < 1.0 && tuv.y < 1.0) {
+        if (uTrackOn > 0.01 && tuv.x > 0.0 && tuv.y > 0.0 && tuv.x < 1.0 && tuv.y < 1.0) {
           vec2 wr = texture2D(tTrack, tuv).rg;
-          float pack = smoothstep(0.05, 0.8, wr.r);
+          float pack = smoothstep(0.05, 0.8, wr.r) * uTrackOn;
           alb = mix(alb, mix(s2, vec3(dot(s2, vec3(0.33))), 0.25) * vec3(0.86, 0.74, 0.68), pack * 0.7);
-          float streak = wr.g * (0.75 + 0.25 * vnoise(p * 0.05));
+          float streak = wr.g * (0.75 + 0.25 * vnoise(p * 0.05)) * uTrackOn;
           alb *= 1.0 - 0.55 * smoothstep(0.05, 0.6, streak);
           alb = mix(alb, vec3(0.16, 0.08, 0.05), smoothstep(0.45, 0.9, streak) * 0.35);
         }

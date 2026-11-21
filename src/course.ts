@@ -37,6 +37,17 @@ export interface CourseDef {
   seed: number
   /** Named sections, shown as you enter them: [world z (km), name]. */
   sections: [number, string][]
+  /** Racers on the grid, you included (default 10). */
+  racers?: number
+  /** A drag race: the field paces itself on you (neck and neck), no spires. */
+  drag?: boolean
+  /** How worn the line is (0 none … 1 a packed, scorched lane; default 1). */
+  wear?: number
+  /** Jump size: height ×, radius × (default 1, 1). */
+  rampH?: number
+  rampR?: number
+  /** Each jump a row of three across the line (a wide field all gets one). */
+  rampRow?: boolean
 }
 
 const ramp8 = (z: number) => (z <= 0 ? 0 : z >= 8000 ? 1 : (z / 8000) ** 2 * (3 - (2 * z) / 8000))
@@ -102,7 +113,36 @@ export const DRY_RIVER: CourseDef = {
   sections: [[9, 'THE MEANDERS'], [28, 'SPIRE FOREST'], [42.5, 'THE HAIRPINS'], [59, 'JUMP FIELDS'], [72, 'LAST RUN']],
 }
 
-export const COURSES: CourseDef[] = [SPRINT, DRY_RIVER]
+/**
+ * Course 3: a 200 km drag race. Twenty racers, no spires — just the line, ramps that throw you a
+ * long way, and a field that paces itself on you so it stays neck and neck. Mach 10+ is the game.
+ */
+export const DRAG: CourseDef = {
+  id: 'drag',
+  name: 'THE LONG DRAG',
+  km: 200,
+  // Straight, with a breath of a curve so it is not a ruler line.
+  xAt: (z) => ramp8(z) * 700 * Math.sin((2 * Math.PI * z) / 95000),
+  gateEvery: 20000,
+  // Ramps every ~18 km (big ones: at Mach 10 a crest throws you for kilometres).
+  // Ten ramps, each a row of three (30 mounds: the terrain takes 32).
+  jumps: [0.06, 0.15, 0.24, 0.33, 0.42, 0.51, 0.6, 0.69, 0.78, 0.87],
+  whoops: [],
+  padEvery: 12000,
+  spireGap: () => null,
+  rockGateP: 0,
+  seed: 7,
+  sections: [],
+  racers: 20,
+  drag: true,
+  wear: 0.3,
+  // Steep enough to throw you at Mach 11 (the launch bar rises with speed).
+  rampH: 2.2,
+  rampR: 1.3,
+  rampRow: true,
+}
+
+export const COURSES: CourseDef[] = [SPRINT, DRY_RIVER, DRAG]
 
 export interface Checkpoint {
   x: number; z: number
@@ -197,7 +237,9 @@ export class Course {
       if (!clear(i)) return
       const [tx, tz] = this.tangent(i)
       const off = k % 3 === 1 ? 110 : k % 3 === 2 ? -110 : 0
-      mounds.push(this.px[i] + tz * off, this.pz[i] - tx * off, 26 + (k % 4) * 4, 125 + (k % 3) * 20)
+      const h = (26 + (k % 4) * 4) * (def.rampH ?? 1), rr = (125 + (k % 3) * 20) * (def.rampR ?? 1)
+      if (def.rampRow) for (const o of [-150, 0, 150]) mounds.push(this.px[i] + tz * o, this.pz[i] - tx * o, h, rr)
+      else mounds.push(this.px[i] + tz * off, this.pz[i] - tx * off, h, rr)
     })
     for (const f of def.whoops) {
       for (let w = 0; w < 4; w++) {

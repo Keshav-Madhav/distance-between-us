@@ -52,6 +52,17 @@ const ROSTER: [string, number][] = [
   ['FLINT', 0xff8a3d],
   ['ZEPHYR', 0x3dffc5],
   ['SABLE', 0xd8d8e8],
+  // (The drag race's twenty.)
+  ['ATLAS', 0x4f7dff],
+  ['CINDER', 0xff5f1f],
+  ['HALO', 0xfff27a],
+  ['ROOK', 0x8a8aa0],
+  ['SPECTRE', 0xc9a2ff],
+  ['TEMPEST', 0x1fc2c2],
+  ['MIRAGE', 0xff9ad5],
+  ['VOLT', 0xc8ff2e],
+  ['ECHO', 0x6fe3ff],
+  ['NOVA', 0xff2e63],
 ]
 
 export interface RaceEvents {
@@ -78,11 +89,12 @@ export class Race {
   constructor(readonly course: Course, readonly player: Player, private readonly ev: RaceEvents) {
     this.K = course.cps.length
     this.racers.push(this.make('YOU', 0xffffff, player, false, 0))
-    ROSTER.forEach(([name, color], i) => {
+    const n = (course.def.racers ?? 10) - 1
+    ROSTER.slice(0, n).forEach(([name, color], i) => {
       const p = new Player()
       p.announce = false
       p.assist = 0.85
-      this.racers.push(this.make(name, color, p, true, 0.72 + i * 0.05))
+      this.racers.push(this.make(name, color, p, true, n > 9 ? 0.78 + (i % 10) * 0.045 : 0.72 + i * 0.05))
     })
   }
 
@@ -99,13 +111,15 @@ export class Race {
     const c = this.course
     const start = c.cps[0]
     const heading = Math.atan2(start.tx, start.tz)
-    // The player starts mid-pack (6th of 10); the rivals fill the other slots.
-    const slots = [5, 0, 1, 2, 3, 4, 6, 7, 8, 9]
+    // The player starts mid-pack (6th of 10); the rivals fill the other slots. Twenty: four abreast.
+    const wide = this.racers.length > 10
+    const cols = wide ? 4 : 2
+    const mine = wide ? 9 : 5
     this.racers.forEach((r, k) => {
-      const slot = slots[k] ?? k
-      const row = Math.floor(slot / 2), col = slot % 2
-      const back = 60 + row * 45
-      const side = (col === 0 ? -1 : 1) * 32
+      const slot = k === 0 ? mine : k <= mine ? k - 1 : k
+      const row = Math.floor(slot / cols), col = slot % cols
+      const back = 60 + row * (wide ? 60 : 45)
+      const side = wide ? (col - 1.5) * 68 : (col === 0 ? -1 : 1) * 32
       const x = start.x - start.tx * back + start.tz * side
       const z = start.z - start.tz * back - start.tx * side
       r.p.reset(x, z, heading, 0)
@@ -118,11 +132,16 @@ export class Race {
       r.lastLap = 0
       r.bestLap = 0
       r.penalty = 0
-      r.lane = side * 1.4
+      // (Lanes are measured to the right, (−tz, tx); the grid offset above is (tz, −tx) — the opposite
+      // side. lane = +side had every racer cross the whole pack off the line.)
+      r.lane = -side * 1.4
       r.laneT = 0
       r.stuck = 0
       r.respawnT = 0
       r.p.maxMach = r.ai ? 4.7 + r.skill * 1.3 : CFG.speed.boostMach
+      // The drag race tops out around Mach 11 (flat out with the burner); elsewhere the usual ceiling.
+      r.p.capMach = c.def.drag ? 11 : CFG.speed.burnCap
+      r.p.rampRide = !!c.def.drag
     })
     this.state = 'grid'
     this.clock = 0
@@ -161,7 +180,8 @@ export class Race {
         const early = this.boostHeldSince >= 1.2
         for (const r of this.racers) {
           // (A slow roll off the line: the engines spool up to Mach 1, then it goes.)
-          r.p.speed = (r.ai ? 0.18 + r.skill * 0.15 : perfect ? 0.55 : early ? 0.05 : 0.2) * MACH
+          // (Drag: the whole field leaves together — staggered launches had the back rows ramming the front.)
+          r.p.speed = (r.ai ? (this.course.def.drag ? 0.3 : 0.18 + r.skill * 0.15) : perfect ? 0.55 : early ? 0.05 : 0.2) * MACH
         }
         this.ev.go(perfect)
       }
@@ -311,13 +331,19 @@ export class Race {
     const n = c.n
     // Lane: a slow drift across the line, and a swing out when someone is just ahead in it.
     r.laneT += dt
-    let lane = r.lane + Math.sin(r.laneT * 0.21 + r.skill * 9) * 70
+    // (Drag: the first 10 s each holds its grid lane — no wander through a four-wide pack.)
+    let lane = r.lane + Math.sin(r.laneT * 0.21 + r.skill * 9) * 70 * (c.def.drag ? THREE.MathUtils.clamp((this.clock - 10) / 8, 0, 1) : 1)
+    // (Drag: no swerving off the grid — every racer has one 60 m ahead in its lane, and all swung at once.)
+    const settled = !c.def.drag || this.clock > 8
     for (const o of this.racers) {
-      if (o === r) continue
+      if (o === r || !settled) continue
       const dx = o.p.pos.x - p.pos.x, dz = o.p.pos.z - p.pos.z
       const ahead = dx * p.fwd.x + dz * p.fwd.z
       const side = dx * p.right.x + dz * p.right.z
-      if (ahead > 0 && ahead < 220 && Math.abs(side) < 22) lane += side > 0 ? -55 : 55
+      // Look further the faster you are closing (220 m is 65 ms at Mach 10); and never sit beside one.
+      const closing = Math.max(0, (p.vel.x - o.p.vel.x) * p.fwd.x + (p.vel.z - o.p.vel.z) * p.fwd.z)
+      if (ahead > 0 && ahead < 220 + closing * 1.6 && Math.abs(side) < 26) lane += side > 0 ? -55 : 55
+      else if (Math.abs(ahead) < 60 && Math.abs(side) < 24) lane += side > 0 ? -30 : 30
     }
     // The course's spires ahead: the first one in the lane decides the line — aim at the gap beside
     // it (the side clear of every spire standing there, rock gates included), not at a point
@@ -411,7 +437,38 @@ export class Race {
     const clearAhead = !this.course.rocks.some((rk) => rk.i > r.idx && rk.i < r.idx + (p.speed * 3) / 40 && Math.abs(rk.lat - lane) < rk.r * 1.8 + 80)
     ctl.burner = ctl.boost && bend < 0.06 && Math.abs(err) < 0.08 && clearAhead && p.mach > 3.5 && p.mach < 5.6 + r.skill * 2.4
     ctl.brake = p.mach > safe * 1.08
+    // Drag race: the field paces itself on you — each racer steers its speed toward yours plus a pull
+    // back toward where you are, with its own slow jostle, so it stays neck and neck and positions
+    // trade. The last 25 km the pull loosens and they race for real. (Never below Mach 5.5 once
+    // going: you can still be left behind.)
+    if (c.def.drag && this.state === 'racing') {
+      const me = this.racers[0]
+      const gap = this.progress(r) - this.progress(me)
+      const late = this.toGo(r) < 25000
+      const jostle = Math.sin(r.laneT * 0.13 + r.skill * 7) * 45 + Math.sin(r.laneT * 0.37 + r.skill * 3) * 20
+      const floor = this.clock > 12 ? 5.5 * MACH : 0
+      const want = Math.max(me.p.speed, floor) - THREE.MathUtils.clamp(gap * (late ? 0.12 : 0.45), -1000, 320) + jostle + (r.skill - 1) * (late ? 140 : 50)
+      p.maxMach = 30
+      // Behind you at the ceiling it could never close: a little headroom when behind.
+      p.capMach = 11 + THREE.MathUtils.clamp(-gap / 1500, 0, 3)
+      ctl.boost = p.speed < want + 30
+      ctl.burner = p.speed < want - 15 && p.mach > (gap < -150 ? 1 : 2.5) && !p.airborne
+      ctl.brake = p.speed > want + 260
+    }
     ctl.strafe = 0
+    // Drag race: dodge on the side thrusters (the burner locks the stick, not the thrusters) — a
+    // racer closing in your lane ahead, or one right beside you.
+    if (c.def.drag && this.state === 'racing' && this.clock > 8) {
+      let push = 0
+      for (const o of this.racers) {
+        if (o === r || o.p.dead || o.p.crashing) continue
+        const dx = o.p.pos.x - p.pos.x, dz = o.p.pos.z - p.pos.z
+        const ahead = dx * p.fwd.x + dz * p.fwd.z, side = dx * p.right.x + dz * p.right.z
+        const closing = Math.max(0, (p.vel.x - o.p.vel.x) * p.fwd.x + (p.vel.z - o.p.vel.z) * p.fwd.z)
+        if ((ahead > -10 && ahead < 120 + closing * 1.2 && Math.abs(side) < 26) || (Math.abs(ahead) < 45 && Math.abs(side) < 30)) push += side > 0 ? -1 : 1
+      }
+      ctl.strafe = THREE.MathUtils.clamp(push, -1, 1)
+    }
     ctl.dodgeL = ctl.dodgeR = false
     // Stuck on something: back on the line.
     if (this.state === 'racing' && !r.finished) {
