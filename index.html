@@ -195,6 +195,23 @@
 </div>
 <div id="loading" class="screen"><div class="t">SPOOLING THRUSTERS</div><div class="b"><i></i></div></div>
 <div id="debug"></div>
+<script>
+  // A failure while loading must not look like a hang: show it on the loading screen.
+  (function () {
+    var show = function (msg) {
+      var l = document.getElementById('loading')
+      if (!l || l.classList.contains('hide')) return
+      var t = l.querySelector('.t')
+      t.textContent = 'FAILED TO LOAD — RELOAD THE PAGE'
+      var d = document.createElement('div')
+      d.style.cssText = 'margin-top:28px;font:12px/1.5 monospace;color:#c98;max-width:80vw;text-align:center;letter-spacing:0'
+      d.textContent = String(msg)
+      l.appendChild(d)
+    }
+    addEventListener('error', function (e) { show(e.message || (e.target && e.target.src ? 'could not load ' + e.target.src : 'error')) }, true)
+    addEventListener('unhandledrejection', function (e) { show(e.reason && e.reason.message || e.reason) })
+  })()
+</script>
 <script type="module" src="/src/main.ts"></script>
 </body>
 </html>
