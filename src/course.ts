@@ -288,7 +288,7 @@ export const FROSTLINE: CourseDef = {
   gateEvery: 5500,
   // Two laps: the world is on screen for more than 40 s. (Jumps are fractions of the whole race.)
   laps: 2,
-  aiPace: 0.65,
+  aiPace: 0.45,
   // (Listed once: the mounds are physical — lap two drives over the same ones.)
   jumps: [0.21, 0.225],
   whoops: [],
@@ -321,7 +321,7 @@ export const ICEFALL: CourseDef = {
   laps: 2,
   // (Tighter bends were tried — ~550-850 m: a good driver tumbled off them at Mach 7, past 'not
   //  too hard'. The challenge here is a faster pack instead.)
-  aiPace: 0.55,
+  aiPace: 0.35,
   // On its straightest stretch (half a lap in), and lower: the loop bends everywhere, and a long
   // flight landed off the course.
   jumps: [0.243, 0.255],
@@ -356,7 +356,7 @@ export const CALDERA: CourseDef = {
   loop: calderaPath,
   gateEvery: 5500,
   laps: 2,
-  aiPace: 0.6,
+  aiPace: 0.4,
   jumps: [0.12, 0.132],
   rampH: 0.8,
   whoops: [],
@@ -386,6 +386,7 @@ export const FAULTLINE: CourseDef = {
     const wander = 1200 * Math.sin((2 * Math.PI * z) / 41000 + 0.3) - 1200 * Math.sin(0.3)
     return ramp8(z) * (wander + sweep)
   },
+  aiPace: -0.2,
   gateEvery: 5000,
   jumps: [0.45, 0.465],
   rampH: 0.9,

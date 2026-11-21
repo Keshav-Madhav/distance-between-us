@@ -12,7 +12,10 @@
 //              and costs a little speed; only a truly brutal landing hurts.
 import * as THREE from 'three'
 import { CFG, MACH } from './config'
-import { groundH } from './terrain'
+import { BIOME, groundH } from './terrain'
+
+/** POLAR SHELF and CINDER: a touch more grip (their long fast sweepers read as icy) — slight, on purpose. */
+const WORLD_GRIP = BIOME === 'desert' ? 1 : 1.1
 import type { Obstacle, World } from './world'
 
 export interface Controls {
@@ -360,7 +363,7 @@ export class Player {
       const brakeGrip = c.brake && !this.airborne ? H.driftBrakeGrip : 1
       // Ground effect grows with speed like downforce: the turn rate grip can hold is gripK + gripQ·v,
       // so a slow start is loose and twitchy, and flat-out is planted.
-      const gripAcc = (this.airborne ? H.airControl : 1) * ((H.gripK * (1 + A * 0.2) + H.gripQ * hs0) * hs0 + H.gripLow) * curve * brakeGrip
+      const gripAcc = (this.airborne ? H.airControl : 1) * ((H.gripK * (1 + A * 0.2) + H.gripQ * hs0) * hs0 + H.gripLow) * curve * brakeGrip * WORLD_GRIP
       const dl = Math.sign(this.lateral) * Math.min(Math.abs(this.lateral), gripAcc * dt)
       this.lateral -= dl
       // (Energy: the slide joins the forward speed as a vector, never added to it. A carve keeps most
