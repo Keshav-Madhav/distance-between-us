@@ -6,7 +6,7 @@
 // player so the race stays a race. They drive the same Player physics: the same jumps, pads, walls.
 import * as THREE from 'three'
 import { CFG, MACH } from './config'
-import { Course, GATE_HALF } from './course'
+import { Course } from './course'
 import { bump, Player, type Controls } from './player'
 import type { World } from './world'
 
@@ -255,7 +255,7 @@ export class Race {
       const lat = Math.abs((p.pos.x - c.x) * c.tz - (p.pos.z - c.z) * c.tx)
       if (lat > 2500) continue
       // Through the gate, beside it, or past it having skipped one: every skipped/missed gate costs 2 s.
-      const wide = lat > GATE_HALF + 15
+      const wide = lat > this.course.gateHalf + 15
       const missed = wide || ahead === 1
       const count = ahead + 1
       for (let q = 0; q < count; q++) {

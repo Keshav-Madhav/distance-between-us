@@ -17,7 +17,7 @@ import { Input } from './input'
 import { Post } from './post'
 import { groundH, SUN_DIR } from './terrain'
 import { loadTextures } from './textures'
-import { Course, COURSES, GATE_HALF, LAPS } from './course'
+import { Course, COURSES, LAPS } from './course'
 import { Race, type Racer } from './race'
 import { ChaseCam } from './camera'
 import { Debris } from './debris'
@@ -550,10 +550,144 @@ let flashT = 0
 let warnT = 0
 let countT = 0
 
+// ───────────────────────── the menu ─────────────────────────
+// Mouse first (keys too): RACE / HUNT tabs, a course card per course with the whole layout drawn
+// beside it, the ship picker (the ship on screen changes as you pick), START, SETTINGS.
+let menuMode: 'race' | 'hunt' = 'race'
+const SHIP_DESC = ['CLASSIC · BALANCED LINES', 'CLASSIC · HEAVY, SIDE PODS', 'CLASSIC · NEEDLE NOSE, CANARDS', 'LOFTED · TWIN-FIN ARROW', 'LOFTED · WIDE AND HEAVY', 'LOFTED · LONG, ONE TALL FIN']
 function showCourse(): void {
-  const d = COURSES[pickedCourse], b = bestOf(d.id)
-  $('#course').innerHTML = `<span class="arr">◀</span> <b>${d.name}</b> · ${d.km} KM${d === course.def ? '' : ' · <i>ENTER TO LOAD</i>'} <span class="arr">▶</span><small>${b !== null ? 'BEST ' + fmtLap(b) : 'NO TIME SET'}</small>`
+  const title = $('#title')
+  title.classList.toggle('hunt', menuMode === 'hunt')
+  for (const b of title.querySelectorAll<HTMLButtonElement>('.tabs button')) b.classList.toggle('on', b.dataset.mode === menuMode)
+  const cards = $('#courses')
+  if (!cards.childElementCount) COURSES.forEach((_d, i) => {
+    const el = document.createElement('div')
+    el.className = 'c'
+    el.onclick = () => { pickedCourse = i; showCourse() }
+    cards.append(el)
+  })
+  COURSES.forEach((d, i) => {
+    const el = cards.children[i] as HTMLElement, b = bestOf(d.id)
+    el.classList.toggle('on', i === pickedCourse)
+    el.innerHTML = `<b>${d.name}</b><span class="best">${b !== null ? fmtLap(b) : d.km + ' KM'}</span><small>${d.blurb}</small>`
+  })
+  $('#ship-name').textContent = MODELS[shipPick]
+  $('#ship-desc').textContent = SHIP_DESC[shipPick] + ' · LOOKS ONLY'
+  drawTrackPreview(COURSES[pickedCourse])
 }
+/** The whole course, start at the bottom, finish at the top; across exaggerated so bends read. */
+function drawTrackPreview(d: (typeof COURSES)[number]): void {
+  const cv = $<HTMLCanvasElement>('#track'), g = cv.getContext('2d')!
+  // Sized to its box (the panel runs the full height), at device pixels: never stretched.
+  const dpr = Math.min(2, devicePixelRatio)
+  cv.width = Math.max(100, Math.round(cv.clientWidth * dpr)); cv.height = Math.max(100, Math.round(cv.clientHeight * dpr))
+  const W = cv.width, H = cv.height, M = 28 * dpr
+  g.setTransform(1, 0, 0, 1, 0, 0)
+  const u = dpr
+  g.clearRect(0, 0, W, H)
+  const L = d.km * 1000
+  const zs: number[] = [], xs: number[] = []
+  for (let z = 0; z <= L; z += 200) { zs.push(z); xs.push(d.xAt(z)) }
+  let mx = 1
+  for (const x of xs) mx = Math.max(mx, Math.abs(x))
+  // True scale: one metre is one metre both ways (fit to whichever runs out first) — no warp.
+  const ky = Math.min((H - 2 * M) / L, (W / 2 - 50 * dpr) / mx)
+  const kx = ky
+  const ex = 1
+  const P = (x: number, z: number): [number, number] => [W / 2 + x * kx, H - M - z * ky]
+  // Spires: a grey band either side where they stand.
+  g.fillStyle = 'rgba(255,255,255,0.07)'
+  for (let i = 0; i < zs.length; i++) if (zs[i] > 4000 && d.spireGap(zs[i] / 1000)) { const [px, py] = P(xs[i], zs[i]); g.fillRect(px - 20 * u, py - 200 * ky, 40 * u, 200 * ky + 1) }
+  // The line.
+  g.lineJoin = 'round'; g.lineCap = 'round'
+  g.strokeStyle = 'rgba(255,240,225,0.9)'; g.lineWidth = 4 * u
+  g.beginPath()
+  zs.forEach((z, i) => { const [px, py] = P(xs[i], z); if (i) g.lineTo(px, py); else g.moveTo(px, py) })
+  g.stroke()
+  // Tight bends (true curvature): red.
+  g.strokeStyle = '#ff3b30'; g.lineWidth = 6 * u
+  for (let i = 1; i < zs.length - 1; i++) {
+    const h = 200, d1 = (xs[i + 1] - xs[i - 1]) / (2 * h), d2 = (xs[i + 1] - 2 * xs[i] + xs[i - 1]) / (h * h)
+    if (Math.abs(d2) / Math.pow(1 + d1 * d1, 1.5) > 1 / 1700) { const [ax, ay] = P(xs[i - 1], zs[i - 1]), [bx, by] = P(xs[i + 1], zs[i + 1]); g.beginPath(); g.moveTo(ax, ay); g.lineTo(bx, by); g.stroke() }
+  }
+  // Gates: ticks across.
+  g.strokeStyle = '#5fe6ff'; g.lineWidth = 2.5 * u
+  for (let z = d.gateEvery; z < L; z += d.gateEvery) { const [px, py] = P(d.xAt(z), z); g.beginPath(); g.moveTo(px - 11 * u, py); g.lineTo(px + 11 * u, py); g.stroke() }
+  // Jumps: orange triangles.
+  g.fillStyle = '#ff8a3d'
+  for (const f of d.jumps) { const z = f * L, [px, py] = P(d.xAt(z), z); g.beginPath(); g.moveTo(px + 14 * u, py); g.lineTo(px + 24 * u, py - 6 * u); g.lineTo(px + 24 * u, py + 6 * u); g.fill() }
+  // Start and finish.
+  const [sx, sy] = P(d.xAt(0), 0), [fx, fy] = P(d.xAt(L), L)
+  g.fillStyle = '#7dff3a'; g.fillRect(sx - 16 * u, sy - 2 * u, 32 * u, 4 * u)
+  for (let i = 0; i < 8; i++) { g.fillStyle = i % 2 ? '#111' : '#fff'; g.fillRect(fx - 16 * u + i * 4 * u, fy - 3 * u, 4 * u, 3 * u); g.fillStyle = i % 2 ? '#fff' : '#111'; g.fillRect(fx - 16 * u + i * 4 * u, fy, 4 * u, 3 * u) }
+  // Section names; km marks.
+  g.font = `600 ${Math.round(11 * dpr)}px "Chakra Petch", system-ui, sans-serif`; g.textBaseline = 'middle'
+  for (const [zk, name] of d.sections) { const [px, py] = P(d.xAt(zk * 1000), zk * 1000); g.fillStyle = 'rgba(255,255,255,0.85)'; g.fillText(name, Math.min(W - 110 * dpr, px + 26 * dpr), py) }
+  g.fillStyle = 'rgba(255,255,255,0.4)'; g.font = `${Math.round(9 * dpr)}px "Chakra Petch", system-ui, sans-serif`
+  const step = L > 120000 ? 50000 : 20000
+  for (let z = step; z < L; z += step) { const [, py] = P(0, z); g.fillText(`${z / 1000}`, 4 * u, py) }
+  $('#tp-name').textContent = d.name
+  const best = bestOf(d.id)
+  $('#tp-meta').textContent = `${d.km} KM · ${Math.round(d.km * 1000 / d.gateEvery) + 1} GATES · ${d.jumps.length} JUMPS · ${d.racers ?? 10} RACERS`
+  $('#tp-info').innerHTML = `${best !== null ? 'YOUR BEST ' + fmtLap(best) : 'NO TIME SET YET'}${d === course.def ? '' : ' · LOADS ON START'}<br/><span style="color:#5fe6ff">━</span> GATES &nbsp;<span style="color:#ff8a3d">▶</span> JUMPS &nbsp;<span style="color:#ff3b30">━</span> HAIRPINS &nbsp;░ SPIRES${ex > 1.3 ? `<br/>WIDTH SHOWN ×${Math.round(ex)}` : ''}`
+}
+function pickShip(delta: number): void {
+  shipPick = (shipPick + delta + MODELS.length) % MODELS.length
+  myCraft.setModel(shipPick)
+  try { localStorage.setItem('dbu-ship', String(shipPick)) } catch { /* blocked */ }
+  showCourse()
+}
+function menuStart(): void {
+  if (menuMode === 'hunt') { startHunt(); return }
+  if (COURSES[pickedCourse] !== course.def) {
+    try { localStorage.setItem('dbu-course', COURSES[pickedCourse].id); sessionStorage.setItem('dbu-go', '1') } catch { /* blocked */ }
+    const u = new URL(location.href); u.searchParams.delete('course'); location.href = u.toString()
+    return
+  }
+  startRace()
+}
+function setPaused(on: boolean): void {
+  paused = on
+  $('#pause').classList.toggle('hide', !on)
+  $('#pause').classList.remove('from-title')
+  sound.suspend(on)
+  last = performance.now()
+}
+/** Back to the menu: everything off, the ship idling on the grid. */
+function toTitle(): void {
+  setPaused(false)
+  overlay = false
+  spectate = false
+  $('#over').classList.add('hide')
+  mode = 'title'
+  combat.enabled = false
+  combat.reset()
+  walker.hide()
+  race.reset()
+  player.reset(course.cps[0].x - course.cps[0].tx * 60, course.cps[0].z - course.cps[0].tz * 60, Math.atan2(course.cps[0].tx, course.cps[0].tz), 0)
+  renderPos.copy(player.pos)
+  resetVisuals()
+  hud.classList.remove('on'); raceEl.classList.remove('on'); standEl.classList.remove('on'); mini.classList.remove('on')
+  scoreEl.style.display = 'none'
+  reticle.style.display = 'none'
+  sound.setSection('title')
+  $('#title').classList.remove('hide')
+  document.body.classList.remove('playing', 'racing')
+  showCourse()
+}
+for (const b of $('#title').querySelectorAll<HTMLButtonElement>('.tabs button')) b.onclick = () => { menuMode = b.dataset.mode as 'race' | 'hunt'; showCourse() }
+$('#ship-prev').onclick = () => pickShip(-1)
+$('#ship-next').onclick = () => pickShip(1)
+$('#start').onclick = () => { sound.start(); menuStart() }
+$('#open-settings').onclick = () => { $('#pause').classList.remove('hide'); $('#pause').classList.add('from-title') }
+$('#p-close').onclick = () => { $('#pause').classList.add('hide'); $('#pause').classList.remove('from-title') }
+$('#p-resume').onclick = () => setPaused(false)
+$('#p-restart').onclick = () => { setPaused(false); if (mode === 'hunt') startHunt(); else startRace() }
+$('#p-menu').onclick = () => toTitle()
+$('#pausebtn').onclick = () => { if (mode !== 'title' && !overlay) setPaused(!paused) }
+$('#b-again').onclick = () => { if (mode === 'hunt') startHunt(); else startRace() }
+$('#b-next').onclick = () => { pickedCourse = (COURSES.indexOf(course.def) + 1) % COURSES.length; menuMode = 'race'; menuStart() }
+$('#b-menu').onclick = () => toTitle()
 function flash(text: string): void { flashEl.textContent = text; flashT = 1.1 }
 function warn(big: string, small: string): void {
   ;(warnEl.querySelector('.big') as HTMLElement).textContent = big
@@ -629,6 +763,7 @@ function startRace(): void {
   wrongT = offT = 0
   $('#title').classList.add('hide')
   $('#over').classList.add('hide')
+  document.body.classList.add('playing', 'racing')
   hud.classList.add('on')
   raceEl.classList.add('on')
   standEl.classList.add('on')
@@ -662,6 +797,7 @@ function startHunt(): void {
   slowmoT = 0
   $('#title').classList.add('hide')
   $('#over').classList.add('hide')
+  document.body.classList.add('playing'); document.body.classList.remove('racing')
   hud.classList.add('on')
   raceEl.classList.remove('on')
   standEl.classList.remove('on')
@@ -1156,7 +1292,8 @@ function frame(now: number): void {
     const a = heading + Math.PI * 0.8 + Math.sin(attractYaw) * 0.3
     camera.position.set(renderPos.x + Math.sin(a) * r, renderPos.y + 1.1, renderPos.z + Math.cos(a) * r)
     tmp.set(-Math.cos(a), 0, Math.sin(a))
-    camera.lookAt(renderPos.x + tmp.x * 2.2, renderPos.y + 3.4, renderPos.z + tmp.z * 2.2)
+    // (Centred between the menu on the left and the course map on the right.)
+    camera.lookAt(renderPos.x - tmp.x * 0.4, renderPos.y + 2.6, renderPos.z - tmp.z * 0.4)
     camera.fov = 42
     camera.updateProjectionMatrix()
   } else if (mode === 'race' && spectate && race.racers[0].finished) {
@@ -1351,6 +1488,11 @@ function updateHud(dt: number, slow: boolean): void {
         if (row.gap.textContent !== gap) row.gap.textContent = gap
       }
       for (let k = shown; k < standEls.length; k++) standEls[k].el.style.display = 'none'
+      // Who is just ahead and just behind, in seconds at your speed.
+      const ahead = standRows[myP - 2], behind = standRows[myP]
+      const sec = (a: Racer, b: Racer) => ((race.progress(a) - race.progress(b)) / Math.max(300, player.speed)).toFixed(2)
+      $('#gap-a').innerHTML = ahead && !me.finished ? `<span class="up">▲ ${ahead.name} +${sec(ahead, me)} S</span>` : ''
+      $('#gap-b').innerHTML = behind && !me.finished ? `<span class="dn">▼ ${behind.name} −${sec(me, behind)} S</span>` : ''
     }
     drawMini()
     // Section banners as you enter each (course 2), and a warning ~3 s before a hairpin.
@@ -1603,8 +1745,9 @@ function drawMini(): void {
   for (let k = 0; k < course.cps.length; k++) {
     const c = course.cps[k]
     if (c.i < i0 || c.i > i1) continue
-    const ay = tx(c.z - c.tx * GATE_HALF), ax = ty(c.x + c.tz * GATE_HALF)
-    const by = tx(c.z + c.tx * GATE_HALF), bx = ty(c.x - c.tz * GATE_HALF)
+    const gh = course.gateHalf
+    const ay = tx(c.z - c.tx * gh), ax = ty(c.x + c.tz * gh)
+    const by = tx(c.z + c.tx * gh), bx = ty(c.x - c.tz * gh)
     const fin = k === 0 || k === course.cps.length - 1
     g.strokeStyle = k === me.next ? '#5fe6ff' : k === me.next + 1 ? 'rgba(95,230,255,0.45)' : fin ? '#ff7a1a' : 'rgba(255,255,255,0.35)'
     g.lineWidth = k === me.next ? 5 : 3
@@ -1644,28 +1787,21 @@ addEventListener('keydown', (e) => {
   if (e.code === 'KeyG') void import('./gui').then((g) => g.toggleGui())
   if (e.code === 'Escape' && mode !== 'title') {
     if (overlay) { overlay = false; spectate = false; $('#over').classList.add('hide'); cam.snap(player.heading); return }
-    paused = !paused
-    $('#pause').classList.toggle('hide', !paused)
-    sound.suspend(paused)
-    last = performance.now()
+    setPaused(!paused)
   }
   if (mode === 'title') {
     // Course select: ← / → on the title; a different course loads on Enter (a reload, straight into
     // the race).
+    if (!$('#pause').classList.contains('hide')) { if (e.code === 'Escape') $('#p-close').click(); return }
     if (e.code === 'ArrowLeft' || e.code === 'ArrowRight') {
       pickedCourse = (pickedCourse + (e.code === 'ArrowRight' ? 1 : COURSES.length - 1)) % COURSES.length
+      menuMode = 'race'
       showCourse()
       return
     }
-    if (e.code === 'Enter' || e.code === 'Space') {
-      if (COURSES[pickedCourse] !== course.def) {
-        try { localStorage.setItem('dbu-course', COURSES[pickedCourse].id); sessionStorage.setItem('dbu-go', '1') } catch { /* blocked */ }
-        const u = new URL(location.href); u.searchParams.delete('course'); location.href = u.toString()
-        return
-      }
-      startRace()
-    }
-    if (e.code === 'KeyH') startHunt()
+    if (e.code === 'ArrowUp' || e.code === 'ArrowDown') { pickShip(e.code === 'ArrowDown' ? 1 : -1); return }
+    if (e.code === 'Enter') menuStart()
+    if (e.code === 'KeyH') { menuMode = 'hunt'; showCourse() }
     return
   }
   if (overlay) {
@@ -1686,7 +1822,7 @@ addEventListener('keydown', (e) => {
     }
   }
 })
-addEventListener('mousedown', () => { sound.start(); if (mode === 'title') startRace() })
+addEventListener('mousedown', () => sound.start())
 document.addEventListener('visibilitychange', () => { sound.suspend(document.hidden); last = performance.now() })
 canvas.addEventListener('webglcontextlost', (e) => { e.preventDefault(); paused = true })
 canvas.addEventListener('webglcontextrestored', () => { paused = false; last = performance.now() })

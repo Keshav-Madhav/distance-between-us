@@ -19,6 +19,8 @@ export const LAPS = 1
 export interface CourseDef {
   id: string
   name: string
+  /** One line for the course card. */
+  blurb: string
   /** Race length (km). */
   km: number
   xAt: (z: number) => number
@@ -48,6 +50,9 @@ export interface CourseDef {
   rampR?: number
   /** Each jump on one half of the track, alternating sides: take it or go round (the drag race). */
   rampHalf?: boolean
+  /** Gate width (half, m) and tower height × (default 260, 1). */
+  gateHalf?: number
+  gateTall?: number
 }
 
 const ramp8 = (z: number) => (z <= 0 ? 0 : z >= 8000 ? 1 : (z / 8000) ** 2 * (3 - (2 * z) / 8000))
@@ -56,6 +61,7 @@ const ramp8 = (z: number) => (z <= 0 ? 0 : z >= 8000 ? 1 : (z / 8000) ** 2 * (3 
 export const SPRINT: CourseDef = {
   id: 'sprint',
   name: 'THE SPRINT',
+  blurb: 'NEARLY STRAIGHT · SPIRES TO WEAVE · FLAT OUT',
   km: 165,
   // A sprint, not a loop: nearly straight. Two slow sine bends (62 km and 23.5 km wavelengths, radius
   // never under ~6 km) ease in after the first 8 km. (A looping course kept turning — "why make it a
@@ -86,6 +92,7 @@ export const SPRINT: CourseDef = {
 export const DRY_RIVER: CourseDef = {
   id: 'dry-river',
   name: 'DRY RIVER',
+  blurb: 'TECHNICAL · SPIRE FOREST · HAIRPINS · JUMPS',
   km: 85,
   xAt: (z) => {
     // Every bend is a (1 − cos) bump: no heading jump at its ends (windowed sines left stray tight
@@ -120,6 +127,7 @@ export const DRY_RIVER: CourseDef = {
 export const DRAG: CourseDef = {
   id: 'drag',
   name: 'THE LONG DRAG',
+  blurb: '20 RACERS · NO SPIRES · DRAFT TO WIN',
   km: 200,
   // Straight, with a breath of a curve so it is not a ruler line.
   xAt: (z) => ramp8(z) * 700 * Math.sin((2 * Math.PI * z) / 95000),
@@ -140,6 +148,9 @@ export const DRAG: CourseDef = {
   rampH: 1.5,
   rampR: 0.95,
   rampHalf: true,
+  // Big gates ("bigger and wider for the sake of easyness"): 1.2 km between the towers, half again as tall.
+  gateHalf: 600,
+  gateTall: 1.5,
 }
 
 export const COURSES: CourseDef[] = [SPRINT, DRY_RIVER, DRAG]
@@ -169,6 +180,9 @@ export class Course {
   readonly finishI: number
   readonly box: { x0: number; x1: number; z0: number; z1: number }
   readonly def: CourseDef
+  /** Half the gap between a gate's towers (m), and the towers' height ×. */
+  readonly gateHalf: number
+  readonly gateTall: number
   /** How sharply the line turns at each index (rad per metre). */
   readonly curv: Float32Array
   private readonly beamMesh: THREE.InstancedMesh
@@ -184,6 +198,8 @@ export class Course {
 
   constructor(def: CourseDef = SPRINT) {
     this.def = def
+    this.gateHalf = def.gateHalf ?? GATE_HALF
+    this.gateTall = def.gateTall ?? 1
     // A 3 km run-up holds the grid; a 6 km run-off past the finish.
     const RUNUP = 3000, RACE = def.km * 1000, RUNOFF = 6000
     const xAt = def.xAt
@@ -306,9 +322,10 @@ export class Course {
     const lightGeo = new THREE.BoxGeometry(0.8, 122, 2.2)
     lightGeo.translate(0, 74, 0)
     this.towerLights = new THREE.InstancedMesh(lightGeo, new THREE.MeshBasicMaterial({ color: 0xffffff }), K * 4)
-    const beamGeo = new THREE.BoxGeometry(GATE_HALF * 2 + 11, 5, 2.5)
+    const beamGeo = new THREE.BoxGeometry(this.gateHalf * 2 + 11, 5, 2.5)
     this.beamMesh = new THREE.InstancedMesh(beamGeo, new THREE.MeshBasicMaterial({ color: 0xffffff }), K)
     const m = new THREE.Matrix4(), q = new THREE.Quaternion(), s = new THREE.Vector3(1, 1, 1), v = new THREE.Vector3()
+    const sTall = new THREE.Vector3(this.gateTall, this.gateTall, this.gateTall)
     const Y = new THREE.Vector3(0, 1, 0)
     for (let k = 0; k < K; k++) {
       const c = this.cps[k]
@@ -317,17 +334,18 @@ export class Course {
       let hmax = -1e9
       for (const side of [-1, 1]) {
         // Normal to the right: (tz, -tx).
-        const x = c.x + c.tz * GATE_HALF * side, z = c.z - c.tx * GATE_HALF * side
+        const x = c.x + c.tz * this.gateHalf * side, z = c.z - c.tx * this.gateHalf * side
         const g = groundH(x, z)
         hmax = Math.max(hmax, g)
-        towers.setMatrixAt(k * 2 + (side > 0 ? 1 : 0), m.compose(v.set(x, g - 4, z), q, s))
+        towers.setMatrixAt(k * 2 + (side > 0 ? 1 : 0), m.compose(v.set(x, g - 4, z), q, sTall))
         for (const off of [-2.8, 2.8]) {
           // On the face toward the track: −side along the normal (tz, −tx).
-          const lx = x + c.tx * off - c.tz * 5.7 * side, lz = z + c.tz * off + c.tx * 5.7 * side
-          this.towerLights.setMatrixAt(k * 4 + (side > 0 ? 2 : 0) + (off > 0 ? 1 : 0), m.compose(v.set(lx, g - 4, lz), q, s))
+          const lx = x + c.tx * off * this.gateTall - c.tz * 5.7 * side * this.gateTall, lz = z + c.tz * off * this.gateTall + c.tx * 5.7 * side * this.gateTall
+          this.towerLights.setMatrixAt(k * 4 + (side > 0 ? 2 : 0) + (off > 0 ? 1 : 0), m.compose(v.set(lx, g - 4, lz), q, sTall))
         }
       }
-      this.beamMesh.setMatrixAt(k, m.compose(v.set(c.x, hmax + 132, c.z), q, s))
+      this.beamMesh.setMatrixAt(k, m.compose(v.set(c.x, hmax + 132 * this.gateTall, c.z), q, s.set(1, this.gateTall, this.gateTall)))
+      s.set(1, 1, 1)
     }
     for (const im of [towers, this.towerLights, this.beamMesh]) { im.frustumCulled = false; this.group.add(im) }
 
@@ -353,7 +371,7 @@ export class Course {
           gl_FragColor = vec4(uColor * (0.035 * scan * edge * bottom + frame * 0.5) * uA * near, 1.0);
         }`,
     })
-    this.curtain = new THREE.Mesh(new THREE.PlaneGeometry(GATE_HALF * 2, 128), this.curtainMat)
+    this.curtain = new THREE.Mesh(new THREE.PlaneGeometry(this.gateHalf * 2, 128), this.curtainMat)
     this.curtain.frustumCulled = false
     this.group.add(this.curtain)
 
@@ -582,11 +600,12 @@ export class Course {
     if (this.towerLights.instanceColor) this.towerLights.instanceColor.needsUpdate = true
     const c = this.cps[next]
     if (c) {
-      const g = Math.max(groundH(c.x + c.tz * GATE_HALF, c.z - c.tx * GATE_HALF), groundH(c.x - c.tz * GATE_HALF, c.z + c.tx * GATE_HALF))
-      this.curtain.position.set(c.x, g + 62, c.z)
+      const g = Math.max(groundH(c.x + c.tz * this.gateHalf, c.z - c.tx * this.gateHalf), groundH(c.x - c.tz * this.gateHalf, c.z + c.tx * this.gateHalf))
+      this.curtain.position.set(c.x, g + 62 * this.gateTall, c.z)
+      this.curtain.scale.set(1, this.gateTall, 1)
       for (let j = 0; j < 2; j++) {
         const sd = j === 0 ? 1 : -1
-        const x = c.x + c.tz * GATE_HALF * sd, z = c.z - c.tx * GATE_HALF * sd
+        const x = c.x + c.tz * this.gateHalf * sd, z = c.z - c.tx * this.gateHalf * sd
         this.pillars[j].position.set(x, groundH(x, z), z)
       }
       this.curtain.rotation.set(0, Math.atan2(c.tx, c.tz), 0)
@@ -597,7 +616,7 @@ export class Course {
     const c2 = next >= 0 ? this.cps[next + 1] : undefined
     if (c2) for (let j = 0; j < 2; j++) {
       const sd = j === 0 ? 1 : -1
-      const x = c2.x + c2.tz * GATE_HALF * sd, z = c2.z - c2.tx * GATE_HALF * sd
+      const x = c2.x + c2.tz * this.gateHalf * sd, z = c2.z - c2.tx * this.gateHalf * sd
       this.pillars[2 + j].position.set(x, groundH(x, z), z)
     }
     for (let j = 0; j < 4; j++) this.pillars[j].visible = j < 2 ? !!c : !!c2
