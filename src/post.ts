@@ -9,6 +9,14 @@ import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js'
 import { CFG } from './config'
 import { NOISE_TEX } from './shaders'
+import { BIOME } from './terrain'
+
+/** A grade per world: shadow tint, highlight tint, saturation, black lift. */
+const GRADE = BIOME === 'ice'
+  ? { sh: 'vec3(0.85, 0.95, 1.15)', hi: 'vec3(1.0, 0.98, 1.04)', sat: '1.05', lift: '0.0' }
+  : BIOME === 'lava'
+    ? { sh: 'vec3(0.75, 0.82, 1.02)', hi: 'vec3(1.12, 0.95, 0.8)', sat: '1.22', lift: '-0.02' }
+    : { sh: 'vec3(0.92, 0.98, 1.1)', hi: 'vec3(1.05, 1.0, 0.94)', sat: '1.12', lift: '0.0' }
 
 const FINAL = {
   uniforms: {
@@ -128,7 +136,7 @@ const FINAL = {
       // Speed streaks: pale spokes flowing outward at the edges of the view.
       if (uStreak > 0.004) {
         float sa = atan(da.y, da.x);
-        float lanes = 260.0;
+        float lanes = 200.0;
         float lane = floor((sa / 6.2831853 + 0.5) * lanes);
         float lh = fract(sin(lane * 91.17) * 4373.13);
         float across = abs(fract((sa / 6.2831853 + 0.5) * lanes) - 0.5) * 2.0;
@@ -136,7 +144,9 @@ const FINAL = {
         float run = fract(r * (1.2 + lh * 1.8) - uStreakT * (0.7 + lh) + lh * 7.0);
         float dash = smoothstep(0.0, 0.06, run) * (1.0 - smoothstep(0.2 + 0.3 * lh, 0.55 + 0.3 * lh, run));
         float on = step(1.0 - mix(0.15, 0.6, uStreak), lh);
-        float edge = smoothstep(mix(0.4, 0.2, uStreak), 0.85, r);
+        float edge = smoothstep(mix(0.5, 0.35, uStreak), 0.95, r);
+        // (Mostly below the horizon, where the ground rushes: across the sky they were clutter.)
+        edge *= mix(0.35, 1.0, smoothstep(-0.1, 0.15, -da.y));
         float sk = thin * dash * on * edge * uStreak;
         c = mix(c, c * 1.6 + vec3(0.25, 0.27, 0.3), clamp(sk, 0.0, 0.7));
       }
@@ -148,8 +158,9 @@ const FINAL = {
       c = aces(c);
       // Grade: punchy, saturated, warm highlights, a cool lift in the shadows.
       float l = dot(c, vec3(0.2126, 0.7152, 0.0722));
-      c = mix(vec3(l), c, 1.18);
-      c *= mix(vec3(0.9, 0.98, 1.08), vec3(1.06, 1.0, 0.92), smoothstep(0.1, 0.8, l));
+      c = mix(vec3(l), c, ${GRADE.sat});
+      c *= mix(${GRADE.sh}, ${GRADE.hi}, smoothstep(0.1, 0.8, l));
+      c += ${GRADE.lift};
       c = clamp(c, 0.0, 1.0);
       c = mix(c, c * c * (3.0 - 2.0 * c), 0.25);
       // Tunnel vision: the vignette closes in with speed.

@@ -415,7 +415,7 @@ function terrainMaterial(shared: GroundUniforms, snap: { value: THREE.Vector2 },
           float lane = (uTrackOn > 0.01 && tl.x > 0.0 && tl.y > 0.0 && tl.x < 1.0 && tl.y < 1.0) ? max(smoothstep(0.003, 0.03, texture2D(tTrack, tl, 6.0).r), smoothstep(0.02, 0.1, texture2D(tTrack, tl, 3.0).r)) : 0.0;
           float cracks = smoothstep(0.03, 0.0, abs(fbmT(p * 0.02) - 0.5)) + 0.5 * smoothstep(0.02, 0.0, abs(fbmT(p * 0.06 + 3.0) - 0.5));
           crust = mix(crust, 1.0 - min(1.0, cracks) * 0.6, lane);
-          vec3 hot = mix(vec3(2.4, 0.5, 0.07), vec3(3.4, 1.45, 0.3), fl) * (1.0 - 0.93 * crust);
+          vec3 hot = mix(vec3(3.4, 0.7, 0.09), vec3(4.6, 1.9, 0.35), fl) * (1.0 - 0.93 * crust);
           col = mix(col, hot, smoothstep(0.3, 0.72, river));
           col += vec3(0.5, 0.13, 0.03) * 0.5 * smoothstep(0.12, 0.32, river) * (1.0 - smoothstep(0.32, 0.72, river));
         }

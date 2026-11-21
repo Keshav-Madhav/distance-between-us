@@ -93,7 +93,7 @@ export const CFG = {
     bloom: 0.5,
     bloomThreshold: 2.4,
     radialBlur: 0.032,
-    aberration: 0.004,
+    aberration: 0.0025,
     streaks: 1,
     grain: 0.022,
     exposure: 0.8,

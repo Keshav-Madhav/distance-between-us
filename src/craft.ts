@@ -174,8 +174,8 @@ export class Craft {
 
     this.mats = mats
     this.numMat = new THREE.MeshBasicMaterial({ map: numberTexture(paint.number, '#' + new THREE.Color(paint.trim).getHexString()), transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2 })
-    this.flameMat = flameMaterial(new THREE.Color(3.2, 2.3, 1.4), new THREE.Color(2.2, 0.55, 0.1))
-    this.innerMat = flameMaterial(new THREE.Color(3.6, 3.4, 3.4), new THREE.Color(1.4, 1.2, 1.8))
+    this.flameMat = flameMaterial(new THREE.Color(2.2, 1.5, 0.8), new THREE.Color(2.0, 0.5, 0.1))
+    this.innerMat = flameMaterial(new THREE.Color(2.6, 2.3, 2.0), new THREE.Color(1.3, 1.1, 1.6))
     this.setModel(model)
     this.lo.visible = false
 
@@ -278,7 +278,8 @@ export class Craft {
   }
 
   setFlames(throttle: number, boost: number, time: number): void {
-    const len = 1.2 + throttle * 1.8 + boost * 5.5
+    // (Shorter and cooler than they were: the plumes ran down over the Mach readout, blown white.)
+    const len = 1.0 + throttle * 1.4 + boost * 4.2
     const wid = 0.85 + boost * 0.35
     const j = 1 + Math.sin(time * 41) * 0.05 + Math.sin(time * 23) * 0.04
     for (const [m, k] of [[this.flameMat, 1], [this.innerMat, 0.55]] as const) {
@@ -289,6 +290,13 @@ export class Craft {
       m.uniforms.uWid.value = wid
     }
     this.glow.color.setRGB(0.3 + boost * 0.4, 1.6, 3.2)
+  }
+
+  /** A rival's exhaust edged in its own colour (its leaderboard colour): told apart at a glance. */
+  setFlameTint(c: THREE.Color, a: number): void {
+    this.flameMat.uniforms.uTint.value.set(c.r * 2.2, c.g * 2.2, c.b * 2.2)
+    this.flameMat.uniforms.uTintA.value = a
+    this.innerMat.uniforms.uTintA.value = 0
   }
 
   /** Drift charge in the exhaust: 0 none, 1 first level (electric blue), 2 second (violet-white). */

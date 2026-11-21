@@ -1455,7 +1455,8 @@ function drawRacer(p: Player, alpha: number, dt: number, isMe: boolean): void {
   const throttle = p.dead || p.crashing ? 0 : 0.3 + 0.7 * p.throttle
   craft.setFlames(throttle, p.boost, time + (isMe ? 0 : p.pos.x * 0.01))
   // The drift charge shows in the exhaust itself (no HUD bar): blue at level one, violet-white at two.
-  craft.setDriftTint(p.drift >= 2 ? 2 : 1, isMe && p.drift >= 0.9 && !p.burning ? Math.min(1, (p.drift - 0.9) * 4) * (0.75 + 0.25 * Math.sin(time * 30)) : 0)
+  if (!isMe) { const rc = rivalCols.get(p); if (rc) craft.setFlameTint(rc, 0.55) }
+  else craft.setDriftTint(p.drift >= 2 ? 2 : 1, isMe && p.drift >= 0.9 && !p.burning ? Math.min(1, (p.drift - 0.9) * 4) * (0.75 + 0.25 * Math.sin(time * 30)) : 0)
   if (p.dead) return
   const near = camera.position.distanceToSquared(tmp) < 1500 * 1500
   for (let i = 0; i < v.trail.length; i++) {
@@ -1800,7 +1801,7 @@ function frame(now: number): void {
   P.uSpeed.value = play ? s : 0
   P.uBlur.value = play ? settings.blur * (cine ? 0.3 : 1) * CFG.post.radialBlur * (s * s * 1.2 + player.boost * 0.4 + white * 0.6 + impactPulse * 0.8) : 0
   P.uAberr.value = play ? CFG.post.aberration * (s + player.boost * 0.5 + damageFlash + impactPulse * 2.5) : 0
-  P.uStreak.value = play ? (cine ? 0.25 : 1) * (BIOME === 'ice' ? 0.45 : 1) * CFG.post.streaks * THREE.MathUtils.clamp((player.mach - 0.8) / 4, 0, 1) : 0
+  P.uStreak.value = play ? (cine ? 0.25 : 1) * (BIOME === 'ice' ? 0.45 : BIOME === 'lava' ? 0.6 : 1) * CFG.post.streaks * THREE.MathUtils.clamp((player.mach - 0.8) / 4, 0, 1) : 0
   P.uStreakT.value += realDt * (0.4 + player.mach * 0.45)
   P.uWhite.value = white * 0.45
   P.uDamage.value = damageFlash
