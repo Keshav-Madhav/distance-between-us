@@ -2567,10 +2567,16 @@ function drawMini(): void {
   const i0 = Math.max(0, me.idx - Math.round(WIN_BACK / 40) - 10), i1 = Math.min(course.n - 1, me.idx + Math.round((WIN_AHEAD * 1.6) / 40))
   g.save()
   g.beginPath(); g.roundRect(8, 8, MW - 16, MAP_H, 14); g.clip()
-  g.beginPath()
-  for (let i = i0; i <= i1; i++) { const x = SX(course.px[i], course.pz[i]), y = SY(course.px[i], course.pz[i]); if (i === i0) g.moveTo(x, y); else g.lineTo(x, y) }
+  // The track: a band the course's width (at least 7 px), outlined dark so it reads on any ground,
+  // bright ahead of you and dimmer behind, with a centre line.
+  const trace = (a: number, b: number) => { g.beginPath(); for (let i = a; i <= b; i++) { const x = SX(course.px[i], course.pz[i]), y = SY(course.px[i], course.pz[i]); if (i === a) g.moveTo(x, y); else g.lineTo(x, y) } }
   g.lineJoin = 'round'; g.lineCap = 'round'
-  g.strokeStyle = 'rgba(255,240,225,0.35)'; g.lineWidth = 2; g.setLineDash(DASH); g.stroke(); g.setLineDash(NODASH)
+  const bandW = Math.max(7, course.gateHalf * 2 * kk)
+  const me0 = Math.max(i0, Math.min(i1, me.idx))
+  trace(i0, i1); g.strokeStyle = 'rgba(0,0,0,0.55)'; g.lineWidth = bandW + 4; g.stroke()
+  trace(i0, me0); g.strokeStyle = 'rgba(255,240,225,0.28)'; g.lineWidth = bandW; g.stroke()
+  trace(me0, i1); g.strokeStyle = 'rgba(255,240,225,0.62)'; g.lineWidth = bandW; g.stroke()
+  trace(me0, i1); g.strokeStyle = 'rgba(255,170,90,0.95)'; g.lineWidth = 1.6; g.setLineDash(DASH); g.stroke(); g.setLineDash(NODASH)
   // Spires: a thin ring round each (the render shows the rock; the ring makes it pop at this size).
   for (const rk of course.rocks) {
     if (rk.i < i0 || rk.i > i1) continue
