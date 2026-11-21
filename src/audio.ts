@@ -34,7 +34,7 @@ export const TRACKS: Record<string, { name: string; file: string; climax?: strin
   hyperflight: { name: 'HYPERFLIGHT', file: 'hyperflight' },
 }
 /** Each course's own track (AUTO). */
-export const COURSE_TRACK: Record<string, string> = { sprint: 'neon-circuit', 'dry-river': 'hot-roadway', drag: 'cool-highway', circuit: 'drive', oval: 'cool-highway', canyon: 'hyperflight', frostline: 'drive', icefall: 'hyperflight', caldera: 'hot-roadway', faultline: 'neon-circuit', greenway: 'drive', riverrun: 'cool-highway' }
+export const COURSE_TRACK: Record<string, string> = { sprint: 'neon-circuit', 'dry-river': 'hot-roadway', drag: 'cool-highway', circuit: 'drive', oval: 'cool-highway', canyon: 'hyperflight', frostline: 'drive', icefall: 'hyperflight', caldera: 'hot-roadway', faultline: 'neon-circuit', greenway: 'drive', riverrun: 'cool-highway', timberline: 'hyperflight', obsidian: 'neon-circuit', whiteout: 'hot-roadway' }
 const MENU_TRACK = 'empty-stretch'
 
 export interface RivalVoice { dist: number; closing: number; pan: number; mach: number }

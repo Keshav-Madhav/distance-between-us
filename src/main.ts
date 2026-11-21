@@ -148,7 +148,7 @@ const WORLDS = [
   { id: 'desert', name: 'RED MESA', blurb: 'Sandstone, blue sky' },
   { id: 'ice', name: 'POLAR SHELF', blurb: 'Glaciers under aurora' },
   { id: 'lava', name: 'CINDER', blurb: 'Lava fields at dusk' },
-  { id: 'forest', name: 'VERDANT', blurb: 'Meadows and old forest' },
+  { id: 'forest', name: 'VERDANT', blurb: 'Meadow and forest' },
 ] as const
 let pickedWorld: Biome = biomeOf(courseDef.id)
 const bestKey = (id: string) => `dbu-best-${id}`

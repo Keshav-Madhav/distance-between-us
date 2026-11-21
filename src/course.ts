@@ -459,7 +459,88 @@ export const RIVERRUN: CourseDef = {
   sections: [[10, 'THE SWEEPERS'], [40, 'THE CROSSINGS'], [52, 'THE SLALOM'], [78, 'LAST RUN']],
 }
 
-export const COURSES: CourseDef[] = [SPRINT, DRY_RIVER, DRAG, CIRCUIT, OVAL, CANYON, FROSTLINE, ICEFALL, CALDERA, FAULTLINE, GREENWAY, RIVERRUN]
+/** POLAR SHELF's sprint: WHITEOUT — 100 km straight across the shelf, long sweepers between glaciers. */
+export const WHITEOUT: CourseDef = {
+  id: 'whiteout',
+  gateHalf: 340,
+  ribbons: true,
+  name: 'WHITEOUT',
+  blurb: 'SPRINT · ACROSS THE SHELF · GLACIER GATES · LAKES',
+  km: 100,
+  xAt: (z) => {
+    const bump = (z0: number, L: number, h: number) => (z > z0 && z < z0 + L ? h * (1 - Math.cos((2 * Math.PI * (z - z0)) / L)) : 0)
+    const sweep = bump(14000, 11000, 650) + bump(36000, 10000, -600) + bump(58000, 9000, 500) + bump(78000, 11000, -650)
+    const wander = 1000 * Math.sin((2 * Math.PI * z) / 43000 + 0.5) - 1000 * Math.sin(0.5)
+    return ramp8(z) * (wander + sweep)
+  },
+  aiPace: -0.1,
+  gateEvery: 5000,
+  jumps: [0.52, 0.535],
+  rampH: 0.8,
+  whoops: [],
+  padEvery: 7000,
+  spireGap: () => null,
+  rockGateP: 0,
+  seed: 97,
+  sections: [[14, 'THE SWEEPERS'], [46, 'THE LAKES'], [78, 'LAST RUN']],
+}
+
+/** CINDER's third: OBSIDIAN — a 70 km loop across the black glass fields, broad and fast, two laps. */
+const obsidianPath = (u: number): [number, number] => {
+  const a = 2 * Math.PI * u
+  const r = 9500 + 1600 * Math.sin(2 * a + 0.2) + 1500 * Math.sin(3 * a + 1.4) + 350 * Math.sin(5 * a + 2.2)
+  return [r * Math.sin(a) * 1.15, r * Math.cos(a) - 9500]
+}
+export const OBSIDIAN: CourseDef = {
+  id: 'obsidian',
+  gateHalf: 340,
+  ribbons: true,
+  name: 'OBSIDIAN',
+  blurb: 'BLACK GLASS FIELDS · BROAD AND FAST · LAVA CROSSINGS',
+  km: Math.round(loopLength(obsidianPath) / 100) / 10,
+  loop: obsidianPath,
+  aiPace: 0.2,
+  gateEvery: 5500,
+  laps: 2,
+  jumps: [0.2, 0.212],
+  rampH: 0.8,
+  whoops: [],
+  padEvery: 8500,
+  spireGap: () => null,
+  rockGateP: 0,
+  seed: 101,
+  sections: [],
+}
+
+/** VERDANT's third: TIMBERLINE — 61 km through the old forest, trees close on both sides, two laps. */
+const timberPath = (u: number): [number, number] => {
+  const a = 2 * Math.PI * u
+  const r = 9000 + 2200 * Math.sin(2 * a + 2.4) + 900 * Math.sin(3 * a + 0.7) + 700 * Math.sin(5 * a + 1.1)
+  return [r * Math.sin(a) * 0.95, r * Math.cos(a) - 9000]
+}
+export const TIMBERLINE: CourseDef = {
+  id: 'timberline',
+  gateHalf: 340,
+  ribbons: true,
+  clearance: 480,
+  name: 'TIMBERLINE',
+  blurb: 'THE OLD FOREST · TREES CLOSE IN · FLOWING',
+  km: Math.round(loopLength(timberPath) / 100) / 10,
+  loop: timberPath,
+  aiPace: 0.2,
+  gateEvery: 5000,
+  laps: 2,
+  jumps: [0.15, 0.162],
+  rampH: 0.75,
+  whoops: [],
+  padEvery: 8000,
+  spireGap: () => null,
+  rockGateP: 0,
+  seed: 103,
+  sections: [],
+}
+
+export const COURSES: CourseDef[] = [SPRINT, DRY_RIVER, DRAG, CIRCUIT, OVAL, CANYON, FROSTLINE, ICEFALL, WHITEOUT, CALDERA, FAULTLINE, OBSIDIAN, GREENWAY, RIVERRUN, TIMBERLINE]
 
 /** The race's line as points (x, z) every ~200 m, start to finish — for previews. */
 export function centerline(def: CourseDef): { xs: number[]; zs: number[] } {

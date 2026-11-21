@@ -6,7 +6,7 @@ const COURSE_ID: string = (() => {
 })()
 /** The world: the desert, or FROSTLINE's arctic plateau (docs/MAP-FROSTLINE.md). */
 export type Biome = 'desert' | 'ice' | 'lava' | 'forest'
-const COURSE_BIOME: Record<string, Biome> = { frostline: 'ice', icefall: 'ice', caldera: 'lava', faultline: 'lava', greenway: 'forest', riverrun: 'forest' }
+const COURSE_BIOME: Record<string, Biome> = { frostline: 'ice', icefall: 'ice', caldera: 'lava', faultline: 'lava', obsidian: 'lava', whiteout: 'ice', greenway: 'forest', riverrun: 'forest', timberline: 'forest' }
 /** Which world a course is in. */
 export const biomeOf = (id: string): Biome => COURSE_BIOME[id] ?? 'desert'
 export const BIOME: Biome = COURSE_BIOME[COURSE_ID] ?? 'desert'
@@ -173,7 +173,7 @@ const LIGHTS: Record<string, Light> = {
   dawn: { zenith: [0.07, 0.24, 0.68], horizon: [0.6, 0.7, 0.9], haze: [0.96, 0.8, 0.72], sunDir: [-0.7, 0.32, 0.65], fogK: 0.000068, sunCol: [2.4, 2.05, 1.75], tint: [1.0, 0.94, 0.9] },
   dusk: { zenith: [0.05, 0.17, 0.52], horizon: [0.55, 0.62, 0.82], haze: [0.96, 0.66, 0.48], sunDir: [-0.66, 0.24, -0.73], fogK: 0.000072, sunCol: [2.35, 1.8, 1.3], tint: [1.0, 0.9, 0.8] },
 }
-const COURSE_LIGHT: Record<string, string> = { sprint: 'noon', 'dry-river': 'afternoon', circuit: 'golden', drag: 'dusk', oval: 'noon', canyon: 'dawn', frostline: 'polar', icefall: 'polar', caldera: 'ember', faultline: 'ember', greenway: 'meadow', riverrun: 'meadow' }
+const COURSE_LIGHT: Record<string, string> = { sprint: 'noon', 'dry-river': 'afternoon', circuit: 'golden', drag: 'dusk', oval: 'noon', canyon: 'dawn', frostline: 'polar', icefall: 'polar', caldera: 'ember', faultline: 'ember', greenway: 'meadow', riverrun: 'meadow', timberline: 'meadow', obsidian: 'ember', whiteout: 'polar' }
 export const LIGHT: Light = LIGHTS[COURSE_LIGHT[COURSE_ID] ?? 'noon'] ?? LIGHTS.noon
 export const SKY = {
   zenith: LIGHT.zenith,
