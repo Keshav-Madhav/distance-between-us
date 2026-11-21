@@ -883,7 +883,31 @@ function drawTrackPreview(d: (typeof COURSES)[number]): void {
     g.beginPath(); g.moveTo(px + Math.cos(an) * 7 * u, py + Math.sin(an) * 7 * u); g.lineTo(px + Math.cos(an + 2.4) * 6 * u, py + Math.sin(an + 2.4) * 6 * u); g.lineTo(px + Math.cos(an - 2.4) * 6 * u, py + Math.sin(an - 2.4) * 6 * u); g.fill()
   }
   // Gates: cyan dots ringed; jumps: orange triangles.
-  for (let s = d.gateEvery; s < L - 100; s += d.gateEvery) { const [px, py] = at(s); g.fillStyle = '#5fe6ff'; g.beginPath(); g.arc(px, py, 3.6 * u, 0, Math.PI * 2); g.fill(); g.strokeStyle = 'rgba(0,0,0,0.6)'; g.lineWidth = 1.2 * u; g.stroke() }
+  // (The real gates: the loaded course's own — tight bends carry three each; other courses: the
+  //  same rule worked out on this line.)
+  const gateAt: number[] = []
+  if (d === course.def) {
+    const lapI = d.loop ? Math.floor((course.finishI - course.startI) / (d.laps ?? 1)) : course.finishI - course.startI
+    for (const c of course.cps) { const f = (c.i - course.startI) / lapI; if (f > 0.005 && f < 0.995) gateAt.push(f * L) }
+  } else {
+    for (let s = d.gateEvery; s < L - 100; s += d.gateEvery) gateAt.push(s)
+    if (d.loop) {
+      const tightR = d.tightR ?? 1400
+      let r0 = -1
+      const runs: [number, number][] = []
+      for (let i = 1; i < N - 1; i++) {
+        const tight = 1 / Math.max(1e-7, kap[i]) < tightR
+        if (tight && r0 < 0) r0 = i
+        if (!tight && r0 >= 0) { runs.push([arc[r0], arc[i - 1]]); r0 = -1 }
+      }
+      for (const [a0, a1] of runs) {
+        if (a1 - a0 < 150) continue
+        for (let k = gateAt.length - 1; k >= 0; k--) if (gateAt[k] > a0 - 1500 && gateAt[k] < a1 + 1500) gateAt.splice(k, 1)
+        gateAt.push(a0 + (a1 - a0) * 0.15, (a0 + a1) / 2, a1 - (a1 - a0) * 0.15)
+      }
+    }
+  }
+  for (const s of gateAt) { const [px, py] = at(s); g.fillStyle = '#5fe6ff'; g.beginPath(); g.arc(px, py, 3.6 * u, 0, Math.PI * 2); g.fill(); g.strokeStyle = 'rgba(0,0,0,0.6)'; g.lineWidth = 1.2 * u; g.stroke() }
   g.fillStyle = '#ff8a3d'
   for (const f of d.jumps) { const [px, py] = at(f * L); g.beginPath(); g.moveTo(px + 8 * u, py); g.lineTo(px + 17 * u, py - 5 * u); g.lineTo(px + 17 * u, py + 5 * u); g.fill() }
   if (compact) {

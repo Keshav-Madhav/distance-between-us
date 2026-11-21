@@ -520,17 +520,22 @@ export class Course {
         const dh = Math.abs(Math.atan2(ax * bz - az * bx, ax * bx + az * bz))
         return dh > 1e-6 ? (2 * W * STEP) / dh : Infinity
       }
-      const apexes: number[] = []
+      // Each tight stretch as a whole (a stadium's end is one long constant-radius arc): its three
+      // gates spread round it — 15%, the middle, 85% — so they mark the outside of the whole bend.
+      // (Taking the first point under the limit as the "apex" bunched them at the entry.)
+      const runs: [number, number][] = []
+      let s0 = -1
       for (let i = startI + 60; i < finishI - 60; i++) {
-        const r0 = radiusAt(i)
-        if (r0 >= tightR || r0 > radiusAt(i - 1) || r0 > radiusAt(i + 1)) continue
-        if (apexes.length && i - apexes[apexes.length - 1] < 3000 / STEP) continue
-        apexes.push(i)
+        const tight = radiusAt(i) < tightR
+        if (tight && s0 < 0) s0 = i
+        if (!tight && s0 >= 0) { if (i - s0 > 4) runs.push([s0, i - 1]); s0 = -1 }
       }
-      for (const a of apexes) {
-        const span = Math.round(Math.min(1300, radiusAt(a) * 0.75) / STEP)
-        gi = gi.filter((i, k) => k === 0 || i === finishI || Math.abs(i - a) > span + 1500 / STEP)
-        gi.push(a - span, a, a + span)
+      if (s0 >= 0) runs.push([s0, finishI - 61])
+      for (const [r0, r1] of runs) {
+        const len = r1 - r0
+        const g3 = [r0 + Math.round(len * 0.15), Math.round((r0 + r1) / 2), r1 - Math.round(len * 0.15)]
+        gi = gi.filter((i, k) => k === 0 || i === finishI || i < r0 - 1500 / STEP || i > r1 + 1500 / STEP)
+        gi.push(...g3)
       }
       gi.sort((a, b) => a - b)
     }

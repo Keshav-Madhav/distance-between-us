@@ -447,7 +447,9 @@ function terrainMaterial(shared: GroundUniforms, snap: { value: THREE.Vector2 },
         float ba = dot(dc, uFwd);
         float sd = dot(dc, side) / 3.5;
         // (x·x, never pow(x, 2.0): pow of a negative is NaN in GLSL — black pixels around the craft.)
-        float behind = exp(-sd * sd) * (1.0 - smoothstep(-4.0, 0.0, ba)) * exp(ba / 26.0) * near;
+        // (exp(min(ba, 0)): ahead of the craft ba runs to kilometres, exp overflowed to infinity, and
+        //  infinity × 0 is NaN — a black line on the ground straight ahead, a "post" on the horizon.)
+        float behind = exp(-sd * sd) * (1.0 - smoothstep(-4.0, 0.0, ba)) * exp(min(ba, 0.0) / 26.0) * near;
         col += vec3(1.4, 0.55, 0.18) * behind * (0.1 + 0.6 * uBoost);
 
         gl_FragColor = vec4(applyFog(col, vW), 1.0);
