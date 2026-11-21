@@ -8,6 +8,7 @@ import { RenderPass } from 'three/addons/postprocessing/RenderPass.js'
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js'
 import { CFG } from './config'
+import { NOISE_TEX } from './shaders'
 
 const FINAL = {
   uniforms: {
@@ -26,6 +27,12 @@ const FINAL = {
     uCenter: { value: new THREE.Vector2(0.5, 0.52) },
     uSharpen: { value: 0.35 },
     uTexel: { value: new THREE.Vector2(1 / 1280, 1 / 720) },
+    // Engine heat: three nozzles in screen uv (xy) with a plume radius (z), the exhaust's screen
+    // direction, and a strength (0 off).
+    uJet: { value: [new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3()] },
+    uJetDir: { value: new THREE.Vector2(0, -1) },
+    uJetK: { value: 0 },
+    tNoise: { value: NOISE_TEX },
   },
   vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }',
   fragmentShader: /* glsl */ `
@@ -33,6 +40,10 @@ const FINAL = {
     uniform float uSpeed, uBlur, uAberr, uStreak, uStreakT, uWhite, uDamage, uTime, uAspect, uExposure, uGrain, uSharpen;
     uniform vec2 uTexel;
     uniform vec2 uCenter;
+    uniform vec3 uJet[3];
+    uniform vec2 uJetDir;
+    uniform float uJetK;
+    uniform sampler2D tNoise;
     varying vec2 vUv;
     float hash(vec2 p) { vec3 p3 = fract(vec3(p.xyx) * 0.1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
     vec3 aces(vec3 x) {
@@ -48,6 +59,25 @@ const FINAL = {
       vec2 uv = vUv;
       float haze = (1.0 - smoothstep(0.0, 0.42, vUv.y)) * (1.0 - 0.6 * uSpeed);
       uv.x += haze * 0.0016 * sin(vUv.y * 160.0 + uTime * 9.0) * sin(vUv.x * 40.0 - uTime * 3.0);
+      // Engine heat: the air behind each nozzle wobbles (a plume that widens and fades with length).
+      if (uJetK > 0.0) {
+        float acc = 0.0;
+        vec2 dir = normalize(uJetDir), perp = vec2(-dir.y, dir.x);
+        for (int i = 0; i < 3; i++) {
+          vec2 q = vUv - uJet[i].xy; q.x *= uAspect;
+          float R = uJet[i].z, L = R * 9.0;
+          float al = dot(q, dir), ac = dot(q, perp);
+          if (al > -R && al < L) {
+            float w = R * (1.0 + max(al, 0.0) / L * 2.5);
+            acc += (1.0 - smoothstep(0.0, L, al)) * smoothstep(-R, 0.0, al) * exp(-(ac * ac) / (w * w));
+          }
+        }
+        if (acc > 0.001) {
+          vec2 nq = vUv * vec2(uAspect, 1.0) * 26.0 - dir * uTime * 9.0;
+          vec2 wob = vec2(texture2D(tNoise, nq * 0.125).r, texture2D(tNoise, nq * 0.125 + 0.37).r) - 0.47;
+          uv += wob * 0.012 * min(acc, 1.5) * uJetK;
+        }
+      }
 
       // Radial blur: strength grows with r², so the middle (where you aim) stays sharp.
       float amt = uBlur * smoothstep(0.16, 0.85, r) * r;

@@ -3,7 +3,7 @@ import { chromium } from 'playwright-core'
 const q = process.argv[2] ?? 'ultra'
 const browser = await chromium.launch({ channel: 'chrome', headless: true, args: ['--mute-audio', '--use-gl=angle', '--ignore-gpu-blocklist', '--disable-gpu-vsync', '--disable-frame-rate-limit'] })
 const page = await (await browser.newContext({ viewport: { width: 1512, height: 945 }, deviceScaleFactor: 2 })).newPage()
-await page.goto(`http://localhost:4417/?fixed&q=${q}`); await page.waitForFunction('window.__g && window.__g.ready')
+await page.goto(`http://localhost:4417/?fixed&q=${q}${process.env.COURSE ? '&course=' + process.env.COURSE : ''}`); await page.waitForFunction('window.__g && window.__g.ready')
 await page.evaluate(() => {
   const g = window.__g
   window.__t = []
@@ -29,4 +29,10 @@ await page.evaluate(() => { document.getElementById('g-bloom').checked = false; 
 await sample('+ bloom off')
 await page.evaluate(() => { window.__g.post.setSamples(0) })
 await sample('+ MSAA off')
+await page.evaluate(() => { const e = document.getElementById('g-dist'); e.value = '12'; e.dispatchEvent(new Event('change')) })
+await sample('+ draw distance near')
+await page.evaluate(() => { const e = document.getElementById('g-part'); e.value = '0.4'; e.dispatchEvent(new Event('change')) })
+await sample('+ particles low')
+await page.evaluate(() => { const g = window.__g; for (const r of g.race.racers) if (r.ai) r.p.pos.y = -9999 })
+await sample('+ rival ships gone')
 await browser.close()

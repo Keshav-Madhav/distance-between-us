@@ -12,6 +12,39 @@ float vnoise(vec2 p) {
 }
 `
 
+/**
+ * Baked noise: a 256² tiling fbm (four octaves of value noise, lattices 8/16/32/64 per tile), so a
+ * shader reads one texel instead of hashing 16 lattice points per call. The sky did three of these
+ * per pixel (48 hashes) — the single biggest cost in the frame (~1.3 ms at Retina).
+ */
+export const NOISE_TEX = (() => {
+  const S = 256, data = new Uint8Array(S * S)
+  const h = (x: number, y: number, o: number) => { const v = Math.sin(x * 127.1 + y * 311.7 + o * 74.7) * 43758.5453; return v - Math.floor(v) }
+  const sm = (t: number) => t * t * (3 - 2 * t)
+  for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
+    let v = 0, a = 0.5
+    for (let o = 0; o < 4; o++) {
+      const L = 8 << o, fx = (x / S) * L, fy = (y / S) * L
+      const ix = Math.floor(fx), iy = Math.floor(fy), ux = sm(fx - ix), uy = sm(fy - iy)
+      const x0 = ix % L, x1 = (ix + 1) % L, y0 = iy % L, y1 = (iy + 1) % L
+      const n0 = h(x0, y0, o) + (h(x1, y0, o) - h(x0, y0, o)) * ux, n1 = h(x0, y1, o) + (h(x1, y1, o) - h(x0, y1, o)) * ux
+      v += a * (n0 + (n1 - n0) * uy); a *= 0.5
+    }
+    data[y * S + x] = Math.round(Math.min(1, v) * 255)
+  }
+  const t = new THREE.DataTexture(data, S, S, THREE.RedFormat, THREE.UnsignedByteType)
+  t.wrapS = t.wrapT = THREE.RepeatWrapping
+  t.magFilter = THREE.LinearFilter; t.minFilter = THREE.LinearMipmapLinearFilter
+  t.generateMipmaps = true
+  t.needsUpdate = true
+  return t
+})()
+/** GLSL: fbmT(p) ≈ a 4-octave fbm of unit-lattice value noise (needs uniform tNoise = NOISE_TEX). */
+export const FBMT_GLSL = /* glsl */ `
+uniform sampler2D tNoise;
+float fbmT(vec2 p) { return texture2D(tNoise, p * 0.125).r; }
+`
+
 /** The generated textures, shared by every patched material (set before shaders compile). */
 export const TEX = {
   tRock: { value: null as THREE.Texture | null },

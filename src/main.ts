@@ -1472,6 +1472,28 @@ function frame(now: number): void {
   // Post.
   const s = Math.min(1, player.mach / 6)
   const P = post.final.uniforms
+  // Engine heat haze: your nozzles and the line their exhaust runs along, on screen.
+  {
+    const on = !player.dead && !player.crashing && myCraft.root.visible
+    let k = on ? 0.35 + 0.65 * player.throttle + player.boost * 0.6 : 0
+    myCraft.body.updateMatrixWorld()
+    tmp.set(0, 0, 0)
+    for (let i = 0; i < 3; i++) {
+      nozzleW.copy(myCraft.nozzles[i]).applyMatrix4(myCraft.body.matrixWorld)
+      tmp.add(nozzleW)
+      proj.copy(nozzleW).project(camera)
+      const dist = camera.position.distanceTo(nozzleW)
+      P.uJet.value[i].set(proj.x * 0.5 + 0.5, proj.y * 0.5 + 0.5, Math.min(0.06, (0.55 / Math.max(dist, 1)) / Math.tan((camera.fov * Math.PI) / 360) * 0.5))
+      if (proj.z > 1) k = 0
+    }
+    tmp.multiplyScalar(1 / 3)
+    proj.copy(tmp).project(camera)
+    const ax = proj.x, ay = proj.y
+    proj.copy(tmp).addScaledVector(player.fwd, -12).project(camera)
+    P.uJetDir.value.set((proj.x - ax) * camera.aspect, proj.y - ay)
+    if (P.uJetDir.value.lengthSq() < 1e-6) k = 0
+    P.uJetK.value = Math.min(1.4, k)
+  }
   const play = mode !== 'title'
   const cine = mode === 'race' && spectate && race.racers[0].finished
   hud.style.opacity = cine ? '0.3' : ''

@@ -4,7 +4,7 @@
 import * as THREE from 'three'
 import { REBASE } from './config'
 import { groundH, MOUND_U, SUN_DIR } from './terrain'
-import { patchStandard, WORLD_GLSL } from './shaders'
+import { FBMT_GLSL, NOISE_TEX, patchStandard, WORLD_GLSL } from './shaders'
 
 export function rng(seed: number): () => number {
   let a = seed >>> 0
@@ -27,7 +27,7 @@ function skyMaterial(ground: boolean): THREE.ShaderMaterial {
   return new THREE.ShaderMaterial({
     side: THREE.BackSide,
     depthWrite: false,
-    uniforms: { uTime: { value: 0 }, uCloudOff: { value: new THREE.Vector2() }, ...MOUND_U },
+    uniforms: { uTime: { value: 0 }, uCloudOff: { value: new THREE.Vector2() }, tNoise: { value: NOISE_TEX }, ...MOUND_U },
     vertexShader: /* glsl */ `
       varying vec3 vDir;
       void main() {
@@ -40,11 +40,9 @@ function skyMaterial(ground: boolean): THREE.ShaderMaterial {
       uniform float uTime;
       uniform vec2 uCloudOff;
       varying vec3 vDir;
-      float fbm(vec2 p) {
-        float a = 0.5, s = 0.0;
-        for (int i = 0; i < 4; i++) { s += a * vnoise(p); p = p * 2.03 + 17.1; a *= 0.5; }
-        return s;
-      }
+      ${FBMT_GLSL}
+      // (Baked: three of these per pixel were 48 hashes — the costliest thing in the frame.)
+      float fbm(vec2 p) { return fbmT(p); }
       void main() {
         vec3 d = normalize(vDir);
         vec3 c = skyColor(d);
@@ -62,6 +60,11 @@ function skyMaterial(ground: boolean): THREE.ShaderMaterial {
           vec3 cc = mix(vec3(0.62, 0.68, 0.8), vec3(1.9, 1.8, 1.65), lit);
           cc += vec3(1.0, 0.8, 0.55) * pow(s, 6.0) * 0.6;
           float fade = smoothstep(0.015, 0.16, d.y);
+          // High cirrus, 9 km up: thin streaks drawn out along the wind, behind the cumulus.
+          vec2 hp = d.xz / d.y * 9000.0 + uCloudOff * 1.7;
+          float ci = fbmT(hp * vec2(0.00006, 0.00028) + 7.3) * 0.7 + fbmT(hp * 0.0011 + 2.1) * 0.3;
+          float cir = smoothstep(0.5, 0.78, ci) * smoothstep(0.03, 0.25, d.y) * (1.0 - cov);
+          c = mix(c, vec3(1.45, 1.42, 1.38) + vec3(1.0, 0.8, 0.55) * pow(s, 8.0) * 0.5, cir * 0.42);
           c = mix(c, cc, cov * fade * 0.92);
         }
         // The sun: a hot disk (past bloom's threshold) and a wide glare.
@@ -181,6 +184,7 @@ export interface GroundUniforms {
   tTrack: { value: THREE.Texture | null }
   uCloudOff: { value: THREE.Vector2 }
   uCloudShadow: { value: number }
+  tNoise: { value: THREE.Texture }
   uTrackBox: { value: THREE.Vector4 }
   uTrackOn: { value: number }
 }
@@ -226,6 +230,7 @@ function terrainMaterial(shared: GroundUniforms, snap: { value: THREE.Vector2 },
       uniform sampler2D tTrack;
       uniform vec2 uCloudOff;
       uniform float uCloudShadow;
+      ${FBMT_GLSL}
       uniform vec4 uTrackBox;
       uniform float uTrackOn;
       varying vec3 vW;
@@ -253,15 +258,15 @@ function terrainMaterial(shared: GroundUniforms, snap: { value: THREE.Vector2 },
         }
         vec3 s2 = texture2D(tSand, rot * p / 170.0 + 0.37, bias * 0.5).rgb;
         vec3 sandT = mix(s1, s2, 0.45);
-        float gm = smoothstep(0.58, 0.72, vnoise(p * 0.0045 + 11.0) * 0.7 + vnoise(p * 0.03) * 0.3);
+        float gm = smoothstep(0.58, 0.72, fbmT(p * 0.0045 + 11.0) * 0.75 + fbmT(p * 0.03) * 0.32);
         vec3 grav = texture2D(tGravel, rot * p / 9.0, bias).rgb;
         vec3 clayT = texture2D(tClay, p / 13.0, bias).rgb;
         vec3 alb = mix(sandT, grav, gm * 0.85);
         alb = mix(alb, clayT * vec3(1.0, 0.92, 0.85), river);
-        float big = vnoise(p * 0.0011) * 0.6 + vnoise(p * 0.004) * 0.4;
+        float big = fbmT(p * 0.0011 + 3.1) * 0.64 + fbmT(p * 0.004 + 5.7) * 0.42;
         alb *= mix(vec3(1.0), vec3(0.78, 0.55, 0.5), smoothstep(0.45, 0.75, big) * 0.7);
         alb *= mix(vec3(1.0), vec3(1.12, 1.1, 1.05), smoothstep(3.0, 12.0, h0) * 0.6);
-        alb *= 0.9 + 0.2 * vnoise(p * 0.03);
+        alb *= 0.9 + 0.21 * fbmT(p * 0.03 + 1.7);
 
         // The racing line, worn: packed and darker, the ripples gone, scorched lanes down it.
         vec2 tuv = (p - uTrackBox.xy) / uTrackBox.zw;
@@ -278,12 +283,20 @@ function terrainMaterial(shared: GroundUniforms, snap: { value: THREE.Vector2 },
         // Cloud shadows: the same coverage the sky draws, projected down along the sun, drifting.
         if (uCloudShadow > 0.5) {
           vec2 cp = p + SUN_DIR.xz / SUN_DIR.y * 2600.0 + uCloudOff;
-          vec2 q = cp * 0.00032;
-          float a = 0.5, b = 0.0;
-          for (int i = 0; i < 3; i++) { b += a * vnoise(q); q = q * 2.03 + 17.1; a *= 0.5; }
+          float b = fbmT(cp * 0.00032) * 0.93;
           sun *= 1.0 - 0.6 * smoothstep(0.46, 0.68, b);
         }
         vec3 col = alb * (vec3(1.0, 0.9, 0.78) * 2.4 * sun + skyColor(n) * 0.36 + vec3(0.5, 0.22, 0.1) * 0.2);
+        // Sand glints: a few grains in each patch catch the sun toward you (near the camera, in sun,
+        // fading out with speed so they never strobe).
+        float gd = (1.0 - smoothstep(30.0, 200.0, length(vW - cameraPosition))) * (1.0 - min(1.0, uSpeed * 1.2));
+        if (gd > 0.0) {
+          vec2 cell = floor(p * 4.0);
+          vec3 gn = normalize(n + vec3(hash12(cell + 1.3) - 0.5, 0.0, hash12(cell + 7.1) - 0.5) * 1.4);
+          float sp = pow(max(dot(reflect(-SUN_DIR, gn), normalize(cameraPosition - vW)), 0.0), 80.0);
+          // (Kept under bloom's threshold mostly: at 4× they bloomed into blobs, not twinkles.)
+          col += vec3(1.7, 1.5, 1.2) * sp * step(0.93, hash12(cell)) * gd * sun * 1.4;
+        }
 
         // The craft's shadow, cast along the sun (fainter and wider the higher it flies).
         vec2 side = vec2(uFwd.y, -uFwd.x);
@@ -516,6 +529,7 @@ export class World {
     tTrack: { value: null },
     uCloudOff: { value: new THREE.Vector2() },
     uCloudShadow: { value: 1 },
+    tNoise: { value: NOISE_TEX },
     uTrackBox: { value: new THREE.Vector4(0, 0, 1, 1) },
     uTrackOn: { value: 0 },
   }
