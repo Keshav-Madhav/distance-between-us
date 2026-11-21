@@ -869,6 +869,17 @@ export class Sound {
     }
   }
 
+  /** Your pulse cannon: a short bright tick with a little body (12 a second — kept light). */
+  pulse(): void {
+    if (!this.ctx) return
+    const t = this.ctx.currentTime
+    this.burst(t, 0.06, 'bandpass', 2400, 900, 0.16, 2.2)
+    const o = this.ctx.createOscillator(); o.type = 'square'
+    o.frequency.setValueAtTime(320, t); o.frequency.exponentialRampToValueAtTime(110, t + 0.05)
+    const g = this.ctx.createGain(); this.env(g, t, 0.05, 0.001, 0.05)
+    o.connect(g).connect(this.sfx); o.start(t); o.stop(t + 0.07)
+  }
+
   bolt(dist: number): void {
     if (!this.ctx) return
     const t = this.ctx.currentTime

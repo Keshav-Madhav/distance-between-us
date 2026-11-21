@@ -246,6 +246,13 @@ export class FlightCraft {
     if (this.sinceHurt > 4) this.hull = Math.min(100, this.hull + 4 * dt)
   }
 
+  /** Hit by enemy fire. */
+  damage(dmg: number): void {
+    if (this.ghost > 0) return
+    this.hull -= dmg
+    this.sinceHurt = 0
+  }
+
   private hurt(dmg: number, kind: 'ground' | 'rock'): void {
     this.hull -= dmg
     this.sinceHurt = 0

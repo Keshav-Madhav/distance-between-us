@@ -26,8 +26,9 @@ export class Input {
     })
     addEventListener('keyup', (e) => this.down.delete(e.code))
     addEventListener('blur', () => this.down.clear())
-    addEventListener('mousedown', (e) => { if (e.button === 0) this.down.add('Mouse0') })
-    addEventListener('mouseup', (e) => { if (e.button === 0) this.down.delete('Mouse0') })
+    addEventListener('mousedown', (e) => { if (e.button === 0) this.down.add('Mouse0'); if (e.button === 2) this.down.add('Mouse2') })
+    addEventListener('mouseup', (e) => { if (e.button === 0) this.down.delete('Mouse0'); if (e.button === 2) this.down.delete('Mouse2') })
+    addEventListener('contextmenu', (e) => { if ((e.target as HTMLElement)?.id === 'game' || document.body.classList.contains('flying')) e.preventDefault() })
     addEventListener('mousemove', (e) => { this.mouseX = e.clientX; this.mouseY = e.clientY; this.mouseAt = performance.now() / 1000 })
   }
 

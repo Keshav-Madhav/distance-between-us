@@ -337,6 +337,9 @@
   #velmark::before, #velmark::after { content: ''; position: absolute; background: #7dff9a; }
   #velmark::before { left: 6px; top: 0; width: 2px; height: 14px; } #velmark::after { top: 6px; left: 0; height: 2px; width: 14px; }
   body.flying #game { cursor: none; }
+  #pipper { position: absolute; left: 0; top: 0; width: 22px; height: 22px; margin: -11px 0 0 -11px; border: 2px solid #ffd23a; border-radius: 50%; display: none; pointer-events: none; box-shadow: 0 0 8px rgba(255,200,40,0.6); }
+  #pipper::after { content: ''; position: absolute; left: 8px; top: 8px; width: 2px; height: 2px; background: #ffd23a; }
+  #paintbox { position: absolute; left: 0; top: 0; width: 28vh; height: 28vh; margin: -14vh 0 0 -14vh; border: 1.5px dashed rgba(255,110,60,0.8); display: none; pointer-events: none; }
 </style>
 </head>
 <body>
@@ -362,7 +365,7 @@
   <div id="align"></div>
   <div id="burn"></div>
   <div id="gmark"><div class="d"></div><div class="t"></div></div>
-  <div id="aimring"></div><div id="velmark"></div>
+  <div id="aimring"></div><div id="velmark"></div><div id="pipper"></div><div id="paintbox"></div>
   <div id="gmark2"><div class="d"></div></div>
   <div id="tags"></div>
   <canvas id="mini" width="440" height="700"></canvas>

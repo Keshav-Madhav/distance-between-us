@@ -13,6 +13,8 @@ import { Player } from './player'
 import { Combat } from './combat'
 import { FlightCam, FlightCraft, type FlightControls } from './flight'
 import { Rings } from './rings'
+import { CANNON, Cannon, interceptT, Missiles, Rounds, segDist, type Target } from './hunt/weapons'
+import { DART, Darts } from './hunt/enemies'
 import { Sound } from './audio'
 import { Input } from './input'
 import { Post } from './post'
@@ -535,6 +537,79 @@ const combat = new Combat({
 })
 scene.add(combat.group)
 // HUNT's flight (docs/HUNT-FLIGHT-PLAN.md): the craft, its camera, the controls.
+// HUNT combat (phase 2): one pool of rounds, your cannon and missiles, the Darts.
+const rounds = new Rounds()
+const cannon = new Cannon()
+const missiles = new Missiles()
+const darts = new Darts()
+scene.add(rounds.mesh, missiles.mesh, darts.mesh, darts.glow)
+let waveT = 3, huntWave = 0, kills = 0
+cannon.onOverheat = () => { sound.beep(false); pop('OVERHEAT') }
+missiles.onLock = () => sound.locked()
+missiles.onLaunch = () => sound.missile()
+darts.onFire = (at) => sound.bolt(at.distanceTo(flight.pos))
+/** The Dart nearest the nose (within 25°, 2.6 km): the pipper's target and the cannon's assist. */
+function noseTarget(): Target | null {
+  let best: Target | null = null, bd = Infinity
+  for (const d of darts.list) {
+    if (!d.alive) continue
+    tmp3.subVectors(d.pos, flight.pos)
+    const dist = tmp3.length()
+    if (dist > 2600) continue
+    const ang = tmp3.normalize().angleTo(flight.fwd)
+    if (ang > 0.44) continue
+    const k = ang * 3000 + dist
+    if (k < bd) { bd = k; best = d }
+  }
+  return best
+}
+const tmp3 = new THREE.Vector3()
+/** Speed is score: ×1 at Mach 1 up to ×3.5 at Mach 6. */
+const speedMul = () => THREE.MathUtils.clamp(1 + (flight.mach - 1) * 0.5, 1, 3.5)
+function huntCombatStep(): void {
+  const fireGun = input.isDown('Mouse0') || input.isDown('Space') || input.isDown('KeyJ') || autoFire
+  const fireMsl = input.isDown('Mouse2') || input.isDown('KeyK')
+  const nt = noseTarget()
+  cannon.step(STEP, fireGun && !player.dead, flight, nt, rounds)
+  if (cannon.fired) { if (Math.random() < 0.5) sound.pulse(); cannon.fired = 0 }
+  missiles.step(STEP, fireMsl && !player.dead, flight, darts.list, (m, t) => { t.hit(4, tmp3.copy(m.vel).normalize()); sound.hit(true) })
+  darts.step(STEP, flight, rounds, (x, z, r) => world.topAt(x, z, r))
+  rounds.step(STEP, (r) => {
+    if (r.pos.y < groundH(r.pos.x, r.pos.z)) return true
+    if (r.mine) {
+      for (const d of darts.list) if (d.alive && segDist(r.prev, r.pos, d.pos) < d.radius) { d.hit(r.dmg, tmp3.copy(r.vel).normalize()); sound.hit(false); return true }
+      return false
+    }
+    if (!player.dead && segDist(r.prev, r.pos, flight.pos) < 9) { flight.damage(r.dmg); damageFlash = Math.min(1, damageFlash + 0.35); shake(0.25); sound.hit(true); return true }
+    return false
+  })
+  for (const d of darts.list) {
+    if (!d.killed) continue
+    d.killed = false
+    kills++
+    const pts = Math.round(DART.points * speedMul() * (d.rearHit ? 1.5 : 1))
+    score += pts
+    pop(`+${pts}  DART${d.rearHit ? ' · ENGINE' : ''}`)
+    fx.explosion(d.pos.x, d.pos.y, d.pos.z, d.vel.x * 0.5, d.vel.y * 0.5, d.vel.z * 0.5, 1.4)
+    sound.explosion(d.pos.distanceTo(flight.pos), 1, 0)
+    hitstop = 0.04
+  }
+  // The practice director: a new flight a few seconds after the last one falls, bigger each time.
+  if (darts.alive === 0 && directorOn) {
+    waveT -= STEP
+    if (waveT <= 0) {
+      huntWave++
+      const n = Math.min(5, 2 + huntWave)
+      darts.spawnFlight(n, flight.pos, Math.atan2(flight.fwd.x, flight.fwd.z) + (Math.random() - 0.5) * 0.8, 6500, flight.pos)
+      flash(`FLIGHT ${huntWave} · ${n} DARTS`)
+      sound.beep(true)
+      waveT = 4
+    }
+  }
+}
+let autoFire = false
+let directorOn = true
+
 // The sandbox course: rings through the sky.
 const rings = new Rings()
 scene.add(rings.mesh)
@@ -1011,6 +1086,7 @@ function toTitle(): void {
   mode = 'title'
   document.body.classList.remove('flying')
   rings.hide()
+  rounds.clear(); missiles.reset(); darts.clear()
   for (const id of ['#aimring', '#velmark', '#gmark']) $(id).style.display = 'none'
   combat.enabled = false
   combat.reset()
@@ -1104,6 +1180,7 @@ let secK = 0, pinUntil = 0
 function startRace(): void {
   document.body.classList.remove('flying')
   rings.hide()
+  rounds.clear(); missiles.reset(); darts.clear()
   for (const id of ['#aimring', '#velmark']) $(id).style.display = 'none'
   applyPending()
   runTop = 0; secK = 0; pinUntil = 0
@@ -1160,6 +1237,7 @@ function startHunt(): void {
   fcam.snap()
   rings.layout(flight.pos.x, flight.pos.z, player.heading, 1, (x, z, r) => world.topAt(x, z, r))
   rings.passed = 0; rings.missed = 0; rings.sets = 0
+  rounds.clear(); cannon.reset(); missiles.reset(); darts.clear(); waveT = 3; huntWave = 0; kills = 0
   hintsEl.innerHTML = FLY_HINTS
   document.body.classList.add('flying')
   hintsEl.style.opacity = '0.85'
@@ -1379,6 +1457,9 @@ function rebase(): void {
   combat.shift(dx, dz)
   flight.shift(dx, dz)
   rings.shift(dx, dz)
+  rounds.shift(dx, dz)
+  missiles.shift(dx, dz)
+  darts.shift(dx, dz)
   fx.shift(dx, dz)
   wreckage.shift(dx, dz)
   shock.shift(dx, dz)
@@ -1423,6 +1504,7 @@ function simStep(): void {
     flight.syncTo(player)
     runTop = Math.max(runTop, flight.topMach)
     rings.step(player)
+    huntCombatStep()
     if (flight.hull <= 0 && !player.dead) die()
     rebase()
     if (!player.dead) runTime += STEP
@@ -1477,6 +1559,21 @@ function readFlight(): void {
 const tmp2 = new THREE.Vector3()
 /** HUNT autopilot (tests): fly at the next ring, throttle on. */
 function huntAutopilot(): void {
+  // Darts up: chase the nearest, put the nose on its lead point, fire when it is there.
+  autoFire = false
+  let best: (typeof darts.list)[number] | null = null, bd = Infinity
+  for (const d of darts.list) if (d.alive && !d.dummy) { const dd = d.pos.distanceTo(flight.pos); if (dd < bd) { bd = dd; best = d } }
+  if (best) {
+    fc.throttle = true; fc.brake = false; fc.burner = false; fc.roll = 0; fc.pitch = 0; fc.turn = 0
+    const r = tmp3.subVectors(best.pos, flight.pos), v = tmp2.subVectors(best.vel, flight.vel)
+    const tt = interceptT(r, v, CANNON.speed)
+    autoAim.copy(best.pos)
+    if (Number.isFinite(tt) && tt < 2) autoAim.addScaledVector(best.vel, tt).addScaledVector(flight.vel, -tt)
+    autoAim.sub(flight.pos).normalize()
+    autoFire = bd < 2400 && autoAim.angleTo(flight.fwd) < 0.035
+    fc.aim = autoAim
+    return
+  }
   const r = rings.items[rings.next]
   fc.throttle = true; fc.brake = false; fc.burner = false; fc.roll = 0; fc.pitch = 0; fc.turn = 0
   if (!r) { fc.aim = null; return }
@@ -1763,6 +1860,16 @@ function frame(now: number): void {
     if (!r.p.dead && v.wasHidden) { v.lastDust.copy(r.p.pos); for (const t of v.trail) t.reset() }
     v.wasHidden = r.p.dead
     drawRacer(r.p, alpha, dt, r.p === player)
+  }
+  if (mode === 'hunt') {
+    darts.draw(alpha, camera.position); rounds.draw(camera.position); missiles.draw()
+    // Missile smoke: a puff per missile per frame.
+    for (const m of missiles.items) {
+      if (!m.on) continue
+      const e = resetE()
+      e.x = m.pos.x; e.y = m.pos.y; e.z = m.pos.z; e.life = 0.9; e.size0 = 1.2; e.size1 = 5; e.r = 0.9; e.g = 0.88; e.b = 0.85; e.a = 0.45
+      fx.smoke.emit(e)
+    }
   }
   let ns = 0
   if (mode === 'race') for (const r of race.racers) {
@@ -2109,7 +2216,7 @@ function updateHud(dt: number, slow: boolean): void {
     $('#gmark').style.display = 'none'
     $('#gmark2').style.display = 'none'
     scoreNum.textContent = String(score)
-    scoreSub.textContent = `ALT ${Math.round(flight.agl)} M · ENERGY ${Math.round(flight.energy)} · RINGS ${rings.passed}${rings.missed ? ` (${rings.missed} MISSED)` : ''} · ${fmtTime(runTime)}`
+    scoreSub.textContent = `ALT ${Math.round(flight.agl)} M · ENERGY ${Math.round(flight.energy)} · HEAT ${cannon.lockout > 0 ? 'VENT' : Math.round((cannon.heat / 3) * 100) + '%'} · MSL ${'▮'.repeat(missiles.rack)}${'▯'.repeat(8 - missiles.rack)} · ${kills} DOWN · RINGS ${rings.passed} · ${fmtTime(runTime)}`
     rings.draw(time)
     // Flight marks: the aim ring, the velocity cross, the next ring.
     const place = (el: HTMLElement, v: THREE.Vector3) => {
@@ -2135,19 +2242,37 @@ function updateHud(dt: number, slow: boolean): void {
     let ei = 0
     let nearRun: THREE.Vector3 | null = null
     let nearD = Infinity
-    for (const d of combat.drones) {
+    for (const d of darts.list) {
       if (!d.alive) continue
       const dist = d.pos.distanceTo(player.pos)
-      if (d.mode === 'run' && dist < nearD) { nearD = dist; nearRun = d.pos }
+      if (dist < nearD) { nearD = dist; nearRun = d.pos }
       proj.copy(d.pos).project(camera)
       if (proj.z >= 1 || Math.abs(proj.x) > 1 || Math.abs(proj.y) > 1 || ei >= enemyEls.length) continue
       const el = enemyEls[ei++]
       el.style.display = 'block'
       el.style.left = `${(proj.x * 0.5 + 0.5) * innerWidth}px`
       el.style.top = `${(-proj.y * 0.5 + 0.5) * innerHeight - 8}px`
-      el.classList.toggle('run', d.mode === 'run')
-      el.firstElementChild!.textContent = `${d.mode === 'run' ? 'RUNNER ' : ''}${dist < 1000 ? Math.round(dist) + ' M' : (dist / 1000).toFixed(1) + ' KM'}`
+      const locked = missiles.locks.includes(d)
+      el.classList.toggle('run', locked)
+      el.firstElementChild!.textContent = `${locked ? 'LOCK · ' : ''}${dist < 1000 ? Math.round(dist) + ' M' : (dist / 1000).toFixed(1) + ' KM'}`
     }
+    if (nearRun) { proj.copy(nearRun).project(camera); if (proj.z < 1 && Math.abs(proj.x) < 1 && Math.abs(proj.y) < 1) nearRun = null }
+    // The pipper: where to put the nose so the cannon meets the target near it.
+    const pip = $('#pipper'), nt = noseTarget()
+    if (nt && !player.dead) {
+      const r = tmp3.subVectors(nt.pos, flight.pos), v = tmp2.subVectors(nt.vel, flight.vel)
+      const tt = interceptT(r, v, CANNON.speed)
+      if (Number.isFinite(tt)) {
+        tmp2.copy(nt.pos).addScaledVector(nt.vel, tt).addScaledVector(flight.vel, -tt)
+        proj.copy(tmp2).project(camera)
+        pip.style.display = proj.z < 1 ? 'block' : 'none'
+        pip.style.left = `${(proj.x * 0.5 + 0.5) * innerWidth}px`; pip.style.top = `${(-proj.y * 0.5 + 0.5) * innerHeight}px`
+      } else pip.style.display = 'none'
+    } else pip.style.display = 'none'
+    // The paint box while painting.
+    const pb = $('#paintbox')
+    pb.style.display = missiles.painting && !player.dead ? 'block' : 'none'
+    if (missiles.painting) { proj.copy(flight.pos).addScaledVector(flight.fwd, 1000).project(camera); pb.style.left = `${(proj.x * 0.5 + 0.5) * innerWidth}px`; pb.style.top = `${(-proj.y * 0.5 + 0.5) * innerHeight}px` }
     for (; ei < enemyEls.length; ei++) enemyEls[ei].style.display = 'none'
     const t = combat.lockTarget
     if (t && !player.dead) {
@@ -2165,7 +2290,7 @@ function updateHud(dt: number, slow: boolean): void {
     } else lockEl.style.display = 'none'
     if (nearRun && !player.dead) {
       proj.copy(nearRun).project(camera)
-      arrowTo(proj, `RUNNER ${(nearD / 1000).toFixed(1)} KM`)
+      arrowTo(proj, `DARTS ${(nearD / 1000).toFixed(1)} KM`)
     } else if (!rings.items.length) arrowEl.style.display = 'none'
   }
   if (debugEl.style.display === 'block' && slow) {
@@ -2446,7 +2571,9 @@ const g = {
   startHunt: () => startHunt(),
   autopilot: (on: boolean) => { autopilot = on },
   flyForce: (on: boolean) => { flyForced = on },
-  rings,
+  rings, darts, cannon, missiles, rounds,
+  autoFire: (on: boolean) => { autoFire = on },
+  director: (on: boolean) => { directorOn = on },
   setMach: (m: number) => { player.speed = m * MACH },
   skipCountdown: () => { race.countdown = 0.01 },
   force: (c: import('./player').Controls | null) => { forced = c },
