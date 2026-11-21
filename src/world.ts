@@ -74,6 +74,11 @@ function skyMaterial(ground: boolean): THREE.ShaderMaterial {
           float lit = clamp(fbm(cp * 0.00032 + SUN_DIR.xz * 0.06) - base + 0.55, 0.0, 1.0);
           vec3 cc = mix(vec3(0.62, 0.68, 0.8) * mix(vec3(1.0), SUN_TINT, 0.5), vec3(1.9, 1.8, 1.65) * SUN_TINT, lit);
           cc += vec3(1.0, 0.8, 0.55) * pow(s, 6.0) * 0.6;
+          // Depth: thick cores darker and cooler underneath; thin edges facing the sun silver.
+          cc *= mix(1.0, 0.72, smoothstep(0.55, 0.95, cov) * (1.0 - lit));
+          cc += vec3(1.2, 1.1, 0.95) * SUN_TINT * cov * (1.0 - cov) * 3.0 * pow(s, 5.0) * 0.8;
+          // Far clouds take the colour of the air in front of them (they recede into the horizon).
+          cc = mix(cc, skyColor(vec3(d.x, 0.03, d.z)) * 1.08, (1.0 - smoothstep(0.02, 0.22, d.y)) * 0.65);
           #ifdef BIOME_LAVA
           // Ash clouds: dark, lit from below by the lava's glow toward the horizon.
           cc = mix(vec3(0.05, 0.04, 0.045), vec3(0.5, 0.15, 0.05), (1.0 - smoothstep(0.02, 0.35, d.y)) * (0.4 + 0.6 * lit));
@@ -89,6 +94,22 @@ function skyMaterial(ground: boolean): THREE.ShaderMaterial {
           c = mix(c, vec3(1.45, 1.42, 1.38) * SUN_TINT + vec3(1.0, 0.8, 0.55) * pow(s, 8.0) * 0.5, cir * 0.42);
           c = mix(c, cc, cov * fade * 0.92);
         }
+        // A bank of distant cloud along the horizon, above the mountains: tops lit on the sun's side,
+        // dissolving into the haze — the farthest thing you see, and the sense of how far that is.
+        #ifndef BIOME_ICE
+        if (d.y > -0.005 && d.y < 0.09) {
+          float az = atan(d.z, d.x);
+          float top = 0.025 + 0.03 * fbmT(vec2(az * 3.2, 1.7) + uCloudOff * 0.00002) + 0.018 * fbmT(vec2(az * 11.0, 4.1));
+          float inBank = 1.0 - smoothstep(top - 0.012, top, d.y);
+          float puff = fbmT(vec2(az * 26.0, d.y * 60.0) + 9.0);
+          vec3 bank = mix(skyColor(vec3(d.x, 0.0, d.z)) * 1.12, vec3(1.25, 1.2, 1.12) * SUN_TINT, 0.35 + 0.4 * puff);
+          bank += vec3(1.0, 0.82, 0.6) * pow(s, 4.0) * 0.5;
+          #ifdef BIOME_LAVA
+          bank = mix(vec3(0.12, 0.07, 0.06), vec3(0.55, 0.2, 0.08), puff);
+          #endif
+          c = mix(c, bank, inBank * smoothstep(0.0, 0.012, d.y + 0.005) * 0.7);
+        }
+        #endif
         #ifdef BIOME_ICE
         // Polar twilight: stars overhead (twinkling a little), and the aurora.
         {
@@ -114,35 +135,45 @@ function skyMaterial(ground: boolean): THREE.ShaderMaterial {
   })
 }
 
-/** A ring of far mountains around the camera: a silhouette band in the haze, two layers deep. */
+/** A ring of far mountains around the camera, three ranges deep (15, 23, 33 km). Not flat cut-outs:
+ *  each column carries its ridge height and slope, so the faces are lit and shadowed by the sun, cut
+ *  by gullies, capped with snow where it is high and cold; and every range sinks into the air — the
+ *  farther the paler and bluer, the foot lost in valley haze (aerial perspective). */
 function mountains(): THREE.Mesh {
-  const seg = 720
+  const seg = 900
   const layers = [
-    { r: 21000, base: 0.7, amp: 1.0, seed: 1.7, tint: 0 },
-    { r: 28000, base: 1.0, amp: 1.6, seed: 4.2, tint: 1 },
+    // (Grand on purpose: at 33 km a 1.9 km peak is 3 degrees of sky — it read as a smudge.)
+    { r: 33000, amp: 3.6, seed: 7.9, far: 1.0 },
+    { r: 23000, amp: 2.2, seed: 4.2, far: 0.55 },
+    { r: 15000, amp: 1.0, seed: 1.7, far: 0.15 },
   ]
-  const pos: number[] = []
-  const tint: number[] = []
-  const idx: number[] = []
-  const n1 = (x: number, s: number) => Math.sin(x * 3 + s) * 0.5 + Math.sin(x * 7.3 + s * 2) * 0.25 + Math.sin(x * 17.1 + s * 3) * 0.14 + Math.sin(x * 41 + s) * 0.06
+  const pos: number[] = [], at: number[] = [], ah: number[] = [], idx: number[] = []
+  const n1 = (x: number, s: number) => Math.sin(x * 3 + s) * 0.5 + Math.sin(x * 7.3 + s * 2) * 0.25 + Math.sin(x * 17.1 + s * 3) * 0.14 + Math.sin(x * 41 + s) * 0.07 + Math.sin(x * 97 + s * 5) * 0.03
+  // Ridged: sharp crests (1 − |noise|), so peaks are peaks, not hills.
+  const ridged = (x: number, s: number) => 1 - Math.abs(Math.sin(x * 5.3 + s) * 0.6 + Math.sin(x * 13.7 + s * 1.7) * 0.3 + Math.sin(x * 29 + s * 2.3) * 0.1)
+  const height = (a: number, L: (typeof layers)[number]) => 150 + Math.max(0, 0.25 + n1(a, L.seed) * 0.45 + ridged(a, L.seed + 3) * 0.55 - 0.3) * 1100 * L.amp
   for (const L of layers) {
     const start = pos.length / 3
     for (let i = 0; i <= seg; i++) {
       const a = (i / seg) * Math.PI * 2
-      const ridge = Math.max(0, L.base * 0.35 + n1(a, L.seed) * 0.6 + Math.abs(n1(a * 2.1, L.seed + 9)) * 0.5)
-      const h = 120 + ridge * 950 * L.amp
+      const h = height(a, L)
+      // Slope along the ring (m per m of arc): which way the face turns.
+      const da = (Math.PI * 2) / seg
+      const slope = (height(a + da, L) - height(a - da, L)) / (2 * da * L.r)
       const x = Math.cos(a) * L.r, z = Math.sin(a) * L.r
       pos.push(x, -400, z, x, h, z)
-      tint.push(L.tint, 0, L.tint, 1)
+      at.push(L.far, 0, L.far, 1)
+      ah.push(h, slope, h, slope)
     }
     for (let i = 0; i < seg; i++) {
-      const a = start + i * 2
-      idx.push(a, a + 2, a + 1, a + 1, a + 2, a + 3)
+      const v = start + i * 2
+      idx.push(v, v + 2, v + 1, v + 1, v + 2, v + 3)
     }
   }
   const g = new THREE.BufferGeometry()
   g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3))
-  g.setAttribute('aT', new THREE.Float32BufferAttribute(tint, 2))
+  g.setAttribute('aT', new THREE.Float32BufferAttribute(at, 2))
+  g.setAttribute('aH', new THREE.Float32BufferAttribute(ah, 2))
   g.setIndex(idx)
   const mat = new THREE.ShaderMaterial({
     side: THREE.DoubleSide,
@@ -150,10 +181,12 @@ function mountains(): THREE.Mesh {
     uniforms: { ...MOUND_U },
     vertexShader: /* glsl */ `
       attribute vec2 aT;
+      attribute vec2 aH;
       varying vec2 vT;
+      varying vec2 vH;
       varying vec3 vDir;
       void main() {
-        vT = aT;
+        vT = aT; vH = aH;
         vDir = position;
         vec4 p = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
         gl_Position = p.xyww;
@@ -161,26 +194,48 @@ function mountains(): THREE.Mesh {
     fragmentShader: /* glsl */ `
       ${WORLD_GLSL}
       varying vec2 vT;
+      varying vec2 vH;
       varying vec3 vDir;
       void main() {
         vec3 d = normalize(vDir);
-        vec3 sky = skyColor(vec3(d.x, max(d.y, 0.0) * 0.4, d.z));
-        // Near range: warm, rusty, more solid; far: blue, nearly sky. Bases fade into the dust.
-        vec3 rock = mix(vec3(0.42, 0.2, 0.14), vec3(0.34, 0.42, 0.6), vT.x);
+        float far = vT.x, v = vT.y;
+        float hTop = vH.x, slope = vH.y;
+        float h = mix(-400.0, hTop, v);                  // height of this point on the face (m)
+        float az = atan(d.z, d.x);
+        // The face's normal, faked: toward the camera, turned along the ring by the slope, leaning up
+        // near the crest; and gullies (vertical noise) breaking it up.
+        vec3 radial = normalize(vec3(d.x, 0.0, d.z)), along = vec3(-radial.z, 0.0, radial.x);
+        float gully = vnoise(vec2(az * 520.0, h * 0.004)) * 0.6 + vnoise(vec2(az * 1500.0, h * 0.012)) * 0.4;
+        vec3 n = normalize(-radial + along * (-slope * 2.2 + (gully - 0.5) * 0.9) + vec3(0.0, 0.25 + 0.9 * smoothstep(0.55, 1.0, v), 0.0));
+        float sun = clamp(dot(n, SUN_DIR) * 0.8 + 0.25, 0.0, 1.0);
+        // Rock and what grows / lies on it, per world.
+        vec3 lit = vec3(0.58, 0.33, 0.22), shade = vec3(0.2, 0.13, 0.13);      // red rock
+        float snowLine = 1e9, green = 0.0;
         #ifdef BIOME_ICE
-        rock = mix(vec3(0.62, 0.68, 0.82), vec3(0.28, 0.36, 0.55), vT.x);
+        lit = vec3(0.55, 0.58, 0.66); shade = vec3(0.2, 0.24, 0.34); snowLine = 700.0;
         #endif
         #ifdef BIOME_LAVA
-        rock = mix(vec3(0.07, 0.055, 0.055), vec3(0.16, 0.08, 0.07), vT.x);
+        lit = vec3(0.14, 0.1, 0.1); shade = vec3(0.05, 0.04, 0.045);
         #endif
         #ifdef BIOME_FOREST
-        rock = mix(vec3(0.16, 0.26, 0.16), vec3(0.32, 0.42, 0.55), vT.x);
+        lit = vec3(0.5, 0.5, 0.48); shade = vec3(0.17, 0.19, 0.22); snowLine = 2300.0; green = 1.0;
         #endif
-        float sunSide = max(dot(normalize(vec3(d.x, 0.0, d.z)), normalize(vec3(SUN_DIR.x, 0.0, SUN_DIR.z))), 0.0);
-        rock *= 0.8 + 0.5 * sunSide;
-        float haze = mix(0.32, 0.6, vT.x);
-        vec3 c = mix(rock, sky, haze);
-        c = mix(sky, c, smoothstep(0.0, 0.5, vT.y));
+        vec3 c = mix(shade, lit, sun) * (0.85 + 0.3 * gully);
+        // Forest on the lower slopes (VERDANT): dark green giving way to rock above the tree line.
+        float tl = 1300.0 + 400.0 * (vnoise(vec2(az * 90.0, 3.0)) - 0.5);
+        c = mix(c, mix(vec3(0.05, 0.1, 0.05), vec3(0.16, 0.26, 0.1), sun), green * (1.0 - smoothstep(tl - 60.0, tl + 60.0, h)));
+        // Snow: above the line, more on gentle (up-facing) faces, streaming down the gullies.
+        float sl = snowLine + 160.0 * (gully - 0.5) - 260.0 * n.y;
+        c = mix(c, mix(vec3(0.55, 0.62, 0.78), vec3(1.05, 1.05, 1.08), sun), smoothstep(sl - 40.0, sl + 40.0, h));
+        #ifdef BIOME_LAVA
+        // The foothills lit from below by the lava fields.
+        c += vec3(0.35, 0.08, 0.02) * (1.0 - smoothstep(0.0, 0.35, v)) * (1.0 - far * 0.7);
+        #endif
+        // The air between: the range takes the colour of the horizon sky — more with distance, and
+        // most at its foot (valley haze). The sun's side glows.
+        vec3 sky = skyColor(vec3(d.x, 0.02 + max(d.y, 0.0) * 0.4, d.z));
+        float haze = mix(0.18, 0.6, far) + (1.0 - smoothstep(0.0, 0.45, v)) * mix(0.35, 0.25, far);
+        c = mix(c, sky, clamp(haze, 0.0, 0.96));
         gl_FragColor = vec4(c, 1.0);
       }`,
   })
@@ -935,6 +990,14 @@ export class World {
     this.sunLight.position.set(SUN_DIR[0], SUN_DIR[1], SUN_DIR[2])
     this.group.add(this.sunLight)
     this.group.add(this.sunLight.target)
+    // Fill: the sky from above, the ground's bounce from below — shaded rock was pitch black with the
+    // sun the only light (a mesa's far face read as a hole cut in the view).
+    {
+      const sky = new THREE.Color(LIGHT.zenith[0], LIGHT.zenith[1], LIGHT.zenith[2]).lerp(new THREE.Color(LIGHT.horizon[0], LIGHT.horizon[1], LIGHT.horizon[2]), 0.55)
+      const ground = BIOME === 'ice' ? new THREE.Color(0.55, 0.6, 0.72) : BIOME === 'lava' ? new THREE.Color(0.3, 0.09, 0.03) : BIOME === 'forest' ? new THREE.Color(0.2, 0.28, 0.1) : new THREE.Color(0.6, 0.32, 0.16)
+      const k = BIOME === 'ice' ? 0.45 : BIOME === 'lava' ? 0.6 : BIOME === 'forest' ? 0.75 : 0.9
+      this.group.add(new THREE.HemisphereLight(sky, ground, k))
+    }
   }
 
   /** Rocks that stand where they are put (the course's spires). */
