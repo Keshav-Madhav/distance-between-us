@@ -58,7 +58,7 @@ function skyMaterial(ground: boolean): THREE.ShaderMaterial {
           float base = fbm(cp * 0.00032);
           float cov = smoothstep(0.52, 0.78, base);
           #ifdef BIOME_ICE
-          cov *= 0.35; // (a clear twilight: thin cloud, so the aurora and stars show)
+          cov *= 0.08; // (a clear twilight: barely any cloud, so the aurora and stars show)
           #endif
           float detail = fbm(cp * 0.0016 + 3.0);
           cov *= smoothstep(0.25, 0.55, detail + cov * 0.4);
@@ -70,6 +70,9 @@ function skyMaterial(ground: boolean): THREE.ShaderMaterial {
           vec2 hp = d.xz / d.y * 9000.0 + uCloudOff * 1.7;
           float ci = fbmT(hp * vec2(0.00006, 0.00028) + 7.3) * 0.7 + fbmT(hp * 0.0011 + 2.1) * 0.3;
           float cir = smoothstep(0.5, 0.78, ci) * smoothstep(0.03, 0.25, d.y) * (1.0 - cov);
+          #ifdef BIOME_ICE
+          cir *= 0.15;
+          #endif
           c = mix(c, vec3(1.45, 1.42, 1.38) * SUN_TINT + vec3(1.0, 0.8, 0.55) * pow(s, 8.0) * 0.5, cir * 0.42);
           c = mix(c, cc, cov * fade * 0.92);
         }
@@ -86,7 +89,11 @@ function skyMaterial(ground: boolean): THREE.ShaderMaterial {
         }
         #endif
         // The sun: a hot disk (past bloom's threshold) and a wide glare.
+        #ifdef BIOME_ICE
+        c += vec3(1.0, 0.75, 0.6) * (smoothstep(0.99955, 0.9998, s) * 12.0 + pow(s, 900.0) * 2.0 + pow(s, 30.0) * 0.15 + pow(s, 4.0) * 0.05);
+        #else
         c += vec3(1.0, 0.9, 0.75) * (smoothstep(0.99955, 0.9998, s) * 40.0 + pow(s, 900.0) * 4.0 + pow(s, 30.0) * 0.4 + pow(s, 4.0) * 0.1);
+        #endif
         gl_FragColor = vec4(c, 1.0);
       }`,
   })
@@ -308,10 +315,18 @@ function terrainMaterial(shared: GroundUniforms, snap: { value: THREE.Vector2 },
         if (uTrackOn > 0.01 && tuv.x > 0.0 && tuv.y > 0.0 && tuv.x < 1.0 && tuv.y < 1.0) {
           vec2 wr = texture2D(tTrack, tuv).rg;
           float pack = smoothstep(0.05, 0.8, wr.r) * uTrackOn;
+          #ifdef BIOME_ICE
+          alb = mix(alb, alb * vec3(0.8, 0.86, 0.97), pack * 0.8);
+          #else
           alb = mix(alb, mix(s2, vec3(dot(s2, vec3(0.33))), 0.25) * vec3(0.86, 0.74, 0.68), pack * 0.7);
+          #endif
           float streak = wr.g * (0.75 + 0.25 * vnoise(p * 0.05)) * uTrackOn;
           alb *= 1.0 - 0.55 * smoothstep(0.05, 0.6, streak);
+          #ifdef BIOME_ICE
+          alb = mix(alb, vec3(0.45, 0.55, 0.7), smoothstep(0.45, 0.9, streak) * 0.35);
+          #else
           alb = mix(alb, vec3(0.16, 0.08, 0.05), smoothstep(0.45, 0.9, streak) * 0.35);
+          #endif
         }
         alb *= 0.72;
         float sun = max(dot(n, SUN_DIR), 0.0);
@@ -332,7 +347,7 @@ function terrainMaterial(shared: GroundUniforms, snap: { value: THREE.Vector2 },
           vec3 Vw = normalize(cameraPosition - vW), Rw = reflect(-Vw, n);
           float fr = pow(1.0 - max(dot(Vw, n), 0.0), 4.0);
           vec3 refl = skyColor(Rw) * 0.9 + aurora(Rw) * 0.9;
-          col = mix(col, refl, river * (0.22 + 0.6 * fr));
+          col = mix(col, refl, river * (0.35 + 0.6 * fr));
         }
         #endif
         // Sand glints: a few grains in each patch catch the sun toward you (near the camera, in sun,
@@ -412,6 +427,9 @@ function pebbles(count: number, tile: number): THREE.InstancedMesh {
         vec3 n = dot(cr, cr) > 1e-12 ? normalize(cr) : vec3(0.0, 1.0, 0.0);
         if (n.y < 0.0) n = -n;
         vec3 alb = mix(vec3(0.3, 0.07, 0.03), vec3(0.55, 0.28, 0.14), vTint);
+        #ifdef BIOME_ICE
+        alb = mix(vec3(0.15, 0.17, 0.22), vec3(0.55, 0.62, 0.75), vTint);
+        #endif
         float sun = max(dot(n, SUN_DIR), 0.0);
         vec3 col = alb * (SUN_COL * sun + skyColor(n) * 0.35);
         gl_FragColor = vec4(applyFog(col, vW), 1.0);

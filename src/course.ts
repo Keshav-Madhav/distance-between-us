@@ -5,7 +5,11 @@
 //   boost pads — glowing chevron strips on the line: run over one for a shove
 //   mounds     — jumps on and beside the line (terrain.ts): their crests launch you
 import * as THREE from 'three'
-import { groundH, setMounds } from './terrain'
+import { BIOME, groundH, setMounds } from './terrain'
+/** The next-gate light: cyan in the desert, amber on the ice (cyan vanished against a cold sky). */
+const NEXT = BIOME === 'ice' ? [5, 2.2, 0.5] : [0.6, 3.2, 5]
+const AFTER = BIOME === 'ice' ? [2.4, 1.1, 0.3] : [0.4, 1.6, 2.4]
+const CURT = BIOME === 'ice' ? [2.2, 1.0, 0.25] : [0.2, 1.4, 2.0]
 import { patchStandard, SKY_FOG_ONLY } from './shaders'
 
 const STEP = 40
@@ -53,6 +57,10 @@ export interface CourseDef {
   rampR?: number
   /** Each jump on one half of the track, alternating sides: take it or go round (the drag race). */
   rampHalf?: boolean
+  /** Laps of a loop (default 1). */
+  laps?: number
+  /** Extra AI top speed on this course (Mach). */
+  aiPace?: number
   /** How far mesas keep from the line (m, default 850): small → a canyon. */
   clearance?: number
   /** Gate width (half, m) and tower height × (default 260, 1). */
@@ -271,7 +279,11 @@ export const FROSTLINE: CourseDef = {
   km: Math.round(loopLength(frostPath) / 100) / 10,
   loop: frostPath,
   gateEvery: 5500,
-  jumps: [0.42, 0.45],
+  // Two laps: the world is on screen for more than 40 s. (Jumps are fractions of the whole race.)
+  laps: 2,
+  aiPace: 0.5,
+  // (Listed once: the mounds are physical — lap two drives over the same ones.)
+  jumps: [0.21, 0.225],
   whoops: [],
   padEvery: 9000,
   spireGap: () => null,
@@ -342,8 +354,8 @@ export class Course {
     // into the first bends). An open course: x(z) from the run-up to the run-off.
     let rawStart = 0
     if (def.loop) {
-      const f = def.loop, u0 = -RUNUP / RACE, u1 = 1 + RUNOFF / RACE
-      const N = Math.ceil((RACE + RUNUP + RUNOFF) / 5)
+      const f = def.loop, laps = def.laps ?? 1, u0 = -RUNUP / RACE, u1 = laps + RUNOFF / RACE
+      const N = Math.ceil((RACE * laps + RUNUP + RUNOFF) / 5)
       for (let i = 0; i <= N; i++) {
         const u = u0 + ((u1 - u0) * i) / N
         if (u < 0) rawStart = i + 1
@@ -385,7 +397,7 @@ export class Course {
     // the finish back on the start line.)
     let lapLen = 0
     if (def.loop) { let [px0, pz0] = def.loop(0); for (let i = 1; i <= 8000; i++) { const [x, z] = def.loop(i / 8000); lapLen += Math.hypot(x - px0, z - pz0); px0 = x; pz0 = z } }
-    const finishI = Math.min(n - 1, startI + Math.round((def.loop ? lapLen : RACE * 1.02) / STEP))
+    const finishI = Math.min(n - 1, startI + Math.round((def.loop ? lapLen * (def.laps ?? 1) : RACE * 1.02) / STEP))
     this.finishI = finishI
     const raceLen = (finishI - startI) * STEP
 
@@ -745,8 +757,8 @@ export class Course {
       const isAfter = next >= 0 && k === next + 1
       const pulse = 0.75 + 0.25 * Math.sin(time * 6)
       if (k === 0 || k === K - 1) this.col.setRGB(5, 1.6, 0.3).multiplyScalar(isNext ? pulse * 1.4 : isAfter ? 1 : 0.7)
-      else if (isNext) this.col.setRGB(0.6, 3.2, 5).multiplyScalar(pulse)
-      else if (isAfter) this.col.setRGB(0.4, 1.6, 2.4).multiplyScalar(0.6)
+      else if (isNext) this.col.setRGB(NEXT[0], NEXT[1], NEXT[2]).multiplyScalar(pulse)
+      else if (isAfter) this.col.setRGB(AFTER[0], AFTER[1], AFTER[2]).multiplyScalar(0.6)
       else this.col.setRGB(1.6, 1.2, 0.9).multiplyScalar(0.55)
       this.beamMesh.setColorAt(k, this.col)
       for (let j = 0; j < 4; j++) this.towerLights.setColorAt(k * 4 + j, this.col)
@@ -764,7 +776,7 @@ export class Course {
         this.pillars[j].position.set(x, groundH(x, z), z)
       }
       this.curtain.rotation.set(0, Math.atan2(c.tx, c.tz), 0)
-      this.curtainMat.uniforms.uColor.value.setRGB(...((next === 0 || next === K - 1 ? [2.4, 0.9, 0.2] : [0.2, 1.4, 2.0]) as [number, number, number]))
+      this.curtainMat.uniforms.uColor.value.setRGB(...((next === 0 || next === K - 1 ? [2.4, 0.9, 0.2] : CURT) as [number, number, number]))
       this.curtainMat.uniforms.uA.value = next === K - 1 || finalLap ? 1.6 : 1
       this.pillarMat.uniforms.uColor.value.copy(this.curtainMat.uniforms.uColor.value)
     }

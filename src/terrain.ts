@@ -1,4 +1,14 @@
 import { Vector4 } from 'three'
+
+/** The course this page was loaded for (a switch is a reload): picks the light and the world. */
+const COURSE_ID: string = (() => {
+  try { return new URLSearchParams(location.search).get('course') ?? localStorage.getItem('dbu-course') ?? 'sprint' } catch { return 'sprint' }
+})()
+/** The world: the desert, or FROSTLINE's arctic plateau (docs/MAP-FROSTLINE.md). */
+const COURSE_BIOME: Record<string, 'desert' | 'ice'> = { frostline: 'ice' }
+export const BIOME: 'desert' | 'ice' = COURSE_BIOME[COURSE_ID] ?? 'desert'
+/** Dust / spray colour for the particles (sand, or snow). */
+export const DUST: [number, number, number] = BIOME === 'ice' ? [0.8, 0.86, 0.96] : [0.8, 0.42, 0.21]
 // The ground, as one formula run in two places: here in JS (the craft hovers on it, rocks and mesas
 // sit on it) and in GLSL (the terrain mesh is displaced by it). The two must stay identical.
 //
@@ -41,7 +51,8 @@ export function riverAt(x: number, z: number): number {
   const c = Math.sin(k(7, 17, x, z) + 0.4 + 0.9 * Math.sin(k(23, -5, x, z) + 2.0) + 0.5 * Math.sin(k(-13, 29, x, z) + 1.0))
   const m = 0.5 + 0.5 * Math.sin(k(4, -3, x, z) + 0.7) * Math.cos(k(2, 5, x, z) + 0.2)
   // (Wide, shallow banks: steep ones were ramps at Mach 6.)
-  return (1 - smooth(0.03, 0.3, Math.abs(c))) * smooth(0.3, 0.55, m)
+  // (FROSTLINE: about four times as wide, and more of them — frozen lakes you are on for seconds.)
+  return BIOME === 'ice' ? (1 - smooth(0.1, 0.62, Math.abs(c))) * smooth(0.15, 0.4, m) : (1 - smooth(0.03, 0.3, Math.abs(c))) * smooth(0.3, 0.55, m)
 }
 
 /**
@@ -90,7 +101,7 @@ const glslWaves = WAVES.map(
 ).join('\n  ')
 
 /** GLSL: groundH(vec2 xz) and riverAt(vec2 xz), the same as above. */
-export const TERRAIN_GLSL = /* glsl */ `
+export const TERRAIN_GLSL = /* glsl */ `${BIOME === 'ice' ? '#ifndef BIOME_ICE\n#define BIOME_ICE\n#endif' : ''}
 #ifndef TAU
 #define TAU 6.283185307
 #endif
@@ -99,7 +110,11 @@ export const TERRAIN_GLSL = /* glsl */ `
 float riverAt(vec2 p) {
   float c = sin(KW(7.0, 17.0) + 0.4 + 0.9 * sin(KW(23.0, -5.0) + 2.0) + 0.5 * sin(KW(-13.0, 29.0) + 1.0));
   float m = 0.5 + 0.5 * sin(KW(4.0, -3.0) + 0.7) * cos(KW(2.0, 5.0) + 0.2);
+  #ifdef BIOME_ICE
+  return (1.0 - smoothstep(0.1, 0.62, abs(c))) * smoothstep(0.15, 0.4, m);
+  #else
   return (1.0 - smoothstep(0.03, 0.3, abs(c))) * smoothstep(0.3, 0.55, m);
+  #endif
 }
 #define MAX_MOUNDS ${MAX_MOUNDS}
 uniform vec4 uMounds[MAX_MOUNDS];
@@ -136,20 +151,11 @@ const LIGHTS: Record<string, Light> = {
   golden: { zenith: [0.1, 0.15, 0.42], horizon: [0.9, 0.6, 0.42], haze: [1.0, 0.52, 0.28], sunDir: [0.62, 0.26, -0.74], fogK: 0.000074, sunCol: [2.5, 1.62, 0.95], tint: [1.06, 0.8, 0.6] },
   // The Long Drag: dusk — the sun on the horizon, a violet sky, the land in shadow and glow.
   // Frostline: polar twilight — the sun just over the horizon, deep blue overhead, rose haze.
-  polar: { zenith: [0.05, 0.11, 0.3], horizon: [0.36, 0.52, 0.72], haze: [0.7, 0.64, 0.76], sunDir: [0.6, 0.14, -0.79], fogK: 0.00006, sunCol: [1.6, 1.25, 1.2], tint: [0.85, 0.82, 1.0] },
+  polar: { zenith: [0.012, 0.025, 0.075], horizon: [0.22, 0.28, 0.46], haze: [0.78, 0.48, 0.52], sunDir: [0.6, 0.04, -0.8], fogK: 0.00006, sunCol: [1.5, 0.95, 0.8], tint: [0.85, 0.8, 1.0] },
   // Canyon Run: dawn — cool blue-pink sky, a low sun from the east, rose light on the rock.
   dawn: { zenith: [0.1, 0.18, 0.48], horizon: [0.78, 0.62, 0.7], haze: [0.95, 0.66, 0.6], sunDir: [-0.7, 0.3, 0.65], fogK: 0.00007, sunCol: [2.4, 1.75, 1.45], tint: [1.04, 0.86, 0.82] },
   dusk: { zenith: [0.05, 0.06, 0.2], horizon: [0.7, 0.38, 0.36], haze: [0.95, 0.42, 0.26], sunDir: [-0.66, 0.17, -0.73], fogK: 0.000082, sunCol: [2.1, 1.05, 0.6], tint: [1.0, 0.62, 0.5] },
 }
-/** The course this page was loaded for (a switch is a reload): picks the light and the world. */
-const COURSE_ID: string = (() => {
-  try { return new URLSearchParams(location.search).get('course') ?? localStorage.getItem('dbu-course') ?? 'sprint' } catch { return 'sprint' }
-})()
-/** The world: the desert, or FROSTLINE's arctic plateau (docs/MAP-FROSTLINE.md). */
-const COURSE_BIOME: Record<string, 'desert' | 'ice'> = { frostline: 'ice' }
-export const BIOME: 'desert' | 'ice' = COURSE_BIOME[COURSE_ID] ?? 'desert'
-/** Dust / spray colour for the particles (sand, or snow). */
-export const DUST: [number, number, number] = BIOME === 'ice' ? [0.8, 0.86, 0.96] : [0.8, 0.42, 0.21]
 const COURSE_LIGHT: Record<string, string> = { sprint: 'noon', 'dry-river': 'afternoon', circuit: 'golden', drag: 'dusk', oval: 'noon', canyon: 'dawn', frostline: 'polar' }
 export const LIGHT: Light = LIGHTS[COURSE_LIGHT[COURSE_ID] ?? 'noon'] ?? LIGHTS.noon
 export const SKY = {
@@ -170,7 +176,7 @@ const sd = (() => {
 export const SUN_DIR = sd
 
 /** GLSL: skyColor(dir) and applyFog(col, worldPos). Needs cameraPosition. */
-export const SKY_GLSL = /* glsl */ `${BIOME === 'ice' ? '#define BIOME_ICE' : ''}
+export const SKY_GLSL = /* glsl */ `${BIOME === 'ice' ? '#ifndef BIOME_ICE\n#define BIOME_ICE\n#endif' : ''}
 const vec3 SKY_ZENITH = ${v3(SKY.zenith)};
 const vec3 SKY_HORIZON = ${v3(SKY.horizon)};
 const vec3 SKY_HAZE = ${v3(SKY.haze)};
@@ -184,18 +190,18 @@ vec3 aurora(vec3 d) {
   if (d.y < 0.015) return vec3(0.0);
   float az = atan(d.x, d.z), t = uAurT * 0.05;
   vec3 acc = vec3(0.0);
-  for (int k = 0; k < 2; k++) {
+  for (int k = 0; k < 3; k++) {
     float fk = float(k);
-    float base = 0.1 + fk * 0.07 + 0.05 * sin(az * (3.0 + fk) + t * (1.0 + fk * 0.6)) + 0.025 * sin(az * 9.0 - t * 2.1 + fk * 2.0);
+    float base = 0.16 + fk * 0.12 + 0.05 * sin(az * (3.0 + fk) + t * (1.0 + fk * 0.6)) + 0.025 * sin(az * 9.0 - t * 2.1 + fk * 2.0);
     float above = d.y - base;
-    float curtain = smoothstep(-0.004, 0.01, above) * exp(-max(above, 0.0) * (12.0 + fk * 6.0));
+    float curtain = smoothstep(-0.004, 0.01, above) * exp(-max(above, 0.0) * (3.5 + fk * 2.0));
     // (Soft, uneven rays — regular ones read as a barcode of stage lights.)
-    float rays = 0.72 + 0.28 * sin(az * 90.0 + 4.0 * sin(az * 5.0 + t) + t * 2.0) * sin(az * 37.0 - t);
+    float rays = 0.35 + 0.65 * abs(sin(az * 90.0 + 4.0 * sin(az * 5.0 + t) + t * 2.0) * sin(az * 37.0 - t + fk));
     float dens = smoothstep(0.35, 0.95, 0.5 + 0.5 * sin(az * 2.3 + t * 0.7 + fk * 1.7) * sin(az * 1.1 - t * 0.45 + fk));
-    vec3 col = mix(vec3(0.12, 1.0, 0.5), vec3(0.75, 0.25, 0.95), smoothstep(0.02, 0.2, above));
-    acc += col * curtain * rays * dens * (1.0 - fk * 0.35);
+    vec3 col = mix(vec3(0.1, 1.0, 0.45), vec3(0.75, 0.22, 0.95), smoothstep(0.08, 0.35, above));
+    acc += col * curtain * rays * dens * (1.0 - fk * 0.3);
   }
-  return acc * 0.75 * smoothstep(0.015, 0.06, d.y);
+  return acc * 1.8 * smoothstep(0.015, 0.06, d.y);
 }
 #endif
 vec3 skyColor(vec3 d) {

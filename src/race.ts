@@ -440,7 +440,7 @@ export class Race {
     // behind, they push hard.)
     // (Up again after a playtest win from 10th: the field must hold Mach 6 like you do.)
     const band = THREE.MathUtils.clamp(-gap / 2500, -0.4, 0.6)
-    p.maxMach = THREE.MathUtils.clamp(5.3 + r.skill * 0.8 + band, 4.6, 6.3)
+    p.maxMach = THREE.MathUtils.clamp(5.3 + r.skill * 0.8 + band, 4.6, 6.3) + (this.course.def.aiPace ?? 0)
     const corner = p.mach > safe * 0.92
     ctl.boost = !corner && Math.abs(err) < 0.5
     // The afterburner on the long straights only (it locks the steering), and only when the line

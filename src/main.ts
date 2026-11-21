@@ -16,6 +16,8 @@ import { Sound } from './audio'
 import { Input } from './input'
 import { Post } from './post'
 import { BIOME, DUST, groundH, SUN_DIR } from './terrain'
+/** Shadows are cast along the sun, but never stretched past a ~17° sun (a sun on the horizon threw them 100 m off). */
+const SHADOW_Y = Math.max(SUN_DIR[1], 0.3)
 import { loadTextures } from './textures'
 import { centerline, Course, COURSES, LAPS } from './course'
 import { Race, type Racer } from './race'
@@ -623,7 +625,8 @@ function drawTrackPreview(d: (typeof COURSES)[number]): void {
   const PX = (x: number) => W / 2 + (x - (x0 + x1) / 2) * k, PY = (z: number) => H / 2 - (z - (z0 + z1) / 2) * k
   // Ground: warm sand, a 1 km grid (10 km lines stronger).
   const bg = g.createRadialGradient(W / 2, H / 2, 0, W / 2, H / 2, Math.max(W, H) * 0.7)
-  bg.addColorStop(0, '#5a3a24'); bg.addColorStop(1, '#2a1a10')
+  // (FROSTLINE's map: snow-blue ground, not the desert's sand.)
+  if (d.id === 'frostline') { bg.addColorStop(0, '#3a4a62'); bg.addColorStop(1, '#141c2a') } else { bg.addColorStop(0, '#5a3a24'); bg.addColorStop(1, '#2a1a10') }
   g.fillStyle = bg; g.fillRect(0, 0, W, H)
   const gx0 = Math.floor(((x0 + x1) / 2 - W / 2 / k) / 1000) * 1000, gz0 = Math.floor(((z0 + z1) / 2 - H / 2 / k) / 1000) * 1000
   for (let gx = gx0; PX(gx) < W; gx += 1000) { const major = Math.round(gx / 1000) % 10 === 0; if (!major && k * 1000 < 6 * u) continue; g.strokeStyle = major ? 'rgba(255,220,180,0.14)' : 'rgba(255,220,180,0.05)'; g.lineWidth = u; g.beginPath(); g.moveTo(PX(gx), 0); g.lineTo(PX(gx), H); g.stroke() }
@@ -694,7 +697,7 @@ function drawTrackPreview(d: (typeof COURSES)[number]): void {
   for (let i = 1; i < N - 1; i++) { const r = 1 / Math.max(1e-7, kap[i]); if (r < 6000) turning += arc[i + 1] - arc[i]; rmin = Math.min(rmin, r) }
   const spires = d.loop ? 0 : (() => { let n = 0; for (let i = 1; i < N; i++) if (zs[i] > 4000) { const gp = d.spireGap(zs[i] / 1000); if (gp) n += (arc[i] - arc[i - 1]) / ((gp[0] + gp[1]) / 2) } return Math.round(n) })()
   const cell = (v: string, l: string) => `<div><b>${v}</b><small>${l}</small></div>`
-  $('#tp-stats').innerHTML = cell(`${d.km} KM`, d.loop ? 'LOOP' : 'SPRINT') + cell(String(Math.round(d.km * 1000 / d.gateEvery) + 1), 'GATES') + cell(String(d.racers ?? 10), 'RACERS') +
+  $('#tp-stats').innerHTML = cell(`${d.km} KM`, d.loop ? ((d.laps ?? 1) > 1 ? `LOOP · ${d.laps} LAPS` : 'LOOP') : 'SPRINT') + cell(String(Math.round(d.km * 1000 / d.gateEvery) + 1), 'GATES') + cell(String(d.racers ?? 10), 'RACERS') +
     cell(`${Math.round((turning / L) * 100)}%`, 'TURNING') + cell(rmin > 20000 ? '—' : `${(rmin / 1000).toFixed(1)} KM`, 'TIGHTEST') + cell(d.jumps.length ? String(d.jumps.length) : spires ? `~${spires}` : '0', d.jumps.length ? 'JUMPS' : 'SPIRES')
   const best = bestOf(d.id)
   $('#tp-info').innerHTML = `${best !== null ? 'YOUR BEST ' + fmtLap(best) : 'NO TIME SET YET'}${d === course.def ? '' : ' · LOADS ON START'}<br/><span style="color:#fff4ea">━</span> STRAIGHT <span style="color:#ffd29a">━</span> SWEEPER <span style="color:#ff8a3d">━</span> BEND <span style="color:#ff3b30">━</span> HAIRPIN <span style="color:#5fe6ff">●</span> GATE`
@@ -1289,13 +1292,14 @@ function drawRacer(p: Player, alpha: number, dt: number, isMe: boolean): void {
   }
   // FROSTLINE: snow drifting through the air around you (a few flakes a frame, small, slow, wind-blown).
   if (isMe && BIOME === 'ice') {
-    for (let i = 0; i < 6; i++) {
+    // (Never right at the camera — near flakes were big soft discs — fine, many, streaking with speed.)
+    for (let i = 0; i < 24; i++) {
       const e = resetE()
-      const ahead = Math.random() * 220 - 30, side = (Math.random() - 0.5) * 140
+      const ahead = 25 + Math.random() * 235, side = (Math.random() - 0.5) * 160
       e.x = tmp.x + p.fwd.x * ahead + p.right.x * side; e.z = tmp.z + p.fwd.z * ahead + p.right.z * side
       e.y = groundH(e.x, e.z) + 1 + Math.random() * 30
       e.vx = 14 + Math.random() * 6; e.vy = -2 - Math.random() * 2; e.vz = 6
-      e.life = 2.5; e.size0 = 0.22; e.size1 = 0.22; e.r = 1.6; e.g = 1.7; e.b = 1.9; e.a = 0.9
+      e.life = 2.5; e.size0 = 0.1; e.size1 = 0.1; e.r = 1.6; e.g = 1.7; e.b = 1.9; e.a = 0.9; e.streak = p.mach > 1.5 ? 1 : 0
       fx.smoke.emit(e)
     }
   }
@@ -1448,7 +1452,7 @@ function frame(now: number): void {
     const k = 1 + h * 0.04
     shadowS.set(6.4 * k, 1, 10.5 * k)
     shadowQ.setFromAxisAngle(Y_AXIS, visuals.get(r.p)!.heading)
-    shadowM.compose(tmp.set(p.x - (SUN_DIR[0] / SUN_DIR[1]) * h, g + 0.3, p.z - (SUN_DIR[2] / SUN_DIR[1]) * h), shadowQ, shadowS)
+    shadowM.compose(tmp.set(p.x - (SUN_DIR[0] / SHADOW_Y) * h, g + 0.3, p.z - (SUN_DIR[2] / SHADOW_Y) * h), shadowQ, shadowS)
     if (h < 120) shadowMesh.setMatrixAt(ns++, shadowM)
   }
   shadowMesh.count = ns
@@ -1502,7 +1506,7 @@ function frame(now: number): void {
   // (On the ground the shadow sits right under the hull: cast along the sun it poked out ahead of the
   // nose — the "black thing in front", user 2026-11-20. It slides off with the sun only as you climb.)
   const cast = THREE.MathUtils.smoothstep(agl, 6, 30) * agl
-  G.uShadow.value.set(renderPos.x - (SUN_DIR[0] / SUN_DIR[1]) * cast, renderPos.z - (SUN_DIR[2] / SUN_DIR[1]) * cast)
+  G.uShadow.value.set(renderPos.x - (SUN_DIR[0] / SHADOW_Y) * cast, renderPos.z - (SUN_DIR[2] / SHADOW_Y) * cast)
   G.uShadowK.value = agl
   G.uFwd.value.set(Math.sin(heading), Math.cos(heading))
   G.uBoost.value = myCraft.root.visible ? player.boost : 0
@@ -1544,7 +1548,7 @@ function frame(now: number): void {
   P.uSpeed.value = play ? s : 0
   P.uBlur.value = play ? settings.blur * (cine ? 0.3 : 1) * CFG.post.radialBlur * (s * s * 1.2 + player.boost * 0.4 + white * 0.6 + impactPulse * 0.8) : 0
   P.uAberr.value = play ? CFG.post.aberration * (s + player.boost * 0.5 + damageFlash + impactPulse * 2.5) : 0
-  P.uStreak.value = play ? (cine ? 0.25 : 1) * CFG.post.streaks * THREE.MathUtils.clamp((player.mach - 0.8) / 4, 0, 1) : 0
+  P.uStreak.value = play ? (cine ? 0.25 : 1) * (BIOME === 'ice' ? 0.45 : 1) * CFG.post.streaks * THREE.MathUtils.clamp((player.mach - 0.8) / 4, 0, 1) : 0
   P.uStreakT.value += realDt * (0.4 + player.mach * 0.45)
   P.uWhite.value = white * 0.45
   P.uDamage.value = damageFlash

@@ -108,14 +108,20 @@ export function patchStandard(mat: THREE.MeshStandardMaterial, opts: PatchOpts =
           c = mix(c, top, smoothstep(0.7, 0.92, vWN.y));
           #ifdef BIOME_ICE
           // Ice cliffs: blue-grey rock, icy bands, snow on every flat and gentle face.
-          c = vec3(dot(c, vec3(0.333))) * vec3(0.6, 0.68, 0.84) * 1.15;
-          c = mix(c, vec3(0.5, 0.74, 0.9), smoothstep(0.52, 0.6, fract(wy0 / 23.0)) * (1.0 - smoothstep(0.6, 0.68, fract(wy0 / 23.0))) * 0.45);
+          c = vec3(dot(c, vec3(0.333))) * vec3(0.68, 0.78, 0.92) * 1.25;
+          c = mix(c, vec3(0.45, 0.78, 0.95), smoothstep(0.5, 0.58, fract(wy0 / 23.0)) * (1.0 - smoothstep(0.62, 0.7, fract(wy0 / 23.0))) * 0.7);
+          // Frozen runs down the faces: vertical streaks of blue ice.
+          c = mix(c, vec3(0.55, 0.82, 0.98), smoothstep(0.62, 0.8, vnoise(vec2((vFogW.x + vFogW.z) * 0.08, vFogW.y * 0.004))) * 0.5);
           c = mix(c, vec3(0.9, 0.93, 1.0), smoothstep(0.35, 0.75, vWN.y));
           #endif
           // Crevices darker, ledges lighter (the texture's own light and dark, pushed), and the foot
           // of the rock in its own shade where it meets the sand.
           float lum = dot(tx * wxz.x + tz * wxz.y, vec3(0.33));
+          #ifdef BIOME_ICE
+          c *= 0.88 + 0.3 * smoothstep(0.08, 0.5, lum);
+          #else
           c *= 0.78 + 0.5 * smoothstep(0.08, 0.5, lum);
+          #endif
           c *= mix(0.55, 1.0, smoothstep(2.0, 45.0, vFogW.y - vBaseY - 4.0));
           diffuseColor.rgb = c;
         }`,
