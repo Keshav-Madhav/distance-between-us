@@ -358,6 +358,10 @@
   #freeze.on { display: block; animation: freezeDrift 2.4s cubic-bezier(0.2, 0.6, 0.3, 1) forwards; will-change: transform; }
   @keyframes freezeDrift { from { transform: scale(1); } to { transform: scale(1.07); } }
   @media (prefers-reduced-motion: reduce) { #freeze.on { animation: none; } }
+  #lockwarn { position: absolute; left: 50%; top: 22vh; width: 220px; margin-left: -110px; height: 22px; display: none; border: 1px solid #ff3a2a; background: rgba(40,0,0,0.4); pointer-events: none; animation: lockblink 0.3s steps(2) infinite; }
+  #lockwarn i { position: absolute; left: 0; top: 0; bottom: 0; width: 0; background: rgba(255,58,42,0.55); }
+  #lockwarn b { position: relative; display: block; text-align: center; line-height: 22px; font-size: 12px; letter-spacing: 0.3em; color: #fff; }
+  @keyframes lockblink { 50% { border-color: rgba(255,58,42,0.3); } }
 </style>
 </head>
 <body>
@@ -385,7 +389,7 @@
   <div id="burn"></div>
   <div id="gmark"><div class="d"></div><div class="t"></div></div>
   <div id="tip"></div>
-  <div id="aimring"></div><div id="velmark"></div><div id="pipper"></div><div id="paintbox"></div><div id="hitmark"></div><div id="dmgarc"></div>
+  <div id="aimring"></div><div id="velmark"></div><div id="pipper"></div><div id="paintbox"></div><div id="hitmark"></div><div id="lockwarn"><i></i><b>MISSILE LOCK</b></div><div id="dmgarc"></div>
   <div id="gmark2"><div class="d"></div></div>
   <div id="tags"></div>
   <canvas id="mini" width="440" height="700"></canvas>
@@ -407,7 +411,7 @@
     <div id="worlds" class="race-only"></div>
     <div class="sec race-only">Course</div>
     <div id="courses" class="race-only"></div>
-    <div class="hunt-only huntinfo"><b>HOW IT PLAYS</b><p>Drones come at you in waves across the open ground. Shoot them down at speed: every kill scores more the faster you fly.</p><p class="soon">A full rework is planned: real flight off the ground, new weapons and enemies.</p></div>
+    <div class="hunt-only huntinfo"><b>HOW IT PLAYS</b><p>Take off and hunt in the open sky. Six waves: darts in V-flights, lancers that fire down their nose, interceptors that lock you from behind.</p><p class="soon">Lead your shots on the gold ring. Kills score more the faster you fly.</p></div>
   </div>
   <div class="shipbar">
     <button id="ship-prev" aria-label="previous ship">◀</button>

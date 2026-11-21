@@ -16,7 +16,7 @@ import { Rings } from './rings'
 import { Tips } from './tips'
 import { markCasters, SunShadow } from './shadow'
 import { CANNON, Cannon, interceptT, Missiles, Rounds, segDist, type Target } from './hunt/weapons'
-import { DART, Darts } from './hunt/enemies'
+import { KINDS, Darts, type Kind } from './hunt/enemies'
 import { Sound } from './audio'
 import { Input } from './input'
 import { Post } from './post'
@@ -576,7 +576,15 @@ const rounds = new Rounds()
 const cannon = new Cannon()
 const missiles = new Missiles()
 const darts = new Darts()
-scene.add(rounds.mesh, missiles.mesh, darts.mesh, darts.glow)
+scene.add(rounds.mesh, missiles.mesh, darts.mesh, darts.glow, darts.beams, darts.seekerMesh)
+darts.onCharge = (d) => { sound.charge(d.pos.distanceTo(flight.pos)) }
+darts.onLockOn = () => { sound.beep(false) }
+darts.onLaunch = (d) => { if (d.kind === 'lancer') { sound.cannon(d.pos.distanceTo(flight.pos)); shake(0.2) } else { sound.missile(); warn('MISSILES', 'TURN HARD · AIR BRAKE TO SHAKE THEM'); warnT = 1.6 } }
+darts.onPlayerHit = (dmg, from) => {
+  if (player.dead) return
+  flight.damage(dmg); damageFlash = Math.min(1, damageFlash + dmg / 30); shake(Math.min(1, dmg / 20)); sound.hit(true)
+  dmgFrom(tmp3.subVectors(flight.pos, from))
+}
 let waveT = 3, huntWave = 0, kills = 0
 cannon.onOverheat = () => { sound.beep(false); pop('OVERHEAT') }
 missiles.onLock = () => sound.locked()
@@ -608,6 +616,10 @@ function huntCombatStep(): void {
   if (cannon.fired) { if (Math.random() < 0.5) sound.pulse(); cannon.fired = 0 }
   missiles.step(STEP, fireMsl && !player.dead, flight, darts.list, (m, t) => { t.hit(4, tmp3.copy(m.vel).normalize()); sound.hit(true) })
   darts.step(STEP, flight, rounds, (x, z, r) => world.topAt(x, z, r))
+  darts.stepSeekers(STEP, flight)
+  // Being locked: a tone that quickens as the lock builds.
+  lockBeepT -= STEP
+  if (darts.lockWarn > 0.05 && lockBeepT <= 0) { sound.beep(darts.lockWarn > 0.7); lockBeepT = 0.32 - darts.lockWarn * 0.22 }
   rounds.step(STEP, (r) => {
     if (r.pos.y < groundH(r.pos.x, r.pos.z)) return true
     if (r.mine) {
@@ -621,9 +633,9 @@ function huntCombatStep(): void {
     if (!d.killed) continue
     d.killed = false
     kills++
-    const pts = Math.round(DART.points * speedMul() * (d.rearHit ? 1.5 : 1))
+    const pts = Math.round(KINDS[d.kind].points * speedMul() * (d.rearHit ? 1.5 : 1))
     score += pts
-    pop(`+${pts}  DART${d.rearHit ? ' · ENGINE' : ''}`)
+    pop(`+${pts}  ${d.kind.toUpperCase()}${d.rearHit ? ' · ENGINE' : ''}`)
     fx.explosion(d.pos.x, d.pos.y, d.pos.z, d.vel.x * 0.5, d.vel.y * 0.5, d.vel.z * 0.5, 1.4)
     sound.explosion(d.pos.distanceTo(flight.pos), 1, 0)
     hitstop = 0.04
@@ -642,20 +654,37 @@ function huntCombatStep(): void {
       if (close < 300) { sound.whoosh(Math.min(1, 90 / Math.max(close, 15)), side > 0 ? 0.8 : -0.8); if (close < 60) shake(0.15) }
     }
   }
-  // The practice director: a new flight a few seconds after the last one falls, bigger each time.
-  if (darts.alive === 0 && directorOn) {
+  // The run: six waves, each a mix, sent when the last is down; after the sixth, the hunt is won.
+  if (darts.alive === 0 && directorOn && !huntDone) {
     waveT -= STEP
     if (waveT <= 0) {
-      huntWave++
-      const n = Math.min(5, 2 + huntWave)
-      darts.spawnFlight(n, flight.pos, Math.atan2(flight.fwd.x, flight.fwd.z) + (Math.random() - 0.5) * 0.8, 6500, flight.pos)
-      flash(`FLIGHT ${huntWave} · ${n} DARTS`)
+      if (huntWave >= HUNT_WAVES.length) { huntDone = true; setTimeout(() => showHuntOver(true), 1600); flash('HUNT COMPLETE'); sound.fanfare(true); return }
+      const w = HUNT_WAVES[huntWave++]
+      const h = Math.atan2(flight.fwd.x, flight.fwd.z)
+      for (const [kind, n] of w.groups) {
+        // Darts and lancers come from ahead; interceptors from behind.
+        const behind = kind === 'interceptor'
+        darts.spawnFlight(n, flight.pos, h + (behind ? Math.PI : 0) + (Math.random() - 0.5) * 0.9, behind ? 5000 : 7000, flight.pos, kind)
+      }
+      flash(`WAVE ${huntWave} / ${HUNT_WAVES.length}`)
+      if (w.note) { warn(w.note[0], w.note[1]); warnT = 2.5 }
       sound.beep(true)
-      waveT = 4
+      waveT = 3.5
     }
   }
 }
 let autoFire = false
+let huntDone = false
+let lockBeepT = 0
+/** HUNT's waves: [kind, how many] groups, and a banner for a new arrival. */
+const HUNT_WAVES: { groups: [Kind, number][]; note?: [string, string] }[] = [
+  { groups: [['dart', 3]] },
+  { groups: [['dart', 4]] },
+  { groups: [['lancer', 1], ['dart', 3]], note: ['LANCER', 'IT GLOWS, THEN FIRES DOWN ITS NOSE · GET OUT OF ITS LINE'] },
+  { groups: [['dart', 5], ['lancer', 1]] },
+  { groups: [['interceptor', 1], ['dart', 3]], note: ['INTERCEPTOR', 'BEHIND YOU · IT LOCKS, THEN FIRES · TURN HARD'] },
+  { groups: [['interceptor', 2], ['lancer', 2], ['dart', 4]], note: ['LAST WAVE', 'EVERYTHING THEY HAVE'] },
+]
 let flightPunch = 0
 /** The hit marker: a white X on the nose for a hit, a bigger gold one for a kill. */
 let hitT = 0
@@ -968,10 +997,10 @@ function showCourse(): void {
   if (menuMode === 'hunt') {
     // The bar carries the hunt's own plan: what it is, and how it scores.
     $('#tp-name').textContent = 'HUNT'
-    $('#tp-blurb').textContent = 'Waves of drones over open ground. Kills score more the faster you fly.'
+    $('#tp-blurb').textContent = 'Six waves in the sky: darts, lancers, interceptors. Kills score more the faster you fly.'
     const cell = (v: string, l: string) => `<div><b>${v}</b><small>${l}</small></div>`
-    $('#tp-stats').innerHTML = cell(BIOME === 'desert' ? 'Red Mesa' : BIOME === 'ice' ? 'Polar Shelf' : 'Cinder', 'World') + cell('× Mach', 'Score multiplier') + cell('Endless', 'Until wrecked')
-    $('#tp-info').innerHTML = '<span class="kc">Space</span> fire missiles <span class="kc">hold aim</span> lock on <span class="kc">Shift</span> afterburner'
+    $('#tp-stats').innerHTML = cell(BIOME === 'desert' ? 'Red Mesa' : BIOME === 'ice' ? 'Polar Shelf' : 'Cinder', 'World') + cell('× Mach', 'Score multiplier') + cell('6 waves', 'Then it ends') + cell((() => { try { return localStorage.getItem('dbu-hunt-best') ?? '—' } catch { return '—' } })(), 'Your best')
+    $('#tp-info').innerHTML = '<span class="kc">Mouse</span> steer <span class="kc">Left click</span> cannon <span class="kc">Right click</span> paint and fire missiles <span class="kc">S</span> air brake'
   } else drawTrackPreview(COURSES[pickedCourse])
 }
 /** The whole course, start at the bottom, finish at the top; across exaggerated so bends read. */
@@ -1248,11 +1277,15 @@ function showResults(): void {
   $('#over .go').textContent = 'R TO RACE AGAIN · H FOR HUNT · ESC TO KEEP FLYING'
   $('#over').classList.remove('hide')
 }
-function showHuntOver(): void {
+function showHuntOver(won = false): void {
   if (mode !== 'hunt') return
   overlay = true
-  $('#over-h').textContent = 'SIGNAL LOST'
-  $('#over-stats').innerHTML = `SCORE ${score}<br/>TOP SPEED MACH ${Math.max(runTop, player.topMach).toFixed(2)}<br/>DRONES DOWN ${combat.kills}<br/>TIME ${fmtTime(runTime)}`
+  let best = 0
+  try { best = +(localStorage.getItem('dbu-hunt-best') ?? 0) } catch { /* blocked */ }
+  const newBest = score > best
+  if (newBest) try { localStorage.setItem('dbu-hunt-best', String(score)) } catch { /* blocked */ }
+  $('#over-h').textContent = won ? 'HUNT COMPLETE' : 'SIGNAL LOST'
+  $('#over-stats').innerHTML = `SCORE ${score}${newBest ? ' · <b style="color:#ffb070">NEW BEST</b>' : ` · BEST ${Math.max(best, score)}`}<br/>WAVE ${Math.min(huntWave, HUNT_WAVES.length)} / ${HUNT_WAVES.length} · ${kills} DOWN<br/>TOP SPEED MACH ${Math.max(runTop, flight.topMach).toFixed(2)} · TIME ${fmtTime(runTime)}`
   $('#res').innerHTML = ''
   $('#over .go').textContent = 'R TO RUN IT AGAIN · ENTER FOR A RACE'
   $('#over').classList.remove('hide')
@@ -1327,9 +1360,10 @@ function startHunt(): void {
   flight.reset(player.pos.x, player.pos.z, player.heading, 40, 2)
   flight.syncTo(player)
   fcam.snap()
-  rings.layout(flight.pos.x, flight.pos.z, player.heading, 1, (x, z, r) => world.topAt(x, z, r))
+  // (The rings were phase 1's sandbox; the hunt is the waves now. tools/flight.mjs still lays them.)
+  rings.hide()
   rings.passed = 0; rings.missed = 0; rings.sets = 0
-  rounds.clear(); cannon.reset(); missiles.reset(); darts.clear(); waveT = 3; huntWave = 0; kills = 0
+  rounds.clear(); cannon.reset(); missiles.reset(); darts.clear(); waveT = 3; huntWave = 0; kills = 0; huntDone = false
   hintsEl.innerHTML = FLY_HINTS
   document.body.classList.add('flying')
   hintsEl.style.opacity = tips.enabled ? '0' : '0.85'
@@ -2357,7 +2391,7 @@ function updateHud(dt: number, slow: boolean): void {
     $('#gmark').style.display = 'none'
     $('#gmark2').style.display = 'none'
     scoreNum.textContent = String(score)
-    scoreSub.textContent = `ALT ${Math.round(flight.agl)} M · ENERGY ${Math.round(flight.energy)} · HEAT ${cannon.lockout > 0 ? 'VENT' : Math.round((cannon.heat / 3) * 100) + '%'} · MSL ${'▮'.repeat(missiles.rack)}${'▯'.repeat(8 - missiles.rack)} · ${kills} DOWN · RINGS ${rings.passed} · ${fmtTime(runTime)}`
+    scoreSub.textContent = `ALT ${Math.round(flight.agl)} M · ENERGY ${Math.round(flight.energy)} · HEAT ${cannon.lockout > 0 ? 'VENT' : Math.round((cannon.heat / 3) * 100) + '%'} · MSL ${'▮'.repeat(missiles.rack)}${'▯'.repeat(8 - missiles.rack)} · WAVE ${Math.min(huntWave, HUNT_WAVES.length)}/${HUNT_WAVES.length} · ${kills} DOWN · ${fmtTime(runTime)}`
     rings.draw(time)
     // Flight marks: the aim ring, the velocity cross, the next ring.
     const place = (el: HTMLElement, v: THREE.Vector3) => {
@@ -2395,7 +2429,7 @@ function updateHud(dt: number, slow: boolean): void {
       el.style.top = `${(-proj.y * 0.5 + 0.5) * innerHeight - 8}px`
       const locked = missiles.locks.includes(d)
       el.classList.toggle('run', locked)
-      el.firstElementChild!.textContent = `${locked ? 'LOCK · ' : ''}${dist < 1000 ? Math.round(dist) + ' M' : (dist / 1000).toFixed(1) + ' KM'}`
+      el.firstElementChild!.textContent = `${locked ? 'LOCK · ' : ''}${d.kind === 'dart' ? '' : d.kind.toUpperCase() + ' '}${dist < 1000 ? Math.round(dist) + ' M' : (dist / 1000).toFixed(1) + ' KM'}`
     }
     if (nearRun) { proj.copy(nearRun).project(camera); if (proj.z < 1 && Math.abs(proj.x) < 1 && Math.abs(proj.y) < 1) nearRun = null }
     // The pipper: where to put the nose so the cannon meets the target near it.
@@ -2410,6 +2444,10 @@ function updateHud(dt: number, slow: boolean): void {
         pip.style.left = `${(proj.x * 0.5 + 0.5) * innerWidth}px`; pip.style.top = `${(-proj.y * 0.5 + 0.5) * innerHeight}px`
       } else pip.style.display = 'none'
     } else pip.style.display = 'none'
+    // Locked by an interceptor: a red bar that fills, top centre.
+    const lw = $('#lockwarn')
+    lw.style.display = darts.lockWarn > 0.05 && !player.dead ? 'block' : 'none'
+    if (darts.lockWarn > 0.05) (lw.firstElementChild as HTMLElement).style.width = `${Math.min(100, darts.lockWarn * 100)}%`
     // The paint box while painting.
     const pb = $('#paintbox')
     pb.style.display = missiles.painting && !player.dead ? 'block' : 'none'
