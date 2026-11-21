@@ -667,6 +667,8 @@ function resize(): void {
 addEventListener('resize', resize)
 applyTier()
 
+// (Declared up here: applyGraphics() resets it during boot, before the frame-pacing code below.)
+let autoCap = 0
 let govAcc = 0, govN = 0, govBad = 0, govGood = 0, govLast = 0
 /**
  * Dynamic resolution, with hysteresis: every resize reallocates the render targets (a hitch), so it
@@ -989,7 +991,6 @@ function drawRacer(p: Player, alpha: number, dt: number, isMe: boolean): void {
 const rafGaps = new Float64Array(30), rafSorted = new Float64Array(30)
 let rafN = 0, rafHead = 0, refreshMs = 16.7
 let lastRaf = performance.now()
-let autoCap = 0
 let autoMisses = 0, autoFrames = 0, autoSince = 0
 function frameCap(): number {
   const refresh = refreshMs
