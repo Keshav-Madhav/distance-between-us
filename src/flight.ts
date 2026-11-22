@@ -39,7 +39,8 @@ export const FLIGHT = {
   /** Climb/dive: speed change per second per unit sin(flight-path angle) (m/s²). */
   gravity: 60,
   energyMax: 100,
-  burnDrain: 22,
+  // (Shift is the throttle now: it drains slower, and the engines still push when the bar is empty.)
+  burnDrain: 12,
   energyRefill: 12,
   cushion: 25,
   softCeiling: 1800,
@@ -126,54 +127,48 @@ export class FlightCraft {
     this.prev.copy(this.pos)
     this.prevQuat.copy(this.quat)
 
-    // ── where to fly: an aim direction ──
-    if (c.aim) this.aim.copy(c.aim)
-    else {
-      // Keys / stick: a direction off the nose — turn about the world's up and pitch toward the
-      // world's up or down (so ↑/↓ mean dive and climb whatever the bank).
-      const flat = _v.set(this.fwd.x, 0, this.fwd.z)
-      if (flat.lengthSq() < 1e-6) flat.set(0, 0, 1)
-      flat.normalize()
-      const sideW = _w.set(-flat.z, 0, flat.x) // world right of the nose's heading
-      this.aim.copy(this.fwd).addScaledVector(sideW, c.turn * 0.45).addScaledVector(UP, c.pitch * 0.5).normalize()
+    // ── controls: rates, like other arcade flyers ──
+    // Turn: the heading swings about the world's up at a steady rate, and the craft banks into it by
+    // itself. Pitch: the nose about the wings. Roll: only roll. Hands off: straight on, wings level.
+    // (The old aim-point controller flew toward a point in the world, so rolling moved that point in
+    //  the craft's frame and the nose chased it — "roll makes me pitch up".)
+    let turnIn = c.turn, pitchIn = c.pitch
+    if (c.aim) {
+      // An aim (autopilot, tests): its heading and elevation off the nose, as turn and pitch.
+      const hA = Math.atan2(c.aim.x, c.aim.z), hF = Math.atan2(this.fwd.x, this.fwd.z)
+      let dh = hF - hA; dh = Math.atan2(Math.sin(dh), Math.cos(dh)) // + = aim to the right
+      turnIn = THREE.MathUtils.clamp(dh * 3, -1, 1)
+      pitchIn = THREE.MathUtils.clamp((Math.asin(THREE.MathUtils.clamp(c.aim.y, -1, 1)) - Math.asin(THREE.MathUtils.clamp(this.fwd.y, -1, 1))) * 3, -1, 1)
     }
-
-    // ── the controller: bank toward a sideways aim, pitch straight at a high or low one ──
-    // (It never rolls over to reach an aim below the nose — that bank-and-yank read as the controls
-    //  doing the opposite of what you asked.)
-    const up = this.aim.dot(this.up), side = this.aim.dot(this.right)
     const m = this.mach
     const corner = THREE.MathUtils.clamp((m - 2.6) / (5 - 2.6), 0, 1)
     const pitchMax = THREE.MathUtils.lerp(F.pitchRate, F.pitchFast, corner) * (c.brake ? 1.25 : 1)
-    // Bank: how far the wings are from level (the world's up seen in the craft's frame).
+    const turnMax = pitchMax * 0.75
+    // Bank: the world's up seen from the cockpit (+ = rolled right).
     const bank = Math.atan2(-UP.dot(this.right), UP.dot(this.up))
-    const inverted = UP.dot(this.up) < 0
     let rollCmd: number
     this.manualT = Math.max(0, this.manualT - dt)
     if (c.roll !== 0) { rollCmd = c.roll; this.manualT = 0.6 }
     else if (this.manualT > 0) rollCmd = 0
     else {
-      // Target bank from the sideways part of the aim (up to ~75°), wings level when straight.
-      const want = THREE.MathUtils.clamp(Math.atan2(side, 0.35) * 0.85, -1.3, 1.3)
-      const target = Math.abs(side) < 0.02 ? 0 : want
-      const d = inverted ? -Math.atan2(Math.sin(bank), Math.cos(bank)) : target - bank
-      rollCmd = THREE.MathUtils.clamp(d * 2.2, -1, 1)
+      const target = turnIn * 1.0 // up to ~57° into a turn; level when straight (also from inverted)
+      let d = target - bank
+      d = Math.atan2(Math.sin(d), Math.cos(d))
+      rollCmd = THREE.MathUtils.clamp(d * 2.5, -1, 1)
     }
-    // Pitch: at the aim's up/down in the cockpit frame, plus a pull while banked into a turn.
-    let pitchCmd = THREE.MathUtils.clamp(4 * Math.asin(THREE.MathUtils.clamp(up, -1, 1)) + Math.abs(side) * 2.2 * Math.abs(Math.sin(bank)), -1, 1)
-    if (inverted && c.roll === 0 && this.manualT <= 0) pitchCmd *= 0.3 // rolling upright first
-    const yawCmd = THREE.MathUtils.clamp(4 * Math.asin(THREE.MathUtils.clamp(side, -1, 1)), -1, 1) * 0.25
-    // Rates ease in (snappy, not instant).
     const ease = 1 - Math.exp(-dt * 10)
-    this.rates.x += (pitchCmd * pitchMax - this.rates.x) * ease
+    this.rates.x += (pitchIn * pitchMax - this.rates.x) * ease
+    this.rates.y += (turnIn * turnMax - this.rates.y) * ease
     this.rates.z += (rollCmd * F.rollRate - this.rates.z) * ease
-    this.rates.y += (yawCmd * F.yawRate * 4 - this.rates.y) * ease
-    // Apply in the craft's frame: pitch about its wing (x), yaw about its top (y), roll about its nose (z).
+    // Turn about the world's up (pre-multiplied: a world-axis rotation); pitch and roll in the craft.
+    _q.setFromAxisAngle(UP, -this.rates.y * dt); this.quat.premultiply(_q)
     _q.setFromAxisAngle(AX, -this.rates.x * dt); this.quat.multiply(_q)
-    _q.setFromAxisAngle(AY, -this.rates.y * dt); this.quat.multiply(_q)
     _q.setFromAxisAngle(AZ, this.rates.z * dt); this.quat.multiply(_q)
     this.quat.normalize()
     this.axes()
+    // Where the inputs are taking the nose (the HUD's aim ring when flying by keys).
+    if (c.aim) this.aim.copy(c.aim)
+    else this.aim.copy(this.fwd).addScaledVector(_v.set(-this.fwd.z, 0, this.fwd.x).normalize(), turnIn * 0.35).addScaledVector(this.up, pitchIn * 0.35).normalize()
 
     // ── speed ──
     this.throttle = c.throttle
@@ -182,13 +177,17 @@ export class FlightCraft {
     if (this.burning) { this.energy = Math.max(0, this.energy - F.burnDrain * dt); this.energyIdle = 0 }
     else { this.energyIdle += dt; if (this.energyIdle > 0.8) this.energy = Math.min(F.energyMax, this.energy + F.energyRefill * dt) }
     const thin = THREE.MathUtils.clamp((this.agl - F.softCeiling) / (F.hardCeiling - F.softCeiling), 0, 1)
-    let target = (c.brake ? F.brakeMach : this.burning ? F.burnerMach : c.throttle ? F.throttleMach : F.cruiseMach) * MACH
+    // Off the throttle the speed creeps toward cruise; Shift pushes hard (energy), or toward the
+    // throttle speed when the energy is gone.
+    let target = (c.brake ? F.brakeMach : this.burning ? F.burnerMach : c.throttle || c.burner ? F.throttleMach : F.cruiseMach) * MACH
     target *= 1 - thin * 0.6
-    this.speed += THREE.MathUtils.clamp(target - this.speed, -F.decel * dt * (c.brake ? 1.6 : 1), F.accel * dt * (this.burning ? 1.5 : 1))
+    const up = this.burning ? F.accel * 1.5 : c.throttle || c.burner ? F.accel : F.accel * 0.3
+    this.speed += THREE.MathUtils.clamp(target - this.speed, -F.decel * dt * (c.brake ? 1.6 : 0.25), up * dt)
     // Climbing costs, diving gains; turning bleeds a little.
     const gamma = Math.asin(THREE.MathUtils.clamp(this.vel.y / Math.max(1, this.vel.length()), -1, 1))
     this.speed -= F.gravity * Math.sin(gamma) * dt
-    this.speed -= this.speed * 0.03 * Math.min(1, Math.abs(this.rates.x) / pitchMax) * dt
+    // Drag in manoeuvres: pulling, turning and rolling hard all bleed speed (turns cost, straights pay).
+    this.speed -= this.speed * (0.1 * Math.min(1, Math.abs(this.rates.x) / pitchMax) + 0.07 * Math.min(1, Math.abs(this.rates.y) / turnMax) + 0.02 * Math.min(1, Math.abs(this.rates.z) / F.rollRate)) * dt
     this.speed = THREE.MathUtils.clamp(this.speed, F.floorMach * MACH, F.diveMach * MACH)
     this.topMach = Math.max(this.topMach, this.mach)
 

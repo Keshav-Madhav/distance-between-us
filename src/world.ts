@@ -1007,7 +1007,14 @@ export class World {
   }
 
   /** Rocks that stand where they are put (the course's spires). */
+  /** Everything the course placed (spires, trackside landforms): hidden in HUNT, where you fly the
+   *  open world — from the air they were rows along a course you are not on, and they did not wrap
+   *  with the world (a jump every 72 km that looked like a reset). */
+  readonly courseRocks = new THREE.Group()
+  get courseOn(): boolean { return this.courseRocks.visible }
+  set courseOn(v: boolean) { this.courseRocks.visible = v }
   addFixed(list: { x: number; z: number; r: number; h: number }[]): void {
+    if (!this.courseRocks.parent) this.group.add(this.courseRocks)
     const mesh = new THREE.InstancedMesh(this.spireGeo!, this.mesaMat!, Math.max(1, list.length))
     const m = new THREE.Matrix4(), q = new THREE.Quaternion(), v = new THREE.Vector3(), sc = new THREE.Vector3()
     list.forEach((o, i) => {
@@ -1018,7 +1025,7 @@ export class World {
     })
     mesh.count = list.length
     mesh.frustumCulled = false
-    this.group.add(mesh)
+    this.courseRocks.add(mesh)
   }
 
   /** The highest rock top within r of (x, z) (the ground if none): rings and flight clear it. */
@@ -1029,7 +1036,7 @@ export class World {
       const reach = r + it.r * 1.8
       if ((it.x - x) ** 2 + (it.z - z) ** 2 < reach * reach) top = Math.max(top, it.by + it.h * it.grow)
     }
-    for (const it of this.fixed) {
+    if (this.courseRocks.visible) for (const it of this.fixed) {
       const reach = r + it.r * 2
       if ((it.x - x) ** 2 + (it.z - z) ** 2 < reach * reach) top = Math.max(top, it.by + it.h)
     }
@@ -1041,6 +1048,7 @@ export class World {
 
   /** Ice landmarks placed by the course itself, close beside the line (the polar world's set pieces). */
   addHeroes(list: { x: number; z: number; r: number; h: number; kind: 'mesa' | 'butte' | 'spire'; v: number; yaw: number; tilt?: number; sink?: number }[]): void {
+    if (!this.courseRocks.parent) this.group.add(this.courseRocks)
     const groups = new Map<string, typeof list>()
     // Grouped by shape and by 5 km cell, each group its own culled mesh (thousands of small shards
     // line a course; only the cells in view are drawn).
@@ -1061,7 +1069,7 @@ export class World {
         mesh.setMatrixAt(i, m.compose(v.set(o.x, by, o.z), q, sc.set(o.r, o.h, o.r)))
       })
       mesh.computeBoundingSphere()
-      this.group.add(mesh)
+      this.courseRocks.add(mesh)
     }
   }
 
@@ -1127,7 +1135,7 @@ export class World {
         n++
       }
     }
-    for (const it of this.fixed) {
+    if (this.courseRocks.visible) for (const it of this.fixed) {
       const dx = x - it.x, dz = z - it.z
       const reach = range + it.r * 2.3
       if (dx * dx + dz * dz > reach * reach) continue

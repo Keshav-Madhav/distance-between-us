@@ -38,7 +38,7 @@ await set({ roll: 1 }); await p.waitForTimeout(1800); await set({}); await p.wai
 c = await sample(); check('quaternion stays unit', Math.abs(c.q - 1) < 1e-4, c.q.toFixed(6))
 check('speed within limits', c.mach >= 0.89 && c.mach <= 6.21, c.mach.toFixed(2))
 // 6) Burner drains energy.
-await set({ burner: true }); await p.waitForTimeout(6000); const e = (await sample()).e
+await set({ burner: true }); await p.waitForTimeout(9500); const e = (await sample()).e
 check('burner drains energy', e < 20, e.toFixed(0))
 // 7) Rings with the autopilot.
 await p.evaluate(() => { const g = window.__g, f = g.flight; f.reset(f.pos.x, f.pos.z, Math.atan2(f.fwd.x, f.fwd.z), 80, 2.4); g.director(false); g.darts.clear(); g.rings.passed = 0; g.rings.missed = 0; g.rings.layout(f.pos.x, f.pos.z, Math.atan2(f.fwd.x, f.fwd.z), 3, (x, z, r) => g.world.topAt(x, z, r)); g.flyForce(false); g.autopilot(true) })

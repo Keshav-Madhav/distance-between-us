@@ -215,14 +215,14 @@ if (BIOME !== 'desert') {
     if (zone === 'glacier') {
       // Glaciers close on both sides: a corridor of ice walls.
       for (const sd2 of [side, -side]) {
-        const r = 170 + rnd() * 170, h = 120 + rnd() * 130, gap = 340 + W + rnd() * 80
+        const r = 170 + rnd() * 170, h = 120 + rnd() * 130, gap = 340 + W + Math.pow(rnd(), 1.5) * 700
         place(i + Math.round(rnd() * 6), sd2, gap + r * 1.6, { r, h, kind: 'mesa', v: Math.floor(rnd() * MESA_N), yaw: rnd() * 6.28 }, gap * 0.9 + r * 1.5)
       }
-      i += Math.round((900 + rnd() * 600) / 40)
+      i += Math.round((700 + rnd() * 1300) / 40)
     } else if (zone === 'forest') {
       const big = rnd() < 0.3
       const r = big ? 90 + rnd() * 60 : 40 + rnd() * 35, h = big ? 90 + rnd() * 60 : 260 + rnd() * 240
-      const gap = 380 + W + rnd() * 160
+      const gap = 380 + W + Math.pow(rnd(), 1.4) * 1300
       place(i, side, gap + r * (big ? 1.4 : 2.0), { r, h, kind: big ? 'butte' : 'spire', v: Math.floor(rnd() * 2.999), yaw: rnd() * 6.28 }, gap * 0.9 + r * 1.3)
       i += Math.round((1300 + rnd() * 900) / 40)
     } else {
@@ -232,34 +232,36 @@ if (BIOME !== 'desert') {
       i += Math.round((4000 + rnd() * 3000) / 40)
     }
   }
-  // The near field, just past the pylons (250 m): dense in the forest, broken blocks and stubby
-  // shards along the glaciers, sparse on the open ice.
-  for (const side of [-1, 1]) {
-    let j = course.startI + Math.round(rnd() * 3)
-    while (j < lapEnd - 10) {
-      const zone = zoneAt(j)
+  // The near field: clusters scattered off the course — a clump of shards here, a lone block there,
+  // a stand of trees 900 m out — at uneven spacing and distance on either side (it was a row on each
+  // side at a steady 360-660 m: from the air, two straight lines tracing the course).
+  let j = course.startI + Math.round(rnd() * 5)
+  while (j < lapEnd - 10) {
+    const zone = zoneAt(j)
+    const side = rnd() < 0.5 ? -1 : 1
+    const off = W + 360 + Math.pow(rnd(), 1.7) * (zone === 'open' ? 2600 : zone === 'glacier' ? 1500 : 1700)
+    const [tx, tz] = course.tangent(j)
+    const lat = side * (off + bendOut(j))
+    const cx = course.px[j] + tz * lat, cz = course.pz[j] - tx * lat
+    const n = zone === 'forest' ? 2 + Math.floor(rnd() * 6) : zone === 'glacier' ? 1 + Math.floor(rnd() * 3) : 1 + Math.floor(rnd() * 2)
+    const spread = 50 + rnd() * (zone === 'forest' ? 260 : 180)
+    for (let q = 0; q < n; q++) {
+      const a = rnd() * 6.28, d = Math.sqrt(rnd()) * spread
+      const x = cx + Math.cos(a) * d, z = cz + Math.sin(a) * d
+      if (course.distance(x, z) < 350 + W) continue
       const roll = rnd()
       const pSpike = zone === 'forest' ? 0.75 : zone === 'glacier' ? 0.35 : 0.3
       const spike = roll < pSpike, sentinel = zone === 'forest' && roll > 0.94
       const sc = 0.4 + 1.6 * rnd()
       const r = sentinel ? 30 + rnd() * 15 : spike ? 6 + rnd() * 8 : (12 + rnd() * 12) * sc
-      const h = sentinel ? 120 + rnd() * 80 : spike ? (zone === 'forest' ? 45 + rnd() * 95 : 20 + rnd() * 40) : BIOME === 'forest' ? r * (1.3 + rnd() * 0.8) : (10 + rnd() * 16) * sc
-      // (Well clear of the edge lines at 250 m: a wide line must not be the end of a race.)
-      const off = W + (sentinel ? 380 : 360 + Math.pow(rnd(), 1.5) * (zone === 'forest' ? 300 : 240))
-      if (spike && zone === 'forest' && rnd() < 0.5) {
-        // A group: 3-7 shards falling away in height from the tallest, leaning their own ways.
-        const k = 3 + Math.floor(rnd() * 5)
-        for (let q = 0; q < k; q++) {
-          const fall = 1 - q / (k + 1)
-          place(Math.min(lapEnd - 1, j + (q % 3)), side, off + rnd() * 60 * q, { r: r * (0.6 + 0.4 * fall), h: h * fall, kind: 'spire', v: Math.floor(rnd() * 2.999), yaw: rnd() * 6.28, tilt: (rnd() - 0.5) * 0.24 }, 350 + W)
-        }
-      } else place(j, side, off, {
-        r, h, kind: spike || sentinel ? 'spire' : 'butte', v: Math.floor(rnd() * 2.999), yaw: rnd() * 6.28,
+      const h = sentinel ? 120 + rnd() * 80 : spike ? (zone === 'forest' ? 45 + rnd() * 95 : 20 + rnd() * 40) * (q === 0 ? 1 : 0.55 + rnd() * 0.45) : BIOME === 'forest' ? r * (1.3 + rnd() * 0.8) : (10 + rnd() * 16) * sc
+      heroes.push({
+        x, z, r, h, kind: spike || sentinel ? 'spire' : 'butte', v: Math.floor(rnd() * 2.999), yaw: rnd() * 6.28,
         tilt: BIOME === 'forest' ? 0 : spike || sentinel ? (rnd() - 0.5) * 0.24 : BIOME === 'lava' ? 0 : (rnd() - 0.5) * 0.7, sink: spike || sentinel ? 0 : rnd() * 0.35,
-      }, 350 + W)
-      const step = zone === 'forest' ? 90 + rnd() * 130 : zone === 'glacier' ? 140 + rnd() * 120 : 320 + rnd() * 300
-      j += Math.max(1, Math.round(step / 40))
+      })
     }
+    const step = zone === 'forest' ? 60 + rnd() * 160 : zone === 'glacier' ? 140 + rnd() * 260 : 380 + rnd() * 700
+    j += Math.max(1, Math.round(step / 40))
   }
   world.addHeroes(heroes)
 }
@@ -612,8 +614,10 @@ const tmp3 = new THREE.Vector3()
 /** Speed is score: ×1 at Mach 1 up to ×3.5 at Mach 6. */
 const speedMul = () => THREE.MathUtils.clamp(1 + (flight.mach - 1) * 0.5, 1, 3.5)
 function huntCombatStep(): void {
-  const fireGun = input.isDown('Mouse0') || input.isDown('Space') || input.isDown('KeyJ') || autoFire
-  const fireMsl = input.isDown('Mouse2') || input.isDown('KeyK')
+  // Keyboard and pad only: Space / J (or pad A, RB) the cannon; F / K (or pad LB) paint and fire missiles.
+  const pad = navigator.getGamepads ? [...navigator.getGamepads()].find((g) => g) : null
+  const fireGun = input.isDown('Space') || input.isDown('KeyJ') || !!pad?.buttons[0]?.pressed || !!pad?.buttons[5]?.pressed || autoFire
+  const fireMsl = input.isDown('KeyF') || input.isDown('KeyK') || !!pad?.buttons[4]?.pressed
   const nt = noseTarget()
   cannon.step(STEP, fireGun && !player.dead, flight, nt, rounds)
   if (cannon.fired) { if (Math.random() < 0.5) sound.pulse(); cannon.fired = 0 }
@@ -905,7 +909,7 @@ const flashEl = $('#flash')
 const warnEl = $('#warn')
 const hintsEl = $('#hints')
 const RACE_HINTS = hintsEl.innerHTML
-const FLY_HINTS = ['<b>MOUSE</b>STEER TOWARD THE CURSOR', '<b>A D · ← →</b>TURN (THE CRAFT BANKS ITSELF)', '<b>↑ ↓</b>NOSE DOWN · PULL UP (INVERT IN SETTINGS)', '<b>W · S</b>THROTTLE · AIR BRAKE', '<b>Q E</b>ROLL', '<b>SHIFT</b>BOOST · SPENDS ENERGY', '<b>RINGS</b>FLY THROUGH THE GLOWING ONE'].map((h) => `<div>${h}</div>`).join('')
+const FLY_HINTS = ['<b>SPACE</b>CANNON · <b>F</b> HOLD TO LOCK, RELEASE TO FIRE MISSILES', '<b>A D · ← →</b>TURN (THE CRAFT BANKS ITSELF)', '<b>W S · ↑ ↓</b>NOSE DOWN · PULL UP', '<b>Q E</b>ROLL', '<b>SHIFT</b>THROTTLE · <b>C</b> AIR BRAKE', '<b>RINGS</b>FLY THROUGH THE GLOWING ONE'].map((h) => `<div>${h}</div>`).join('')
 const debugEl = $('#debug')
 const raceEl = $('#race')
 const standEl = $('#stand')
@@ -1014,7 +1018,7 @@ function showCourse(): void {
     $('#tp-blurb').textContent = 'Six waves in the sky: darts, lancers, interceptors. Kills score more the faster you fly.'
     const cell = (v: string, l: string) => `<div><b>${v}</b><small>${l}</small></div>`
     $('#tp-stats').innerHTML = cell(BIOME === 'desert' ? 'Red Mesa' : BIOME === 'ice' ? 'Polar Shelf' : 'Cinder', 'World') + cell('× Mach', 'Score multiplier') + cell('6 waves', 'Then it ends') + cell((() => { try { return localStorage.getItem('dbu-hunt-best') ?? '—' } catch { return '—' } })(), 'Your best')
-    $('#tp-info').innerHTML = '<span class="kc">Mouse</span> steer <span class="kc">Left click</span> cannon <span class="kc">Right click</span> paint and fire missiles <span class="kc">S</span> air brake'
+    $('#tp-info').innerHTML = '<span class="kc">W S</span> pitch <span class="kc">A D</span> turn <span class="kc">Shift</span> throttle <span class="kc">Space</span> cannon <span class="kc">F</span> hold to lock, release to fire'
   } else drawTrackPreview(COURSES[pickedCourse])
 }
 /** The whole course, start at the bottom, finish at the top; across exaggerated so bends read. */
@@ -1217,6 +1221,7 @@ function toTitle(): void {
   spectate = false
   $('#over').classList.add('hide')
   mode = 'title'
+  world.courseOn = true; course.group.visible = true
   document.body.classList.remove('flying')
   rings.hide()
   rounds.clear(); missiles.reset(); darts.clear()
@@ -1315,6 +1320,7 @@ let runTop = 0
 let driftLvl = 0
 let secK = 0, pinUntil = 0
 function startRace(): void {
+  world.courseOn = true; course.group.visible = true
   missedCount = 0
   document.body.classList.remove('flying')
   rings.hide()
@@ -1376,6 +1382,8 @@ function startHunt(): void {
   fcam.snap()
   // (The rings were phase 1's sandbox; the hunt is the waves now. tools/flight.mjs still lays them.)
   rings.hide()
+  // The open world: no course, no course-placed landforms (see World.courseRocks).
+  world.courseOn = false; course.group.visible = false
   rings.passed = 0; rings.missed = 0; rings.sets = 0
   rounds.clear(); cannon.reset(); missiles.reset(); darts.clear(); waveT = 3; huntWave = 0; kills = 0; huntDone = false
   hintsEl.innerHTML = FLY_HINTS
@@ -1645,7 +1653,7 @@ function simStep(): void {
     race.step(STEP, forced ?? (auto ? me.controls : input.c), world)
     if (race.state !== 'grid') runTime += STEP
   } else if (mode === 'hunt') {
-    // Flight: the controls (mouse aim, keys, stick), the craft, mirrored into the Player.
+    // Flight: the controls (keys, stick), the craft, mirrored into the Player.
     if (!flyForced) readFlight()
     if (autopilot) huntAutopilot()
     flight.step(STEP, fc, world)
@@ -1661,19 +1669,18 @@ function simStep(): void {
 }
 
 /** HUNT's controls, like other flying games:
- *  mouse — steer toward the cursor (centred: straight on; held off to one side: keep turning);
  *  keys — W/S throttle and air brake, A/D or ←/→ turn (the craft banks itself), ↑/↓ pitch
  *  (↑ = nose down, as on a stick; "Invert flight pitch" in settings), Q/E roll, Shift boost;
  *  pad — left stick fly, right stick roll, triggers throttle / brake, X boost. */
 let invertPitch = false
 let fTurn = 0, fPitch = 0
-const mouseRay = new THREE.Vector3()
 function readFlight(): void {
   const k = (c: string) => input.isDown(c)
-  fc.throttle = k('KeyW'); fc.brake = k('KeyS'); fc.burner = k('ShiftLeft') || k('ShiftRight')
+  // HUNT keys: W/S (and ↑/↓) pitch like a stick, A/D turn, Q/E roll, Shift throttle, C/Ctrl air brake.
+  fc.throttle = false; fc.brake = k('KeyC') || k('ControlLeft') || k('ControlRight'); fc.burner = k('ShiftLeft') || k('ShiftRight')
   fc.roll = (k('KeyE') ? 1 : 0) - (k('KeyQ') ? 1 : 0)
   let turn = (k('KeyD') || k('ArrowRight') ? 1 : 0) - (k('KeyA') || k('ArrowLeft') ? 1 : 0)
-  let pitch = ((k('ArrowDown') ? 1 : 0) - (k('ArrowUp') ? 1 : 0)) * (invertPitch ? -1 : 1)
+  let pitch = ((k('ArrowDown') || k('KeyS') ? 1 : 0) - (k('ArrowUp') || k('KeyW') ? 1 : 0)) * (invertPitch ? -1 : 1)
   const pads = navigator.getGamepads ? navigator.getGamepads() : []
   for (const p of pads) {
     if (!p) continue
@@ -1691,18 +1698,8 @@ function readFlight(): void {
   fTurn += THREE.MathUtils.clamp(turn - fTurn, -STEP * 6, STEP * 6)
   fPitch += THREE.MathUtils.clamp(pitch - fPitch, -STEP * 6, STEP * 6)
   fc.turn = fTurn; fc.pitch = fPitch
-  // The mouse: when it moved in the last 3 s and no key or stick is steering, the craft flies toward
-  // the point under the cursor (a ray from the camera). Near the middle: straight on.
-  const mouseLive = performance.now() / 1000 - input.mouseAt < 3 && turn === 0 && pitch === 0 && !paused
-  if (mouseLive) {
-    let nx = (input.mouseX / innerWidth) * 2 - 1, ny = -((input.mouseY / innerHeight) * 2 - 1)
-    const r = Math.hypot(nx, ny), dead = 0.04
-    if (r < dead) { nx = 0; ny = 0 } else { const k2 = (r - dead) / (1 - dead) / r; nx *= k2; ny *= k2 }
-    mouseRay.set(nx, ny, 0.5).unproject(camera).sub(camera.position).normalize()
-    // Pure aim straight ahead when centred: the nose, not the camera's slightly-down look.
-    if (nx === 0 && ny === 0) mouseRay.copy(flight.fwd)
-    fc.aim = mouseRay
-  } else fc.aim = null
+  // (HUNT is keyboard and pad only: no mouse steering.)
+  fc.aim = null
 }
 const tmp2 = new THREE.Vector3()
 /** HUNT autopilot (tests): fly at the next ring, throttle on. */
@@ -2415,9 +2412,8 @@ function updateHud(dt: number, slow: boolean): void {
       if (on) { el.style.left = `${(proj.x * 0.5 + 0.5) * innerWidth}px`; el.style.top = `${(-proj.y * 0.5 + 0.5) * innerHeight}px` }
       return on
     }
-    // The aim ring: on the cursor when the mouse is steering, else where the keys are taking the nose.
-    if (fc.aim && performance.now() / 1000 - input.mouseAt < 3) { const ar = $('#aimring'); ar.style.display = 'block'; ar.style.left = `${input.mouseX}px`; ar.style.top = `${input.mouseY}px` }
-    else place($('#aimring'), tmp2.copy(flight.pos).addScaledVector(flight.aim, 600))
+    // The aim ring: where the keys are taking the nose.
+    place($('#aimring'), tmp2.copy(flight.pos).addScaledVector(flight.aim, 600))
     if (flight.vel.lengthSq() > 1) place($('#velmark'), tmp2.copy(flight.vel).normalize().multiplyScalar(600).add(flight.pos))
     const nr = rings.items[rings.next]
     const gmEl = $('#gmark')
