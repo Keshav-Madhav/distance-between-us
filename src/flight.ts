@@ -104,6 +104,10 @@ export class FlightCraft {
   invincible = false
   /** The ground cushion (HUNT: skimming is safe). FREE ROAM turns it off: the ground is where you land. */
   cushionOn = true
+  /** FREE ROAM: no caps tuned for HUNT's fights — speed is held off the throttle (only drag, climbs and
+   *  dives change it), W pushes toward Mach 8.5 and Shift toward 12 with no energy limit, the ceiling is
+   *  7 km, the auto-bank goes to ~77°. */
+  sandbox = false
 
   get mach(): number { return this.speed / MACH }
 
@@ -168,8 +172,12 @@ export class FlightCraft {
     this.manualT = Math.max(0, this.manualT - dt)
     if (c.roll !== 0) { rollCmd = c.roll; this.manualT = 0.6 }
     else if (this.manualT > 0) rollCmd = 0
+    // Pulling (or pushing) hard with no turn: leave the wings where they are — that is a loop, not
+    // something to level. (Auto-levelling rolled you upright over the top: every loop became a half
+    // loop and a roll.)
+    else if (Math.abs(pitchIn) > 0.3 && Math.abs(turnIn) < 0.2) { rollCmd = 0; this.manualT = 0.4 }
     else {
-      const target = turnIn * 1.0 // up to ~57° into a turn; level when straight (also from inverted)
+      const target = turnIn * (this.sandbox ? 1.35 : 1.0) // up to ~57° into a turn (77° in FREE ROAM); level when straight (also from inverted)
       let d = target - bank
       d = Math.atan2(Math.sin(d), Math.cos(d))
       rollCmd = THREE.MathUtils.clamp(d * 2.5, -1, 1)
@@ -191,22 +199,33 @@ export class FlightCraft {
     // ── speed ──
     this.throttle = c.throttle
     this.braking = c.brake
-    this.burning = c.burner && this.energy > 0.5
-    if (this.burning) { this.energy = Math.max(0, this.energy - F.burnDrain * dt); this.energyIdle = 0 }
+    this.burning = c.burner && (this.energy > 0.5 || this.sandbox)
+    if (this.burning && !this.sandbox) { this.energy = Math.max(0, this.energy - F.burnDrain * dt); this.energyIdle = 0 }
     else { this.energyIdle += dt; if (this.energyIdle > 0.8) this.energy = Math.min(F.energyMax, this.energy + F.energyRefill * dt) }
-    const thin = THREE.MathUtils.clamp((this.agl - F.softCeiling) / (F.hardCeiling - F.softCeiling), 0, 1)
+    // (FREE ROAM: only where the world stops being drawn — the terrain reaches ~24 km.)
+    const soft = this.sandbox ? 22000 : F.softCeiling, hard = this.sandbox ? 24000 : F.hardCeiling
+    const thin = THREE.MathUtils.clamp((this.agl - soft) / (hard - soft), 0, 1)
     // Off the throttle the speed creeps toward cruise; Shift pushes hard (energy), or toward the
     // throttle speed when the energy is gone.
-    let target = (c.brake ? F.brakeMach : this.burning ? F.burnerMach : c.throttle || c.burner ? F.throttleMach : F.cruiseMach) * MACH
-    target *= 1 - thin * 0.6
-    const up = this.burning ? F.accel * 1.5 : c.throttle || c.burner ? F.accel : F.accel * 0.3
-    this.speed += THREE.MathUtils.clamp(target - this.speed, -F.decel * dt * (c.brake ? 1.6 : 0.25), up * dt)
+    if (this.sandbox) {
+      // Held off the throttle (a little drag); W and Shift push toward their speeds, never pull back.
+      if (c.brake) this.speed += Math.max(F.brakeMach * MACH - this.speed, -F.decel * 1.6 * dt)
+      else if (this.burning && this.speed < 12 * MACH) this.speed += F.accel * 1.5 * dt
+      else if (c.throttle && this.speed < 8.5 * MACH) this.speed += F.accel * dt
+      this.speed -= this.speed * 0.012 * dt
+      this.speed *= 1 - thin * 0.5 * dt
+    } else {
+      let target = (c.brake ? F.brakeMach : this.burning ? F.burnerMach : c.throttle || c.burner ? F.throttleMach : F.cruiseMach) * MACH
+      target *= 1 - thin * 0.6
+      const up = this.burning ? F.accel * 1.5 : c.throttle || c.burner ? F.accel : F.accel * 0.3
+      this.speed += THREE.MathUtils.clamp(target - this.speed, -F.decel * dt * (c.brake ? 1.6 : 0.25), up * dt)
+    }
     // Climbing costs, diving gains; turning bleeds a little.
     const gamma = Math.asin(THREE.MathUtils.clamp(this.vel.y / Math.max(1, this.vel.length()), -1, 1))
     this.speed -= F.gravity * Math.sin(gamma) * dt
     // Drag in manoeuvres: pulling, turning and rolling hard all bleed speed (turns cost, straights pay).
     this.speed -= this.speed * (0.1 * Math.min(1, Math.abs(this.rates.x) / pitchMax) + 0.07 * Math.min(1, Math.abs(this.rates.y) / turnMax) + 0.02 * Math.min(1, Math.abs(this.rates.z) / F.rollRate)) * dt
-    this.speed = THREE.MathUtils.clamp(this.speed, F.floorMach * MACH, F.diveMach * MACH)
+    this.speed = THREE.MathUtils.clamp(this.speed, F.floorMach * MACH, (this.sandbox ? 14 : F.diveMach) * MACH)
     this.topMach = Math.max(this.topMach, this.mach)
 
     // ── velocity follows the nose ──
@@ -217,7 +236,7 @@ export class FlightCraft {
     this.vel.copy(dir).multiplyScalar(this.speed)
 
     // ── the ceiling: thin air pushes the nose down and stops the climb ──
-    if (thin > 0) {
+    if (thin > 0 && !this.sandbox) {
       if (this.vel.y > 0) this.vel.y *= 1 - thin
       if (this.fwd.y > 0) { _q.setFromAxisAngle(AX, thin * 0.6 * dt); this.quat.multiply(_q); this.axes() }
     }
@@ -250,7 +269,7 @@ export class FlightCraft {
       this.agl = 3
     }
     // Hard ceiling.
-    if (this.agl > F.hardCeiling) this.pos.y = g + F.hardCeiling
+    if (this.agl > hard) this.pos.y = g + hard
 
     // ── rock: solid (with height — over a mesa is clear air) ──
     const n = world.near(this.pos.x, this.pos.z, this.pos.y, 30, this.obs)

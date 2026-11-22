@@ -1502,7 +1502,7 @@ function camBlendStart(): void { camFromOff.subVectors(camera.position, renderPo
 function freeOff(): void {
   freeAir = false
   player.ground = groundH; player.cliffs = false
-  flight.ground = groundH; flight.invincible = false; flight.cushionOn = true
+  flight.ground = groundH; flight.invincible = false; flight.cushionOn = true; flight.sandbox = false
   shards.hide()
   document.body.classList.remove('free')
   $('#score .lab').textContent = 'SCORE'
@@ -1527,7 +1527,7 @@ function startFree(): void {
   for (const id of ['#aimring', '#velmark', '#gmark']) $(id).style.display = 'none'
   world.courseOn = false; course.group.visible = false
   player.ground = surf; player.cliffs = true
-  flight.ground = surf; flight.invincible = true; flight.cushionOn = false
+  flight.ground = surf; flight.invincible = true; flight.cushionOn = false; flight.sandbox = true
   const c = course.cps[0]
   player.reset(c.x, c.z, Math.atan2(c.tx, c.tz), 1.5)
   shards.start(player.pos.x, player.pos.z, player.heading, groundH, surf)
@@ -1575,7 +1575,9 @@ function touchDown(): void {
   landQ.copy(flight.quat); landBlend = 0.45
   const hs = Math.hypot(flight.vel.x, flight.vel.z)
   const h = hs > 30 ? Math.atan2(flight.vel.x, flight.vel.z) : Math.atan2(flight.fwd.x, flight.fwd.z)
-  player.reset(flight.pos.x, flight.pos.z, h, hs / MACH)
+  // The dive's speed turns along the ground (a steep one costs a little more), not thrown away.
+  const steep = Math.min(1, Math.abs(flight.vel.y) / Math.max(flight.speed, 1))
+  player.reset(flight.pos.x, flight.pos.z, h, (flight.speed * (1 - 0.15 * steep)) / MACH)
   player.prev.copy(flight.prev)
   player.squash = Math.min(1, Math.max(0, -flight.vel.y) / 70)
   cam.snap(h)
@@ -1605,8 +1607,10 @@ function readFree(): void {
   fTurn += THREE.MathUtils.clamp(turn - fTurn, -STEP * 6, STEP * 6)
   fPitch += THREE.MathUtils.clamp(pitch - fPitch, -STEP * 5, STEP * 5)
   fc.turn = fTurn
-  // Flight assist: no pitch held → ease the nose toward a gentle glide (about 5° down).
-  fc.pitch = Math.abs(fPitch) > 0.05 ? fPitch : THREE.MathUtils.clamp(-(flight.fwd.y + 0.09) * 2.5, -0.35, 0.35)
+  // Flight assist: no pitch held → ease the nose toward a glide — about 5° down near the ground, steeper
+  // (~14°) high up, so letting go always brings you back down in a few seconds, not half a minute.
+  const glide = 0.09 + 0.16 * THREE.MathUtils.smoothstep(flight.agl, 150, 1200)
+  fc.pitch = Math.abs(fPitch) > 0.05 ? fPitch : THREE.MathUtils.clamp(-(flight.fwd.y + glide) * 2.5, -0.35, 0.35)
   fc.aim = null
 }
 
@@ -1885,14 +1889,16 @@ function simStep(): void {
       flight.step(STEP, fc, world)
       flight.syncTo(player)
       freeAirT += STEP
-      // Touched the surface: grip takes over, you drive on.
-      if (freeAirT > 0.3 && flight.agl < 6) touchDown()
+      // Down on the surface (coming down, not skimming up off it): grip takes over, you drive on.
+      if (freeAirT > 0.8 && flight.agl < 5 && flight.vel.y <= 0) touchDown()
     } else {
       player.step(STEP, forced ?? input.c, world)
       sinceLand += STEP
       const pullUp = !forced && !flyForced && (input.isDown('Space') || [...(navigator.getGamepads ? navigator.getGamepads() : [])].some((p) => p?.buttons[0]?.pressed))
       // Properly airborne (a jump, a cliff edge, a rock's crest) — or pulling up at speed: you fly.
-      if (sinceLand > 0.4 && player.airborne && (player.airTime > 0.2 || player.vy > 15)) takeOff(Math.atan2(player.vy, Math.max(player.speed, 1)))
+      // (A hop over a dune stays a hop: only a real flight — well clear of the ground — hands over. The
+      //  old rule handed over on every bump: ~36 camera and attitude re-snaps in 45 s, "the reset".)
+      if (sinceLand > 0.8 && player.airborne && player.airTime > 0.35 && (player.agl > 10 || player.vy > 25)) takeOff(Math.atan2(player.vy, Math.max(player.speed, 1)))
       else if (pullUp && player.mach > 0.8 && !player.airborne) takeOff(0.25)
     }
     player.hull = 100

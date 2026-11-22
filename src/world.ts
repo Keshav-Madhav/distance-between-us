@@ -1269,7 +1269,8 @@ export class World {
       for (const it of w.items) {
         if (it.grow < 0.5) continue
         const hh = it.h * it.grow
-        const sk = Math.min(150, hh * 0.45)
+        // (Linear, ~1:1.1: a curved skirt was gentle at the foot and a wall at the lip — 90 m in one step.)
+        const sk = Math.min(320, hh * 0.9)
         const dx = x - it.x, dz = z - it.z
         const reach = it.r * 2.3 + sk
         const d2 = dx * dx + dz * dz
@@ -1277,7 +1278,7 @@ export class World {
         const c = Math.cos(it.yaw), s = Math.sin(it.yaw)
         const th = Math.atan2(dx * s + dz * c, dx * c - dz * s)
         const d = Math.sqrt(d2)
-        const rad = (t: number) => it.r * w.prof(th, t) * 0.97 + sk * (1 - t) * (1 - t)
+        const rad = (t: number) => it.r * w.prof(th, t) * 0.97 + sk * (1 - t)
         if (d >= rad(0)) continue
         let t = 1
         if (d >= rad(1)) {

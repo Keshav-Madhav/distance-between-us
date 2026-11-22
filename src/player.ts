@@ -478,6 +478,12 @@ export class Player {
     else this.vel.set(this.fwd.x * this.speed + this.right.x * lat, this.vy, this.fwd.z * this.speed + this.right.z * lat)
     this.pos.x += this.vel.x * dt
     this.pos.z += this.vel.z * dt
+    // (The ground step above used the height before this move: at Mach 8 that is 20 m back, and rising
+    //  ground could put the hull a little into it for a step. Never under the surface where it is now.)
+    {
+      const gN = this.ground(this.pos.x, this.pos.z)
+      if (this.pos.y < gN + 1.2) this.pos.y = gN + 1.2
+    }
 
     // ── visual attitude ──
     // Floaty: bank and pitch are under-damped springs (they lean, overshoot a touch, settle).
