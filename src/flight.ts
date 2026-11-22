@@ -98,6 +98,10 @@ export class FlightCraft {
   /** Events for the game: hits (damage), ground scrapes. */
   onHit: ((dmg: number, kind: 'ground' | 'rock') => void) | null = null
   private readonly obs: Obstacle[] = []
+  /** The surface under the craft (FREE ROAM: World.surfaceAt, so a mesa top is ground). */
+  ground: (x: number, z: number) => number = groundH
+  /** FREE ROAM: no hull loss, ever. */
+  invincible = false
 
   get mach(): number { return this.speed / MACH }
 
@@ -116,6 +120,15 @@ export class FlightCraft {
     this.ghost = 0
     this.rates.set(0, 0, 0)
     this.topMach = 0
+  }
+
+  /** FREE ROAM: lift off from the hover — at pos, on heading, at speed (m/s), the nose up a little. */
+  launch(pos: THREE.Vector3, heading: number, speed: number, pitchUp: number): void {
+    this.reset(pos.x, pos.z, heading, 0, Math.max(FLIGHT.floorMach, speed / MACH))
+    this.pos.copy(pos); this.prev.copy(pos)
+    _q.setFromAxisAngle(AX, -pitchUp); this.quat.multiply(_q); this.prevQuat.copy(this.quat); this.axes()
+    this.vel.copy(this.fwd).multiplyScalar(this.speed)
+    this.aim.copy(this.fwd)
   }
 
   private axes(): void {
@@ -212,7 +225,7 @@ export class FlightCraft {
     // ── the ground: a soft cushion from 70 m that eases the nose up and kills the sink (never a snap),
     //    then a scrape; only a real nose-dive into it hurts. (It used to yank the nose 0.5 rad in one
     //    step and take 35 hull for any shallow dive — three skims ended the run: "the reset".) ──
-    const g = groundH(this.pos.x, this.pos.z)
+    const g = this.ground(this.pos.x, this.pos.z)
     this.agl = this.pos.y - g
     this.sinking = this.vel.y < -30 && this.agl < 250 + -this.vel.y * 2.5
     if (this.agl < F.cushion) {
@@ -258,12 +271,13 @@ export class FlightCraft {
 
   /** Hit by enemy fire. */
   damage(dmg: number): void {
-    if (this.ghost > 0) return
+    if (this.ghost > 0 || this.invincible) return
     this.hull -= dmg
     this.sinceHurt = 0
   }
 
   private hurt(dmg: number, kind: 'ground' | 'rock'): void {
+    if (this.invincible) { this.onHit?.(0, kind); return }
     this.hull -= dmg
     this.sinceHurt = 0
     this.ghost = dmg >= 30 ? 1.5 : 0.25

@@ -399,6 +399,9 @@
   #pipper { width: 30px; height: 30px; margin: -15px 0 0 -15px; border-width: 2.5px; }
   #pipper::after { left: 12px; top: 12px; }
   #pause select#mus { width: 210px; }
+  #title.free .course-only, #title:not(.free) .free-only, #title.free .keys .race-keys, #title:not(.free) .keys .free-keys { display: none; }
+  #title.free .plan { grid-template-columns: 1fr 300px; }
+  body.free #hull { display: none; }
   #title.hunt .keys .race-keys { display: none; } #title:not(.hunt) .keys .hunt-keys { display: none; }
   .medal { display: inline-block; vertical-align: -3px; margin-right: 7px; filter: drop-shadow(0 1px 2px rgba(0,0,0,0.55)); }
   .medalbig { display: inline-flex; align-items: center; gap: 10px; margin-top: 10px; font-size: 18px; letter-spacing: 0.3em; }
@@ -457,14 +460,15 @@
 <div id="title" class="screen hide">
   <header class="topbar">
     <h1>THE DISTANCE BETWEEN <span>US</span></h1>
-    <div class="tabs" role="tablist"><button data-mode="race" class="on">RACE</button><button data-mode="hunt">HUNT</button></div>
+    <div class="tabs" role="tablist"><button data-mode="race" class="on">RACE</button><button data-mode="hunt">HUNT</button><button data-mode="free">FREE ROAM</button></div>
     <button id="open-settings" aria-label="Settings">SETTINGS</button>
   </header>
   <div class="menu">
     <div class="sec race-only">World</div>
     <div id="worlds" class="race-only"></div>
-    <div class="sec race-only">Course</div>
-    <div id="courses" class="race-only"></div>
+    <div class="sec race-only course-only">Course</div>
+    <div id="courses" class="race-only course-only"></div>
+    <div class="free-only huntinfo"><b>HOW IT PLAYS</b><p>The whole world and nothing to win. Ride up any rock and launch off the top. Press Space to take off and fly; touch down anywhere and drive on. Nothing hurts.</p><p class="soon">Beams mark trails of five crystals: on the ground, on the summits, up in the sky.</p></div>
     <div class="hunt-only huntinfo"><b>HOW IT PLAYS</b><p>Take off and hunt in the open sky. Six waves: darts in V-flights, lancers that fire down their nose, interceptors that lock you from behind.</p><p class="soon">Lead your shots on the gold ring. Kills score more the faster you fly.</p></div>
   </div>
   <div class="shipbar">
@@ -475,11 +479,11 @@
   </div>
   <aside class="paints" id="paint-drawer"><b>PAINT</b><div><small>Body</small><span id="sw-body"></span></div><div><small>Trim</small><span id="sw-trim"></span></div><div><small>Livery</small><span id="sw-livery" class="opts"></span></div><div><small>Finish</small><span id="sw-finish" class="opts"></span></div><div><small>Exhaust</small><span id="sw-flame" class="opts"></span></div></aside>
   <footer class="plan">
-    <canvas id="track" class="race-only" width="460" height="280"></canvas>
+    <canvas id="track" class="race-only course-only" width="460" height="280"></canvas>
     <div class="info"><div class="ph"><b id="tp-name"></b><span id="tp-blurb"></span></div><div id="tp-stats"></div><div id="tp-info"></div></div>
     <button id="start" class="big">START</button>
   </footer>
-  <div class="keys"><span class="kc">Enter</span> start <span class="kc">Esc</span> pause <span class="race-keys"><span class="kc">drag</span> look around <span class="kc">W</span> throttle <span class="kc">Shift</span> burner <span class="kc">A D</span> steer</span><span class="hunt-keys"><span class="kc">W S</span> pitch <span class="kc">A D</span> turn <span class="kc">Shift</span> throttle <span class="kc">Space</span> cannon <span class="kc">F</span> missiles</span></div>
+  <div class="keys"><span class="kc">Enter</span> start <span class="kc">Esc</span> pause <span class="race-keys"><span class="kc">drag</span> look around <span class="kc">W</span> throttle <span class="kc">Shift</span> burner <span class="kc">A D</span> steer</span><span class="free-keys"><span class="kc">W</span> throttle <span class="kc">A D</span> steer <span class="kc">Space</span> take off · drop</span><span class="hunt-keys"><span class="kc">W S</span> pitch <span class="kc">A D</span> turn <span class="kc">Shift</span> throttle <span class="kc">Space</span> cannon <span class="kc">F</span> missiles</span></div>
 </div>
 <div id="over" class="screen hide">
   <h2 id="over-h">SIGNAL LOST</h2>

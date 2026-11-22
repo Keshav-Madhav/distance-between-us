@@ -11,7 +11,8 @@ import { Fx, resetE } from './particles'
 import { Trail } from './trails'
 import { Player } from './player'
 import { Combat } from './combat'
-import { FlightCam, FlightCraft, type FlightControls } from './flight'
+import { FLIGHT, FlightCam, FlightCraft, type FlightControls } from './flight'
+import { Shards } from './shards'
 import { Rings } from './rings'
 import { Tips } from './tips'
 import { markCasters, SunShadow } from './shadow'
@@ -326,7 +327,7 @@ const player = new Player()
 const cam = new ChaseCam(camera)
 
 // ───────────────────────── game state ─────────────────────────
-type Mode = 'title' | 'race' | 'hunt'
+type Mode = 'title' | 'race' | 'hunt' | 'free'
 let mode: Mode = 'title'
 let overlay = false
 let paused = false
@@ -758,6 +759,23 @@ let directorOn = true
 // The sandbox course: rings through the sky.
 const rings = new Rings()
 scene.add(rings.mesh)
+// FREE ROAM's crystals (src/shards.ts) and the surface the free craft rides (rocks included).
+const shards = new Shards(BIOME === 'ice' ? 0x9fe8ff : BIOME === 'forest' ? 0xc8ff7a : 0xffd36a)
+scene.add(shards.group)
+const surf = (x: number, z: number) => world.surfaceAt(x, z)
+shards.onTake = (x, y, z, n, done, kind) => {
+  sound.chime(n, done)
+  for (let i = 0; i < (done ? 40 : 16); i++) {
+    const e = resetE()
+    e.x = x; e.y = y; e.z = z
+    const a = Math.random() * 6.28, u = Math.random() * 2 - 1, sp = (done ? 60 : 35) * (0.5 + Math.random())
+    e.vx = Math.cos(a) * Math.sqrt(1 - u * u) * sp + player.vel.x * 0.5; e.vy = u * sp + 10; e.vz = Math.sin(a) * Math.sqrt(1 - u * u) * sp + player.vel.z * 0.5
+    e.life = 0.6 + Math.random() * 0.6; e.size0 = done ? 1.6 : 1.1; e.size1 = 0.2
+    e.r = 6; e.g = 4.6; e.b = 1.6; e.a = 1; e.drag = 1.2; e.grav = 10; e.streak = 1
+    fx.glow.emit(e)
+  }
+  if (done) { pop(`TRAIL OF FIVE · ${kind === 'sky' ? 'SKY' : kind === 'top' ? 'SUMMIT' : 'GROUND'}`); shards.saveTotal(); shake(0.15) }
+}
 rings.onPass = (_r, i) => { sound.gate(i === 9); pop(`RING ${i + 1}/10`); score += Math.round(100 * Math.max(1, flight.mach)) }
 rings.onMiss = (_r, i) => { sound.missed(); pop(`MISSED RING ${i + 1}`) }
 rings.onSet = () => { flash(`SET ${rings.sets} · ${rings.passed} RINGS`); sound.fanfare(true) }
@@ -921,7 +939,7 @@ let missedCount = 0, burnHeld = 0
 const tipCtx: import('./tips').TipCtx = { mode: 'title', course: '', t: 0, km: 0, mach: 0, burning: false, burnHeld: 0, wake: 0, drifting: false, slip: 0, spin: false, airborne: false, hull: 100, missed: 0, place: 1, lap: 1, dartNear: false, darts: 0, kills: 0, overheat: false, agl: 0 }
 function updateTips(dt: number): void {
   const c = tipCtx
-  if (mode === 'title') { tips.hide(); return }
+  if (mode === 'title' || mode === 'free') { tips.hide(); return }
   if (paused || overlay || player.dead || (mode === 'race' && race.state === 'grid')) return
   burnHeld = player.burning ? burnHeld + dt : 0
   const me = race.racers[0]
@@ -969,11 +987,12 @@ let countT = 0
 // ───────────────────────── the menu ─────────────────────────
 // Mouse first (keys too): RACE / HUNT tabs, a course card per course with the whole layout drawn
 // beside it, the ship picker (the ship on screen changes as you pick), START, SETTINGS.
-let menuMode: 'race' | 'hunt' = 'race'
+let menuMode: 'race' | 'hunt' | 'free' = 'race'
 const SHIP_DESC = ['Classic hull, balanced lines', 'Classic hull, heavy, side pods', 'Classic hull, needle nose and canards', 'Lofted hull, twin-fin arrow', 'Lofted hull, wide and heavy', 'Lofted hull, long, one tall fin']
 function showCourse(): void {
   const title = $('#title')
   title.classList.toggle('hunt', menuMode === 'hunt')
+  title.classList.toggle('free', menuMode === 'free')
   for (const b of title.querySelectorAll<HTMLButtonElement>('.tabs button')) b.classList.toggle('on', b.dataset.mode === menuMode)
   const worlds = $('#worlds')
   if (!worlds.childElementCount) for (const w of WORLDS) {
@@ -1049,7 +1068,7 @@ function showCourse(): void {
     })
     names.forEach((_n, i) => (box.children[i] as HTMLElement).classList.toggle('on', i === (myPaint[key] ?? 0)))
   }
-  $('#start').textContent = swapPending ? `LOADING ${swapPending}…` : menuMode === 'hunt' ? 'START HUNT' : `START · ${COURSES[pickedCourse].name}`
+  $('#start').textContent = swapPending ? `LOADING ${swapPending}…` : menuMode === 'hunt' ? 'START HUNT' : menuMode === 'free' ? 'START FREE ROAM' : `START · ${COURSES[pickedCourse].name}`
   $('#ship-name').textContent = MODELS[shipPick]
   $('#ship-desc').textContent = SHIP_DESC[shipPick]
   $('#ship-desc').title = 'Every craft handles the same: the choice is looks.'
@@ -1060,6 +1079,12 @@ function showCourse(): void {
     const cell = (v: string, l: string) => `<div><b>${v}</b><small>${l}</small></div>`
     $('#tp-stats').innerHTML = cell(BIOME === 'desert' ? 'Red Mesa' : BIOME === 'ice' ? 'Polar Shelf' : 'Cinder', 'World') + cell('× Mach', 'Score multiplier') + cell('6 waves', 'Then it ends') + cell((() => { try { return localStorage.getItem('dbu-hunt-best') ?? '—' } catch { return '—' } })(), 'Your best')
     $('#tp-info').textContent = '' // (the keys are in the footer: they showed twice)
+  } else if (menuMode === 'free') {
+    $('#tp-name').textContent = 'FREE ROAM'
+    $('#tp-blurb').textContent = 'No race, no clock, no damage. Drive up any rock and launch off it, take off and fly, land anywhere.'
+    const cell = (v: string, l: string) => `<div><b>${v}</b><small>${l}</small></div>`
+    $('#tp-stats').innerHTML = cell(WORLDS.find((w) => w.id === BIOME)?.name ?? '', 'World') + cell('Off', 'Damage') + cell('Space', 'Take off · drop') + cell(String(shards.total), 'Crystals found')
+    $('#tp-info').textContent = ''
   } else drawTrackPreview(COURSES[pickedCourse])
 }
 /** The whole course, start at the bottom, finish at the top; across exaggerated so bends read. */
@@ -1243,6 +1268,7 @@ function pickShip(delta: number): void {
 }
 function menuStart(): void {
   if (menuMode === 'hunt') { startHunt(); return }
+  if (menuMode === 'free') { if (!swapPending) startFree(); return }
   try { localStorage.setItem('dbu-course-' + biomeOf(COURSES[pickedCourse].id), COURSES[pickedCourse].id) } catch { /* blocked */ }
   if (swapPending) return
   if (COURSES[pickedCourse] !== course.def) { swapTo(COURSES[pickedCourse].id, true); return }
@@ -1258,6 +1284,8 @@ function setPaused(on: boolean): void {
 /** Back to the menu: everything off, the ship idling on the grid. */
 function toTitle(): void {
   setPaused(false)
+  if (mode === 'free') shards.saveTotal()
+  freeOff()
   overlay = false
   spectate = false
   $('#over').classList.add('hide')
@@ -1282,7 +1310,7 @@ function toTitle(): void {
   document.body.classList.remove('playing', 'racing')
   showCourse()
 }
-for (const b of $('#title').querySelectorAll<HTMLButtonElement>('.tabs button')) b.onclick = () => { menuMode = b.dataset.mode as 'race' | 'hunt'; showCourse() }
+for (const b of $('#title').querySelectorAll<HTMLButtonElement>('.tabs button')) b.onclick = () => { menuMode = b.dataset.mode as 'race' | 'hunt' | 'free'; showCourse() }
 $('#ship-prev').onclick = () => pickShip(-1)
 $('#ship-next').onclick = () => pickShip(1)
 for (const ev of ['mouseenter', 'focus'] as const) $('#start').addEventListener(ev, () => { titleRev = true })
@@ -1296,7 +1324,7 @@ $('#start').onclick = () => { sound.start(); menuStart() }
 $('#open-settings').onclick = () => { $('#pause').classList.remove('hide'); $('#pause').classList.add('from-title') }
 $('#p-close').onclick = () => { $('#pause').classList.add('hide'); setTimeout(() => { if ($('#pause').classList.contains('hide')) $('#pause').classList.remove('from-title') }, 320) }
 $('#p-resume').onclick = () => setPaused(false)
-$('#p-restart').onclick = () => { setPaused(false); if (mode === 'hunt') startHunt(); else startRace() }
+$('#p-restart').onclick = () => { setPaused(false); if (mode === 'hunt') startHunt(); else if (mode === 'free') startFree(); else startRace() }
 $('#p-menu').onclick = () => toTitle()
 $('#pausebtn').onclick = () => { if (mode !== 'title' && !overlay) setPaused(!paused) }
 $('#b-again').onclick = () => { if (mode === 'hunt') startHunt(); else startRace() }
@@ -1363,6 +1391,7 @@ let runTop = 0
 let driftLvl = 0
 let secK = 0, pinUntil = 0
 function startRace(): void {
+  freeOff()
   world.courseOn = true; course.group.visible = true
   missedCount = 0
   document.body.classList.remove('flying')
@@ -1405,6 +1434,7 @@ function startRace(): void {
 }
 
 function startHunt(): void {
+  freeOff()
   applyPending()
   runTop = 0
   player.noCollide = false
@@ -1453,6 +1483,99 @@ function startHunt(): void {
   player.speed = 0.6 * MACH
   shake(0.5)
   sound.boostKick()
+}
+
+// ───────────────────────── free roam ─────────────────────────
+// No race, no clock, no damage: ride up the rocks and off their tops, take off (Space) and fly, touch
+// down anywhere to drive on. The hover craft (Player) on the ground, the FlightCraft in the air; the
+// handover keeps position and velocity, and the camera and the hull's attitude blend across it.
+let freeAir = false, freeAirT = 0
+let camBlend = 0, landBlend = 0
+const camFromOff = new THREE.Vector3(), camFromQ = new THREE.Quaternion()
+const landQ = new THREE.Quaternion(), landTmpQ = new THREE.Quaternion()
+const FREE_HINTS = ['<b>W · SHIFT</b>THROTTLE · BURNER', '<b>A D · S</b>STEER · BRAKE', '<b>SPACE</b>TAKE OFF · DROP BACK DOWN', '<b>FLYING</b>W S PITCH · A D TURN · Q E ROLL', '<b>NO DAMAGE</b>DRIVE UP ANY ROCK, LAUNCH OFF THE TOP', '<b>BEAMS</b>CRYSTAL TRAILS · TAKE ALL FIVE'].map((h) => `<div>${h}</div>`).join('')
+function camBlendStart(): void { camFromOff.subVectors(camera.position, renderPos); camFromQ.copy(camera.quaternion); camBlend = 1 }
+function freeOff(): void {
+  freeAir = false
+  player.ground = groundH; player.cliffs = false
+  flight.ground = groundH; flight.invincible = false
+  shards.hide()
+  document.body.classList.remove('free')
+  $('#score .lab').textContent = 'SCORE'
+}
+function startFree(): void {
+  freeOff()
+  applyPending()
+  runTop = 0
+  player.noCollide = true
+  player.announce = true
+  player.maxMach = CFG.speed.boostMach
+  spectate = false
+  wreckage.clear()
+  sound.start()
+  sound.revive()
+  mode = 'free'
+  overlay = false
+  combat.enabled = false
+  combat.reset()
+  rings.hide()
+  rounds.clear(); missiles.reset(); darts.clear()
+  for (const id of ['#aimring', '#velmark', '#gmark']) $(id).style.display = 'none'
+  world.courseOn = false; course.group.visible = false
+  player.ground = surf; player.cliffs = true
+  flight.ground = surf; flight.invincible = true
+  const c = course.cps[0]
+  player.reset(c.x, c.z, Math.atan2(c.tx, c.tz), 1.5)
+  shards.start(player.pos.x, player.pos.z, player.heading, groundH, surf)
+  resetVisuals()
+  for (const r of race.racers) if (r.ai) visuals.get(r.p)!.craft.root.visible = false
+  visuals.get(player)!.lastDust.copy(player.pos)
+  cam.snap(player.heading)
+  runTime = 0
+  damageFlash = 0
+  slowmoT = 0
+  $('#title').classList.add('hide')
+  $('#over').classList.add('hide')
+  document.body.classList.toggle('world-lava', BIOME === 'lava')
+  document.body.classList.remove('flying', 'racing'); document.body.classList.add('playing', 'free')
+  hud.classList.add('on')
+  raceEl.classList.remove('on')
+  standEl.classList.remove('on')
+  mini.classList.remove('on')
+  scoreEl.style.display = ''
+  $('#score .lab').textContent = 'CRYSTALS'
+  reticle.style.display = 'none'
+  hintsEl.innerHTML = FREE_HINTS
+  hintsEl.style.opacity = '0.85'
+  setTimeout(() => { if (mode === 'free') hintsEl.style.opacity = '0' }, 12000)
+}
+/** Space: off the ground into flight, or out of flight onto a ballistic fall (you land wherever). */
+function toggleFly(): void {
+  if (mode !== 'free' || paused) return
+  if (freeAir) { touchDown(); return }
+  if (player.spin > 0 || player.crashing) return
+  freeAir = true; freeAirT = 0
+  camBlendStart()
+  tmp.copy(player.pos); tmp.y += 2
+  flight.launch(tmp, player.heading, Math.max(player.speed, 1.2 * MACH), player.airborne ? 0.12 : 0.32)
+  flight.energy = FLIGHT.energyMax
+  flight.ghost = 0
+  fTurn = fPitch = 0
+  fcam.snap()
+  sound.boostKick(); shake(0.3)
+}
+/** Back to the hover craft: same place, same velocity; the nose put along the travel (no crooked landing). */
+function touchDown(): void {
+  freeAir = false
+  camBlendStart()
+  landQ.copy(flight.quat); landBlend = 0.45
+  const hs = Math.hypot(flight.vel.x, flight.vel.z)
+  const h = hs > 30 ? Math.atan2(flight.vel.x, flight.vel.z) : Math.atan2(flight.fwd.x, flight.fwd.z)
+  player.reset(flight.pos.x, flight.pos.z, h, hs / MACH)
+  player.pos.copy(flight.pos); player.prev.copy(flight.prev)
+  player.airborne = true; player.airTime = 0.2
+  player.vy = flight.vel.y
+  cam.snap(h)
 }
 
 // ───────────────────────── quality ─────────────────────────
@@ -1648,7 +1771,7 @@ let orbitYaw = -0.65, orbitPitch = 0.12, orbitKey = 0, orbitKeyP = 0
 let hudT = 0
 
 function rebase(): void {
-  if (mode !== 'hunt') return
+  if (mode !== 'hunt' && mode !== 'free') return
   const dx = player.pos.x > REBASE / 2 ? -REBASE : player.pos.x < -REBASE / 2 ? REBASE : 0
   const dz = player.pos.z > REBASE / 2 ? -REBASE : player.pos.z < -REBASE / 2 ? REBASE : 0
   if (!dx && !dz) return
@@ -1656,6 +1779,7 @@ function rebase(): void {
   combat.shift(dx, dz)
   flight.shift(dx, dz)
   rings.shift(dx, dz)
+  shards.shift(dx, dz)
   rounds.shift(dx, dz)
   missiles.shift(dx, dz)
   darts.shift(dx, dz)
@@ -1723,6 +1847,20 @@ function simStep(): void {
     rebase()
     if (!player.dead) runTime += STEP
 
+  } else if (mode === 'free') {
+    if (freeAir) {
+      if (!flyForced) readFlight()
+      flight.step(STEP, fc, world)
+      flight.syncTo(player)
+      freeAirT += STEP
+      // Down at the surface with the nose not buried in it: touch down and drive on.
+      if (freeAirT > 1 && flight.agl < 9 && flight.fwd.y > -0.5) touchDown()
+    } else player.step(STEP, forced ?? input.c, world)
+    player.hull = 100
+    runTop = Math.max(runTop, player.topMach)
+    shards.step(player.prev, player.pos, player.heading, groundH, surf)
+    rebase()
+    runTime += STEP
   }
 }
 
@@ -1806,7 +1944,14 @@ function drawRacer(p: Player, alpha: number, dt: number, isMe: boolean): void {
   craft.root.position.copy(tmp)
   craft.root.rotation.set(0, heading, 0)
   // Flying (HUNT): the craft's whole orientation, interpolated — loops and rolls included.
-  if (mode === 'hunt' && isMe) craft.root.quaternion.slerpQuaternions(flight.prevQuat, flight.quat, alpha)
+  if ((mode === 'hunt' || (mode === 'free' && freeAir)) && isMe) craft.root.quaternion.slerpQuaternions(flight.prevQuat, flight.quat, alpha)
+  // Just touched down from flight: the hull eases from its flying attitude onto the hover.
+  else if (isMe && landBlend > 0) {
+    landBlend = Math.max(0, landBlend - dt)
+    landTmpQ.copy(craft.root.quaternion)
+    const k = 1 - landBlend / 0.45
+    craft.root.quaternion.slerpQuaternions(landQ, landTmpQ, k * k * (3 - 2 * k))
+  }
   // A flip: two full rolls (eased) on top of the bank.
   const tu = 1 - p.tumble
   const roll = p.tumble > 0 ? p.tumbleDir * Math.PI * 4 * (1 - (1 - tu) * (1 - tu)) : 0
@@ -2109,7 +2254,7 @@ function frame(now: number): void {
   myCraft.setCone(mode === 'title' ? 0 : Math.max(coneA, nearMach1), time)
 
   if (mode === 'title') {
-    if (!$('#title').classList.contains('hunt')) animTrackPreview(now)
+    if (!$('#title').classList.contains('hunt') && !$('#title').classList.contains('free')) animTrackPreview(now)
     // A fixed orbit round the ship as it flies (← → and ↑ ↓, or drag, turn it): locked to the ship,
     // so the desert streams past at Mach 4.
     void attractYaw
@@ -2126,7 +2271,7 @@ function frame(now: number): void {
     camera.updateProjectionMatrix()
   } else if (mode === 'race' && spectate && race.racers[0].finished) {
     cam.cinematic(realDt, time, player, renderPos, heading)
-  } else if (mode === 'hunt' && !player.dead) {
+  } else if ((mode === 'hunt' || (mode === 'free' && freeAir)) && !player.dead) {
     flightQ.slerpQuaternions(flight.prevQuat, flight.quat, alpha)
     flightPunch *= Math.exp(-realDt * 4)
     fcam.update(realDt, renderPos, flightQ, flight.vel, flight.mach, fovMax, flightPunch)
@@ -2139,10 +2284,20 @@ function frame(now: number): void {
     cam.update(realDt, time, player, renderPos, heading, world, fovMax)
   }
 
+  // Ground ↔ air in FREE ROAM: the camera eases from where it was (relative to the craft) to the new rig.
+  if (camBlend > 0) {
+    camBlend = Math.max(0, camBlend - realDt / 0.7)
+    const k = camBlend * camBlend * (3 - 2 * camBlend)
+    tmp.addVectors(renderPos, camFromOff)
+    camera.position.lerp(tmp, k)
+    camera.quaternion.slerp(camFromQ, k)
+  }
+
   const me = race.racers[0]
   course.update(mode === 'race' ? me.next : -1, time, false)
-  course.group.visible = mode !== 'hunt'
-  world.ground.uTrackOn.value = mode === 'hunt' ? 0 : course.def.wear ?? 1
+  course.group.visible = mode === 'race' || mode === 'title'
+  world.ground.uTrackOn.value = mode === 'hunt' || mode === 'free' ? 0 : course.def.wear ?? 1
+  if (mode === 'free') shards.draw(time)
 
   if (mode === 'hunt') combat.render(alpha, realDt, time)
   combat.group.visible = mode === 'hunt'
@@ -2277,7 +2432,7 @@ function frame(now: number): void {
     else if (player.crashing || (crashBreak > 0 && (crashBreak -= realDt) > 0)) sound.setSection('break')
     else sound.setSection(race.toGo(me) < 25000 ? 'final' : 'drop')
     if (player.crashing) crashBreak = 2
-  } else if (mode === 'hunt') sound.setSection(player.crashing ? 'break' : 'drop')
+  } else if (mode === 'hunt' || mode === 'free') sound.setSection(player.crashing ? 'break' : 'drop')
   else sound.setSection('title')
   sound.update(realDt, engineMach, player.boost, player.brake, mode === 'hunt' ? combat.lockProgress : 0, mode === 'hunt' && combat.locked, play && !player.dead && !player.crashing, heat, player.burning, rivalVoices)
 
@@ -2454,6 +2609,16 @@ function updateHud(dt: number, slow: boolean): void {
     }
     arrowTo(proj, me.finished ? '' : `${me.next === 0 ? 'START' : me.next === race.K - 1 ? 'FINISH' : 'GATE ' + me.next} · ${(Math.hypot(c.x - player.pos.x, c.z - player.pos.z) / 1000).toFixed(1)} KM`)
     lockEl.style.display = 'none'
+  } else if (mode === 'free') {
+    for (const { d } of tagEls) d.style.display = 'none'
+    $('#gmark').style.display = 'none'
+    $('#gmark2').style.display = 'none'
+    lockEl.style.display = 'none'
+    if (slow) {
+      scoreNum.textContent = String(shards.taken)
+      const alt = Math.max(0, Math.round(player.pos.y - groundH(player.pos.x, player.pos.z)))
+      scoreSub.innerHTML = `${shards.total} FOUND IN ALL<br/>${freeAir ? '<b>FLYING</b> · SPACE TO DROP' : player.airborne ? '<b>AIRBORNE</b> · SPACE TO FLY' : 'SPACE TO TAKE OFF'}<br/>ALT ${alt} M · ${fmtTime(runTime)}`
+    }
   } else if (mode === 'hunt') {
     for (const { d } of tagEls) d.style.display = 'none'
     $('#gmark').style.display = 'none'
@@ -2774,6 +2939,7 @@ addEventListener('keydown', (e) => {
     if (e.code === 'Enter') startRace()
     return
   }
+  if (mode === 'free') { if (e.code === 'Space' && !e.repeat) toggleFly(); return }
   if (e.code === 'KeyR' && e.shiftKey) { if (mode === 'race') startRace(); else startHunt(); return }
   if (e.code === 'KeyR' && mode === 'race' && race.state === 'racing') {
     const me = race.racers[0]
@@ -2900,6 +3066,7 @@ const g = {
     tier, scale: renderScale, hull: Math.round(player.hull), air: player.airborne, agl: +player.agl.toFixed(1),
     place: race.racers[0].place, crashing: player.crashing, burning: player.burning, slip: +(player.slip * 57.3).toFixed(1), spin: +player.spin.toFixed(2), drift: +player.drift.toFixed(2), yaw: +player.yawRate.toFixed(2), lap: race.lapOf(race.racers[0]), passed: race.racers[0].passed, race: race.state, particles: fx.glow.count + fx.smoke.count,
   }),
-  player, race, course, combat, flight, fc, CFG, world, scene, camera, post, fx, input, wreckage,
+  player, race, course, combat, flight, fc, CFG, world, scene, camera, post, fx, input, wreckage, shards,
+  free: () => startFree(), fly: () => toggleFly(), get freeAir() { return freeAir },
 }
 ;(window as unknown as { __g: typeof g }).__g = g

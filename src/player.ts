@@ -147,7 +147,7 @@ export class Player {
   reset(x = 0, z = 0, heading = 0, mach = CFG.speed.launchMach): void {
     this.heading = this.prevHeading = heading
     this.updateAxes()
-    this.pos.set(x, groundH(x, z) + CFG.handling.hover, z)
+    this.pos.set(x, this.ground(x, z) + CFG.handling.hover, z)
     this.prev.copy(this.pos)
     this.speed = mach * MACH
     this.lateral = 0
@@ -203,7 +203,7 @@ export class Player {
     this.scrape = Math.max(0, this.scrape - dt * 6)
     if (frozen) {
       // On the grid: engines live, wheels-up, held.
-      const g = groundH(this.pos.x, this.pos.z)
+      const g = this.ground(this.pos.x, this.pos.z)
       this.pos.y = g + CFG.handling.hover
       this.throttle += ((c.boost ? 1 : 0) - this.throttle) * Math.min(1, dt * 6)
       this.boost += ((c.burner ? 1 : 0) - this.boost) * Math.min(1, dt * 6)
@@ -215,7 +215,7 @@ export class Player {
     if (this.dead) {
       this.speed *= Math.exp(-1.2 * dt)
       this.pos.addScaledVector(this.fwd, this.speed * dt)
-      this.pos.y = Math.max(groundH(this.pos.x, this.pos.z) + 0.8, this.pos.y - 20 * dt)
+      this.pos.y = Math.max(this.ground(this.pos.x, this.pos.z) + 0.8, this.pos.y - 20 * dt)
       return
     }
     if (this.sinceHurt > 3) this.hull = Math.min(100, this.hull + 5 * dt)
@@ -403,17 +403,24 @@ export class Player {
     if (this.tumble > 0 && free) this.tumble = Math.max(0, this.tumble - dt / 1.25)
 
     // ── ground effect / flight ──
-    const g0 = groundH(this.pos.x, this.pos.z)
+    const g0 = this.ground(this.pos.x, this.pos.z)
     const ax = this.vel.x, az = this.vel.z
     const hs = Math.hypot(ax, az) || 1
     const ux = ax / hs, uz = az / hs
     // Slope along the direction of travel, here and 40 m on.
-    const gA = groundH(this.pos.x + ux * 20, this.pos.z + uz * 20)
-    const gB = groundH(this.pos.x - ux * 20, this.pos.z - uz * 20)
-    const gC = groundH(this.pos.x + ux * 60, this.pos.z + uz * 60)
+    const gA = this.ground(this.pos.x + ux * 20, this.pos.z + uz * 20)
+    const gB = this.ground(this.pos.x - ux * 20, this.pos.z - uz * 20)
+    const gC = this.ground(this.pos.x + ux * 60, this.pos.z + uz * 60)
     const slope = (gA - gB) / 40
     const slopeAhead = (gC - gA) / 40
     const ride = g0 + H.hover
+    if (!this.airborne && this.cliffs && slope < -0.7) {
+      // Off the edge of a mesa: keep the height and fall from it.
+      this.airborne = true
+      this.airTime = 0
+      this.vy = Math.max(this.vy, 0)
+      this.onLaunch?.(0)
+    }
     if (!this.airborne) {
       const terrainVy = slope * hs
       // Launch: rising, and the ground is about to fall away faster than the ground effect can hold.
@@ -606,7 +613,7 @@ export class Player {
     const cv = this.crashVel
     cv.y -= 34 * dt
     this.pos.addScaledVector(cv, dt)
-    const g = groundH(this.pos.x, this.pos.z)
+    const g = this.ground(this.pos.x, this.pos.z)
     this.crashGround = false
     if (this.pos.y < g + 1.1) {
       this.pos.y = g + 1.1
@@ -660,6 +667,10 @@ export class Player {
    *  a head-on one stops you hard); turn the nose part-way along the wall. */
   /** Tools: no rock collisions (handling tests on open ground). */
   noCollide = false
+  /** The surface the hover rides (FREE ROAM swaps in World.surfaceAt: up the landforms). */
+  ground: (x: number, z: number) => number = groundH
+  /** FREE ROAM: a drop steeper than this is a cliff edge — off it you fly, not slide down the face. */
+  cliffs = false
   private collide(world: World): void {
     if (this.noCollide) return
     // Swept: at Mach 8+ a step is longer than a spire is wide. Walk the step in 12 m samples and stop

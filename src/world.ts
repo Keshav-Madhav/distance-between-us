@@ -1043,6 +1043,41 @@ export class World {
     this.courseRocks.add(mesh)
   }
 
+  /**
+   * FREE ROAM rides over the landforms: the height of whatever is under (x, z) — the ground, or the
+   * rock there at its true profile, with a skirt at the foot (wide at the bottom, gone at the top) so
+   * a wall is a steep ramp you can drive up, not a cliff you stop against.
+   */
+  surfaceAt(x: number, z: number): number {
+    let top = groundH(x, z)
+    for (let wi = 0; wi < this.wrapped.length; wi++) {
+      const w = this.wrapped[wi]
+      for (const it of w.items) {
+        if (it.grow < 0.5) continue
+        const hh = it.h * it.grow
+        const sk = Math.min(150, hh * 0.45)
+        const dx = x - it.x, dz = z - it.z
+        const reach = it.r * 2.3 + sk
+        const d2 = dx * dx + dz * dz
+        if (d2 > reach * reach) continue
+        const c = Math.cos(it.yaw), s = Math.sin(it.yaw)
+        const th = Math.atan2(dx * s + dz * c, dx * c - dz * s)
+        const d = Math.sqrt(d2)
+        const rad = (t: number) => it.r * w.prof(th, t) * 0.97 + sk * (1 - t) * (1 - t)
+        if (d >= rad(0)) continue
+        let t = 1
+        if (d >= rad(1)) {
+          // The highest t the point is still inside (profiles narrow upward): bisect.
+          let lo = 0, hi = 1
+          for (let k = 0; k < 9; k++) { const m = (lo + hi) / 2; if (d < rad(m)) lo = m; else hi = m }
+          t = lo
+        }
+        top = Math.max(top, it.by + hh * t)
+      }
+    }
+    return top
+  }
+
   /** The highest rock top within r of (x, z) (the ground if none): rings and flight clear it. */
   topAt(x: number, z: number, r: number): number {
     let top = groundH(x, z)

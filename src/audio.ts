@@ -885,6 +885,22 @@ export class Sound {
     }
   }
 
+  /** FREE ROAM: a crystal taken — a bell note that climbs with each one in a trail; a chord for all five. */
+  chime(n: number, done: boolean): void {
+    if (!this.ctx) return
+    const ctx = this.ctx, t = ctx.currentTime
+    const scale = [0, 2, 4, 7, 9, 12, 14]
+    const notes = done ? [0, 4, 7, 12] : [scale[Math.min(scale.length - 1, n - 1)]]
+    notes.forEach((st, i) => {
+      const f = 660 * 2 ** (st / 12)
+      for (const [mul, gain] of [[1, 0.13], [2.01, 0.04]] as const) {
+        const o = ctx.createOscillator(); o.type = 'sine'; o.frequency.value = f * mul
+        const g = ctx.createGain(); this.env(g, t + i * 0.07, gain, 0.004, done ? 0.9 : 0.5)
+        o.connect(g).connect(this.sfx); o.start(t + i * 0.07); o.stop(t + i * 0.07 + 1)
+      }
+    })
+  }
+
   /** Your pulse cannon: a short bright tick with a little body (12 a second — kept light). */
   pulse(): void {
     if (!this.ctx) return

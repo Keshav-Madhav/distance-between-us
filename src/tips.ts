@@ -7,7 +7,7 @@
 // time in a slipstream, a missed gate…).
 
 export interface TipCtx {
-  mode: 'title' | 'race' | 'hunt'
+  mode: 'title' | 'race' | 'hunt' | 'free'
   course: string
   /** Race clock (s) since GO, or hunt time. */
   t: number
