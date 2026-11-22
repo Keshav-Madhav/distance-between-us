@@ -703,14 +703,16 @@ function pebbles(count: number, tile: number): THREE.InstancedMesh {
  */
 function canopy(count: number, tile: number, shared: GroundUniforms, wind: { value: number }): THREE.InstancedMesh {
   const r = rng(91)
-  // One crown: four lumps, a broad low base and a domed top.
+  // One crown: seven lumps — a broad spreading base and a domed top (a few trunks carry wide crowns).
   const parts: THREE.BufferGeometry[] = []
-  for (let k = 0; k < 4; k++) {
+  for (let k = 0; k < 7; k++) {
     const g = new THREE.IcosahedronGeometry(1, 0)
-    const a = k * 2.3 + r(), d = k === 0 ? 0 : 0.45 + r() * 0.2
-    const sc = k === 0 ? 0.85 : 0.55 + r() * 0.15
-    g.scale(sc, k === 0 ? 0.7 : sc * 0.8, sc)
-    g.translate(Math.cos(a) * d, k === 0 ? 0.1 : 0.2 + r() * 0.35, Math.sin(a) * d)
+    // The centre lump, five around it spreading wide and low, one high on top.
+    const ring = k >= 1 && k <= 5
+    const a = (k / 5) * 6.28 + r() * 0.5, d = ring ? 0.55 + r() * 0.2 : 0
+    const sc = k === 0 ? 0.7 : ring ? 0.45 + r() * 0.12 : 0.5
+    g.scale(sc, sc * (ring ? 0.6 : 0.8), sc)
+    g.translate(Math.cos(a) * d, k === 0 ? 0.1 : ring ? 0.0 + r() * 0.15 : 0.45, Math.sin(a) * d)
     parts.push(g.toNonIndexed())
   }
   const geo = new THREE.BufferGeometry()
@@ -766,8 +768,8 @@ function canopy(count: number, tile: number, shared: GroundUniforms, wind: { val
         k *= 1.0 - smoothstep(0.16, 0.3, road);
         k *= 1.0 - smoothstep(0.08, 0.3, riverAt(o.xz));
         float h = length(m[1]);
-        // Tall trees: a huge crown held up on a bare trunk 34-56 m above the floor (you see in under it).
-        float lift = 34.0 + 22.0 * hash12(instanceMatrix[3].xz + 3.7);
+        // Tall trees: an open forest — few trunks, each holding a huge crown 48-74 m above the floor (you see in under it).
+        float lift = 48.0 + 26.0 * hash12(instanceMatrix[3].xz + 3.7);
         float g = groundH(o.xz) - (1.0 - k) * (lift + h * 1.5);
         o.y = g + lift + h * 0.55;
         vec3 lp = position;
@@ -775,7 +777,7 @@ function canopy(count: number, tile: number, shared: GroundUniforms, wind: { val
         vTrunk = aTrunk;
         if (aTrunk > 0.5) {
           // Stretched from the floor to inside the crown; a fixed girth (not the crown's scale).
-          float tr = 1.8 + 1.6 * hash12(instanceMatrix[3].xz + 9.1);
+          float tr = 2.4 + 1.8 * hash12(instanceMatrix[3].xz + 9.1);
           w = vec3(o.x + lp.x * tr * k, g + lp.y * (lift + h * 0.5), o.z + lp.z * tr * k);
         } else {
           // A slow sway in the tops.
@@ -824,7 +826,13 @@ function canopy(count: number, tile: number, shared: GroundUniforms, wind: { val
         }
         float sun = max(dot(n, SUN_DIR), 0.0) * (vTrunk > 0.5 ? 0.35 : 1.0);
         vec3 col = alb * (SUN_COL * sun * 0.8 + skyColor(n) * 0.5 + vec3(0.04, 0.07, 0.03));
-        gl_FragColor = vec4(applyFog(col, vW), 1.0);
+        col = applyFog(col, vW);
+        // Under the canopy the mist is thicker: far trunks dissolve into it (only the near ones read).
+        if (vTrunk > 0.5) {
+          vec3 dv = vW - cameraPosition;
+          col = mix(col, skyColor(normalize(vec3(dv.x, 0.02, dv.z))) * 0.3, smoothstep(200.0, 900.0, length(dv.xz)) * 0.92);
+        }
+        gl_FragColor = vec4(col, 1.0);
       }`,
   })
   const mesh = new THREE.InstancedMesh(geo, mat, count)
@@ -834,7 +842,7 @@ function canopy(count: number, tile: number, shared: GroundUniforms, wind: { val
   let i = 0
   for (let gx = 0; gx < n && i < count; gx++) for (let gz = 0; gz < n && i < count; gz++) {
     v.set((gx + 0.15 + r() * 0.7) * cell, 0, (gz + 0.15 + r() * 0.7) * cell)
-    const rad = cell * (0.75 + r() * 0.4), h = 34 + r() * 20 + (r() < 0.12 ? 16 : 0)
+    const rad = cell * (0.62 + r() * 0.3), h = 42 + r() * 22 + (r() < 0.12 ? 18 : 0)
     sv.set(rad, h, rad)
     q.setFromEuler(e.set(0, r() * 6.28, 0))
     mesh.setMatrixAt(i++, mm.compose(v, q, sv))
@@ -1083,7 +1091,7 @@ export class World {
     }
 
     this.group.add(pebbles(1800, 1500))
-    if (BIOME === 'jungle') this.group.add(canopy(4900, 4400, this.ground, AUR_T))
+    if (BIOME === 'jungle') this.group.add(canopy(2000, 4400, this.ground, AUR_T))
 
     const mesaMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.92, metalness: 0, flatShading: true })
     const ICE = BIOME === 'ice', LAVA = BIOME === 'lava', FOREST = BIOME === 'forest' || BIOME === 'jungle', JUNGLE = BIOME === 'jungle'

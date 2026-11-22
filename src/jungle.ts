@@ -17,7 +17,7 @@ const ICO0 = new THREE.IcosahedronGeometry(1, 0)
  *  third of the way up to the top (neighbouring crowns overlap into one canopy). */
 function canopyTree(M: Mesh, x: number, z: number, y0: number, h: number, r: number, rnd: () => number): void {
   const rot = rnd() * 6.28
-  const crownY = y0 + h * (0.42 + rnd() * 0.08)
+  const crownY = y0 + h * (0.5 + rnd() * 0.08)
   M.add(new THREE.CylinderGeometry(0.05, 0.08, 1, 6), BARK, x, (y0 + crownY) / 2 + 0.02, z, r * 0.8, crownY - y0 + 0.06, r * 0.8, rot)
   const top = y0 + h
   const n = 4 + Math.floor(rnd() * 2)
@@ -110,14 +110,14 @@ function stand(seed: number, v: number) {
   const r = rng(seed)
   const M = new Mesh()
   const trees: Tree[] = []
-  const n = [8, 6, 10][v]
+  const n = [4, 3, 5][v]
   for (let k = 0; k < n; k++) {
     const a = r() * 6.28, d = k === 0 ? 0 : 0.2 + Math.sqrt(r()) * 1.0
     const x = Math.cos(a) * d, z = Math.sin(a) * d
     const layer = k === 0 ? 1 : r()
     const h = layer > 0.75 ? 0.85 + r() * 0.15 : layer > 0.3 ? 0.55 + r() * 0.2 : 0.3 + r() * 0.15
     const isPalm = v === 1 ? r() < 0.3 : r() < 0.08
-    const cr = isPalm ? 0.22 + r() * 0.08 : 0.55 + r() * 0.25
+    const cr = isPalm ? 0.22 + r() * 0.08 : 0.8 + r() * 0.3
     if (isPalm) palm(M, x, z, FOOT, h * 0.6, cr, r)
     else canopyTree(M, x, z, FOOT, h, cr, r)
     trees.push({ x, z, h: isPalm ? h * 0.6 : h, r: cr, kind: 'leaf' })
