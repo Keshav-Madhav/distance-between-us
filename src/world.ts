@@ -113,7 +113,7 @@ function skyMaterial(ground: boolean): THREE.ShaderMaterial {
           #elif defined(BIOME_JUNGLE)
           cir = 0.0;
           #endif
-          c = mix(c, vec3(1.45, 1.42, 1.38) * SUN_TINT + vec3(1.0, 0.8, 0.55) * pow(s, 8.0) * 0.5, cir * 0.42);
+          c = mix(c, vec3(1.45, 1.42, 1.38) * SUN_TINT + vec3(1.0, 0.8, 0.55) * pow(s, 8.0) * 0.5, cir * 0.42 * uCloudFade);
           c = mix(c, cc, cov * fade * 0.92);
         }
         // A bank of distant cloud along the horizon, above the mountains: tops lit on the sun's side,
@@ -208,13 +208,17 @@ function mountains(): THREE.Mesh {
     vertexShader: /* glsl */ `
       attribute vec2 aT;
       attribute vec2 aH;
+      uniform vec4 uWorldFade;
       varying vec2 vT;
       varying vec2 vH;
       varying vec3 vDir;
       void main() {
         vT = aT; vH = aH;
-        vDir = position;
-        vec4 p = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        // Climbing: the far ranges sink below the horizon (dithering them away left a pepper of holes).
+        vec3 ps = position;
+        ps.y = mix(ps.y, -0.02 * length(ps.xz), uWorldFade.w);
+        vDir = ps;
+        vec4 p = projectionMatrix * modelViewMatrix * vec4(ps, 1.0);
         gl_Position = p.xyww;
       }`,
     fragmentShader: /* glsl */ `
@@ -223,7 +227,6 @@ function mountains(): THREE.Mesh {
       varying vec2 vH;
       varying vec3 vDir;
       void main() {
-        if (ign(gl_FragCoord.xy) < uWorldFade.w) discard;
         vec3 d = normalize(vDir);
         float far = vT.x, v = vT.y;
         float hTop = vH.x, slope = vH.y;

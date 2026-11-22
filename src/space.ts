@@ -20,11 +20,11 @@ export const ATMO_TOP = 100_000
 
 /** Per world: scattering (1/km), scale heights (km), Mie's forward lobe, the ground and cloud look. */
 export const LOOK = {
-  desert: { g3: [0.3, 0.13, 0.07], br: [5.8e-3, 13.5e-3, 33.1e-3], bm: 0.03, hr: 8, hm: 1.6, g: 0.76, mieTint: [1, 0.95, 0.88], g1: [0.62, 0.32, 0.15], g2: [0.4, 0.17, 0.09], water: [0.8, 0.64, 0.45], cloud: [0.95, 0.95, 0.97], cov: [0.52, 0.78], sun: 22 },
+  desert: { g3: [0.3, 0.13, 0.07], br: [5.8e-3, 13.5e-3, 33.1e-3], bm: 0.03, hr: 8, hm: 1.6, g: 0.76, mieTint: [1, 0.95, 0.88], g1: [0.62, 0.32, 0.15], g2: [0.4, 0.17, 0.09], water: [0.8, 0.64, 0.45], cloud: [0.95, 0.95, 0.97], cov: [0.6, 0.86], sun: 22 },
   ice: { g3: [0.62, 0.74, 0.88], br: [5.8e-3, 13.5e-3, 33.1e-3], bm: 0.02, hr: 8, hm: 1.4, g: 0.76, mieTint: [1, 0.9, 0.95], g1: [0.86, 0.9, 0.97], g2: [0.55, 0.62, 0.75], water: [0.2, 0.34, 0.48], cloud: [0.95, 0.96, 1.0], cov: [0.7, 0.9], sun: 18 },
   lava: { g3: [0.24, 0.12, 0.08], br: [26e-3, 13e-3, 7e-3], bm: 0.045, hr: 9, hm: 2.5, g: 0.7, mieTint: [0.8, 0.5, 0.35], g1: [0.13, 0.11, 0.1], g2: [0.07, 0.05, 0.05], water: [1.8, 0.45, 0.06], cloud: [0.32, 0.27, 0.26], cov: [0.48, 0.74], sun: 16 },
   forest: { g3: [0.07, 0.15, 0.05], br: [5.8e-3, 13.5e-3, 33.1e-3], bm: 0.028, hr: 8, hm: 1.6, g: 0.76, mieTint: [1, 1, 0.95], g1: [0.2, 0.32, 0.1], g2: [0.33, 0.35, 0.15], water: [0.04, 0.12, 0.15], cloud: [0.96, 0.96, 0.98], cov: [0.52, 0.78], sun: 22 },
-  jungle: { g3: [0.03, 0.07, 0.025], br: [5e-3, 11e-3, 22e-3], bm: 0.05, hr: 8, hm: 2.2, g: 0.72, mieTint: [0.8, 0.92, 0.84], g1: [0.05, 0.12, 0.04], g2: [0.09, 0.15, 0.05], water: [0.16, 0.11, 0.06], cloud: [0.62, 0.66, 0.63], cov: [0.3, 0.66], sun: 15 },
+  jungle: { g3: [0.03, 0.07, 0.025], br: [5e-3, 11e-3, 22e-3], bm: 0.05, hr: 8, hm: 2.2, g: 0.72, mieTint: [0.8, 0.92, 0.84], g1: [0.05, 0.12, 0.04], g2: [0.09, 0.15, 0.05], water: [0.16, 0.11, 0.06], cloud: [0.62, 0.66, 0.63], cov: [0.2, 0.5], sun: 15 },
 }[BIOME]
 
 /** Cloud cover at a world (x, z) — the same layer everywhere: the sky pass's shell from orbit, the
@@ -167,10 +167,11 @@ export class Space {
           float n1 = fbmT(xz * 0.0000045 + 3.0 + wq * 3.0), n2 = fbmT(xz * 0.00003 + 7.0), n3 = fbmT(xz * 0.0002 + 1.0);
           vec3 c = mix(${v3(LOOK.g1)}, ${v3(LOOK.g2)}, smoothstep(0.35, 0.65, n1 * 0.6 + n2 * 0.4));
           c = mix(c, ${v3(LOOK.g3)}, smoothstep(0.52, 0.7, prov) * 0.85);
-          c *= 0.8 + 0.4 * n3;
+          // (Fine texture fades with height: from orbit it aliased into a crosshatch.)
+          c *= 0.8 + 0.4 * mix(n3, 0.5, smoothstep(15.0, 60.0, uAlt));
           // Rivers, the same ones the ground has.
           // (Only near you: at planet scale their regular meanders read as a pattern.)
-          float rv = riverAt(xz) * (1.0 - smoothstep(20000.0, 60000.0, length(xz - uCamXZ))) * (1.0 - smoothstep(8.0, 25.0, uAlt));
+          float rv = riverAt(xz) * (1.0 - smoothstep(12000.0, 24000.0, length(xz - uCamXZ))) * (1.0 - smoothstep(6.0, 14.0, uAlt));
           c = mix(c, ${v3(LOOK.water)}, smoothstep(0.35, 0.7, rv) * 0.55);
           return c;
         }
@@ -251,21 +252,40 @@ export class Space {
             float sunN = max(dot(n, SUN), 0.0);
             vec3 lit = sunTrans(p * 1.0001) * ${LOOK.sun.toFixed(1)} * 0.075;
             vec3 gc = groundCol(xz);
+            // Relief from orbit: the province and region noise as heights, its slope tilting the normal
+            // (a low sun picks out plateaus and basins instead of one flat tint).
+            {
+              float e = 6000.0 + uAlt * 60.0;
+              float hc = fbmT(xz * 0.0000045 + 3.0) * 0.7 + fbmT(xz * 0.00003 + 7.0) * 0.3;
+              float hx = fbmT((xz + vec2(e, 0.0)) * 0.0000045 + 3.0) * 0.7 + fbmT((xz + vec2(e, 0.0)) * 0.00003 + 7.0) * 0.3;
+              float hz = fbmT((xz + vec2(0.0, e)) * 0.0000045 + 3.0) * 0.7 + fbmT((xz + vec2(0.0, e)) * 0.00003 + 7.0) * 0.3;
+              vec2 g = vec2(hx - hc, hz - hc) * 9.0;
+              vec3 tx = normalize(cross(n, vec3(0.0, 0.0, 1.0))), tz = normalize(cross(tx, n));
+              n = normalize(n - tx * g.x - tz * g.y);
+              sunN = max(dot(n, SUN), 0.0);
+            }
             // Cloud shadows: the cover 2.6 km up, along the sun.
             float shade = 1.0 - 0.55 * cloudAt(xz + SUN.xz / max(SUN.y, 0.08) * 2600.0);
             // Light from the sky dome itself (twilight worlds are lit by it, not left black).
-            vec3 skyL = vec3(0.55, 0.7, 1.0) * ${LOOK.sun.toFixed(1)} * ${BIOME === 'ice' ? '0.014' : '0.004'} * (0.3 + smoothstep(-0.1, 0.3, dot(n, SUN)));
+            vec3 skyL = vec3(0.55, 0.7, 1.0) * ${LOOK.sun.toFixed(1)} * ${BIOME === 'ice' ? '0.03' : '0.004'} * (0.3 + smoothstep(-0.1, 0.3, dot(n, SUN)));
+            // (Ice catches even a 2° sun: a grazing floor on the light — snow scatters it everywhere.)
+            ${BIOME === 'ice' ? 'sunN = max(sunN, 0.22 * smoothstep(-0.05, 0.1, dot(n, SUN)));' : ''}
             back = gc * (lit * sunN * shade + skyL);
+            // (Snow is lit by the whole sky, not the low sun: the same cold ambient the ground's snow has.)
+            ${BIOME === 'ice' ? 'back += gc * vec3(0.38, 0.44, 0.58) * 0.9;' : ''}
             // Sun glint off water, close in (rivers, lakes).
-            float wet = smoothstep(0.35, 0.7, riverAt(xz)) * (1.0 - smoothstep(20000.0, 60000.0, length(xz - uCamXZ))) * (1.0 - smoothstep(8.0, 25.0, uAlt));
+            float wet = smoothstep(0.35, 0.7, riverAt(xz)) * (1.0 - smoothstep(12000.0, 24000.0, length(xz - uCamXZ))) * (1.0 - smoothstep(6.0, 14.0, uAlt));
             back += lit * 2.0 * pow(max(dot(reflect(d, n), SUN), 0.0), 120.0) * wet;
             ${BIOME === 'lava' ? `{
               // Near you, the ground's own cracks and lava rivers; across the planet, sparse volcanic
               // centres glowing (Io), not one crack pattern tiled over the globe.
-              float nearK = (1.0 - smoothstep(20000.0, 60000.0, length(xz - uCamXZ))) * (1.0 - smoothstep(8.0, 25.0, uAlt));
+              float nearK = (1.0 - smoothstep(12000.0, 24000.0, length(xz - uCamXZ))) * (1.0 - smoothstep(6.0, 14.0, uAlt));
               back += (vec3(2.2, 0.5, 0.06) * smoothstep(0.012, 0.0, abs(fbmT(xz * 0.0004 + 2.0) - 0.5)) * 0.25 + vec3(1.6, 0.4, 0.05) * smoothstep(0.25, 0.6, riverAt(xz)) * 0.5) * nearK;
               float hot = smoothstep(0.62, 0.74, fbmT(xz * 0.0000025 + 11.0)) * smoothstep(0.45, 0.7, fbmT(xz * 0.00002 + 3.0));
               back += vec3(2.4, 0.6, 0.08) * hot * 3.0;
+              // Lava threads at regional scale (tens of km): what you see of the lava fields from orbit.
+              float thr = smoothstep(0.03, 0.0, abs(fbmT(xz * 0.000018 + 6.0) - 0.5)) * smoothstep(0.45, 0.65, fbmT(xz * 0.000006 + 2.0));
+              back += vec3(2.2, 0.55, 0.07) * thr * 1.2;
             }` : ''}
             // The cloud shell 2.6 km up, over the ground (from above it).
             if (h > 2.6) {
@@ -274,7 +294,7 @@ export class Space {
                 vec3 pc = o + d * gc.x, nc = normalize(pc);
                 float cl = cloudAt(toWorld(nc));
                 float sc = max(dot(nc, SUN), 0.0);
-                vec3 ccol = ${v3(LOOK.cloud)} * (sunTrans(pc) * ${LOOK.sun.toFixed(1)} * 0.05 * (0.35 + 0.65 * sc) + vec3(0.015));
+                vec3 ccol = ${v3(LOOK.cloud)} * (sunTrans(pc) * ${LOOK.sun.toFixed(1)} * 0.05 * (0.35 + 0.65 * sc) + vec3(${BIOME === 'ice' ? '0.35, 0.4, 0.52' : '0.015'}));
                 back = mix(back, ccol, cl * 0.95);
               }
             }
@@ -282,7 +302,7 @@ export class Space {
             // (A bright sky drowns the stars: they fade with the light scattered in front of them.)
             // Day side: the sunlit world sets the exposure, and the sky is nearly black (ISS daylight).
             vec3 ds = SKYROT * d;
-            back = (stars(ds) + galaxy(ds)) * exp(-dot(col, vec3(0.3, 0.5, 0.2)) * 30.0) * ${(1 - 0.85 * Math.min(1, Math.max(0, (SUN_DIR[1] + 0.05) / 0.3))).toFixed(3)};
+            back = (stars(ds) + galaxy(ds)) * exp(-dot(col, vec3(0.3, 0.5, 0.2)) * 30.0) * ${(1 - 0.96 * Math.min(1, Math.max(0, (SUN_DIR[1] + 0.05) / 0.3))).toFixed(3)};
             // The sun's disc (and its glare is the bloom's job).
             float sd = dot(d, SUN);
             back += vec3(1.0, 0.96, 0.9) * (smoothstep(0.99996, 0.99999, sd) * 400.0 + pow(max(sd, 0.0), 2000.0) * 8.0);
@@ -291,12 +311,16 @@ export class Space {
           ${BIOME === 'ice' ? `{
             // Aurora, seen from above or beside: green curtains 100-220 km up, along wavy arcs in the
             // world below, red at their tops; marched through that shell (POLAR SHELF only).
+            // The part of the ray inside the 100-220 km shell — never past the ground (marching on through
+            // the planet lit curtains on its far side as green stripes on the ice).
             vec2 a0 = sphere(h, d, R + 100.0), a1 = sphere(h, d, R + 220.0);
-            float t0 = a0.y > 0.0 && a0.x > 0.0 ? 0.0 : 0.0;
             float tIn = max(0.0, a1.x), tOut = a1.y;
-            if (tOut > 0.0) {
-              // Skip the inside of the lower shell (below the curtains' feet).
-              if (a0.x > 0.0) tOut = min(tOut, a0.x);
+            if (h < 100.0) tIn = max(tIn, a0.y);          // from below: start where the ray leaves the lower shell
+            else if (a0.x > 0.0) tOut = min(tOut, a0.x);  // from above: stop where it enters it
+            if (ground) tOut = min(tOut, gP.x);
+            // Only where the sky is dark enough: faded on the sunlit side.
+            float night = 1.0 - smoothstep(-0.05, 0.25, dot(normalize(o + d * max(tIn, 0.0)), SUN));
+            if (tOut > tIn && night > 0.01) {
               float dsA = (tOut - tIn) / 16.0;
               vec3 em = vec3(0.0);
               float ja = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
@@ -312,8 +336,7 @@ export class Space {
                 vec3 c = mix(vec3(0.15, 1.0, 0.45), vec3(0.85, 0.2, 0.55), smoothstep(0.45, 1.0, u)) * exp(-u * 2.2);
                 em += c * curtain * fold * dsA;
               }
-              col += em * 0.009;
-              t0 += 0.0;
+              col += em * 0.009 * night;
             }
           }` : ''}
           gl_FragColor = vec4(col * uExposure, 1.0);

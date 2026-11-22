@@ -2454,7 +2454,7 @@ function frame(now: number): void {
   if (player.barrier === 'silence') white = Math.min(1, white + realDt * 1.6)
   else white = Math.max(0, white - realDt * (player.barrier === 'boom' ? 1.6 : 4))
   P.uSpeed.value = play ? s : 0
-  P.uBlur.value = play ? settings.blur * (cine ? 0.3 : 1) * CFG.post.radialBlur * (s * s * 1.2 + player.boost * 0.4 + white * 0.6 + impactPulse * 0.8) : 0
+  P.uBlur.value = play ? settings.blur * (cine ? 0.3 : 1) * CFG.post.radialBlur * (s * s * 1.2 + player.boost * 0.4 + white * 0.6 + impactPulse * 0.8) * (1 - space.vac) : 0
   P.uAberr.value = play ? CFG.post.aberration * (s + player.boost * 0.5 + damageFlash + impactPulse * 2.5) : 0
   P.uStreak.value = play ? (cine ? 0.25 : 1) * (BIOME === 'ice' ? 0.45 : BIOME === 'lava' ? 0.6 : 1) * CFG.post.streaks * THREE.MathUtils.clamp((player.mach - 0.8) / 4, 0, 1) * (1 - space.vac) : 0
   P.uStreakT.value += realDt * (0.4 + player.mach * 0.45)
