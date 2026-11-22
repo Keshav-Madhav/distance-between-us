@@ -104,6 +104,8 @@ export class Player {
   private windT = 0
   private readonly windPh = Math.random() * 100
   wake = 0
+  /** The turn rate full lock asks for right now (rad/s): the grip limit at this speed (see step). */
+  turnMax = 1
   /** Steering assist 0 … 1 (more grip, more self-align, automatic countersteer). */
   assist = 0.6
   bankV = 0
@@ -282,10 +284,14 @@ export class Player {
         this.speed = Math.min(this.speed, 5.88 * MACH)
         this.barrierT += dt
         if (this.barrierT >= 0.5) {
-          this.barrier = 'boom'
-          this.barrierT = 0
-          this.speed = 6.05 * MACH
-          this.onBarrier?.('boom')
+          // (Only if still at the barrier: it set Mach 6.05 outright, so braking or a hit during the
+          //  silence flung you from Mach 2.6 back to 6 — tools/physcheck.mjs.)
+          if (this.speed >= 5.6 * MACH) {
+            this.barrier = 'boom'
+            this.barrierT = 0
+            this.speed = Math.max(this.speed, 6.05 * MACH)
+            this.onBarrier?.('boom')
+          } else { this.barrier = 'none'; this.barrierCooldown = 2 }
         }
       } else if (this.barrier === 'boom') {
         this.barrierT += dt
@@ -318,24 +324,31 @@ export class Player {
       // The stick reaches the craft more slowly the faster you go (8/s at low speed → 2.6/s past Mach 6):
       // a tap is a small correction at Mach 6, a held lock still builds into a slide. ("A little too
       // responsive" at high speed — the authority stays, the twitch goes.)
-      const rate = this.slew ? THREE.MathUtils.lerp(8, 2.6, THREE.MathUtils.clamp((m - 2) / 4, 0, 1)) : 100
+      // …but letting go (or easing off) is quick, like a wheel that centres itself: the slow release
+      // kept the craft turning ~25° after the key came up — release, overshoot, correct, wobble.
+      const easing = Math.abs(c.steer) < Math.abs(this.steerIn) || c.steer * this.steerIn < 0
+      const rate = !this.slew ? 100 : easing ? 12 : THREE.MathUtils.lerp(10, 4, THREE.MathUtils.clamp((m - 2) / 4, 0, 1))
       this.steerIn += THREE.MathUtils.clamp(c.steer - this.steerIn, -rate * dt, rate * dt)
       let steer = this.spin > 0 ? 0 : this.steerIn
       // Assist: automatic countersteer once past the peak — but only when you are not steering into the
       // turn yourself (neutral, or already countering). It catches the slide you let go of; it never
       // fights a turn you are asking for (it used to cancel your lock exactly when you pushed).
       if (A > 0 && ab0 > peak && steer * Math.sign(beta0) >= -0.15) steer = THREE.MathUtils.clamp(steer + Math.sign(beta0) * Math.min(1, (ab0 - peak) * 3) * A, -1, 1)
-      // Adaptive: authority grows with speed faster than grip does — at Mach 5 full lock asks for more
-      // than the ground effect can hold (sharp, and a slide if held); half lock is safe. The grip gauge
-      // shows where the limit is.
-      // The brake sharpens the turn (weight forward, more bite): authority up while it is on.
-      // (Above Mach 5 the extra bite tapers off: "a little too responsive" at high speed without the burner.)
-      const auth = H.steerTorque * (this.airborne ? 0.7 : 1) * (1 + H.steerGain * THREE.MathUtils.clamp((m - 0.8) / 4.2, 0, 1)) * (1 - 0.08 * THREE.MathUtils.clamp((m - 5) / 3, 0, 1)) * (1 + 0.5 * this.brake)
+      // The stick asks for a TURN RATE, not a torque. Full lock = the tightest turn the grip can hold at
+      // this speed (lateral grip at the peak slip ÷ speed); half lock half that; the craft tracks it,
+      // damped. (It was a torque with yaw momentum, and full lock asked for more than the grip held at
+      // speed: keys only send nothing or full lock, so a player either didn't turn or slid — while the
+      // AI fed small analog amounts plus its own yaw damping. tools/gripcompare.mjs: a key driver was
+      // past the grip limit 55-60% of the time, off the line 70-80%; the AI 0%.)
+      // Assist sets how close to the limit full lock goes (off: a little past it, a slide if held;
+      // high: just inside). The brake asks for more (and lightens the grip): a trail-brake still starts
+      // a drift on purpose. The afterburner holds the line: a fraction of the turn.
+      const gripPeak = (this.airborne ? H.airControl : 1) * ((H.gripK * (1 + A * 0.2) + H.gripQ * hs0) * hs0 + H.gripLow) * WORLD_GRIP
+      const omegaGrip = Math.min(2.2, gripPeak / Math.max(hs0, 60))
+      this.turnMax = omegaGrip * (1.12 - 0.2 * A) * (this.burning ? 0.1 : 1)
+      const yawWant = -steer * this.turnMax * (1 + 0.35 * this.brake)
       // Weathervane: with grip, the nose is pulled back toward the travel.
       const align = (this.airborne ? H.airControl : 1) * -H.alignK * (1 + A * 0.5) * (1 + hs0 / 1400) * Math.sin(beta0) * curve * Math.min(1, hs0 / 250)
-      // Afterburner lit: the stick barely moves the nose, and the yaw is damped hard — the burn holds
-      // you on the line you lit it on.
-      const damp = this.spin > 0 ? 0.9 : H.yawDamp * (this.burning ? 2.2 : 1)
       this.steerWant = c.steer
       // Chaos: gusts at speed (smooth, never twitchy noise) and the wake of a rival just ahead (rough).
       this.windT += dt
@@ -345,7 +358,12 @@ export class Player {
       const rough = this.wake > 0 ? Math.sin(this.windT * 23 + this.windPh) * 0.6 + Math.sin(this.windT * 37) * 0.4 : 0
       this.side += (n1 * H.gust * fast + rough * 140 * this.wake) * dt * (this.airborne ? 1.5 : 1)
       const gustYaw = (n2 * H.gustYaw * fast + rough * 0.9 * this.wake) * (this.airborne ? 1.5 : 1)
-      this.yawRate += (-steer * auth * (this.burning ? H.burnSteer : 1) - damp * this.yawRate + align * (this.burning ? 0.4 : 1) + gustYaw) * dt
+      // Track the asked-for rate (yawDamp: ~0.2 s to settle; in the air, slower).
+      // (Unwinding — asking for less turn than there is — goes faster than winding up: the turn stops
+      //  where you let go.)
+      const unwind = Math.abs(yawWant) < Math.abs(this.yawRate) || yawWant * this.yawRate < 0
+      const track = H.yawDamp * 1.4 * (this.airborne ? 0.6 : 1) * (this.burning ? 1.6 : 1) * (unwind ? 1.8 : 1)
+      this.yawRate += ((yawWant - this.yawRate) * track + align * (this.burning ? 0.4 : 1) + gustYaw) * dt
       this.heading += this.yawRate * dt
       // Turning keeps the velocity: re-split it against the new heading (the slide is real).
       const lat0 = this.lateral + this.side
@@ -649,7 +667,10 @@ export class Player {
       const dx = this.pos.x - o.x, dz = this.pos.z - o.z, d = Math.hypot(dx, dz)
       if (d >= o.cr + 2) continue
       const nx = dx / (d || 1), nz = dz / (d || 1)
-      this.pos.x = o.x + nx * (o.cr + 2); this.pos.z = o.z + nz * (o.cr + 2)
+      // (At most 25 m a step: coming down onto a landform from above put the wreck deep inside it, and
+      //  one push threw it 100+ m sideways. Now it slides off over a few frames.)
+      const push = Math.min(o.cr + 2 - d, 25)
+      this.pos.x += nx * push; this.pos.z += nz * push
       const vn = cv.x * nx + cv.z * nz
       if (vn < 0) { cv.x -= 1.3 * vn * nx; cv.z -= 1.3 * vn * nz; this.onBounce?.(-vn * 0.5) }
     }
@@ -706,8 +727,11 @@ export class Player {
       if (d >= rr) continue
       const nx = dx / (d || 1)
       const nz = dz / (d || 1)
-      this.pos.x = o.x + nx * rr
-      this.pos.z = o.z + nz * rr
+      // (Capped per step, like the wreck's: falling onto a landform's shoulder from a jump put the craft
+      //  inside it, and one push threw it up to 190 m sideways.)
+      const push = Math.min(rr - d, 25)
+      this.pos.x += nx * push
+      this.pos.z += nz * push
       const vx = this.vel.x, vz = this.vel.z
       const vn = vx * nx + vz * nz
       if (vn >= 0) continue

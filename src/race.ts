@@ -97,8 +97,9 @@ export class Race {
     ROSTER.slice(0, n).forEach(([name, color], i) => {
       const p = new Player()
       p.announce = false
-      p.slew = false
-      p.assist = 0.85
+      // The same craft as yours: the same steering lag and the same assist as the default setting.
+      // (They had no lag and assist 0.85 against your 0.6: more grip, more self-align, a later spin.)
+      p.assist = 0.6
       this.racers.push(this.make(name, color, p, true, n > 9 ? 0.78 + (i % 10) * 0.045 : 0.72 + i * 0.05))
     })
   }
@@ -437,9 +438,13 @@ export class Race {
     let err = want - p.heading
     err = Math.atan2(Math.sin(err), Math.cos(err))
     void aimI
-    // (Yaw has momentum now: damp it, or the AI over-rotates into its own spin.)
-    const lim = p.mach > 3 ? 0.7 : 1
-    ctl.steer = THREE.MathUtils.clamp(-err * 3.2 + p.yawRate * 0.7, -lim, lim)
+    // The stick asks for a turn rate (Player.turnMax at full lock), as yours does: the line's own turn
+    // here (feed-forward) plus a correction toward the heading wanted.
+    const [t2x, t2z] = c.tangent(Math.min(n - 1, look + 6))
+    let lineTurn = Math.atan2(t2x, t2z) - lineH
+    lineTurn = Math.atan2(Math.sin(lineTurn), Math.cos(lineTurn))
+    const yawWant = (lineTurn / 240) * p.speed + err * 3.6
+    ctl.steer = THREE.MathUtils.clamp(-yawWant / Math.max(p.turnMax, 0.15), -1, 1)
     // Bends ahead: how much the line turns over the next ~2.5 s.
     // The sharpest the line turns, per km, over the next ~3 s: what speed it can be taken at.
     let bend = 0

@@ -20,10 +20,20 @@ await p.evaluate(() => {
   const bad = (kind, info) => { const k = (V.kinds[kind] ??= { n: 0, ex: [] }); k.n++; if (k.ex.length < 4) k.ex.push({ t: +(performance.now() / 1000).toFixed(2), mode: g.mode, ...info }) }
   const fin = (...xs) => xs.every(Number.isFinite)
   const pl = g.player, fl = g.flight
+  // Designed events, attributed (not violations): race respawns (wreck, stuck, R), boost pads, drift
+  // boosts, the burner's kick, rock deflections.
+  V.events = { respawn: 0, pad: 0, drift: 0, deflect: 0 }
+  let evStep = -1, respawnFrame = -1
+  if (g.race) {
+    const rs = g.race.respawn.bind(g.race); g.race.respawn = (r) => { rs(r); if (r.p === pl) { V.events.respawn++; respawnFrame = V.frames } }
+    const rn = g.race.respawnNear.bind(g.race); g.race.respawnNear = (r) => { rn(r); if (r.p === pl) { V.events.respawn++; respawnFrame = V.frames } }
+    const pd = g.race.pads.bind(g.race); g.race.pads = (r, dt) => { const c0 = r.padCool; pd(r, dt); if (r.p === pl && r.padCool > c0 + 0.5) { V.events.pad++; evStep = V.steps + 1 } }
+  }
+  const db = pl.onDriftBoost; pl.onDriftBoost = (l) => { V.events.drift++; evStep = V.steps + 1; db?.(l) }
   // Player
   const ps = pl.step.bind(pl)
   pl.step = (dt, c, w, frozen) => {
-    const x0 = pl.pos.x, y0 = pl.pos.y, z0 = pl.pos.z, h0 = pl.heading, s0 = pl.speed, crash0 = pl.crashing, spin0 = pl.spin > 0 || pl.recover > 0
+    const x0 = pl.pos.x, y0 = pl.pos.y, z0 = pl.pos.z, h0 = pl.heading, s0 = Math.hypot(pl.vel.x, pl.vel.z), crash0 = pl.crashing, spin0 = pl.spin > 0 || pl.recover > 0, sc0 = pl.scrape, burn0 = pl.burning
     ps(dt, c, w, frozen)
     if (g.mode === 'title') return
     V.steps++
@@ -38,9 +48,12 @@ await p.evaluate(() => {
     if (d < 5000 && d > Math.max(s0, pl.speed) * dt * 1.6 + 40) bad('player teleport (xz)', { moved: +d.toFixed(1), expect: +(pl.speed * dt).toFixed(1) })
     if (Math.abs(P.y - y0) > 60 + Math.abs(pl.vy) * dt * 2 && Math.abs(P.y - y0) < 5000) bad('player vertical snap', { dy: +(P.y - y0).toFixed(1), air: pl.airborne, vy: +pl.vy.toFixed(1), mach: +pl.mach.toFixed(2) })
     let dh = pl.heading - h0; dh = Math.atan2(Math.sin(dh), Math.cos(dh))
-    if (!crash0 && !pl.crashing && !spin0 && pl.spin <= 0 && Math.abs(dh) > 0.12) bad('player heading snap', { dh: +dh.toFixed(3), mach: +pl.mach.toFixed(2) })
-    const ds = pl.speed - s0
-    if (!pl.crashing && !crash0 && ds > 0.9 * MACH) bad('player speed jump up', { from: +(s0 / MACH).toFixed(2), to: +(pl.speed / MACH).toFixed(2) })
+    const hit = pl.scrape > sc0 + 0.3
+    if (hit) V.events.deflect++
+    if (!crash0 && !pl.crashing && !spin0 && pl.spin <= 0 && Math.abs(dh) > 0.12 && !hit) bad('player heading snap', { dh: +dh.toFixed(3), mach: +pl.mach.toFixed(2), yaw: +pl.yawRate.toFixed(2), air: pl.airborne, recover: +pl.recover.toFixed(2), tumble: +pl.tumble.toFixed(2), scrape: +pl.scrape.toFixed(2), sc0: +sc0.toFixed(2), dead: pl.dead, hull: +pl.hull.toFixed(0) })
+    const ds = Math.hypot(pl.vel.x, pl.vel.z) - s0
+    const kick = (pl.burning && !burn0 ? 120 : 0) + (V.steps <= evStep ? 1.85 * MACH : 0)
+    if (!pl.crashing && !crash0 && ds > 0.9 * MACH + kick) bad('player speed jump up', { from: +(s0 / MACH).toFixed(2), to: +(pl.speed / MACH).toFixed(2) })
     if (g.mode === 'free' && pl.hull < 100 - 1e-6) bad('FREE ROAM took damage', { hull: pl.hull })
   }
   // FlightCraft
@@ -72,8 +85,8 @@ await p.evaluate(() => {
       const air = g.freeAir, P = g.player.pos.clone(), s = g.player.speed
       if (lastP) {
         const d = Math.hypot(P.x - lastP.x, P.z - lastP.z), dy = Math.abs(P.y - lastP.y)
-        if (d < 5000 && d > Math.max(s, lastS) * 0.1 + 60 && g.mode === 'race' && lastS < 0.5 * MACH) { V.respawns = (V.respawns ?? 0) + 1; V.respawnAt = [...(V.respawnAt ?? []), +(performance.now() / 1000).toFixed(1)] }
-        else if (d < 5000 && d > Math.max(s, lastS) * 0.1 + 60) bad('frame: craft jumped (xz)', { d: +d.toFixed(1), air, crashing: g.player.crashing, dead: g.player.dead, recovered: g.player.recovered, spinning: g.player.spin > 0, mach: +(s / MACH).toFixed(2), lastMach: +(lastS / MACH).toFixed(2) })
+        if (V.frames - respawnFrame <= 2) { /* the race put you back on the line */ }
+        else if (d < 5000 && d > Math.max(s, lastS) * 0.1 + 60) bad('frame: craft jumped (xz)', { sinceRespawn: V.frames - respawnFrame, d: +d.toFixed(1), air, crashing: g.player.crashing, dead: g.player.dead, recovered: g.player.recovered, spinning: g.player.spin > 0, mach: +(s / MACH).toFixed(2), lastMach: +(lastS / MACH).toFixed(2) })
         if (dy > 80 && dy < 5000) bad('frame: craft jumped (y)', { dy: +dy.toFixed(1), air, was: lastAir })
         if (air !== lastAir && lastAir !== null) {
           V.transitions.push({ to: air ? 'air' : 'ground', mach0: +(lastS / MACH).toFixed(2), mach1: +(s / MACH).toFixed(2), dy: +(P.y - lastP.y).toFixed(1) })
@@ -167,7 +180,7 @@ if (scenario === 'race-auto') {
 const V = await p.evaluate(() => window.__v)
 console.log(`\n== ${scenario} on ${course} (${SECS}s): ${V.steps} player steps, ${V.fsteps} flight steps, ${V.frames} frames · max Mach ground ${V.maxMach.toFixed(2)} air ${V.maxFMach.toFixed(2)} · min flight AGL ${V.minAgl === 1e9 ? '-' : V.minAgl.toFixed(1)}`)
 for (const [what, s] of log) console.log('  ·', what, JSON.stringify(s))
-if (V.respawns) console.log(`  respawns after being stuck (race's own rule): ${V.respawns} at ${V.respawnAt.join(', ')} s`)
+console.log(`  designed events: ${V.events.respawn} race respawns · ${V.events.pad} pads · ${V.events.drift} drift boosts · ${V.events.deflect} rock deflections`)
 if (V.transitions.length) {
   const ups = V.transitions.filter((t) => t.to === 'air').length
   console.log(`  handovers: ${V.transitions.length} (${ups} to air) · worst speed change ${Math.max(...V.transitions.map((t) => Math.abs(t.mach1 - t.mach0))).toFixed(2)} Mach · worst dy ${Math.max(...V.transitions.map((t) => Math.abs(t.dy))).toFixed(1)} m`)

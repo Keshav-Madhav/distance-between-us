@@ -42,10 +42,8 @@ export const CFG = {
     /** Max yaw rate at Mach 1 and Mach 6 (rad/s) — the AI's planning numbers. */
     yawLow: 1.35,
     yawHigh: 0.78,
-    /** Yaw torque at full stick (rad/s²) and yaw damping (1/s): full stick settles at ~torque/damp. */
-    steerTorque: 4.5,
-    /** Extra steering authority at speed (×(1 + gain) by Mach 5). */
-    steerGain: 1.0,
+    /** How fast the yaw tracks the turn rate the stick asks for (1/s; ×1.4 in Player.step). The stick
+     *  asks for a turn RATE: full lock = the tightest turn the grip holds at this speed (Player.turnMax). */
     yawDamp: 4.7,
     /** Weathervane torque pulling the nose back to the travel (needs grip). */
     alignK: 2.7,
@@ -62,8 +60,6 @@ export const CFG = {
     /** Gusts: sideways buffeting at speed (m/s²) and a little yaw (rad/s²). */
     gust: 55,
     gustYaw: 0.35,
-    /** Steering authority left while the afterburner burns. */
-    burnSteer: 0.2,
     /** In the air: the share of grip and self-align the fins give (steering bends the path). */
     airControl: 0.4,
     /** Side-thruster strafe acceleration (m/s²). */
