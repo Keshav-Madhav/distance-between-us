@@ -158,6 +158,19 @@ export function patchStandard(mat: THREE.MeshStandardMaterial, opts: PatchOpts =
             c = g0 * (0.8 + 0.4 * fh);
             c = mix(c, c * vec3(1.35, 1.3, 0.9), smoothstep(0.6, 1.0, fract(t * 3.0)) * 0.4);
           }
+          #ifdef BIOME_JUNGLE
+          // MONSOON: limestone streaked dark with wet and furred with moss; black-wet bark; deep greens.
+          if (vCrev < 0.25) {
+            c = vec3(0.34, 0.35, 0.31) * (0.75 + 0.3 * fh) * (0.7 + 0.3 * vnoise(vec2((vFogW.x - vFogW.z) * 0.05, vFogW.y * 0.02)));
+            float mossy = smoothstep(0.25, 0.65, vWN.y + 0.5 * vnoise(vFogW.xz * 0.02 + vFogW.y * 0.01));
+            c = mix(c, vec3(0.05, 0.12, 0.04) * (0.8 + 0.4 * fh), mossy);
+          } else if (vCrev < 0.75) c = vec3(0.1, 0.08, 0.06) * (0.8 + 0.3 * fh);
+          else {
+            vec3 g0 = mix(vec3(0.02, 0.07, 0.03), vec3(0.09, 0.19, 0.05), sd);
+            c = g0 * (0.75 + 0.5 * fh);
+            c = mix(c, c * vec3(1.4, 1.35, 0.85), smoothstep(0.55, 1.0, fh) * 0.35);
+          }
+          #endif
           c *= mix(0.7, 1.0, smoothstep(1.0, 18.0, hy));
           diffuseColor.rgb = c;
         }`)
@@ -166,7 +179,11 @@ export function patchStandard(mat: THREE.MeshStandardMaterial, opts: PatchOpts =
           // Sun through the leaves at grazing angles; a little sky fill so shade is green, not black.
           float rim = 1.0 - abs(dot(normalize(vViewPosition), normal));
           float leaf = smoothstep(0.75, 1.0, vCrev);
+          #ifdef BIOME_JUNGLE
+          totalEmissiveRadiance += diffuseColor.rgb * (0.16 + leaf * 0.18 * rim * rim);
+          #else
           totalEmissiveRadiance += diffuseColor.rgb * (0.22 + leaf * 0.25 * rim * rim);
+          #endif
         }`)
     }
     if (opts.lava) {

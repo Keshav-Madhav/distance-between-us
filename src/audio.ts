@@ -350,7 +350,21 @@ export class Sound {
     this.ambG = g
     const src = (buf: AudioBuffer, rate = 1) => { const s = ctx.createBufferSource(); s.buffer = buf; s.loop = true; s.playbackRate.value = rate; s.start(0, Math.random() * buf.duration); return s }
     const lfo = (param: AudioParam, hz: number, depth: number) => { const o = ctx.createOscillator(); o.frequency.value = hz; const d = ctx.createGain(); d.gain.value = depth; o.connect(d).connect(param); o.start() }
-    if (BIOME === 'forest') {
+    if (BIOME === 'jungle') {
+      // Rain on the leaves: a broad hiss with a softer patter under it, swelling slowly…
+      const hp = ctx.createBiquadFilter(); hp.type = 'bandpass'; hp.frequency.value = 3800; hp.Q.value = 0.35
+      const rg = ctx.createGain(); rg.gain.value = 0.55
+      lfo(rg.gain, 0.05, 0.15)
+      src(this.noise).connect(hp).connect(rg).connect(g)
+      const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 700
+      const pg = ctx.createGain(); pg.gain.value = 0.5
+      src(this.crackle, 0.8).connect(lp).connect(pg).connect(g)
+      // …and the insects: a high trill, pulsing.
+      const o = ctx.createOscillator(); o.type = 'sine'; o.frequency.value = 4700
+      const ig = ctx.createGain(); ig.gain.value = 0.012
+      lfo(ig.gain, 23, 0.012)
+      o.connect(ig).connect(g); o.start()
+    } else if (BIOME === 'forest') {
       // Leaves in the wind: a soft high rustle, gusting.
       const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 2600; bp.Q.value = 0.6
       const vg = ctx.createGain(); vg.gain.value = 0.35
@@ -382,7 +396,22 @@ export class Sound {
     if (this.ambT > 0) return
     this.ambT = 1.5 + Math.random() * 3.5
     const pan = this.ctx.createStereoPanner(); pan.pan.value = Math.random() * 1.6 - 0.8; pan.connect(this.ambG)
-    if (BIOME === 'forest') {
+    if (BIOME === 'jungle') {
+      if (Math.random() < 0.18) {
+        // Thunder, far off: a long low roll.
+        this.burst(t, 3.2, 'lowpass', 220, 60, 1.4, 2.6, pan, 0.4)
+      } else {
+        // A call through the trees: a long falling whistle, sometimes answered.
+        const n = Math.random() < 0.4 ? 2 : 1, base = 1300 + Math.random() * 900
+        for (let i = 0; i < n; i++) {
+          const t0 = t + i * 0.55
+          const o = this.ctx.createOscillator(); o.type = 'sine'
+          o.frequency.setValueAtTime(base, t0); o.frequency.exponentialRampToValueAtTime(base * 0.55, t0 + 0.4)
+          const gg = this.ctx.createGain(); gg.gain.setValueAtTime(0, t0); gg.gain.linearRampToValueAtTime(0.12, t0 + 0.04); gg.gain.exponentialRampToValueAtTime(0.001, t0 + 0.45)
+          o.connect(gg).connect(pan); o.start(t0); o.stop(t0 + 0.5)
+        }
+      }
+    } else if (BIOME === 'forest') {
       // A bird: a little phrase of 2-5 chirps, each a quick sine sweep.
       const n = 2 + Math.floor(Math.random() * 4), base = 2600 + Math.random() * 2200
       for (let i = 0; i < n; i++) {

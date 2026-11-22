@@ -546,6 +546,64 @@ export const TIMBERLINE: CourseDef = {
   sections: [],
 }
 
+/** MONSOON (the fifth world): MISTRIVER — an 88 km sprint down a rainforest valley, in and out of
+ *  the mist, the river crossed again and again, a run of linked bends under the karst towers. */
+export const MISTRIVER: CourseDef = {
+  id: 'mistriver',
+  // (Close: the rainforest crowds the line, the gate ribbons show the way.)
+  clearance: 360,
+  gateHalf: 340,
+  ribbons: true,
+  name: 'MISTRIVER',
+  blurb: 'SPRINT · DOWN THE RAINFOREST · RIVER CROSSINGS · KARST TOWERS',
+  km: 88,
+  xAt: (z) => {
+    const bump = (z0: number, L: number, h: number) => (z > z0 && z < z0 + L ? h * (1 - Math.cos((2 * Math.PI * (z - z0)) / L)) : 0)
+    const sweep = bump(9000, 9000, -550) + bump(22000, 10000, 600) + bump(70000, 9000, -500)
+    const linked = bump(42000, 5500, 360) + bump(47500, 5500, -360) + bump(53000, 5500, 360)
+    const wander = 1200 * Math.sin((2 * Math.PI * z) / 31000 + 1.7) - 1200 * Math.sin(1.7)
+    return ramp8(z) * (wander + sweep + linked)
+  },
+  aiPace: -0.05,
+  gateEvery: 5000,
+  jumps: [0.33, 0.345],
+  rampH: 0.8,
+  whoops: [],
+  padEvery: 7000,
+  spireGap: () => null,
+  rockGateP: 0,
+  seed: 107,
+  sections: [[9, 'INTO THE MIST'], [36, 'THE CROSSINGS'], [42, 'UNDER THE TOWERS'], [66, 'LAST RUN']],
+}
+
+/** MONSOON's loop: UNDERSTORY — 58 km under the canopy, the trees close on both sides, two laps. */
+const understoryPath = (u: number): [number, number] => {
+  const a = 2 * Math.PI * u
+  const r = 8600 + 1900 * Math.sin(2 * a + 1.1) + 1100 * Math.sin(3 * a + 2.6) + 500 * Math.sin(6 * a + 0.4)
+  return [r * Math.sin(a) * 1.05, r * Math.cos(a) - 8600]
+}
+export const UNDERSTORY: CourseDef = {
+  id: 'understory',
+  clearance: 330,
+  gateHalf: 340,
+  ribbons: true,
+  name: 'UNDERSTORY',
+  blurb: 'UNDER THE CANOPY · TREES CLOSE IN · MIST · FLOWING',
+  km: Math.round(loopLength(understoryPath) / 100) / 10,
+  loop: understoryPath,
+  aiPace: 0.15,
+  gateEvery: 5000,
+  laps: 2,
+  jumps: [0.4, 0.412],
+  rampH: 0.75,
+  whoops: [],
+  padEvery: 8000,
+  spireGap: () => null,
+  rockGateP: 0,
+  seed: 109,
+  sections: [],
+}
+
 /** Medal times (s) for a course: its whole race distance at average speeds of Mach 6.6 / 5.9 / 5.2
  *  (gold, silver, bronze); the drag at 9.6 / 8.6 / 7.6. */
 export function medals(d: CourseDef): [number, number, number] {
@@ -555,7 +613,7 @@ export function medals(d: CourseDef): [number, number, number] {
   const m = (d.drag ? [9.6, 8.6, 7.6] : [6.6, 5.9, 5.2]).map((x) => x * pace)
   return m.map((x) => Math.round((dist / (x * 343)) * 10) / 10) as [number, number, number]
 }
-export const COURSES: CourseDef[] = [SPRINT, DRY_RIVER, DRAG, CIRCUIT, OVAL, CANYON, FROSTLINE, ICEFALL, WHITEOUT, CALDERA, FAULTLINE, OBSIDIAN, GREENWAY, RIVERRUN, TIMBERLINE]
+export const COURSES: CourseDef[] = [SPRINT, DRY_RIVER, DRAG, CIRCUIT, OVAL, CANYON, FROSTLINE, ICEFALL, WHITEOUT, CALDERA, FAULTLINE, OBSIDIAN, GREENWAY, RIVERRUN, TIMBERLINE, MISTRIVER, UNDERSTORY]
 
 /** The race's line as points (x, z) every ~200 m, start to finish — for previews. */
 export function centerline(def: CourseDef): { xs: number[]; zs: number[] } {

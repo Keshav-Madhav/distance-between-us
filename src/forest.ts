@@ -11,14 +11,14 @@ type Profile = (th: number, t: number) => number
 
 export const FOREST_VARIANTS: Record<ForestKind, number> = { mesa: 3, butte: 3, spire: 3 }
 
-const FOOT = -0.08
-const ROCK = 0, BARK = 0.5, LEAF = 1
-function rng(seed: number) {
+export const FOOT = -0.08
+export const ROCK = 0, BARK = 0.5, LEAF = 1
+export function rng(seed: number) {
   let s = seed >>> 0
   return () => { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296 }
 }
 
-class Mesh {
+export class Mesh {
   readonly pos: number[] = []
   readonly mask: number[] = []
   /** A geometry's triangles, moved to (x, y, z) and scaled, with one mask value. */
@@ -41,10 +41,10 @@ class Mesh {
   }
 }
 
-interface Tree { x: number; z: number; h: number; r: number; kind: 'pine' | 'leaf' | 'red' }
+export interface Tree { x: number; z: number; h: number; r: number; kind: 'pine' | 'leaf' | 'red' }
 
 /** One tree into the mesh, base at y0 (its own height h, canopy radius r). */
-function tree(M: Mesh, t: Tree, y0: number, rnd: () => number): void {
+export function tree(M: Mesh, t: Tree, y0: number, rnd: () => number): void {
   const rot = rnd() * 6.28
   if (t.kind === 'leaf') {
     // Broadleaf: a trunk, then a lumpy crown of three blobs.
@@ -70,7 +70,7 @@ function tree(M: Mesh, t: Tree, y0: number, rnd: () => number): void {
 }
 
 /** The tallest point of a tree list's canopy at height y, along a ray from the centre (collision). */
-function treeProfile(trees: Tree[], y0: number): Profile {
+export function treeProfile(trees: Tree[], y0: number): Profile {
   return (th, t) => {
     const ct = Math.cos(th), st = Math.sin(th)
     let far = 0

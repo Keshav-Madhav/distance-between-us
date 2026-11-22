@@ -21,7 +21,7 @@ import { KINDS, Darts, type Kind } from './hunt/enemies'
 import { Sound } from './audio'
 import { Input } from './input'
 import { Post } from './post'
-import { BIOME, biomeOf, type Biome, DUST, groundH, SUN_DIR } from './terrain'
+import { BIOME, biomeOf, type Biome, DUST, GREEN, groundH, SUN_DIR } from './terrain'
 /** Shadows are cast along the sun, but never stretched past a ~17° sun (a sun on the horizon threw them 100 m off). */
 const SHADOW_Y = Math.max(SUN_DIR[1], 0.3)
 import { loadTextures } from './textures'
@@ -151,6 +151,7 @@ const WORLDS = [
   { id: 'ice', name: 'POLAR SHELF', blurb: 'Glaciers under aurora' },
   { id: 'lava', name: 'CINDER', blurb: 'Lava fields at dusk' },
   { id: 'forest', name: 'VERDANT', blurb: 'Meadow and forest' },
+  { id: 'jungle', name: 'MONSOON', blurb: 'Rainforest under mist' },
 ] as const
 let pickedWorld: Biome = biomeOf(courseDef.id)
 const bestKey = (id: string) => `dbu-best-${id}`
@@ -213,7 +214,10 @@ if (BIOME !== 'desert') {
   // Zones along the lap, so the course has places: a shard forest, a corridor between glaciers,
   // open polished ice. Each course its own order and lengths.
   type Zone = 'forest' | 'glacier' | 'open'
-  const ZONES: [number, Zone][] = BIOME === 'forest'
+  const ZONES: [number, Zone][] = BIOME === 'jungle'
+    // MONSOON: the canopy almost all the way, two runs between karst towers.
+    ? [[0.0, 'forest'], [0.3, 'glacier'], [0.42, 'forest'], [0.7, 'glacier'], [0.8, 'forest']]
+    : BIOME === 'forest'
     // VERDANT: mostly forest, a meadow to breathe, a run past the granite domes.
     ? [[0.0, 'forest'], [0.22, 'open'], [0.32, 'forest'], [0.56, 'glacier'], [0.72, 'forest']]
     : tight
@@ -279,10 +283,10 @@ if (BIOME !== 'desert') {
       const spike = roll < pSpike, sentinel = zone === 'forest' && roll > 0.94
       const sc = 0.4 + 1.6 * rnd()
       const r = sentinel ? 30 + rnd() * 15 : spike ? 6 + rnd() * 8 : (12 + rnd() * 12) * sc
-      const h = sentinel ? 120 + rnd() * 80 : spike ? (zone === 'forest' ? 45 + rnd() * 95 : 20 + rnd() * 40) * (q === 0 ? 1 : 0.55 + rnd() * 0.45) : BIOME === 'forest' ? r * (1.3 + rnd() * 0.8) : (10 + rnd() * 16) * sc
+      const h = sentinel ? 120 + rnd() * 80 : spike ? (BIOME === 'jungle' ? 110 + rnd() * 80 : zone === 'forest' ? 45 + rnd() * 95 : 20 + rnd() * 40) * (q === 0 ? 1 : 0.55 + rnd() * 0.45) : GREEN ? r * (1.3 + rnd() * 0.8) : (10 + rnd() * 16) * sc
       heroes.push({
         x, z, r, h, kind: spike || sentinel ? 'spire' : 'butte', v: Math.floor(rnd() * 2.999), yaw: rnd() * 6.28,
-        tilt: BIOME === 'forest' ? 0 : spike || sentinel ? (rnd() - 0.5) * 0.24 : BIOME === 'lava' ? 0 : (rnd() - 0.5) * 0.7, sink: spike || sentinel ? 0 : rnd() * 0.35,
+        tilt: GREEN ? 0 : spike || sentinel ? (rnd() - 0.5) * 0.24 : BIOME === 'lava' ? 0 : (rnd() - 0.5) * 0.7, sink: spike || sentinel ? 0 : rnd() * 0.35,
       })
     }
     const step = zone === 'forest' ? 60 + rnd() * 160 : zone === 'glacier' ? 140 + rnd() * 260 : 380 + rnd() * 700
@@ -760,7 +764,7 @@ let directorOn = true
 const rings = new Rings()
 scene.add(rings.mesh)
 // FREE ROAM's crystals (src/shards.ts) and the surface the free craft rides (rocks included).
-const shards = new Shards(BIOME === 'ice' ? 0x9fe8ff : BIOME === 'forest' ? 0xc8ff7a : 0xffd36a)
+const shards = new Shards(BIOME === 'ice' ? 0x9fe8ff : BIOME === 'forest' ? 0xc8ff7a : BIOME === 'jungle' ? 0xffe08a : 0xffd36a)
 scene.add(shards.group)
 const surf = (x: number, z: number) => world.surfaceAt(x, z)
 shards.onTake = (x, y, z, n, done, kind) => {
@@ -1077,7 +1081,7 @@ function showCourse(): void {
     $('#tp-name').textContent = 'HUNT'
     $('#tp-blurb').textContent = 'Six waves in the sky: darts, lancers, interceptors. Kills score more the faster you fly.'
     const cell = (v: string, l: string) => `<div><b>${v}</b><small>${l}</small></div>`
-    $('#tp-stats').innerHTML = cell(BIOME === 'desert' ? 'Red Mesa' : BIOME === 'ice' ? 'Polar Shelf' : 'Cinder', 'World') + cell('× Mach', 'Score multiplier') + cell('6 waves', 'Then it ends') + cell((() => { try { return localStorage.getItem('dbu-hunt-best') ?? '—' } catch { return '—' } })(), 'Your best')
+    $('#tp-stats').innerHTML = cell(WORLDS.find((w) => w.id === BIOME)?.name ?? '', 'World') + cell('× Mach', 'Score multiplier') + cell('6 waves', 'Then it ends') + cell((() => { try { return localStorage.getItem('dbu-hunt-best') ?? '—' } catch { return '—' } })(), 'Your best')
     $('#tp-info').textContent = '' // (the keys are in the footer: they showed twice)
   } else if (menuMode === 'free') {
     $('#tp-name').textContent = 'FREE ROAM'
@@ -1117,7 +1121,7 @@ function drawTrackPreview(d: (typeof COURSES)[number]): void {
   // Ground: warm sand, a 1 km grid (10 km lines stronger).
   const bg = g.createRadialGradient(W / 2, H / 2, 0, W / 2, H / 2, Math.max(W, H) * 0.7)
   // (FROSTLINE's map: snow-blue ground, not the desert's sand.)
-  if (biomeOf(d.id) === 'ice') { bg.addColorStop(0, '#3a4a62'); bg.addColorStop(1, '#141c2a') } else if (biomeOf(d.id) === 'lava') { bg.addColorStop(0, '#2a1e1c'); bg.addColorStop(1, '#0e0a0a') } else if (biomeOf(d.id) === 'forest') { bg.addColorStop(0, '#2c3a22'); bg.addColorStop(1, '#121a0e') } else { bg.addColorStop(0, '#5a3a24'); bg.addColorStop(1, '#2a1a10') }
+  if (biomeOf(d.id) === 'ice') { bg.addColorStop(0, '#3a4a62'); bg.addColorStop(1, '#141c2a') } else if (biomeOf(d.id) === 'lava') { bg.addColorStop(0, '#2a1e1c'); bg.addColorStop(1, '#0e0a0a') } else if (biomeOf(d.id) === 'forest') { bg.addColorStop(0, '#2c3a22'); bg.addColorStop(1, '#121a0e') } else if (biomeOf(d.id) === 'jungle') { bg.addColorStop(0, '#1c2a20'); bg.addColorStop(1, '#0a110c') } else { bg.addColorStop(0, '#5a3a24'); bg.addColorStop(1, '#2a1a10') }
   g.fillStyle = compact ? '#17110f' : bg; g.fillRect(0, 0, W, H)
   g.setTransform(1, 0, 0, 1, 0, 0)
   if (rot) { g.translate(W / 2, H / 2); g.rotate(-Math.PI / 2); g.translate(-W / 2, -H / 2) }
@@ -2058,6 +2062,27 @@ function drawRacer(p: Player, alpha: number, dt: number, isMe: boolean): void {
       fx.smoke.emit(e)
     }
   }
+  // MONSOON: rain — streaks falling past you — and low mist drifting through the trunks.
+  if (isMe && BIOME === 'jungle') {
+    for (let i = 0; i < 26; i++) {
+      const e = resetE()
+      const ahead = -20 + Math.random() * 200, side = (Math.random() - 0.5) * 160
+      e.x = tmp.x + p.fwd.x * ahead + p.right.x * side; e.z = tmp.z + p.fwd.z * ahead + p.right.z * side
+      e.y = tmp.y + 4 + Math.random() * 45
+      e.vx = 3; e.vy = -70 - Math.random() * 25; e.vz = 1
+      e.life = 0.5; e.size0 = 0.05; e.size1 = 0.05; e.r = 0.9; e.g = 1.0; e.b = 1.05; e.a = 0.45; e.streak = 1
+      fx.glow.emit(e)
+    }
+    if (Math.random() < 0.5) {
+      const e = resetE()
+      const ahead = 60 + Math.random() * 400, side = (Math.random() - 0.5) * 500
+      e.x = tmp.x + p.fwd.x * ahead + p.right.x * side; e.z = tmp.z + p.fwd.z * ahead + p.right.z * side
+      e.y = groundH(e.x, e.z) + 4 + Math.random() * 18
+      e.vx = 2; e.vy = 0.3; e.vz = 1
+      e.life = 4; e.size0 = 16; e.size1 = 34; e.r = 0.5; e.g = 0.58; e.b = 0.52; e.a = 0.09
+      fx.smoke.emit(e)
+    }
+  }
   // VERDANT: pollen and seed fluff drifting in the sun.
   if (isMe && BIOME === 'forest') {
     for (let i = 0; i < 10; i++) {
@@ -2470,7 +2495,7 @@ function updateHud(dt: number, slow: boolean): void {
     al.style.display = 'block'
     al.textContent = deg < 6 ? 'ALIGNED' : `NOSE ${deg.toFixed(0)}° OFF · ${player.slip > 0 ? 'STEER RIGHT' : 'STEER LEFT'}`
     al.className = deg > 26 ? 'bad' : 'ok'
-  } else if (player.wake > 0.3 && !player.airborne) {
+  } else if (player.wake > 0.3 && !player.airborne && mode === 'race') {
     al.style.display = 'block'
     al.textContent = `SLIPSTREAM ${'▮'.repeat(Math.ceil(player.wake * 5))}`
     al.className = 'ok'
@@ -2485,7 +2510,7 @@ function updateHud(dt: number, slow: boolean): void {
   // The afterburner: say plainly that the steering is locked, and say it louder if you try to turn.
   const bn = $('#burn')
   const fighting = player.burning && Math.abs(player.steerWant) > 0.3
-  bn.style.display = player.burning ? 'block' : 'none'
+  bn.style.display = player.burning && !(mode === 'free' && freeAir) ? 'block' : 'none'
   bn.className = fighting ? 'fight' : ''
   bn.innerHTML = fighting ? 'RELEASE <b>SHIFT</b> TO TURN' : 'AFTERBURNER · <b>STEERING LOCKED</b>'
   $('#grip').classList.toggle('locked', player.burning)

@@ -5,15 +5,17 @@ const COURSE_ID: string = (() => {
   try { return new URLSearchParams(location.search).get('course') ?? localStorage.getItem('dbu-course') ?? 'sprint' } catch { return 'sprint' }
 })()
 /** The world: the desert, or FROSTLINE's arctic plateau (docs/MAP-FROSTLINE.md). */
-export type Biome = 'desert' | 'ice' | 'lava' | 'forest'
-const COURSE_BIOME: Record<string, Biome> = { frostline: 'ice', icefall: 'ice', caldera: 'lava', faultline: 'lava', obsidian: 'lava', whiteout: 'ice', greenway: 'forest', riverrun: 'forest', timberline: 'forest' }
+export type Biome = 'desert' | 'ice' | 'lava' | 'forest' | 'jungle'
+const COURSE_BIOME: Record<string, Biome> = { frostline: 'ice', icefall: 'ice', caldera: 'lava', faultline: 'lava', obsidian: 'lava', whiteout: 'ice', greenway: 'forest', riverrun: 'forest', timberline: 'forest', mistriver: 'jungle', understory: 'jungle' }
 /** Which world a course is in. */
 export const biomeOf = (id: string): Biome => COURSE_BIOME[id] ?? 'desert'
 export const BIOME: Biome = COURSE_BIOME[COURSE_ID] ?? 'desert'
+/** VERDANT and MONSOON share the green worlds' machinery (rivers, trees, the forest shaders). */
+export const GREEN = BIOME === 'forest' || BIOME === 'jungle'
 /** Dust / spray colour for the particles (sand, snow, or ash). */
-export const DUST: [number, number, number] = BIOME === 'ice' ? [0.8, 0.86, 0.96] : BIOME === 'lava' ? [0.32, 0.27, 0.26] : BIOME === 'forest' ? [0.52, 0.47, 0.32] : [0.8, 0.42, 0.21]
+export const DUST: [number, number, number] = BIOME === 'ice' ? [0.8, 0.86, 0.96] : BIOME === 'lava' ? [0.32, 0.27, 0.26] : BIOME === 'forest' ? [0.52, 0.47, 0.32] : BIOME === 'jungle' ? [0.26, 0.24, 0.16] : [0.8, 0.42, 0.21]
 /** The GLSL define naming the world (every world shader gets it). */
-const BIOME_DEF = BIOME === 'ice' ? '#ifndef BIOME_ICE\n#define BIOME_ICE\n#endif' : BIOME === 'lava' ? '#ifndef BIOME_LAVA\n#define BIOME_LAVA\n#endif' : BIOME === 'forest' ? '#ifndef BIOME_FOREST\n#define BIOME_FOREST\n#endif' : ''
+const BIOME_DEF = BIOME === 'ice' ? '#ifndef BIOME_ICE\n#define BIOME_ICE\n#endif' : BIOME === 'lava' ? '#ifndef BIOME_LAVA\n#define BIOME_LAVA\n#endif' : BIOME === 'forest' ? '#ifndef BIOME_FOREST\n#define BIOME_FOREST\n#endif' : BIOME === 'jungle' ? '#ifndef BIOME_FOREST\n#define BIOME_FOREST\n#endif\n#ifndef BIOME_JUNGLE\n#define BIOME_JUNGLE\n#endif' : ''
 // The ground, as one formula run in two places: here in JS (the craft hovers on it, rocks and mesas
 // sit on it) and in GLSL (the terrain mesh is displaced by it). The two must stay identical.
 //
@@ -60,7 +62,7 @@ export function riverAt(x: number, z: number): number {
   // (CINDER: lava rivers, a little wider than the desert's dry beds.)
   if (BIOME === 'lava') return (1 - smooth(0.04, 0.36, Math.abs(c))) * smooth(0.25, 0.5, m)
   // (VERDANT: rivers, a bit wider than the desert's beds.)
-  if (BIOME === 'forest') return (1 - smooth(0.05, 0.4, Math.abs(c))) * smooth(0.22, 0.48, m)
+  if (GREEN) return (1 - smooth(0.05, 0.4, Math.abs(c))) * smooth(0.22, 0.48, m)
   return BIOME === 'ice' ? (1 - smooth(0.1, 0.62, Math.abs(c))) * smooth(0.15, 0.4, m) : (1 - smooth(0.03, 0.3, Math.abs(c))) * smooth(0.3, 0.55, m)
 }
 
@@ -168,12 +170,14 @@ const LIGHTS: Record<string, Light> = {
   meadow: { zenith: [0.09, 0.28, 0.72], horizon: [0.58, 0.72, 0.88], haze: [0.92, 0.86, 0.72], sunDir: [-0.62, 0.36, 0.68], fogK: 0.000048, sunCol: [2.45, 2.15, 1.75], tint: [1.02, 1.0, 0.94] },
   // CINDER: volcanic dusk — a smoky red sky, a low bloody sun, ash haze.
   ember: { zenith: [0.02, 0.018, 0.03], horizon: [0.3, 0.12, 0.07], haze: [0.85, 0.32, 0.12], sunDir: [-0.55, 0.05, 0.84], fogK: 0.000075, sunCol: [1.7, 0.75, 0.42], tint: [1.0, 0.62, 0.5] },
+  // MONSOON: under the rain clouds — a dark green-grey overcast, the sun a pale smear, mist in the valleys.
+  monsoon: { zenith: [0.08, 0.1, 0.095], horizon: [0.25, 0.3, 0.27], haze: [0.31, 0.37, 0.32], sunDir: [0.3, 0.72, -0.45], fogK: 0.00012, sunCol: [1.3, 1.36, 1.2], tint: [0.86, 1.0, 0.88] },
   polar: { zenith: [0.006, 0.014, 0.05], horizon: [0.17, 0.21, 0.38], haze: [0.78, 0.48, 0.52], sunDir: [0.6, 0.04, -0.8], fogK: 0.00006, sunCol: [1.5, 0.95, 0.8], tint: [0.85, 0.8, 1.0] },
   // Canyon Run: dawn — cool blue-pink sky, a low sun from the east, rose light on the rock.
   dawn: { zenith: [0.07, 0.24, 0.68], horizon: [0.6, 0.7, 0.9], haze: [0.96, 0.8, 0.72], sunDir: [-0.7, 0.32, 0.65], fogK: 0.000068, sunCol: [2.4, 2.05, 1.75], tint: [1.0, 0.94, 0.9] },
   dusk: { zenith: [0.05, 0.17, 0.52], horizon: [0.55, 0.62, 0.82], haze: [0.96, 0.66, 0.48], sunDir: [-0.66, 0.24, -0.73], fogK: 0.000072, sunCol: [2.35, 1.8, 1.3], tint: [1.0, 0.9, 0.8] },
 }
-const COURSE_LIGHT: Record<string, string> = { sprint: 'noon', 'dry-river': 'afternoon', circuit: 'golden', drag: 'dusk', oval: 'noon', canyon: 'dawn', frostline: 'polar', icefall: 'polar', caldera: 'ember', faultline: 'ember', greenway: 'meadow', riverrun: 'meadow', timberline: 'meadow', obsidian: 'ember', whiteout: 'polar' }
+const COURSE_LIGHT: Record<string, string> = { sprint: 'noon', 'dry-river': 'afternoon', circuit: 'golden', drag: 'dusk', oval: 'noon', canyon: 'dawn', frostline: 'polar', icefall: 'polar', caldera: 'ember', faultline: 'ember', greenway: 'meadow', riverrun: 'meadow', timberline: 'meadow', obsidian: 'ember', whiteout: 'polar', mistriver: 'monsoon', understory: 'monsoon' }
 export const LIGHT: Light = LIGHTS[COURSE_LIGHT[COURSE_ID] ?? 'noon'] ?? LIGHTS.noon
 export const SKY = {
   zenith: LIGHT.zenith,
@@ -247,6 +251,12 @@ vec3 applyFog(vec3 col, vec3 wpos) {
   float f = 1.0 - exp(-k * k);
   // Thinner up high: mesa tops stand clear of the ground haze.
   f *= mix(1.0, 0.55, smoothstep(0.0, 500.0, wpos.y));
+  #ifdef BIOME_JUNGLE
+  // Valley mist: a layer lying on the forest — dense low down, gone by ~200 m, so the tall crowns
+  // and the karst towers stand up out of it.
+  float mist = (1.0 - exp(-dist * 0.00042)) * (1.0 - smoothstep(10.0, 200.0, wpos.y));
+  f = max(f, mist * 0.92);
+  #endif
   return mix(col, skyColor(d / max(dist, 1e-3)), clamp(f, 0.0, 1.0));
 }
 `

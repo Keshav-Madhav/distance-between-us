@@ -14,6 +14,9 @@ import { BIOME } from './terrain'
 /** A grade per world: shadow tint, highlight tint, saturation, black lift. */
 const GRADE = BIOME === 'ice'
   ? { sh: 'vec3(0.9, 0.95, 1.08)', hi: 'vec3(1.02, 0.98, 1.04)', sat: '1.15', lift: '0.0' }
+  : BIOME === 'jungle'
+    // MONSOON: deep, cool, a touch of green in the shadows, muted, the blacks lifted by the mist.
+    ? { sh: 'vec3(0.86, 1.0, 0.95)', hi: 'vec3(0.97, 1.03, 0.94)', sat: '0.92', lift: '0.014' }
   : BIOME === 'forest'
     ? { sh: 'vec3(0.9, 0.98, 1.06)', hi: 'vec3(1.05, 1.02, 0.93)', sat: '1.1', lift: '0.0' }
   : BIOME === 'lava'
@@ -186,7 +189,7 @@ export class Post {
     this.composer = new EffectComposer(renderer, this.target)
     this.composer.addPass(new RenderPass(scene, camera))
     // (VERDANT's bright sky bloomed the sun over the ship and HUD: a higher threshold there.)
-    this.bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), CFG.post.bloom, 0.55, BIOME === 'forest' ? 3.0 : CFG.post.bloomThreshold)
+    this.bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), CFG.post.bloom, 0.55, BIOME === 'forest' || BIOME === 'jungle' ? 3.0 : CFG.post.bloomThreshold)
     // (Bloom's blur spreads one NaN/inf pixel over the whole frame — a black screen. Its bright-pass
     // input is sanitised and clamped, which also tames fireflies.)
     const hp = this.bloom.materialHighPassFilter

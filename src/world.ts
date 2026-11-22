@@ -7,9 +7,10 @@ import { BIOME, groundH, LIGHT, MOUND_U, SUN_DIR } from './terrain'
 import { ICE_VARIANTS, iceGeometry } from './ice'
 import { LAVA_VARIANTS, lavaGeometry } from './lava'
 import { FOREST_VARIANTS, forestGeometry } from './forest'
+import { JUNGLE_VARIANTS, jungleGeometry } from './jungle'
 
 /** The world's own landform shapes (ice or basalt) — the desert's mesas come from mesaGeometry. */
-const landGeometry = (kind: 'mesa' | 'butte' | 'spire', seed: number, v: number) => BIOME === 'lava' ? lavaGeometry(kind, seed, v) : BIOME === 'forest' ? forestGeometry(kind, seed, v) : iceGeometry(kind, seed, v)
+const landGeometry = (kind: 'mesa' | 'butte' | 'spire', seed: number, v: number) => BIOME === 'lava' ? lavaGeometry(kind, seed, v) : BIOME === 'forest' ? forestGeometry(kind, seed, v) : BIOME === 'jungle' ? jungleGeometry(kind, seed, v) : iceGeometry(kind, seed, v)
 import { FBMT_GLSL, NOISE_TEX, patchStandard, WORLD_GLSL } from './shaders'
 import { SHADOW_GLSL, SHADOW_U } from './shadow'
 
@@ -57,7 +58,7 @@ function skyMaterial(ground: boolean): THREE.ShaderMaterial {
         vec3 d = normalize(vDir);
         vec3 c = skyColor(d);
         float s = max(dot(d, SUN_DIR), 0.0);
-        ${ground ? `c = mix(c, ${BIOME === 'lava' ? 'vec3(0.06, 0.04, 0.035)' : BIOME === 'ice' ? 'vec3(0.6, 0.66, 0.8)' : BIOME === 'forest' ? 'vec3(0.2, 0.3, 0.12)' : 'vec3(0.62, 0.3, 0.13)'}, 1.0 - smoothstep(-0.08, 0.0, d.y));` : ''}
+        ${ground ? `c = mix(c, ${BIOME === 'lava' ? 'vec3(0.06, 0.04, 0.035)' : BIOME === 'ice' ? 'vec3(0.6, 0.66, 0.8)' : BIOME === 'forest' ? 'vec3(0.2, 0.3, 0.12)' : BIOME === 'jungle' ? 'vec3(0.05, 0.08, 0.05)' : 'vec3(0.62, 0.3, 0.13)'}, 1.0 - smoothstep(-0.08, 0.0, d.y));` : ''}
         // Fair-weather cumulus on a plane 2.6 km up: fbm coverage, lit tops, grey-blue bases,
         // thinned toward the horizon where they would alias.
         if (d.y > 0.015) {
@@ -66,6 +67,9 @@ function skyMaterial(ground: boolean): THREE.ShaderMaterial {
           float cov = smoothstep(0.52, 0.78, base);
           #ifdef BIOME_ICE
           cov *= 0.08; // (a clear twilight: barely any cloud, so the aurora and stars show)
+          #endif
+          #ifdef BIOME_JUNGLE
+          cov = smoothstep(0.28, 0.66, base); // (the rains: a low, near-total overcast)
           #endif
           #ifdef BIOME_LAVA
           cov = min(1.0, cov * 1.4 + 0.1); // (an ash sky)
@@ -84,13 +88,20 @@ function skyMaterial(ground: boolean): THREE.ShaderMaterial {
           // Ash clouds: dark, lit from below by the lava's glow toward the horizon.
           cc = mix(vec3(0.05, 0.04, 0.045), vec3(0.5, 0.15, 0.05), (1.0 - smoothstep(0.02, 0.35, d.y)) * (0.4 + 0.6 * lit));
           #endif
+          #ifdef BIOME_JUNGLE
+          // Rain clouds: heavy and grey-green, barely lit, melting into the mist at the horizon.
+          cc = mix(vec3(0.1, 0.12, 0.115), vec3(0.28, 0.32, 0.3), lit) * (0.85 + 0.3 * detail);
+          cc = mix(cc, skyColor(vec3(d.x, 0.03, d.z)) * 0.95, (1.0 - smoothstep(0.02, 0.25, d.y)) * 0.75);
+          #endif
           float fade = smoothstep(0.015, 0.16, d.y);
           // High cirrus, 9 km up: thin streaks drawn out along the wind, behind the cumulus.
           vec2 hp = d.xz / d.y * 9000.0 + uCloudOff * 1.7;
           float ci = fbmT(hp * vec2(0.00006, 0.00028) + 7.3) * 0.7 + fbmT(hp * 0.0011 + 2.1) * 0.3;
           float cir = smoothstep(0.5, 0.78, ci) * smoothstep(0.03, 0.25, d.y) * (1.0 - cov);
-          #ifdef BIOME_ICE
+          #if defined(BIOME_ICE)
           cir *= 0.15;
+          #elif defined(BIOME_JUNGLE)
+          cir = 0.0;
           #endif
           c = mix(c, vec3(1.45, 1.42, 1.38) * SUN_TINT + vec3(1.0, 0.8, 0.55) * pow(s, 8.0) * 0.5, cir * 0.42);
           c = mix(c, cc, cov * fade * 0.92);
@@ -126,6 +137,9 @@ function skyMaterial(ground: boolean): THREE.ShaderMaterial {
         // The sun: a hot disk (past bloom's threshold) and a wide glare.
         #if defined(BIOME_LAVA)
         c += vec3(1.0, 0.4, 0.2) * (smoothstep(0.99955, 0.9998, s) * 6.0 + pow(s, 900.0) * 1.5 + pow(s, 30.0) * 0.15 + pow(s, 4.0) * 0.06);
+        #elif defined(BIOME_JUNGLE)
+        // Behind the overcast: no disc, a pale bright smear where the sun is.
+        c += vec3(0.9, 0.95, 0.85) * (pow(s, 60.0) * 0.35 + pow(s, 6.0) * 0.1);
         #elif defined(BIOME_ICE)
         c += vec3(1.0, 0.75, 0.6) * (smoothstep(0.99955, 0.9998, s) * 12.0 + pow(s, 900.0) * 2.0 + pow(s, 30.0) * 0.15 + pow(s, 4.0) * 0.05);
         #else
@@ -221,9 +235,15 @@ function mountains(): THREE.Mesh {
         #ifdef BIOME_FOREST
         lit = vec3(0.5, 0.5, 0.48); shade = vec3(0.17, 0.19, 0.22); snowLine = 2300.0; green = 1.0;
         #endif
+        #ifdef BIOME_JUNGLE
+        snowLine = 1e9; // (green to the summits: the rainforest's ridges, half lost in cloud)
+        #endif
         vec3 c = mix(shade, lit, sun) * (0.85 + 0.3 * gully);
         // Forest on the lower slopes (VERDANT): dark green giving way to rock above the tree line.
         float tl = 1300.0 + 400.0 * (vnoise(vec2(az * 90.0, 3.0)) - 0.5);
+        #ifdef BIOME_JUNGLE
+        tl = 1e9;
+        #endif
         c = mix(c, mix(vec3(0.05, 0.1, 0.05), vec3(0.16, 0.26, 0.1), sun), green * (1.0 - smoothstep(tl - 60.0, tl + 60.0, h)));
         // Snow: above the line, more on gentle (up-facing) faces, streaming down the gullies.
         float sl = snowLine + 160.0 * (gully - 0.5) - 260.0 * n.y;
@@ -420,11 +440,22 @@ function terrainMaterial(shared: GroundUniforms, snap: { value: THREE.Vector2 },
           vec3 grass = mix(vec3(0.17, 0.3, 0.07), vec3(0.33, 0.36, 0.12), dry) * (0.75 + 0.5 * lumS) * (0.85 + 0.3 * fbmT(p * 0.004 + 9.0));
           vec3 rockG = vec3(0.42, 0.41, 0.38) * (0.8 + 0.4 * dot(grav, vec3(0.333)));
           alb = mix(grass, rockG, gm * 0.55);
+          #ifdef BIOME_JUNGLE
+          // MONSOON: the forest floor — dark wet leaf litter, moss, black mud; no meadow.
+          {
+            float moss = 0.75 - 0.6 * smoothstep(0.5, 0.75, fbmT(p * 0.0016 + 7.0));
+            vec3 litter = mix(vec3(0.075, 0.058, 0.03), vec3(0.03, 0.07, 0.022), moss) * (0.7 + 0.6 * lumS) * (0.8 + 0.4 * fbmT(p * 0.006 + 2.0));
+            alb = mix(litter, vec3(0.12, 0.13, 0.1) * (0.8 + 0.4 * dot(grav, vec3(0.333))), gm * 0.4);
+          }
+          #endif
           // Wind waves over the grass: soft bright bands drifting across.
           float wv = sin(dot(p, vec2(0.012, 0.007)) - uTime * 1.4 + fbmT(p * 0.002) * 6.0);
           alb *= 1.0 + 0.1 * smoothstep(0.4, 1.0, wv) * (1.0 - gm);
           // Wildflowers, close in: sparse dots of white, yellow, violet.
           float fd = 1.0 - smoothstep(40.0, 220.0, length(vW - cameraPosition));
+          #ifdef BIOME_JUNGLE
+          fd = 0.0;
+          #endif
           if (fd > 0.0) {
             vec2 fc = floor(p * 0.9);
             float fl = step(0.985, hash12(fc)) * (1.0 - smoothstep(0.2, 0.42, length(fract(p * 0.9) - 0.5))) * fd * (1.0 - gm);
@@ -432,7 +463,11 @@ function terrainMaterial(shared: GroundUniforms, snap: { value: THREE.Vector2 },
             alb = mix(alb, fcol, fl);
           }
           // River beds: gravel banks under clear water (the water itself is lit below).
+          #ifdef BIOME_JUNGLE
+          alb = mix(alb, vec3(0.15, 0.11, 0.06), smoothstep(0.05, 0.3, river)); // mud banks
+          #else
           alb = mix(alb, vec3(0.3, 0.32, 0.26), smoothstep(0.05, 0.3, river));
+          #endif
         }
         #endif
         float lavaCrack = 0.0;
@@ -456,6 +491,8 @@ function terrainMaterial(shared: GroundUniforms, snap: { value: THREE.Vector2 },
           alb = mix(alb, alb * vec3(0.8, 0.86, 0.97), pack * 0.8);
           #elif defined(BIOME_LAVA)
           alb = mix(alb, vec3(0.32, 0.3, 0.29), pack * 0.75); // packed ash: a grey road on black sand
+          #elif defined(BIOME_JUNGLE)
+          alb = mix(alb, vec3(0.13, 0.1, 0.06), pack * 0.4); // a mud track through the moss (thin: the green shows)
           #elif defined(BIOME_FOREST)
           alb = mix(alb, vec3(0.28, 0.24, 0.17), pack * 0.6); // a dirt road through the grass (thin: the meadow shows)
           #else
@@ -511,12 +548,17 @@ function terrainMaterial(shared: GroundUniforms, snap: { value: THREE.Vector2 },
           // (Darker and less mirror-like than first drawn: at a racer's grazing angle the full sky
           //  turned every river into a pale sheet.)
           vec3 water = mix(vec3(0.03, 0.1, 0.12), skyColor(Rw) * 0.75, 0.15 + 0.4 * fr);
+          #ifdef BIOME_JUNGLE
+          water = mix(vec3(0.12, 0.085, 0.045), skyColor(Rw) * 0.45, 0.05 + 0.3 * fr); // a brown, silted river
+          #endif
           water *= 0.85 + 0.15 * fbmT(p * 0.01 + vec2(uTime * 0.03, 0.0));
           water += vec3(0.9, 0.85, 0.7) * pow(max(dot(Rw, SUN_DIR), 0.0), 160.0) * 1.2;
           col = mix(col, water, w);
         }
         // Sunlit grass glows a little (it scatters light): a warm fill so the meadow is never dull.
+        #ifndef BIOME_JUNGLE
         col += alb * vec3(0.12, 0.14, 0.06);
+        #endif
         #endif
         #ifdef BIOME_LAVA
         // Hot cracks across the basalt off the road (the race showed brown ground, lava only on the map):
@@ -624,6 +666,9 @@ function pebbles(count: number, tile: number): THREE.InstancedMesh {
         #ifdef BIOME_FOREST
         alb = mix(vec3(0.3, 0.3, 0.28), vec3(0.55, 0.54, 0.5), vTint);
         #endif
+        #ifdef BIOME_JUNGLE
+        alb = mix(vec3(0.08, 0.11, 0.06), vec3(0.2, 0.22, 0.14), vTint); // (mossy stones, leaf litter)
+        #endif
         #ifdef BIOME_LAVA
         alb = mix(vec3(0.05, 0.045, 0.045), vec3(0.2, 0.17, 0.16), vTint);
         #endif
@@ -645,6 +690,156 @@ function pebbles(count: number, tile: number): THREE.InstancedMesh {
     q.setFromEuler(e.set(r() * 0.5, r() * 6.28, r() * 0.5))
     mesh.setMatrixAt(i, m.compose(v, q, s))
   }
+  mesh.frustumCulled = false
+  return mesh
+}
+
+/**
+ * MONSOON's canopy: a carpet of tree crowns over every bit of ground off the course — domes of leaves
+ * from the ground up (no trunks to see), each a cluster of lumps, tiled round the camera like the
+ * pebbles. Off the course corridor (the track texture's blue) and out of the rivers; sunk into the
+ * ground toward the tile's edge so the wrap never pops. The stands, emergents and karst towers rise
+ * out of it.
+ */
+function canopy(count: number, tile: number, shared: GroundUniforms, wind: { value: number }): THREE.InstancedMesh {
+  const r = rng(91)
+  // One crown: four lumps, a broad low base and a domed top.
+  const parts: THREE.BufferGeometry[] = []
+  for (let k = 0; k < 4; k++) {
+    const g = new THREE.IcosahedronGeometry(1, 0)
+    const a = k * 2.3 + r(), d = k === 0 ? 0 : 0.45 + r() * 0.2
+    const sc = k === 0 ? 0.85 : 0.55 + r() * 0.15
+    g.scale(sc, k === 0 ? 0.7 : sc * 0.8, sc)
+    g.translate(Math.cos(a) * d, k === 0 ? 0.1 : 0.2 + r() * 0.35, Math.sin(a) * d)
+    parts.push(g.toNonIndexed())
+  }
+  const geo = new THREE.BufferGeometry()
+  const pos: number[] = [], nrm: number[] = []
+  // Each lump's normals point out from its own centre (a soft round mass, not crystal facets).
+  for (let k = 0; k < parts.length; k++) {
+    const pa = parts[k].attributes.position.array as Float32Array
+    let cx = 0, cy = 0, cz = 0
+    for (let i = 0; i < pa.length; i += 3) { cx += pa[i]; cy += pa[i + 1]; cz += pa[i + 2] }
+    const nv = pa.length / 3; cx /= nv; cy /= nv; cz /= nv
+    for (let i = 0; i < pa.length; i += 3) {
+      pos.push(pa[i], pa[i + 1], pa[i + 2])
+      const dx = pa[i] - cx, dy = pa[i + 1] - cy, dz = pa[i + 2] - cz, l = Math.hypot(dx, dy, dz) || 1
+      nrm.push(dx / l, dy / l, dz / l)
+    }
+  }
+  const trunkFlag: number[] = new Array(pos.length / 3).fill(0)
+  // The trunk: a thin column, y 0…1 (the shader stretches it from the ground to the crown's base).
+  {
+    const t = new THREE.CylinderGeometry(0.7, 1, 1, 6, 1, true).toNonIndexed()
+    t.translate(0, 0.5, 0)
+    const ta = t.attributes.position.array as Float32Array, tn = t.attributes.normal.array as Float32Array
+    for (let i = 0; i < ta.length; i++) { pos.push(ta[i]); nrm.push(tn[i]) }
+    for (let i = 0; i < ta.length / 3; i++) trunkFlag.push(1)
+  }
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3))
+  geo.setAttribute('normal', new THREE.Float32BufferAttribute(nrm, 3))
+  geo.setAttribute('aTrunk', new THREE.Float32BufferAttribute(trunkFlag, 1))
+  const mat = new THREE.ShaderMaterial({
+    uniforms: { uTile: { value: tile }, tTrack: shared.tTrack, uTrackBox: shared.uTrackBox, uTrackOn: shared.uTrackOn, uWind: wind, ...MOUND_U },
+    vertexShader: /* glsl */ `
+      ${WORLD_GLSL}
+      uniform float uTile;
+      uniform sampler2D tTrack;
+      uniform vec4 uTrackBox;
+      uniform float uTrackOn;
+      uniform float uWind;
+      attribute float aTrunk;
+      varying vec3 vW;
+      varying vec3 vNw;
+      varying float vTint;
+      varying float vUp;
+      varying float vTrunk;
+      void main() {
+        vec3 o = instanceMatrix[3].xyz;
+        o.xz += uTile * floor((cameraPosition.xz - o.xz) / uTile + 0.5);
+        mat3 m = mat3(instanceMatrix);
+        float k = 1.0 - smoothstep(uTile * 0.36, uTile * 0.48, length(o.xz - cameraPosition.xz));
+        // Off the racing line (the wear's second band, ~±200 m: the trees crowd the gates) and out of
+        // the rivers.
+        vec2 tuv = (o.xz - uTrackBox.xy) / uTrackBox.zw;
+        float road = (uTrackOn > 0.01 && tuv.x > 0.0 && tuv.y > 0.0 && tuv.x < 1.0 && tuv.y < 1.0) ? texture2D(tTrack, tuv).r : 0.0;
+        k *= 1.0 - smoothstep(0.16, 0.3, road);
+        k *= 1.0 - smoothstep(0.08, 0.3, riverAt(o.xz));
+        float h = length(m[1]);
+        // Tall trees: a huge crown held up on a bare trunk 34-56 m above the floor (you see in under it).
+        float lift = 34.0 + 22.0 * hash12(instanceMatrix[3].xz + 3.7);
+        float g = groundH(o.xz) - (1.0 - k) * (lift + h * 1.5);
+        o.y = g + lift + h * 0.55;
+        vec3 lp = position;
+        vec3 w;
+        vTrunk = aTrunk;
+        if (aTrunk > 0.5) {
+          // Stretched from the floor to inside the crown; a fixed girth (not the crown's scale).
+          float tr = 1.8 + 1.6 * hash12(instanceMatrix[3].xz + 9.1);
+          w = vec3(o.x + lp.x * tr * k, g + lp.y * (lift + h * 0.5), o.z + lp.z * tr * k);
+        } else {
+          // A slow sway in the tops.
+          lp.xz += vec2(0.6, 0.3) * sin(uWind * 1.1 + o.x * 0.013 + o.z * 0.017) * 0.03 * max(lp.y + 0.6, 0.0);
+          w = o + m * lp * max(k, 0.001);
+        }
+        vW = w;
+        vec3 sc = vec3(dot(m[0], m[0]), dot(m[1], m[1]), dot(m[2], m[2]));
+        vNw = aTrunk > 0.5 ? normalize(vec3(normal.x, 0.0, normal.z)) : normalize(m * (normal / sc));
+        vUp = lp.y;
+        vTint = hash12(instanceMatrix[3].xz);
+        gl_Position = projectionMatrix * viewMatrix * vec4(w, 1.0);
+      }`,
+    fragmentShader: /* glsl */ `
+      ${WORLD_GLSL}
+      varying vec3 vW;
+      varying vec3 vNw;
+      varying float vTint;
+      varying float vUp;
+      varying float vTrunk;
+      float cvn(vec3 p) {
+        vec3 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
+        float a = mix(hash12(i.xz + i.y * 17.0), hash12(i.xz + vec2(1.0, 0.0) + i.y * 17.0), f.x);
+        float b = mix(hash12(i.xz + vec2(0.0, 1.0) + i.y * 17.0), hash12(i.xz + vec2(1.0) + i.y * 17.0), f.x);
+        float c = mix(hash12(i.xz + (i.y + 1.0) * 17.0), hash12(i.xz + vec2(1.0, 0.0) + (i.y + 1.0) * 17.0), f.x);
+        float d = mix(hash12(i.xz + vec2(0.0, 1.0) + (i.y + 1.0) * 17.0), hash12(i.xz + vec2(1.0) + (i.y + 1.0) * 17.0), f.x);
+        return mix(mix(a, b, f.z), mix(c, d, f.z), f.y);
+      }
+      void main() {
+        // Leaves: clumps of foliage as bumps on the round mass, fading out with distance.
+        float dist = length(vW - cameraPosition);
+        float near = 1.0 - smoothstep(300.0, 1400.0, dist);
+        float l1 = 0.5, l2 = 0.5;
+        if (near > 0.0) { l1 = cvn(vW * 0.16); l2 = cvn(vW * 0.55 + 7.0); }
+        vec3 n = normalize(vNw + near * vec3(l1 - 0.5, 0.0, l2 - 0.5) * 1.1);
+        vec3 alb = mix(vec3(0.02, 0.065, 0.025), vec3(0.085, 0.17, 0.045), vTint);
+        alb *= 0.75 + 0.45 * mix(0.5, l1 * 0.6 + l2 * 0.4, near);
+        // Deep gaps between the leaf clumps.
+        alb *= 1.0 - near * 0.45 * smoothstep(0.55, 0.2, l1 * 0.7 + l2 * 0.3);
+        // Darker down in the crown (self-shade), paler new growth on top.
+        alb *= mix(0.55, 1.15, smoothstep(-0.6, 0.7, vUp));
+        if (vTrunk > 0.5) {
+          // Dark wet bark, mossy toward the foot, in the crown's shade.
+          n = vNw;
+          alb = mix(vec3(0.03, 0.06, 0.025), vec3(0.075, 0.06, 0.045), smoothstep(0.0, 25.0, vW.y)) * (0.7 + 0.5 * hash12(floor(vW.xz) + floor(vW.y * 0.3)));
+        }
+        float sun = max(dot(n, SUN_DIR), 0.0) * (vTrunk > 0.5 ? 0.35 : 1.0);
+        vec3 col = alb * (SUN_COL * sun * 0.8 + skyColor(n) * 0.5 + vec3(0.04, 0.07, 0.03));
+        gl_FragColor = vec4(applyFog(col, vW), 1.0);
+      }`,
+  })
+  const mesh = new THREE.InstancedMesh(geo, mat, count)
+  const mm = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), v = new THREE.Vector3(), sv = new THREE.Vector3()
+  // A jittered grid: even cover, no clumping bare patches.
+  const n = Math.ceil(Math.sqrt(count)), cell = tile / n
+  let i = 0
+  for (let gx = 0; gx < n && i < count; gx++) for (let gz = 0; gz < n && i < count; gz++) {
+    v.set((gx + 0.15 + r() * 0.7) * cell, 0, (gz + 0.15 + r() * 0.7) * cell)
+    const rad = cell * (0.75 + r() * 0.4), h = 34 + r() * 20 + (r() < 0.12 ? 16 : 0)
+    sv.set(rad, h, rad)
+    q.setFromEuler(e.set(0, r() * 6.28, 0))
+    mesh.setMatrixAt(i++, mm.compose(v, q, sv))
+  }
+  mesh.count = i
   mesh.frustumCulled = false
   return mesh
 }
@@ -888,9 +1083,10 @@ export class World {
     }
 
     this.group.add(pebbles(1800, 1500))
+    if (BIOME === 'jungle') this.group.add(canopy(4900, 4400, this.ground, AUR_T))
 
     const mesaMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.92, metalness: 0, flatShading: true })
-    const ICE = BIOME === 'ice', LAVA = BIOME === 'lava', FOREST = BIOME === 'forest'
+    const ICE = BIOME === 'ice', LAVA = BIOME === 'lava', FOREST = BIOME === 'forest' || BIOME === 'jungle', JUNGLE = BIOME === 'jungle'
     if (ICE) { mesaMat.roughness = 0.3; patchStandard(mesaMat, { ice: true, shadow: true }) }
     else if (LAVA) { mesaMat.roughness = 0.85; patchStandard(mesaMat, { lava: true, shadow: true }) }
     else if (FOREST) { mesaMat.roughness = 0.8; mesaMat.flatShading = true; patchStandard(mesaMat, { forest: true, aur: AUR_T, shadow: true }) }
@@ -902,6 +1098,9 @@ export class World {
     const kinds: [Kind, number, number][] = BIOME === 'lava'
       // CINDER: cinder cones first, a few basalt massifs (the column fields read as a city skyline).
       ? [['mesa', 160, 2200], ['butte', 520, 1000], ['spire', 70, 900]]
+      : JUNGLE
+      // MONSOON: the canopy nearly everywhere, emergents standing over it, karst towers now and then.
+      ? [['mesa', 240, 1700], ['butte', 1300, 320], ['spire', 900, 340]]
       : BIOME === 'forest'
       // VERDANT is a forest: groves everywhere, giant trees often, granite domes now and then.
       ? [['mesa', 360, 1500], ['butte', 1000, 380], ['spire', 520, 420]]
@@ -916,7 +1115,7 @@ export class World {
     for (const [kind, count, spacing] of kinds) {
       // One instanced mesh per shape archetype; items are dealt across them at random.
       const ws: Wrapped[] = []
-      for (let v = 0; v < (ICE ? ICE_VARIANTS : LAVA ? LAVA_VARIANTS : FOREST ? FOREST_VARIANTS : MESA_VARIANTS)[kind]; v++) {
+      for (let v = 0; v < (ICE ? ICE_VARIANTS : LAVA ? LAVA_VARIANTS : JUNGLE ? JUNGLE_VARIANTS : FOREST ? FOREST_VARIANTS : MESA_VARIANTS)[kind]; v++) {
         const seed = kind.length * 31 + 7 + v * 101
         const { geo, prof } = ICE || LAVA || FOREST ? landGeometry(kind, seed, v) : mesaGeometry(kind, seed, v)
         if (kind === 'spire' && v === 0) { this.spireGeo = geo; this.fixedProf = prof }
@@ -945,7 +1144,14 @@ export class World {
           const sc = 0.45 + 2.0 * Math.pow(r(), 2.2)
           rad *= sc; h *= 0.6 + 0.4 * sc
         }
-        if (FOREST) {
+        if (JUNGLE) {
+          // Karst towers tall and narrow; the canopy a few hundred metres across, 70-120 m; emergents over it.
+          if (kind === 'mesa') { rad *= 0.5; h *= 1.25 }
+          else if (kind === 'butte') { rad *= 1.15; h = 85 + r() * 50 }
+          else { rad *= 0.85; h = 120 + r() * 70 }
+          const sc = 0.6 + 1.2 * Math.pow(r(), 2)
+          rad *= sc; h *= 0.75 + 0.25 * sc
+        } else if (FOREST) {
           // Domes broad and rounded; groves a few hundred metres across and 60-120 m tall; giant trees.
           if (kind === 'mesa') { rad *= 1.0; h *= 0.75 }
           else if (kind === 'butte') { rad *= 0.7; h = 80 + r() * 80 }
@@ -1015,8 +1221,8 @@ export class World {
     // sun the only light (a mesa's far face read as a hole cut in the view).
     {
       const sky = new THREE.Color(LIGHT.zenith[0], LIGHT.zenith[1], LIGHT.zenith[2]).lerp(new THREE.Color(LIGHT.horizon[0], LIGHT.horizon[1], LIGHT.horizon[2]), 0.55)
-      const ground = BIOME === 'ice' ? new THREE.Color(0.55, 0.6, 0.72) : BIOME === 'lava' ? new THREE.Color(0.3, 0.09, 0.03) : BIOME === 'forest' ? new THREE.Color(0.2, 0.28, 0.1) : new THREE.Color(0.6, 0.32, 0.16)
-      const k = BIOME === 'ice' ? 0.45 : BIOME === 'lava' ? 0.6 : BIOME === 'forest' ? 0.75 : 0.9
+      const ground = BIOME === 'ice' ? new THREE.Color(0.55, 0.6, 0.72) : BIOME === 'lava' ? new THREE.Color(0.3, 0.09, 0.03) : BIOME === 'forest' ? new THREE.Color(0.2, 0.28, 0.1) : BIOME === 'jungle' ? new THREE.Color(0.06, 0.1, 0.04) : new THREE.Color(0.6, 0.32, 0.16)
+      const k = BIOME === 'ice' ? 0.45 : BIOME === 'lava' ? 0.6 : BIOME === 'forest' ? 0.75 : BIOME === 'jungle' ? 0.8 : 0.9
       this.group.add(new THREE.HemisphereLight(sky, ground, k))
     }
   }
