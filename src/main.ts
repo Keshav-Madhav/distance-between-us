@@ -682,6 +682,7 @@ function huntCombatStep(): void {
 }
 let autoFire = false
 let huntDone = false
+let craftLeft = 3
 let lockBeepT = 0
 /** HUNT's waves: [kind, how many] groups, and a banner for a new arrival. */
 const HUNT_WAVES: { groups: [Kind, number][]; note?: [string, string] }[] = [
@@ -1385,7 +1386,7 @@ function startHunt(): void {
   // The open world: no course, no course-placed landforms (see World.courseRocks).
   world.courseOn = false; course.group.visible = false
   rings.passed = 0; rings.missed = 0; rings.sets = 0
-  rounds.clear(); cannon.reset(); missiles.reset(); darts.clear(); waveT = 3; huntWave = 0; kills = 0; huntDone = false
+  rounds.clear(); cannon.reset(); missiles.reset(); darts.clear(); waveT = 3; huntWave = 0; kills = 0; huntDone = false; craftLeft = 3
   hintsEl.innerHTML = FLY_HINTS
   document.body.classList.add('flying')
   hintsEl.style.opacity = tips.enabled ? '0' : '0.85'
@@ -1661,7 +1662,22 @@ function simStep(): void {
     runTop = Math.max(runTop, flight.topMach)
     rings.step(player)
     huntCombatStep()
-    if (flight.hull <= 0 && !player.dead) die()
+    if (flight.hull <= 0 && !player.dead) {
+      // Three craft a run: losing one is a respawn up in the air (a moment of grace), not the end.
+      craftLeft--
+      if (craftLeft > 0) {
+        fx.explosion(flight.pos.x, flight.pos.y, flight.pos.z, flight.vel.x * 0.4, flight.vel.y * 0.4, flight.vel.z * 0.4, 2.2)
+        sound.death(); shake(0.8)
+        const h = Math.atan2(flight.fwd.x, flight.fwd.z)
+        flight.reset(flight.pos.x, flight.pos.z, h, 600, 2.4)
+        flight.ghost = 3
+        flight.syncTo(player)
+        fcam.snap()
+        for (const t of visuals.get(player)!.trail) t.reset()
+        flash(`CRAFT LOST · ${craftLeft} LEFT`)
+        damageFlash = 1
+      } else die()
+    }
     rebase()
     if (!player.dead) runTime += STEP
 
@@ -2402,7 +2418,7 @@ function updateHud(dt: number, slow: boolean): void {
     $('#gmark').style.display = 'none'
     $('#gmark2').style.display = 'none'
     scoreNum.textContent = String(score)
-    scoreSub.textContent = `ALT ${Math.round(flight.agl)} M · ENERGY ${Math.round(flight.energy)} · HEAT ${cannon.lockout > 0 ? 'VENT' : Math.round((cannon.heat / 3) * 100) + '%'} · MSL ${'▮'.repeat(missiles.rack)}${'▯'.repeat(8 - missiles.rack)} · WAVE ${Math.min(huntWave, HUNT_WAVES.length)}/${HUNT_WAVES.length} · ${kills} DOWN · ${fmtTime(runTime)}`
+    scoreSub.textContent = `CRAFT ${'▮'.repeat(Math.max(0, craftLeft))}${'▯'.repeat(3 - Math.max(0, craftLeft))} · ALT ${Math.round(flight.agl)} M · ENERGY ${Math.round(flight.energy)} · HEAT ${cannon.lockout > 0 ? 'VENT' : Math.round((cannon.heat / 3) * 100) + '%'} · MSL ${'▮'.repeat(missiles.rack)}${'▯'.repeat(8 - missiles.rack)} · WAVE ${Math.min(huntWave, HUNT_WAVES.length)}/${HUNT_WAVES.length} · ${kills} DOWN · ${fmtTime(runTime)}`
     rings.draw(time)
     // Flight marks: the aim ring, the velocity cross, the next ring.
     const place = (el: HTMLElement, v: THREE.Vector3) => {
@@ -2454,6 +2470,10 @@ function updateHud(dt: number, slow: boolean): void {
         pip.style.left = `${(proj.x * 0.5 + 0.5) * innerWidth}px`; pip.style.top = `${(-proj.y * 0.5 + 0.5) * innerHeight}px`
       } else pip.style.display = 'none'
     } else pip.style.display = 'none'
+    // Low and sinking fast: PULL UP.
+    const al = $('#align')
+    if (flight.sinking && !player.dead) { al.style.display = 'block'; al.textContent = 'PULL UP · S'; al.className = 'bad' }
+    else if (al.textContent?.startsWith('PULL UP')) al.style.display = 'none'
     // Locked by an interceptor: a red bar that fills, top centre.
     const lw = $('#lockwarn')
     lw.style.display = darts.lockWarn > 0.05 && !player.dead ? 'block' : 'none'

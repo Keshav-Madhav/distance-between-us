@@ -42,7 +42,7 @@ export const FLIGHT = {
   // (Shift is the throttle now: it drains slower, and the engines still push when the bar is empty.)
   burnDrain: 12,
   energyRefill: 12,
-  cushion: 25,
+  cushion: 70,
   softCeiling: 1800,
   hardCeiling: 2200,
 }
@@ -87,6 +87,8 @@ export class FlightCraft {
   agl = 0
   burning = false
   braking = false
+  /** Low and coming down fast (the HUD's PULL UP). */
+  sinking = false
   throttle = false
   topMach = 0
   /** Rates (rad/s) actually applied: pitch, roll, yaw. */
@@ -206,22 +208,30 @@ export class FlightCraft {
 
     this.pos.addScaledVector(this.vel, dt)
 
-    // ── the ground: a cushion, then a scrape, then a hard hit ──
+    // ── the ground: a soft cushion from 70 m that eases the nose up and kills the sink (never a snap),
+    //    then a scrape; only a real nose-dive into it hurts. (It used to yank the nose 0.5 rad in one
+    //    step and take 35 hull for any shallow dive — three skims ended the run: "the reset".) ──
     const g = groundH(this.pos.x, this.pos.z)
     this.agl = this.pos.y - g
+    this.sinking = this.vel.y < -30 && this.agl < 250 + -this.vel.y * 2.5
     if (this.agl < F.cushion) {
-      const push = (F.cushion - this.agl) / F.cushion
-      if (this.vel.y < 0) this.vel.y *= 1 - Math.min(1, push * 6 * dt * 10)
-      this.pos.y += push * push * 40 * dt
+      const k = 1 - Math.max(0, this.agl) / F.cushion
+      if (this.vel.y < 0) this.vel.y *= 1 - Math.min(1, k * k * 6 * dt)
+      if (this.fwd.y < 0) {
+        const ax = _w.crossVectors(this.fwd, UP)
+        if (ax.lengthSq() > 1e-6) {
+          ax.normalize()
+          _q.setFromAxisAngle(ax, Math.min(-this.fwd.y, (0.4 + 2.2 * k * k) * dt))
+          this.quat.premultiply(_q); this.quat.normalize(); this.axes()
+        }
+      }
     }
-    if (this.agl < 2) {
+    if (this.agl < 3) {
       const descent = -this.vel.y
-      this.pos.y = g + 2
-      if (this.vel.y < 0) this.vel.y = Math.abs(this.vel.y) * 0.3
-      // Nose up out of it.
-      if (this.fwd.y < 0) { _q.setFromAxisAngle(AX, -Math.min(0.5, -this.fwd.y) ); this.quat.multiply(_q); this.axes() }
-      if (this.ghost <= 0) this.hurt(descent > 60 ? 35 : 5, 'ground')
-      this.agl = 2
+      this.pos.y = g + 3
+      if (this.vel.y < 0) this.vel.y = 0
+      if (this.ghost <= 0 && descent > 40) this.hurt(descent > 220 ? 20 : 4, 'ground')
+      this.agl = 3
     }
     // Hard ceiling.
     if (this.agl > F.hardCeiling) this.pos.y = g + F.hardCeiling
