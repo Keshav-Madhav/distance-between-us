@@ -287,6 +287,8 @@ if (BIOME !== 'desert') {
     const step = zone === 'forest' ? 60 + rnd() * 160 : zone === 'glacier' ? 140 + rnd() * 260 : 380 + rnd() * 700
     j += Math.max(1, Math.round(step / 40))
   }
+  // CINDER: the course's stacks squat and broad (tall hex columns beside the course read as towers).
+  if (BIOME === 'lava') for (const h of heroes) if (h.kind === 'spire') { h.h *= 0.3; h.r *= 1.5 }
   world.addHeroes(heroes)
 }
 scene.add(world.group)
@@ -612,7 +614,7 @@ darts.onCharge = (d) => { sound.charge(d.pos.distanceTo(flight.pos)) }
 darts.onLockOn = () => { sound.beep(false) }
 darts.onLaunch = (d) => { if (d.kind === 'lancer') { sound.cannon(d.pos.distanceTo(flight.pos)); shake(0.2) } else { sound.missile(); warn('MISSILES', 'TURN HARD · AIR BRAKE TO SHAKE THEM'); warnT = 1.6 } }
 darts.onPlayerHit = (dmg, from) => {
-  if (player.dead) return
+  if (player.dead || flight.ghost > 0) return
   if (dmg >= 10) chain = Math.max(1, chain / 2)
   flight.damage(dmg); damageFlash = Math.min(1, damageFlash + dmg / 30); shake(Math.min(1, dmg / 20)); sound.hit(true)
   dmgFrom(tmp3.subVectors(flight.pos, from))
@@ -648,7 +650,7 @@ function huntCombatStep(): void {
   const nt = noseTarget()
   cannon.step(STEP, fireGun && !player.dead, flight, nt, rounds)
   if (cannon.fired) { if (Math.random() < 0.5) sound.pulse(); cannon.fired = 0 }
-  missiles.step(STEP, fireMsl && !player.dead, flight, darts.list, (m, t) => { t.hit(3, tmp3.copy(m.vel).normalize()); sound.hit(true) })
+  missiles.step(STEP, fireMsl && !player.dead, flight, darts.list, (m, t) => { t.hit(2, tmp3.copy(m.vel).normalize()); sound.hit(true) })
   darts.step(STEP, flight, rounds, (x, z, r) => world.topAt(x, z, r))
   darts.stepSeekers(STEP, flight)
   // Being locked: a tone that quickens as the lock builds.
@@ -660,7 +662,7 @@ function huntCombatStep(): void {
       for (const d of darts.list) if (d.alive && segDist(r.prev, r.pos, d.pos) < d.radius) { d.hit(r.dmg, tmp3.copy(r.vel).normalize()); sound.hit(false); hitMark(false); return true }
       return false
     }
-    if (!player.dead && segDist(r.prev, r.pos, flight.pos) < 9) { flight.damage(r.dmg); damageFlash = Math.min(1, damageFlash + 0.35); shake(0.25); sound.hit(true); dmgFrom(r.vel); return true }
+    if (!player.dead && flight.ghost <= 0 && segDist(r.prev, r.pos, flight.pos) < 9) { flight.damage(r.dmg); damageFlash = Math.min(1, damageFlash + 0.35); shake(0.25); sound.hit(true); dmgFrom(r.vel); return true }
     return false
   })
   for (const d of darts.list) {
@@ -668,7 +670,7 @@ function huntCombatStep(): void {
     d.killed = false
     kills++
     // The chain: kills within 3.5 s of each other build it (+0.25 each, up to ×4); a big hit halves it.
-    chain = chainT > 0 ? Math.min(4, chain + 0.25) : 1
+    chain = Math.min(4, chain + 0.25)
     chainT = 3.5
     const pts = Math.round(KINDS[d.kind].points * speedMul() * chain * (d.rearHit ? 1.5 : 1))
     score += pts
@@ -679,7 +681,9 @@ function huntCombatStep(): void {
     hitMark(true)
     flightPunch = 6
   }
-  chainT = Math.max(0, chainT - STEP); if (chainT === 0) chain = 1
+  // The chain fades rather than snapping back: -0.25 every 2 s once its window has passed.
+  chainT = Math.max(0, chainT - STEP)
+  if (chainT === 0 && chain > 1) { chainDecay += STEP; if (chainDecay >= 2) { chainDecay = 0; chain = Math.max(1, chain - 0.25) } } else chainDecay = 0
   waveAge += STEP
   // Darts ripping past close: a whoosh from their side (the closer, the louder).
   for (const d of darts.list) {
@@ -695,7 +699,7 @@ function huntCombatStep(): void {
   }
   // The run: six waves, each a mix, sent when the last is down; after the sixth, the hunt is won.
   // (A wave never stalls: after 75 s the next comes anyway — a straggler that wandered off held up the run.)
-  if ((darts.alive === 0 || waveAge > 75) && directorOn && !huntDone) {
+  if ((darts.alive === 0 || (waveAge > 75 && huntWave < HUNT_WAVES.length)) && directorOn && !huntDone) {
     waveT -= STEP
     if (waveT <= 0) {
       if (huntWave >= HUNT_WAVES.length) { huntDone = true; setTimeout(() => showHuntOver(true), 1600); flash('HUNT COMPLETE'); sound.fanfare(true); return }
@@ -717,7 +721,7 @@ function huntCombatStep(): void {
 let autoFire = false
 let huntDone = false
 let craftLeft = 3
-let chain = 1, chainT = 0, waveAge = 0
+let chain = 1, chainT = 0, waveAge = 0, chainDecay = 0
 let lockBeepT = 0
 /** HUNT's waves: [kind, how many] groups, and a banner for a new arrival. */
 const HUNT_WAVES: { groups: [Kind, number][]; note?: [string, string] }[] = [
@@ -1055,7 +1059,7 @@ function showCourse(): void {
     $('#tp-blurb').textContent = 'Six waves in the sky: darts, lancers, interceptors. Kills score more the faster you fly.'
     const cell = (v: string, l: string) => `<div><b>${v}</b><small>${l}</small></div>`
     $('#tp-stats').innerHTML = cell(BIOME === 'desert' ? 'Red Mesa' : BIOME === 'ice' ? 'Polar Shelf' : 'Cinder', 'World') + cell('× Mach', 'Score multiplier') + cell('6 waves', 'Then it ends') + cell((() => { try { return localStorage.getItem('dbu-hunt-best') ?? '—' } catch { return '—' } })(), 'Your best')
-    $('#tp-info').innerHTML = '<span class="kc">W S</span> pitch <span class="kc">A D</span> turn <span class="kc">Shift</span> throttle <span class="kc">Space</span> cannon <span class="kc">F</span> hold to lock, release to fire'
+    $('#tp-info').textContent = '' // (the keys are in the footer: they showed twice)
   } else drawTrackPreview(COURSES[pickedCourse])
 }
 /** The whole course, start at the bottom, finish at the top; across exaggerated so bends read. */
@@ -1200,7 +1204,7 @@ function drawTrackPreview(d: (typeof COURSES)[number]): void {
   // (Gates for the whole race, as the race screen counts them: the loaded course knows exactly.)
   const gates = d === course.def ? course.cps.length : Math.round((d.km * 1000 * (d.laps ?? 1)) / d.gateEvery) + 1
   $('#tp-stats').innerHTML = cell(`${d.km} km`, d.loop ? ((d.laps ?? 1) > 1 ? `Loop, ${d.laps} laps` : 'Loop') : 'Sprint') + cell(String(gates), 'Gates') + cell(String(d.racers ?? 10), 'Racers') +
-    cell(`${Math.round((turning / L) * 100)}%`, 'Turning') + cell(rmin > 20000 ? '—' : `${(rmin / 1000).toFixed(1)} km`, 'Tightest bend') +
+    cell(`${Math.round((turning / L) * 100)}%`, 'Turning') + cell(rmin > 20000 ? '—' : `${(rmin / 1000).toFixed(1)} km`, 'Tightest') +
     (d.jumps.length ? cell(String(d.jumps.length), 'Jumps') : spires ? cell(`~${spires}`, 'Spires') : '') + cell(bestOf(d.id) !== null ? fmtLap(bestOf(d.id)!) : '—', 'Your best') + cell(`${medalSvg(3, 14)}${fmtLap(medals(d)[0])}`, 'Gold time')
   const best = bestOf(d.id)
   $('#tp-info').innerHTML = ''
@@ -1387,7 +1391,7 @@ function startRace(): void {
   wrongT = offT = 0
   $('#title').classList.add('hide')
   $('#over').classList.add('hide')
-  document.body.classList.add('playing', 'racing')
+  document.body.classList.toggle('world-lava', BIOME === 'lava'); document.body.classList.add('playing', 'racing')
   hud.classList.add('on')
   raceEl.classList.add('on')
   standEl.classList.add('on')

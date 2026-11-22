@@ -24,6 +24,8 @@ export interface CourseDef {
   id: string
   /** Glowing ground lines down both edges and dashes down the middle (the route at a glance). */
   ribbons?: boolean
+  /** Medal pace (1 = the standard Mach 6.6 / 5.9 / 5.2 averages); twisty courses lower. */
+  medalPace?: number
   /** Loops: bends tighter than this (m) get three gates through them (default 1400). */
   tightR?: number
   name: string
@@ -108,6 +110,7 @@ export const SPRINT: CourseDef = {
  */
 export const DRY_RIVER: CourseDef = {
   id: 'dry-river',
+  medalPace: 0.82,
   name: 'DRY RIVER',
   blurb: 'TECHNICAL · SPIRE FOREST · HAIRPINS · JUMPS',
   km: 85,
@@ -226,6 +229,7 @@ const ovalPath = (() => {
 })()
 export const OVAL: CourseDef = {
   id: 'oval',
+  medalPace: 0.9,
   name: 'THE OVAL',
   blurb: 'TWO STRAIGHTS · TWO TIGHT ENDS · DRAFT AND BRAKE',
   km: Math.round(loopLength(ovalPath) / 100) / 10,
@@ -251,6 +255,7 @@ const canyonPath = (u: number): [number, number] => {
 }
 export const CANYON: CourseDef = {
   id: 'canyon',
+  medalPace: 0.93,
   name: 'CANYON RUN',
   blurb: 'A KIDNEY LOOP · ROCK WALLS CLOSE · DAWN',
   km: Math.round(loopLength(canyonPath) / 100) / 10,
@@ -310,6 +315,7 @@ const icefallPath = (u: number): [number, number] => {
 }
 export const ICEFALL: CourseDef = {
   id: 'icefall',
+  medalPace: 0.95,
   // (Wider than the desert's 260: these worlds crowd the line with landforms.)
   gateHalf: 340,
   ribbons: true,
@@ -544,7 +550,9 @@ export const TIMBERLINE: CourseDef = {
  *  (gold, silver, bronze); the drag at 9.6 / 8.6 / 7.6. */
 export function medals(d: CourseDef): [number, number, number] {
   const dist = d.km * 1000 * (d.laps ?? 1)
-  const m = d.drag ? [9.6, 8.6, 7.6] : [6.6, 5.9, 5.2]
+  // (Twisty courses have slower medals: their hairpins and stadium ends cost speed.)
+  const pace = d.medalPace ?? 1
+  const m = (d.drag ? [9.6, 8.6, 7.6] : [6.6, 5.9, 5.2]).map((x) => x * pace)
   return m.map((x) => Math.round((dist / (x * 343)) * 10) / 10) as [number, number, number]
 }
 export const COURSES: CourseDef[] = [SPRINT, DRY_RIVER, DRAG, CIRCUIT, OVAL, CANYON, FROSTLINE, ICEFALL, WHITEOUT, CALDERA, FAULTLINE, OBSIDIAN, GREENWAY, RIVERRUN, TIMBERLINE]
@@ -998,6 +1006,12 @@ export class Course {
       path(0)
       g.stroke()
     }
+    // Blue: the whole corridor, edge to edge (shaders that need "is this the course", e.g. CINDER's
+    // lava crusting over where the course crosses it).
+    g.strokeStyle = 'rgba(0,0,255,1)'
+    g.lineWidth = (this.gateHalf * 2 + 120) * kx
+    path(0)
+    g.stroke()
     let seed = 7
     const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647)
     for (let l = 0; l < 46; l++) {

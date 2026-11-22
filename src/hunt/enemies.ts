@@ -60,7 +60,7 @@ export class Dart implements Target {
     // A hit travelling the same way the Dart flies came from behind it: into the engine.
     this.rearHit = dir.dot(fwd) > 0.5
     this.hp -= dmg * (this.rearHit ? 2 : 1)
-    if (this.kind === 'lancer' && this.charge > 0 && !this.rearHit) this.charge = 0 // a hit on its nose spoils the shot
+    if (this.kind === 'lancer' && this.charge > 0 && !this.rearHit) { this.charge = 0; this.special = 2.5 } // a hit on its nose spoils the shot (and it must line up again)
     if (this.breakT <= 0) {
       this.breakT = 1.4
       this.breakDir.crossVectors(fwd, UP).normalize().multiplyScalar(Math.random() < 0.5 ? -1 : 1).addScaledVector(UP, (Math.random() - 0.3) * 0.6).normalize()

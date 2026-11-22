@@ -249,7 +249,9 @@ export class Player {
       target = Math.min(S.boostMach, this.maxMach) * MACH
       // Holding W keeps what the afterburner gave you (it never bleeds it away); below Mach 1 the
       // engines are still spooling — a slow start, then they bite.
-      k = this.speed > target ? 0 : S.boostK * (0.32 + 0.68 * THREE.MathUtils.smoothstep(m, 0.55, 1.15))
+      // Above it, a light drag (0.04/s): burner speed is something to manage, not a deposit kept all race
+      // (it decided races by 25 s, and the AI's speed ceiling did nothing).
+      k = this.speed > target ? 0.04 : S.boostK * (0.32 + 0.68 * THREE.MathUtils.smoothstep(m, 0.55, 1.15))
     }
     // (In the air there is nothing to push against: the engines only hold speed.)
     if (this.airborne) k *= 0.35

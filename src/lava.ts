@@ -55,7 +55,7 @@ function finish(pos: number[], glow: number[]): THREE.BufferGeometry {
 }
 
 /** Basalt massifs: columns on a hex grid inside a lobed outline, stepping down toward the edge. */
-function massif(seed: number, v: number) {
+export function massif(seed: number, v: number) {
   const r = rng(seed)
   const harm: [number, number][] = []
   for (let i = 2; i <= 5; i++) harm.push([(0.14 / i) * (0.4 + r()), r() * 6.28])
@@ -74,7 +74,7 @@ function massif(seed: number, v: number) {
     return Math.max(0.08, q * (v === 1 ? 0.75 + 0.25 * Math.cos(th - eph) : 1))
   }
   const pos: number[] = [], glow: number[] = []
-  const cr = 0.085 // column radius (unit)
+  const cr = 0.14 // column radius (unit) (bigger, fewer: small ones read as voxel dice)
   const dx = cr * Math.sqrt(3), dz = cr * 1.5
   const rot = r() * 0.4
   for (let iz = -14; iz <= 14; iz++) for (let ix = -16; ix <= 16; ix++) {
@@ -155,7 +155,8 @@ function stacks(seed: number, v: number) {
 }
 
 export function lavaGeometry(kind: LavaKind, seed: number, v: number): { geo: THREE.BufferGeometry; prof: Profile } {
-  if (kind === 'mesa') return massif(seed, v)
+  // (The column massifs read as a city skyline from the course: the big slot is broad volcanoes too.)
+  if (kind === 'mesa') return cone(seed + 17, v)
   if (kind === 'butte') return cone(seed, v)
   return stacks(seed, v)
 }

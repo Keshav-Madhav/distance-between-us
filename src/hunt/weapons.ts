@@ -132,7 +132,7 @@ export class Cannon {
   reset(): void { this.heat = 0; this.lockout = 0; this.cd = 0 }
 }
 
-export const MISSILE = { rack: 6, reload: 1.6, boxDeg: 16, lockTime: 0.3, maxLocks: 4, arm: 250, life: 6, accel: 600, extra: 900, turn: 2.4, dmg: 3, radius: 22, ripple: 0.1 }
+export const MISSILE = { rack: 6, reload: 3, boxDeg: 16, lockTime: 0.3, maxLocks: 4, arm: 250, life: 6, accel: 600, extra: 900, turn: 2.4, dmg: 2, radius: 22, ripple: 0.1 }
 
 export interface Missile { on: boolean; pos: THREE.Vector3; prev: THREE.Vector3; vel: THREE.Vector3; target: Target | null; life: number; travelled: number }
 

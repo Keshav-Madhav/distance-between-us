@@ -204,7 +204,7 @@ export class FlightCraft {
     // ── the ceiling: thin air pushes the nose down and stops the climb ──
     if (thin > 0) {
       if (this.vel.y > 0) this.vel.y *= 1 - thin
-      _q.setFromAxisAngle(AX, thin * 0.6 * dt * Math.sign(this.fwd.y)); if (this.fwd.y > 0) this.quat.multiply(_q)
+      if (this.fwd.y > 0) { _q.setFromAxisAngle(AX, thin * 0.6 * dt); this.quat.multiply(_q); this.axes() }
     }
 
     this.pos.addScaledVector(this.vel, dt)
@@ -331,7 +331,7 @@ export class FlightCam {
     this.upS.lerp(wantUp, 1 - Math.exp(-dt * 5)).normalize()
     this.fwdS.lerp(fwd, 1 - Math.exp(-dt * 10)).normalize()
     const cam = this.camera
-    cam.position.copy(at).addScaledVector(this.back, -13).addScaledVector(this.upS, 3.2)
+    cam.position.copy(at).addScaledVector(this.back, -14).addScaledVector(this.upS, 4.6)
     const g = groundH(cam.position.x, cam.position.z)
     if (cam.position.y < g + 1.6) cam.position.y = g + 1.6
     cam.up.copy(this.upS)

@@ -129,7 +129,7 @@ function skyMaterial(ground: boolean): THREE.ShaderMaterial {
         #elif defined(BIOME_ICE)
         c += vec3(1.0, 0.75, 0.6) * (smoothstep(0.99955, 0.9998, s) * 12.0 + pow(s, 900.0) * 2.0 + pow(s, 30.0) * 0.15 + pow(s, 4.0) * 0.05);
         #else
-        c += vec3(1.0, 0.9, 0.75) * (smoothstep(0.99955, 0.9998, s) * 40.0 + pow(s, 900.0) * 4.0 + pow(s, 30.0) * 0.4 + pow(s, 4.0) * 0.1);
+        c += vec3(1.0, 0.9, 0.75) * (smoothstep(0.99955, 0.9998, s) * 40.0 + pow(s, 900.0) * 4.0 + (pow(s, 30.0) * 0.4 + pow(s, 4.0) * 0.1) * ${BIOME === 'forest' ? '0.45' : '1.0'});
         #endif
         gl_FragColor = vec4(c, 1.0);
       }`,
@@ -366,7 +366,8 @@ function terrainMaterial(shared: GroundUniforms, snap: { value: THREE.Vector2 },
           #endif
         }
         vec3 s2 = texture2D(tSand, rot * p / 170.0 + 0.37, bias * 0.5).rgb;
-        vec3 sandT = mix(s1, s2, 0.45);
+        // (The fine tiling fades out with distance: from the air it made a moire grid.)
+        vec3 sandT = mix(s1, s2, mix(0.45, 1.0, smoothstep(250.0, 1800.0, length(vW - cameraPosition))));
         float gm = smoothstep(0.58, 0.72, fbmT(p * 0.0045 + 11.0) * 0.75 + fbmT(p * 0.03) * 0.32);
         vec3 grav = texture2D(tGravel, rot * p / 9.0, bias).rgb;
         vec3 clayT = texture2D(tClay, p / 13.0, bias).rgb;
@@ -434,6 +435,7 @@ function terrainMaterial(shared: GroundUniforms, snap: { value: THREE.Vector2 },
           alb = mix(alb, vec3(0.3, 0.32, 0.26), smoothstep(0.05, 0.3, river));
         }
         #endif
+        float lavaCrack = 0.0;
         #ifdef BIOME_LAVA
         // CINDER: black basalt sand, grey ash drifts where the gravel was, crusted banks to the lava.
         {
@@ -442,6 +444,7 @@ function terrainMaterial(shared: GroundUniforms, snap: { value: THREE.Vector2 },
           vec3 ashG = vec3(0.34, 0.31, 0.3) * (0.85 + 0.3 * dot(grav, vec3(0.333)));
           alb = mix(basalt, ashG, gm * 0.7);
           alb = mix(alb, vec3(0.04, 0.025, 0.02), smoothstep(0.1, 0.32, river));
+          lavaCrack = smoothstep(0.012, 0.0, abs(fbmT(p * 0.006 + 2.0) - 0.5)) * (0.6 + 0.4 * fbmT(p * 0.03));
         }
         #endif
         // The racing line, worn: packed and darker, the ripples gone, scorched lanes down it.
@@ -454,7 +457,7 @@ function terrainMaterial(shared: GroundUniforms, snap: { value: THREE.Vector2 },
           #elif defined(BIOME_LAVA)
           alb = mix(alb, vec3(0.32, 0.3, 0.29), pack * 0.75); // packed ash: a grey road on black sand
           #elif defined(BIOME_FOREST)
-          alb = mix(alb, vec3(0.36, 0.27, 0.17), pack * 0.85); // a dirt road through the grass
+          alb = mix(alb, vec3(0.28, 0.24, 0.17), pack * 0.6); // a dirt road through the grass (thin: the meadow shows)
           #else
           alb = mix(alb, mix(s2, vec3(dot(s2, vec3(0.33))), 0.25) * vec3(0.86, 0.74, 0.68), pack * 0.7);
           #endif
@@ -516,6 +519,13 @@ function terrainMaterial(shared: GroundUniforms, snap: { value: THREE.Vector2 },
         col += alb * vec3(0.12, 0.14, 0.06);
         #endif
         #ifdef BIOME_LAVA
+        // Hot cracks across the basalt off the road (the race showed brown ground, lava only on the map):
+        // glowing seams, faded far off (no shimmer) and kept off the course.
+        {
+          vec2 tl2 = (p - uTrackBox.xy) / uTrackBox.zw;
+          float road = (uTrackOn > 0.01 && tl2.x > 0.0 && tl2.y > 0.0 && tl2.x < 1.0 && tl2.y < 1.0) ? smoothstep(0.2, 0.6, texture2D(tTrack, tl2, 1.5).b) : 0.0;
+          col += vec3(3.0, 0.8, 0.12) * lavaCrack * (1.0 - road) * (1.0 - smoothstep(600.0, 3500.0, length(vW - cameraPosition)));
+        }
         // The lava: flowing, glowing, crusting over in plates; and its glow on the sand beside it.
         col += alb * vec3(0.16, 0.12, 0.12) + alb * vec3(0.35, 0.12, 0.04) * 0.6; // the orange sky's light on the ground
         if (river > 0.01) {
@@ -524,12 +534,12 @@ function terrainMaterial(shared: GroundUniforms, snap: { value: THREE.Vector2 },
           // Where the course crosses, the flow has cooled to a black crust with glowing cracks (a wide
           // blur of the course's wear map marks the corridor): you race over it, not through fire.
           vec2 tl = (p - uTrackBox.xy) / uTrackBox.zw;
-          float lane = (uTrackOn > 0.01 && tl.x > 0.0 && tl.y > 0.0 && tl.x < 1.0 && tl.y < 1.0) ? max(smoothstep(0.003, 0.03, texture2D(tTrack, tl, 6.0).r), smoothstep(0.02, 0.1, texture2D(tTrack, tl, 3.0).r)) : 0.0;
+          float lane = (uTrackOn > 0.01 && tl.x > 0.0 && tl.y > 0.0 && tl.x < 1.0 && tl.y < 1.0) ? smoothstep(0.25, 0.75, texture2D(tTrack, tl, 1.5).b) : 0.0;
           float cracks = smoothstep(0.03, 0.0, abs(fbmT(p * 0.02) - 0.5)) + 0.5 * smoothstep(0.02, 0.0, abs(fbmT(p * 0.06 + 3.0) - 0.5));
-          crust = mix(crust, 1.0 - min(1.0, cracks) * 0.6, lane);
-          vec3 hot = mix(vec3(3.4, 0.7, 0.09), vec3(4.6, 1.9, 0.35), fl) * (1.0 - 0.93 * crust);
+          crust = mix(crust, 1.0 - min(1.0, cracks) * 0.3, lane);
+          vec3 hot = mix(vec3(3.4, 0.7, 0.09), vec3(4.6, 1.9, 0.35), fl) * (1.0 - mix(0.93, 0.985, lane) * crust);
           col = mix(col, hot, smoothstep(0.3, 0.72, river));
-          col += vec3(0.5, 0.13, 0.03) * 0.5 * smoothstep(0.12, 0.32, river) * (1.0 - smoothstep(0.32, 0.72, river));
+          col += vec3(0.5, 0.13, 0.03) * 0.5 * smoothstep(0.12, 0.32, river) * (1.0 - smoothstep(0.32, 0.72, river)) * (1.0 - lane);
         }
         #endif
         // Sand glints: a few grains in each patch catch the sun toward you (near the camera, in sun,
@@ -889,7 +899,10 @@ export class World {
     patchStandard(spikeMat, { ice: true, spike: true, aur: AUR_T, shadow: true })
     this.spikeMat = spikeMat
     const r = rng(1234)
-    const kinds: [Kind, number, number][] = BIOME === 'forest'
+    const kinds: [Kind, number, number][] = BIOME === 'lava'
+      // CINDER: cinder cones first, a few basalt massifs (the column fields read as a city skyline).
+      ? [['mesa', 160, 2200], ['butte', 520, 1000], ['spire', 70, 900]]
+      : BIOME === 'forest'
       // VERDANT is a forest: groves everywhere, giant trees often, granite domes now and then.
       ? [['mesa', 360, 1500], ['butte', 1000, 380], ['spire', 520, 420]]
       : [
@@ -942,9 +955,9 @@ export class World {
         }
         if (LAVA) {
           // Massifs wide and low; cones broad (their slopes flare); stacks tall. Any size.
-          if (kind === 'mesa') { rad *= 1.1; h *= 0.55 }
+          if (kind === 'mesa') { rad *= 1.7; h *= 1.3 } // big volcanoes, broad slopes
           else if (kind === 'butte') { rad *= 1.8; h *= 0.9 }
-          else { rad *= 0.85; h *= 0.38 } // stacks: squat crags (tall hex towers read as skyscrapers)
+          else { rad *= 1.0; h *= 0.28 } // stacks: squat crags (tall hex towers read as skyscrapers)
           const sc = 0.5 + 1.8 * Math.pow(r(), 2)
           rad *= sc; h *= 0.6 + 0.4 * sc
         }

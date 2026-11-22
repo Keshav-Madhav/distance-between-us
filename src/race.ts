@@ -15,6 +15,8 @@ export interface Racer {
   color: number
   p: Player
   ai: boolean
+  /** This tick's rubber band (Mach). */
+  band?: number
   idx: number
   /** Gates passed in total (lap = floor((passed - 1) / K) + 1 once started). */
   passed: number
@@ -74,6 +76,8 @@ export interface RaceEvents {
   go(perfect: boolean): void
   missedGate?(r: Racer): void
 }
+
+const bandOf = (r: Racer) => r.band ?? 0
 
 export class Race {
   readonly racers: Racer[] = []
@@ -255,7 +259,7 @@ export class Race {
       if (!(s0 < 0 && s1 >= 0)) continue
       const lat = Math.abs((p.pos.x - c.x) * c.tz - (p.pos.z - c.z) * c.tx)
       if (lat > 2500) continue
-      // Through the gate, beside it, or past it having skipped one: every skipped/missed gate costs 2 s.
+      // Through the gate, beside it, or past it having skipped one: every skipped or missed gate costs speed (60% kept).
       const wide = lat > this.course.gateHalf + 15
       const missed = wide || ahead === 1
       const count = ahead + 1
@@ -458,13 +462,15 @@ export class Race {
     // (Up again after a playtest win from 10th: the field must hold Mach 6 like you do.)
     // (Narrowed: at -0.4…+0.6 the pack stayed within a second of you all race — places felt assigned.)
     const band = THREE.MathUtils.clamp(-gap / 2500, -0.2, 0.3)
+    r.band = band
     p.maxMach = THREE.MathUtils.clamp(5.3 + r.skill * 0.8 + band, 4.6, 6.3) + (this.course.def.aiPace ?? 0)
     const corner = p.mach > safe * 0.92
     ctl.boost = !corner && Math.abs(err) < 0.5
     // The afterburner on the long straights only (it locks the steering), and only when the line
     // and their lane are clear for a while; the bolder ones light it more.
     const clearAhead = !this.course.rocks.some((rk) => rk.i > r.idx && rk.i < r.idx + (p.speed * 3) / 40 && Math.abs(rk.lat - lane) < rk.r * 1.8 + 80)
-    ctl.burner = ctl.boost && bend < 0.06 && Math.abs(err) < 0.08 && clearAhead && p.mach > 3.5 && p.mach < 5.6 + r.skill * 2.4
+    // (The rubber band reaches the burner too: well ahead of you it lights it less.)
+    ctl.burner = ctl.boost && bend < 0.06 && Math.abs(err) < 0.08 && clearAhead && p.mach > 3.5 && p.mach < 5.6 + r.skill * 2.4 + bandOf(r) * 2
     ctl.brake = p.mach > safe * 1.08
     // Drag race: they race their own race, flat out — the same physics as you, a skill spread of a few
     // per cent in the burner's soft limit, and the slipstream. Nobody waits for you: drop to Mach 4 and

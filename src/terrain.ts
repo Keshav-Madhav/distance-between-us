@@ -165,7 +165,7 @@ const LIGHTS: Record<string, Light> = {
   // The Long Drag: late day, the sun low but the sky still blue.
   // Frostline: polar twilight — the sun just over the horizon, deep blue overhead, rose haze.
   // VERDANT: a clear highland morning — deep blue overhead, a pale horizon, a low warm sun.
-  meadow: { zenith: [0.09, 0.28, 0.72], horizon: [0.58, 0.72, 0.88], haze: [0.92, 0.86, 0.72], sunDir: [-0.62, 0.36, 0.68], fogK: 0.000068, sunCol: [2.45, 2.15, 1.75], tint: [1.02, 1.0, 0.94] },
+  meadow: { zenith: [0.09, 0.28, 0.72], horizon: [0.58, 0.72, 0.88], haze: [0.92, 0.86, 0.72], sunDir: [-0.62, 0.36, 0.68], fogK: 0.000048, sunCol: [2.45, 2.15, 1.75], tint: [1.02, 1.0, 0.94] },
   // CINDER: volcanic dusk — a smoky red sky, a low bloody sun, ash haze.
   ember: { zenith: [0.02, 0.018, 0.03], horizon: [0.3, 0.12, 0.07], haze: [0.85, 0.32, 0.12], sunDir: [-0.55, 0.05, 0.84], fogK: 0.000075, sunCol: [1.7, 0.75, 0.42], tint: [1.0, 0.62, 0.5] },
   polar: { zenith: [0.006, 0.014, 0.05], horizon: [0.17, 0.21, 0.38], haze: [0.78, 0.48, 0.52], sunDir: [0.6, 0.04, -0.8], fogK: 0.00006, sunCol: [1.5, 0.95, 0.8], tint: [0.85, 0.8, 1.0] },
@@ -217,7 +217,8 @@ vec3 aurora(vec3 d) {
     float curtain = smoothstep(-0.025, 0.035, above) * exp(-max(above, 0.0) * (4.5 + fk * 2.0));
     // Rays at uneven spacing: a warped phase, so they bunch and thin like real folds.
     float ph = az * 53.0 + 7.0 * sin(az * 4.0 + t + fk) + 3.0 * sin(az * 11.0 - t * 0.7);
-    float rays = 0.3 + 0.7 * pow(abs(sin(ph) * sin(az * 29.0 - t + fk * 1.3 + 2.0 * sin(az * 6.0))), 0.7);
+    // (Soft folds, not bars: the hard sine rays read as vertical stripes from the air.)
+    float rays = 0.55 + 0.45 * smoothstep(0.0, 1.0, abs(sin(ph * 0.6) * sin(az * 17.0 - t + fk * 1.3 + 2.0 * sin(az * 6.0))));
     // Curtains in a few bright folds with dark sky between, ends feathered.
     float dens = smoothstep(0.4, 0.95, 0.5 + 0.5 * sin(az * 2.0 + t * 0.7 + fk * 1.7) * sin(az * 1.0 - t * 0.45 + fk));
     vec3 col = mix(vec3(0.1, 1.0, 0.45), vec3(0.75, 0.22, 0.95), smoothstep(0.08, 0.35, above));
