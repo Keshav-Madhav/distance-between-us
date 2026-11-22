@@ -343,7 +343,7 @@ export class Sound {
   private ambG: GainNode | null = null
   private ambT = 0
   private startAmbience(): void {
-    if (BIOME === 'desert' || !this.ctx) return
+    if (BIOME === 'desert' || BIOME === 'space' || !this.ctx) return
     const ctx = this.ctx
     const g = ctx.createGain(); g.gain.value = 0
     g.connect(this.sfx); g.connect(this.verbIn)

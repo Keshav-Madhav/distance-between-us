@@ -113,6 +113,9 @@
   #worlds .w small { position: relative; display: block; font-size: 9px; letter-spacing: 0.22em; opacity: 0.85; margin-top: 4px; text-shadow: 0 1px 3px rgba(0,0,0,0.7); }
   #worlds .w[data-w=desert] { background: linear-gradient(180deg, rgba(120,170,230,0.55) 0%, rgba(235,170,110,0.5) 48%, rgba(170,70,30,0.75) 52%, rgba(120,45,20,0.8) 100%); }
   #worlds .w[data-w=forest] { background: linear-gradient(180deg, #2f6fcf 0%, #9cc6ea 48%, #dfe8d0 56%, #4f7a2a 57.5%, #2c4a18 100%); }
+  #worlds .w[data-w=space] { background: radial-gradient(circle at 70% 28%, #fff6dc 0, #ffd58a 3%, rgba(255,190,110,0.35) 9%, transparent 22%), radial-gradient(circle at 30% 70%, #3b6fb0 0, #24456f 9%, #0a1428 10.5%, transparent 11%), radial-gradient(1px 1px at 20% 30%, #fff 50%, transparent), radial-gradient(1px 1px at 80% 75%, #cde 50%, transparent), radial-gradient(1px 1px at 55% 50%, #fff 50%, transparent), #03050b; }
+  .sysmark { position: fixed; display: none; transform: translate(-50%, -150%); pointer-events: none; z-index: 5; font-size: 11px; letter-spacing: 0.25em; color: #cfe2ff; text-shadow: 0 1px 3px #000, 0 0 8px rgba(0,0,0,0.8); white-space: nowrap; }
+  .sysmark::after { content: ''; position: absolute; left: 50%; top: 150%; width: 9px; height: 9px; margin: -4px 0 0 -5px; border: 1px solid #9fd2ff; transform: rotate(45deg); }
   #worlds .w[data-w=jungle] { background: linear-gradient(180deg, #2a3430 0%, #56645c 46%, #7d8c82 54%, #22361f 56%, #0b150b 100%); }
   #worlds .w[data-w=jungle] .sun { width: 26px; height: 14px; left: 62%; top: 22%; border-radius: 50%; background: rgba(220,230,215,0.35); box-shadow: 0 0 22px 10px rgba(200,215,200,0.25); }
   #worlds .w[data-w=forest] .sun { width: 13px; height: 13px; left: 24%; top: 26%; background: #fffbe8; box-shadow: 0 0 16px 6px rgba(255,250,220,0.7); }
@@ -470,7 +473,7 @@
     <div id="worlds"></div>
     <div class="sec race-only course-only">Course</div>
     <div id="courses" class="race-only course-only"></div>
-    <div class="free-only huntinfo"><b>HOW IT PLAYS</b><p>The whole world and nothing to win. Leave the ground — off a jump, a cliff, a rock's top, or Space at speed — and you fly; touch down anywhere and drive on. Same keys on the ground and in the air. Nothing hurts.</p><p class="soon">Beams mark trails of five crystals: on the ground, on the summits, up in the sky.</p></div>
+    <div class="free-only huntinfo"><b>HOW IT PLAYS</b><p>The whole world and nothing to win. Leave the ground — off a jump, a cliff, a rock's top, or Space at speed — and you fly; touch down anywhere and drive on. Same keys on the ground and in the air. Nothing hurts.</p><p class="soon">Beams mark trails of five crystals: on the ground, on the summits, up in the sky.</p><p>Keep climbing and you leave the air: point the nose up and hold Shift. Climb out past 1,500 km (Shift cruises up there) and you are back among the worlds.</p></div>
     <div class="hunt-only huntinfo"><b>HOW IT PLAYS</b><p>Take off and hunt in the open sky. Six waves: darts in V-flights, lancers that fire down their nose, interceptors that lock you from behind.</p><p class="soon">Lead your shots on the gold ring. Kills score more the faster you fly.</p></div>
   </div>
   <div class="shipbar">

@@ -110,6 +110,10 @@ export class FlightCraft {
   sandbox = false
   /** 0 in the air … 1 in vacuum (set each step). */
   vac = 0
+  /** ORBIT: free space — no ground, no ceiling. */
+  unbound = false
+  /** ORBIT's cruise: a speed the craft eases to (m/s; 0 = off), above every other limit. */
+  cruise = 0
 
   get mach(): number { return this.speed / MACH }
 
@@ -206,14 +210,15 @@ export class FlightCraft {
     else { this.energyIdle += dt; if (this.energyIdle > 0.8) this.energy = Math.min(F.energyMax, this.energy + F.energyRefill * dt) }
     // (FREE ROAM: only where the world stops being drawn — the terrain reaches ~24 km.)
     // (FREE ROAM: up into space — src/space.ts; the limit is far beyond where the air ends.)
-    const soft = this.sandbox ? 380000 : F.softCeiling, hard = this.sandbox ? 400000 : F.hardCeiling
+    const soft = this.unbound ? Infinity : this.sandbox ? 1650000 : F.softCeiling, hard = this.unbound ? Infinity : this.sandbox ? 1700000 : F.hardCeiling
     /** 0 in the air … 1 in vacuum (FREE ROAM): no drag, the engines push harder, speed is free. */
     const vac = this.sandbox ? THREE.MathUtils.smoothstep(this.agl, 20000, 70000) : 0
     this.vac = vac
-    const thin = THREE.MathUtils.clamp((this.agl - soft) / (hard - soft), 0, 1)
+    const thin = this.unbound ? 0 : THREE.MathUtils.clamp((this.agl - soft) / (hard - soft), 0, 1)
     // Off the throttle the speed creeps toward cruise; Shift pushes hard (energy), or toward the
     // throttle speed when the energy is gone.
-    if (this.sandbox) {
+    if (this.cruise > 0) this.speed += (this.cruise - this.speed) * (1 - Math.exp(-2.4 * dt))
+    else if (this.sandbox) {
       // Held off the throttle (a little drag); W and Shift push toward their speeds, never pull back.
       const boost = 1 + 3 * vac
       if (c.brake) this.speed += Math.max(F.brakeMach * MACH - this.speed, -F.decel * 1.6 * boost * dt)
@@ -232,7 +237,7 @@ export class FlightCraft {
     this.speed -= F.gravity * Math.sin(gamma) * (1 - 0.8 * (this.vac ?? 0)) * dt
     // Drag in manoeuvres: pulling, turning and rolling hard all bleed speed (turns cost, straights pay).
     this.speed -= this.speed * (0.1 * Math.min(1, Math.abs(this.rates.x) / pitchMax) + 0.07 * Math.min(1, Math.abs(this.rates.y) / turnMax) + 0.02 * Math.min(1, Math.abs(this.rates.z) / F.rollRate)) * dt
-    this.speed = THREE.MathUtils.clamp(this.speed, F.floorMach * MACH, (this.sandbox ? THREE.MathUtils.lerp(14, 85, this.vac) : F.diveMach) * MACH)
+    this.speed = THREE.MathUtils.clamp(this.speed, F.floorMach * MACH, Math.max(this.cruise, (this.sandbox ? THREE.MathUtils.lerp(14, 85, this.vac) : F.diveMach) * MACH))
     this.topMach = Math.max(this.topMach, this.mach)
 
     // ── velocity follows the nose ──

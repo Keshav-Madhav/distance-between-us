@@ -19,13 +19,15 @@ export const PLANET_R = 6_371_000
 export const ATMO_TOP = 100_000
 
 /** Per world: scattering (1/km), scale heights (km), Mie's forward lobe, the ground and cloud look. */
-export const LOOK = {
+export const LOOKS = {
   desert: { amb: [0.3, 0.24, 0.2], g3: [0.3, 0.13, 0.07], br: [5.8e-3, 13.5e-3, 33.1e-3], bm: 0.03, hr: 8, hm: 1.6, g: 0.76, mieTint: [1, 0.95, 0.88], g1: [0.62, 0.32, 0.15], g2: [0.4, 0.17, 0.09], water: [0.8, 0.64, 0.45], cloud: [0.95, 0.95, 0.97], cov: [0.6, 0.86], sun: 22 },
   ice: { amb: [0.0, 0.0, 0.0], g3: [0.62, 0.74, 0.88], br: [5.8e-3, 13.5e-3, 33.1e-3], bm: 0.02, hr: 8, hm: 1.4, g: 0.76, mieTint: [1, 0.9, 0.95], g1: [0.86, 0.9, 0.97], g2: [0.55, 0.62, 0.75], water: [0.2, 0.34, 0.48], cloud: [0.95, 0.96, 1.0], cov: [0.7, 0.9], sun: 18 },
   lava: { amb: [0.75, 0.36, 0.2], g3: [0.24, 0.12, 0.08], br: [9e-3, 7e-3, 5e-3], bm: 0.05, hr: 9, hm: 2.5, g: 0.7, mieTint: [0.8, 0.5, 0.35], g1: [0.13, 0.11, 0.1], g2: [0.07, 0.05, 0.05], water: [1.8, 0.45, 0.06], cloud: [0.32, 0.27, 0.26], cov: [0.48, 0.74], sun: 16 },
   forest: { amb: [0.2, 0.25, 0.24], g3: [0.06, 0.1, 0.04], br: [5.8e-3, 13.5e-3, 33.1e-3], bm: 0.028, hr: 8, hm: 1.6, g: 0.76, mieTint: [1, 1, 0.95], g1: [0.15, 0.21, 0.08], g2: [0.25, 0.26, 0.12], water: [0.04, 0.12, 0.15], cloud: [0.96, 0.96, 0.98], cov: [0.52, 0.78], sun: 22 },
   jungle: { amb: [0.13, 0.16, 0.14], g3: [0.03, 0.07, 0.025], br: [5e-3, 11e-3, 22e-3], bm: 0.05, hr: 8, hm: 2.2, g: 0.72, mieTint: [0.8, 0.92, 0.84], g1: [0.05, 0.12, 0.04], g2: [0.09, 0.15, 0.05], water: [0.16, 0.11, 0.06], cloud: [0.62, 0.66, 0.63], cov: [0.2, 0.5], sun: 15 },
-}[BIOME]
+}
+export type PlanetBiome = keyof typeof LOOKS
+export const LOOK = LOOKS[BIOME === 'space' ? 'desert' : BIOME]
 
 /** Cloud cover at a world (x, z) — the same layer everywhere: the sky pass's shell from orbit, the
  *  cloud deck you fly up through (src/world.ts). Needs uCloudOff, fbmT, uAlt (km, for the detail's LOD). */
@@ -36,7 +38,10 @@ export const cloudGlsl = (alt: string) => /* glsl */ `
           //  25 km, and from orbit the bare pattern repeated hundreds of times — stamped flecks.)
           vec2 pc = xz + uCloudOff;
           vec2 wc = vec2(fbmT(pc * 0.00009 + 1.7), fbmT(pc * 0.00009 + 5.3)) - 0.5;
-          float base = fbmT(pc * 0.00032 + wc * 2.2) * 0.62 + fbmT(mat2(0.8, -0.6, 0.6, 0.8) * pc * 0.000131 + 3.1) * 0.38;
+          // (From hundreds of km up the fine octaves repeat hundreds of times across the view — a lace:
+          //  they give way to their mean and to a larger scale.)
+          float hiK = smoothstep(120.0, 700.0, ${alt});
+          float base = mix(fbmT(pc * 0.00032 + wc * 2.2), 0.5, hiK) * 0.62 + mix(fbmT(mat2(0.8, -0.6, 0.6, 0.8) * pc * 0.000131 + 3.1), fbmT(mat2(0.8, -0.6, 0.6, 0.8) * pc * 0.000019 + 8.4), hiK) * 0.38;
           // Weather: large clear regions and cloud bands, not an even scatter of puffs.
           float wx = fbmT(xz * 0.000011 + 4.0) * 0.7 + fbmT(xz * 0.0000037 + 9.0) * 0.3;
           base += (wx - 0.5) * 0.45;
@@ -64,7 +69,7 @@ export const cloudGlsl = (alt: string) => /* glsl */ `
 `
 /** A rotation of the star field per world (each world its own sky). */
 function skyRot(): string {
-  const seed = { desert: 0.3, ice: 1.9, lava: 3.1, forest: 4.4, jungle: 5.6 }[BIOME]
+  const seed = { desert: 0.3, ice: 1.9, lava: 3.1, forest: 4.4, jungle: 5.6, space: 0.3 }[BIOME]
   const m = new THREE.Matrix3().setFromMatrix4(new THREE.Matrix4().makeRotationFromEuler(new THREE.Euler(seed * 1.3, seed * 2.1, seed * 0.7)))
   return m.elements.map((x) => x.toFixed(5)).join(', ')
 }
@@ -358,6 +363,8 @@ export class Space {
   readonly scene = new THREE.Scene()
   readonly cam = new THREE.PerspectiveCamera() // (unused by the full-screen pass; a perspective one because passes are resized)
   readonly mat: THREE.ShaderMaterial
+  /** The full-screen quad (ORBIT draws the star system with it instead: src/system.ts). */
+  quad!: THREE.Mesh
   /** 0 at the ground … 1 in space (the HUD, the sky dome and the flight model read it). */
   vac = 0
   constructor() {
@@ -399,6 +406,7 @@ export class Space {
     const q = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), this.mat)
     q.frustumCulled = false
     this.scene.add(q)
+    this.quad = q
   }
 
   /** The game's sky dome, drawn over the space backdrop (fading as you climb). It lives here while you

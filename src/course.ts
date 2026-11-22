@@ -604,6 +604,24 @@ export const UNDERSTORY: CourseDef = {
   sections: [],
 }
 
+/** ORBIT: no course — the star system (src/system.ts). A short straight line exists only because a
+ *  world is built from a course; it is never shown. */
+export const ORBIT: CourseDef = {
+  id: 'orbit',
+  name: 'THE SYSTEM',
+  blurb: 'A STAR AND ITS FIVE WORLDS · FLY DOWN TO ANY OF THEM',
+  km: 20,
+  xAt: () => 0,
+  gateEvery: 5000,
+  jumps: [],
+  whoops: [],
+  padEvery: 9000,
+  spireGap: () => null,
+  rockGateP: 0,
+  seed: 113,
+  sections: [],
+}
+
 /** Medal times (s) for a course: its whole race distance at average speeds of Mach 6.6 / 5.9 / 5.2
  *  (gold, silver, bronze); the drag at 9.6 / 8.6 / 7.6. */
 export function medals(d: CourseDef): [number, number, number] {
@@ -613,7 +631,7 @@ export function medals(d: CourseDef): [number, number, number] {
   const m = (d.drag ? [9.6, 8.6, 7.6] : [6.6, 5.9, 5.2]).map((x) => x * pace)
   return m.map((x) => Math.round((dist / (x * 343)) * 10) / 10) as [number, number, number]
 }
-export const COURSES: CourseDef[] = [SPRINT, DRY_RIVER, DRAG, CIRCUIT, OVAL, CANYON, FROSTLINE, ICEFALL, WHITEOUT, CALDERA, FAULTLINE, OBSIDIAN, GREENWAY, RIVERRUN, TIMBERLINE, MISTRIVER, UNDERSTORY]
+export const COURSES: CourseDef[] = [SPRINT, DRY_RIVER, DRAG, CIRCUIT, OVAL, CANYON, FROSTLINE, ICEFALL, WHITEOUT, CALDERA, FAULTLINE, OBSIDIAN, GREENWAY, RIVERRUN, TIMBERLINE, MISTRIVER, UNDERSTORY, ORBIT]
 
 /** The race's line as points (x, z) every ~200 m, start to finish — for previews. */
 export function centerline(def: CourseDef): { xs: number[]; zs: number[] } {

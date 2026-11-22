@@ -11,8 +11,10 @@ const COURSE_ID: string = (() => {
   try { return new URLSearchParams(location.search).get('course') ?? localStorage.getItem('dbu-course') ?? 'sprint' } catch { return 'sprint' }
 })()
 /** The world: the desert, or FROSTLINE's arctic plateau (docs/MAP-FROSTLINE.md). */
-export type Biome = 'desert' | 'ice' | 'lava' | 'forest' | 'jungle'
-const COURSE_BIOME: Record<string, Biome> = { frostline: 'ice', icefall: 'ice', caldera: 'lava', faultline: 'lava', obsidian: 'lava', whiteout: 'ice', greenway: 'forest', riverrun: 'forest', timberline: 'forest', mistriver: 'jungle', understory: 'jungle' }
+/** 'space' is ORBIT: the star system (src/system.ts) — no ground of its own (it builds the desert's,
+ *  hidden). */
+export type Biome = 'desert' | 'ice' | 'lava' | 'forest' | 'jungle' | 'space'
+const COURSE_BIOME: Record<string, Biome> = { frostline: 'ice', icefall: 'ice', caldera: 'lava', faultline: 'lava', obsidian: 'lava', whiteout: 'ice', greenway: 'forest', riverrun: 'forest', timberline: 'forest', mistriver: 'jungle', understory: 'jungle', orbit: 'space' }
 /** Which world a course is in. */
 export const biomeOf = (id: string): Biome => COURSE_BIOME[id] ?? 'desert'
 export const BIOME: Biome = COURSE_BIOME[COURSE_ID] ?? 'desert'

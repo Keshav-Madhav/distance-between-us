@@ -22,7 +22,8 @@ import { Sound } from './audio'
 import { Input } from './input'
 import { Post } from './post'
 import { BIOME, biomeOf, type Biome, DUST, GREEN, groundH, SUN_DIR, WORLD_FADE } from './terrain'
-import { PLANET_R, Space, SPACE_U } from './space'
+import { PLANET_R, Space, SPACE_U, type PlanetBiome } from './space'
+import { PLANETS, StarSystem, STAR_R } from './system'
 /** Shadows are cast along the sun, but never stretched past a ~17° sun (a sun on the horizon threw them 100 m off). */
 const SHADOW_Y = Math.max(SUN_DIR[1], 0.3)
 import { loadTextures } from './textures'
@@ -55,7 +56,7 @@ let retired = false
 /** Freeze the view (next frame is copied to #freeze, then rendering stops): see the #freeze CSS. */
 let freezeWanted = false, frozen = false
 let swapPending: string | null = null
-function swapTo(id: string, go: boolean): void {
+function swapTo(id: string, go: boolean | string): void {
   if (swapPending) return
   try { localStorage.setItem('dbu-course', id) } catch { /* blocked */ }
   freezeWanted = true
@@ -66,12 +67,12 @@ function swapTo(id: string, go: boolean): void {
   else hostSwap(id, go)
 }
 let hosting: { frame: HTMLIFrameElement | null; busy: boolean } = { frame: null, busy: false }
-function hostSwap(id: string, go: boolean): void {
+function hostSwap(id: string, go: boolean | string): void {
   if (hosting.busy) return
   hosting.busy = true
   const u = new URL(location.href)
   u.searchParams.set('course', id); u.searchParams.set('embed', '1')
-  if (go) u.searchParams.set('go', '1'); else u.searchParams.delete('go')
+  if (go) u.searchParams.set('go', go === true ? '1' : go); else u.searchParams.delete('go')
   const f = document.createElement('iframe')
   f.src = u.toString()
   f.allow = 'autoplay; fullscreen; gamepad'
@@ -91,6 +92,7 @@ function hostSwap(id: string, go: boolean): void {
       f.contentWindow?.focus()
       hosting = { frame: f, busy: false }
       const top = new URL(location.href); top.searchParams.set('course', id); top.searchParams.delete('embed'); top.searchParams.delete('go')
+      void go
       history.replaceState(null, '', top.toString())
     }, 750)
   }
@@ -153,6 +155,7 @@ const WORLDS = [
   { id: 'lava', name: 'CINDER', blurb: 'Lava fields at dusk' },
   { id: 'forest', name: 'VERDANT', blurb: 'Meadow and forest' },
   { id: 'jungle', name: 'MONSOON', blurb: 'Rainforest under mist' },
+  { id: 'space', name: 'ORBIT', blurb: 'The star and its worlds' },
 ] as const
 let pickedWorld: Biome = biomeOf(courseDef.id)
 const bestKey = (id: string) => `dbu-best-${id}`
@@ -1026,7 +1029,12 @@ function showCourse(): void {
     void n
     worlds.append(el)
   }
-  for (const el of worlds.children) (el as HTMLElement).classList.toggle('on', (el as HTMLElement).dataset.w === pickedWorld)
+  for (const el of worlds.children) {
+    const e = el as HTMLElement
+    e.classList.toggle('on', e.dataset.w === pickedWorld)
+    // ORBIT is somewhere to fly, not to race: FREE ROAM only.
+    if (e.dataset.w === 'space') e.style.display = menuMode === 'free' ? '' : 'none'
+  }
   const cards = $('#courses')
   if (!cards.childElementCount) COURSES.forEach((_d, i) => {
     const el = document.createElement('div')
@@ -1085,6 +1093,12 @@ function showCourse(): void {
     const cell = (v: string, l: string) => `<div><b>${v}</b><small>${l}</small></div>`
     $('#tp-stats').innerHTML = cell(WORLDS.find((w) => w.id === BIOME)?.name ?? '', 'World') + cell('× Mach', 'Score multiplier') + cell('6 waves', 'Then it ends') + cell((() => { try { return localStorage.getItem('dbu-hunt-best') ?? '—' } catch { return '—' } })(), 'Your best')
     $('#tp-info').textContent = '' // (the keys are in the footer: they showed twice)
+  } else if (menuMode === 'free' && IN_SYSTEM) {
+    $('#tp-name').textContent = 'ORBIT'
+    $('#tp-blurb').textContent = 'A star and its five worlds. Hold Shift to cruise between them; fly down to any one and you are there.'
+    const cell = (v: string, l: string) => `<div><b>${v}</b><small>${l}</small></div>`
+    $('#tp-stats').innerHTML = cell('5', 'Worlds') + cell('Shift', 'Cruise') + cell('1,500 km', 'Fly down below') + cell('1,500 km', 'Climb out above')
+    $('#tp-info').textContent = ''
   } else if (menuMode === 'free') {
     $('#tp-name').textContent = 'FREE ROAM'
     $('#tp-blurb').textContent = 'No race, no clock, no damage. Drive up any rock and launch off it, take off and fly, land anywhere.'
@@ -1274,7 +1288,7 @@ function pickShip(delta: number): void {
 }
 function menuStart(): void {
   if (menuMode === 'hunt') { startHunt(); return }
-  if (menuMode === 'free') { if (!swapPending) startFree(); return }
+  if (menuMode === 'free') { if (!swapPending) { if (IN_SYSTEM) startSystem(null); else startFree() } return }
   try { localStorage.setItem('dbu-course-' + biomeOf(COURSES[pickedCourse].id), COURSES[pickedCourse].id) } catch { /* blocked */ }
   if (swapPending) return
   if (COURSES[pickedCourse] !== course.def) { swapTo(COURSES[pickedCourse].id, true); return }
@@ -1316,7 +1330,12 @@ function toTitle(): void {
   document.body.classList.remove('playing', 'racing')
   showCourse()
 }
-for (const b of $('#title').querySelectorAll<HTMLButtonElement>('.tabs button')) b.onclick = () => { menuMode = b.dataset.mode as 'race' | 'hunt' | 'free'; showCourse() }
+for (const b of $('#title').querySelectorAll<HTMLButtonElement>('.tabs button')) b.onclick = () => {
+  menuMode = b.dataset.mode as 'race' | 'hunt' | 'free'
+  // RACE or HUNT from ORBIT: down to RED MESA (there is nothing to race out there).
+  if (menuMode !== 'free' && pickedWorld === 'space') { pickedWorld = 'desert'; pickedCourse = 0; showCourse(); swapTo(COURSES[0].id, false); return }
+  showCourse()
+}
 $('#ship-prev').onclick = () => pickShip(-1)
 $('#ship-next').onclick = () => pickShip(1)
 for (const ev of ['mouseenter', 'focus'] as const) $('#start').addEventListener(ev, () => { titleRev = true })
@@ -1330,7 +1349,7 @@ $('#start').onclick = () => { sound.start(); menuStart() }
 $('#open-settings').onclick = () => { $('#pause').classList.remove('hide'); $('#pause').classList.add('from-title') }
 $('#p-close').onclick = () => { $('#pause').classList.add('hide'); setTimeout(() => { if ($('#pause').classList.contains('hide')) $('#pause').classList.remove('from-title') }, 320) }
 $('#p-resume').onclick = () => setPaused(false)
-$('#p-restart').onclick = () => { setPaused(false); if (mode === 'hunt') startHunt(); else if (mode === 'free') startFree(); else startRace() }
+$('#p-restart').onclick = () => { setPaused(false); if (mode === 'hunt') startHunt(); else if (mode === 'free') { if (IN_SYSTEM) startSystem(null); else startFree() } else startRace() }
 $('#p-menu').onclick = () => toTitle()
 $('#pausebtn').onclick = () => { if (mode !== 'title' && !overlay) setPaused(!paused) }
 $('#b-again').onclick = () => { if (mode === 'hunt') startHunt(); else startRace() }
@@ -1501,7 +1520,7 @@ let freeAir = false, freeAirT = 0
 let camBlend = 0, landBlend = 0
 const camFromOff = new THREE.Vector3(), camFromQ = new THREE.Quaternion()
 const landQ = new THREE.Quaternion(), landTmpQ = new THREE.Quaternion()
-const FREE_HINTS = ['<b>W · SHIFT</b>THROTTLE · BURNER (GROUND AND AIR)', '<b>A D · S</b>STEER · BRAKE', '<b>SPACE · C</b>NOSE UP · NOSE DOWN', '<b>AIRBORNE</b>YOU FLY · LET GO AND YOU GLIDE DOWN', '<b>NO DAMAGE</b>DRIVE UP ANY ROCK, LAUNCH OFF THE TOP', '<b>BEAMS</b>CRYSTAL TRAILS · TAKE ALL FIVE'].map((h) => `<div>${h}</div>`).join('')
+const FREE_HINTS = ['<b>W · SHIFT</b>THROTTLE · BURNER (GROUND AND AIR)', '<b>A D · S</b>STEER · BRAKE', '<b>SPACE · C</b>NOSE UP · NOSE DOWN (IT STAYS WHERE YOU POINT IT)', '<b>TO SPACE</b>POINT THE NOSE UP, HOLD SHIFT · PAST 80 KM YOU ARE IN ORBIT', '<b>NO DAMAGE</b>DRIVE UP ANY ROCK, LAUNCH OFF THE TOP', '<b>BEAMS</b>CRYSTAL TRAILS · TAKE ALL FIVE'].map((h) => `<div>${h}</div>`).join('')
 function camBlendStart(): void { camFromOff.subVectors(camera.position, renderPos); camFromQ.copy(camera.quaternion); camBlend = 1 }
 function freeOff(): void {
   freeAir = false
@@ -1612,10 +1631,10 @@ function readFree(): void {
   fTurn += THREE.MathUtils.clamp(turn - fTurn, -STEP * 6, STEP * 6)
   fPitch += THREE.MathUtils.clamp(pitch - fPitch, -STEP * 5, STEP * 5)
   fc.turn = fTurn
-  // Flight assist: no pitch held → ease the nose toward a glide — about 5° down near the ground, steeper
-  // (~14°) high up, so letting go always brings you back down in a few seconds, not half a minute.
-  const glide = 0.09 + 0.16 * THREE.MathUtils.smoothstep(flight.agl, 150, 1200)
-  fc.pitch = Math.abs(fPitch) > 0.05 ? fPitch : THREE.MathUtils.clamp(-(flight.fwd.y + glide) * 2.5, -0.35, 0.35)
+  // Hands off: the nose stays where you put it (attitude hold, as in other flying games). (It used to
+  // ease into a glide: any climb you let go of turned back down — tools/climb.mjs peaked at 7 km and
+  // fell back; nobody could reach space.)
+  fc.pitch = fPitch
   fc.aim = null
 }
 
@@ -1636,10 +1655,132 @@ const post = new Post(renderer, scene, camera, TIERS[tier].samples)
 // Space (src/space.ts): behind everything, only once you climb in FREE ROAM.
 const space = new Space()
 space.addSky(world.sky)
+// ORBIT (src/system.ts): the star system, drawn where the planet view would be; nothing of the
+// flat world shows (only its lights are kept, to light the ship).
+const IN_SYSTEM = BIOME === 'space'
+const system = IN_SYSTEM ? new StarSystem() : null
+if (system) {
+  space.quad.material = system.mat
+  for (const o of world.group.children) if (!(o as THREE.Light).isLight) o.visible = false
+}
+/** The ship in the system (metres from the star); the craft itself stays at ANCHOR, the system moves. */
+const sysPos = new THREE.Vector3()
+const ANCHOR = new THREE.Vector3(0, 50000, 0)
+const sysEye = new THREE.Vector3()
+const _sv = new THREE.Vector3(), _sn = new THREE.Vector3(), _st = new THREE.Vector3()
+/** Into ORBIT's flight: by a planet — the one you climbed out of (moving out, at its pitch and speed),
+ *  or RED MESA's sunlit side, 60,000 km out, facing it. */
+function startSystem(from: { biome: PlanetBiome; pitch: number; speed: number } | null): void {
+  startFree()
+  shards.hide()
+  takeOff(0)
+  flight.unbound = true
+  flight.ground = () => -1e15
+  const pl = PLANETS.find((p) => p.biome === (from?.biome ?? 'desert'))!
+  const toStar = _sn.copy(pl.pos).negate().normalize()
+  let fwd: THREE.Vector3
+  if (from) {
+    // Out of its sunlit side, a little off the line to the star (so you see it lit as you leave).
+    const n = toStar.clone().add(_st.set(-toStar.z, 0.25, toStar.x).multiplyScalar(0.55)).normalize()
+    sysPos.copy(pl.pos).addScaledVector(n, PLANET_R + 1560000)
+    const t = _st.crossVectors(n, new THREE.Vector3(0, 1, 0)).normalize()
+    const a = Math.max(0.12, from.pitch)
+    fwd = n.clone().multiplyScalar(Math.sin(a)).addScaledVector(t, Math.cos(a)).normalize()
+  } else {
+    sysPos.copy(pl.pos).addScaledVector(toStar, PLANET_R + 6e7)
+    fwd = toStar.clone().negate()
+  }
+  flight.launch(ANCHOR, Math.atan2(fwd.x, fwd.z), from ? Math.min(from.speed, 85 * MACH) : 3 * MACH, Math.asin(THREE.MathUtils.clamp(fwd.y, -1, 1)))
+  flight.syncTo(player)
+  fcam.snap()
+  camBlend = 0
+  runTime = 0
+}
+/** Arriving at a planet from ORBIT: high above it, coming down at the angle and speed you flew in. */
+function arriveFree(pitch: number, speed: number): void {
+  startFree()
+  takeOff(0)
+  const h = player.heading
+  // (Straight at the planet's centre was a vertical plunge: the descent is bent to at most ~30°.)
+  flight.launch(_sv.set(player.pos.x, flight.ground(player.pos.x, player.pos.z) + 1450000, player.pos.z), h, Math.min(speed, 85 * MACH), THREE.MathUtils.clamp(pitch, -0.52, -0.05))
+  flight.syncTo(player)
+  fcam.snap()
+  camBlend = 0
+  runTime = 0
+}
+/** ORBIT's step: flight in free space, cruise, the system moving past the anchored craft, arrival. */
+function systemStep(): void {
+  if (!flyForced) readFree()
+  const nb = system!.nearest(sysPos)
+  // Cruise: Shift scales the speed with the distance to the nearest body (half of it a second) — a
+  // planet millions of km off is seconds away, and you slow by yourself as you close on anything.
+  const safe = 0.5 * Math.max(nb.alt, 0)
+  const top = 85 * MACH
+  if (fc.burner && safe > top) flight.cruise = safe
+  else if (flight.speed > top) flight.cruise = Math.min(flight.speed * Math.exp(-1.4 * STEP), Math.max(safe, top))
+  else flight.cruise = 0
+  flight.step(STEP, fc, world)
+  // The system moves, not the craft (it stays where the GPU's precision is).
+  _sv.subVectors(flight.pos, ANCHOR)
+  sysPos.add(_sv)
+  flight.pos.sub(_sv); flight.prev.sub(_sv)
+  // Never into the star.
+  if (sysPos.length() < STAR_R + 5e7) sysPos.setLength(STAR_R + 5e7)
+  flight.syncTo(player)
+  player.hull = 100
+  { const v = visuals.get(player)!; for (const t of [...v.trail, ...v.vapour]) t.reset() }
+  runTime += STEP
+  // Down to a planet: within 400 km of it, heading in — that world takes over, mid-descent.
+  const n2 = system!.nearest(sysPos)
+  if (n2.i >= 0 && !swapPending && runTime > 2) {
+    const pl = PLANETS[n2.i]
+    const rn = _sn.subVectors(sysPos, pl.pos).normalize()
+    const radial = flight.vel.dot(rn)
+    if (n2.alt < 50000) sysPos.copy(pl.pos).addScaledVector(rn, PLANET_R + 50000)
+    if (n2.alt < 1500000 && radial < 0) {
+      const id = COURSES.find((c) => biomeOf(c.id) === pl.biome)!.id
+      const pitch = Math.asin(THREE.MathUtils.clamp(flight.fwd.dot(rn), -1, 1))
+      swapTo(id, `arrive:${pitch.toFixed(3)}:${Math.round(flight.speed)}`)
+    }
+  }
+}
+// The planets' names over them, with the distance (ORBIT).
+const sysMarks = IN_SYSTEM ? PLANETS.map(() => { const el = document.createElement('div'); el.className = 'sysmark'; document.body.append(el); return el }) : []
+function drawSysMarks(): void {
+  const show = IN_SYSTEM && mode === 'free'
+  PLANETS.forEach((p, i) => {
+    const el = sysMarks[i]
+    if (!show) { el.style.display = 'none'; return }
+    _sv.subVectors(p.pos, sysEye)
+    const dist = _sv.length() - PLANET_R
+    _sv.normalize().multiplyScalar(1000).add(camera.position).project(camera)
+    if (_sv.z > 1 || Math.abs(_sv.x) > 1.05 || Math.abs(_sv.y) > 1.05) { el.style.display = 'none'; return }
+    el.style.display = 'block'
+    el.style.left = `${(_sv.x * 0.5 + 0.5) * innerWidth}px`
+    el.style.top = `${(-_sv.y * 0.5 + 0.5) * innerHeight}px`
+    const km = dist / 1000
+    const txt = `${p.name} · ${km > 1e6 ? (km / 1e6).toFixed(1) + 'M KM' : km > 10000 ? Math.round(km / 1000) + 'K KM' : Math.round(km) + ' KM'}`
+    if (el.textContent !== txt) el.textContent = txt
+  })
+}
 post.attachSpace(space.scene, camera)
 /** Climbing: the sky dome thins, the flat world dissolves into the planet, the haze thins. */
 let spaceOff = false
 function updateSpace(): void {
+  if (system) {
+    post.setSpace(true)
+    world.sky.visible = false; world.deck.visible = false
+    const sm0 = (world.sky.material as THREE.ShaderMaterial).uniforms
+    sm0.uAir.value = 0
+    sysEye.copy(sysPos).add(camera.position).sub(ANCHOR)
+    system.update(camera, sysEye, time)
+    space.vac = 1
+    world.hemi.intensity = world.hemiK * 0.12
+    world.sunLight.position.copy(sysEye).negate().normalize() // (the star lights the ship)
+    WORLD_FADE.uWorldFade.value.set(0, 1, 1, 1)
+    drawSysMarks()
+    return
+  }
   const alt = camera.position.y
   const on = mode === 'free' && alt > 2500 && !spaceOff
   post.setSpace(on)
@@ -1862,6 +2003,12 @@ function rebase(): void {
 /** The menu's flight: your ship flat out down the course (the AI's line round the spires), never
  *  colliding, back to the start before the finish. */
 function titleStep(): void {
+  if (IN_SYSTEM) {
+    // ORBIT's title: the ship drifting by RED MESA (the camera orbits it).
+    player.pos.copy(ANCHOR); player.prev.copy(ANCHOR); player.speed = 0.3 * MACH
+    player.prevHeading = player.heading; player.heading += STEP * 0.03
+    return
+  }
   const me = race.racers[0]
   me.idx = course.nearest(player.pos.x, player.pos.z, me.idx)
   if (me.idx > course.finishI - 150 || player.crashing || player.spin > 0) {
@@ -1917,14 +2064,26 @@ function simStep(): void {
     rebase()
     if (!player.dead) runTime += STEP
 
+  } else if (mode === 'free' && system) {
+    systemStep()
   } else if (mode === 'free') {
     if (freeAir) {
       if (!flyForced) readFree()
+      // Above the air, cruise as in ORBIT: Shift scales the speed with the height (half of it a second),
+      // so climbing out to 1,500 km or coming down from it takes seconds, not minutes.
+      {
+        const top = 85 * MACH, safe = 0.5 * Math.max(flight.agl - 60000, 0)
+        if (flight.vac > 0.95 && fc.burner && safe > top) flight.cruise = safe
+        else if (flight.speed > top) flight.cruise = Math.min(flight.speed * Math.exp(-1.4 * STEP), Math.max(safe, top))
+        else flight.cruise = 0
+      }
       flight.step(STEP, fc, world)
       flight.syncTo(player)
       freeAirT += STEP
       // Down on the surface (coming down, not skimming up off it): grip takes over, you drive on.
       if (freeAirT > 0.8 && flight.agl < 5 && flight.vel.y <= 0) touchDown()
+      // Out of the top of the air: back to ORBIT, by this planet — pick another from up there.
+      if (flight.agl > 1520000 && flight.vel.y > 0 && runTime > 4 && !swapPending) swapTo('orbit', `sys:${BIOME}:${Math.asin(THREE.MathUtils.clamp(flight.fwd.y, -1, 1)).toFixed(3)}:${Math.round(flight.speed)}`)
     } else {
       player.step(STEP, forced ?? input.c, world)
       sinceLand += STEP
@@ -2397,7 +2556,7 @@ function frame(now: number): void {
 
   const me = race.racers[0]
   course.update(mode === 'race' ? me.next : -1, time, false)
-  course.group.visible = mode === 'race' || mode === 'title'
+  course.group.visible = (mode === 'race' || mode === 'title') && !IN_SYSTEM
   world.ground.uTrackOn.value = mode === 'hunt' || mode === 'free' ? 0 : course.def.wear ?? 1
   if (mode === 'free') shards.draw(time)
 
@@ -2567,6 +2726,11 @@ function updateHud(dt: number, slow: boolean): void {
   machNum.textContent = orbital ? (player.speed / 1000).toFixed(2) : m.toFixed(2)
   kmsEl.textContent = orbital ? `MACH ${m.toFixed(1)}` : `${(player.speed / 1000).toFixed(2)} KM/S`
   if (machLab.textContent !== (orbital ? 'KM/S' : 'MACH')) machLab.textContent = orbital ? 'KM/S' : 'MACH'
+  // Cruising (ORBIT): thousands of km/s; past 100,000 km/s as a fraction of light speed.
+  if (orbital && player.speed > 1e5) {
+    machNum.textContent = player.speed > 1e8 ? `${(player.speed / 2.998e8).toFixed(2)}c` : Math.round(player.speed / 1000).toLocaleString('en')
+    kmsEl.textContent = player.speed > 1e8 ? `${Math.round(player.speed / 1000).toLocaleString('en')} KM/S` : 'CRUISE'
+  }
   for (let i = 0; i < 6; i++) {
     barCells[i].classList.toggle('on', m >= i + 0.5 || m > i + 1)
     barCells[i].classList.toggle('white', m >= 5.9)
@@ -2596,7 +2760,7 @@ function updateHud(dt: number, slow: boolean): void {
   bn.style.display = player.burning && !(mode === 'free' && freeAir) ? 'block' : 'none'
   bn.className = fighting ? 'fight' : ''
   bn.innerHTML = fighting ? 'RELEASE <b>SHIFT</b> TO TURN' : 'AFTERBURNER · <b>STEERING LOCKED</b>'
-  $('#grip').classList.toggle('locked', player.burning)
+  $('#grip').classList.toggle('locked', player.burning && mode === 'race')
   // In a wake: the camera shakes with it.
   if (player.wake > 0.15) cam.trauma = Math.max(cam.trauma, player.wake * 0.45)
   // Drift charge levels: felt, not read — a thunk, a rumble and a camera nudge at each level.
@@ -2722,7 +2886,14 @@ function updateHud(dt: number, slow: boolean): void {
     $('#gmark').style.display = 'none'
     $('#gmark2').style.display = 'none'
     lockEl.style.display = 'none'
-    if (slow) {
+    if (slow && system) {
+      const nb = system.nearest(sysPos)
+      const name = nb.i >= 0 ? PLANETS[nb.i].name : 'THE STAR'
+      const km = nb.alt / 1000
+      scoreNum.textContent = name
+      if ($('#score .lab').textContent !== 'NEAREST') $('#score .lab').textContent = 'NEAREST'
+      scoreSub.innerHTML = `${km > 1e6 ? (km / 1e6).toFixed(2) + ' MILLION KM' : Math.round(km).toLocaleString('en') + ' KM'} ABOVE IT<br/>${flight.cruise > 0 ? '<b style="color:#9fd2ff">CRUISE</b>' : 'HOLD SHIFT TO CRUISE'} · BELOW 1,500 KM YOU ARE THERE<br/>${fmtTime(runTime)}`
+    } else if (slow) {
       scoreNum.textContent = String(shards.taken)
       const alt = Math.max(0, Math.round(player.pos.y - groundH(player.pos.x, player.pos.z)))
       const altTxt = alt < 10000 ? `${alt} M` : `${(alt / 1000).toFixed(alt < 100000 ? 1 : 0)} KM`
@@ -3133,13 +3304,21 @@ bootMark('warm'); loadBar.style.width = '100%'
 $('#loading').classList.add('hide')
 $('#title').classList.remove('hide')
 requestAnimationFrame((t) => { last = t; frame(t) })
+if (IN_SYSTEM) {
+  menuMode = 'free'; pickedWorld = 'space'
+  const pl = PLANETS.find((q) => q.biome === 'desert')!
+  sysPos.copy(pl.pos).addScaledVector(_sn.copy(pl.pos).negate().normalize(), PLANET_R + 2.2e7)
+}
 showCourse()
 // Picked a different course on the title: it has loaded — straight into the race.
 try { if (sessionStorage.getItem('dbu-go')) { sessionStorage.removeItem('dbu-go'); startRace() } } catch { /* blocked */ }
 // Booted inside a swap frame: tell the host once two frames have drawn (shaders compiled, warm).
 if (window.parent !== window) {
   requestAnimationFrame(() => requestAnimationFrame(() => {
-    if (params.get('go')) startRace()
+    const go = params.get('go')
+    if (go === '1') startRace()
+    else if (go?.startsWith('arrive:')) { const [, p, v] = go.split(':'); menuMode = 'free'; showCourse(); arriveFree(+p, +v) }
+    else if (go?.startsWith('sys:')) { const [, b, p, v] = go.split(':'); menuMode = 'free'; showCourse(); startSystem({ biome: b as PlanetBiome, pitch: +p, speed: +v }) }
     window.parent.postMessage({ type: 'dbu-ready' }, location.origin)
   }))
 }
@@ -3178,6 +3357,6 @@ const g = {
   }),
   player, race, course, combat, flight, fc, CFG, world, scene, camera, post, fx, input, wreckage, shards,
   spaceOff: (v: boolean) => { spaceOff = v },
-  free: () => startFree(), fly: () => takeOff(0.3), get freeAir() { return freeAir },
+  free: () => startFree(), system: () => startSystem(null), get sys() { return { pos: sysPos, planets: PLANETS, near: system?.nearest(sysPos) } }, fly: () => takeOff(0.3), get freeAir() { return freeAir },
 }
 ;(window as unknown as { __g: typeof g }).__g = g
