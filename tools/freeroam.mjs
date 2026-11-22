@@ -46,14 +46,17 @@ await shot('2-climb')
 await p.evaluate(() => { Object.assign(window.__g.fc, { pitch: 0, turn: 0.6 }) })
 console.log(JSON.stringify(await run(5, 'turn')))
 await shot('3-fly')
-await p.evaluate(() => { window.__g.fly() }) // drop
-console.log(JSON.stringify(await run(1.5, 'drop')))
-await shot('4-drop')
-console.log(JSON.stringify(await run(8, 'fall+land')))
-await shot('5-landed')
-// Fly down gently to touch down on its own.
-await p.evaluate(() => { const g = window.__g; g.fly(); Object.assign(g.fc, { pitch: -0.5, turn: 0, burner: false }) })
-console.log(JSON.stringify(await run(10, 'glide-down')))
+// Dive down to touch down on its own, then drive on.
+await p.evaluate(() => { const g = window.__g; Object.assign(g.fc, { pitch: -0.7, turn: 0, burner: false }) })
+console.log(JSON.stringify(await run(14, 'dive-to-land')))
 await shot('6-touchdown')
+// Back on the ground: drive (burner) and count automatic take-offs off jumps / crests / edges.
+await p.evaluate(() => window.__g.flyForce(false))
+const auto = await p.evaluate(() => new Promise((done) => {
+  const g = window.__g; let ups = 0, downs = 0, was = g.freeAir, t0 = performance.now()
+  const iv = setInterval(() => { const f = g.freeAir; if (f && !was) ups++; if (!f && was) downs++; was = f
+    if (performance.now() - t0 > 20000) { clearInterval(iv); done({ takeoffs: ups, landings: downs, nowFlying: f }) } }, 30)
+}))
+console.log('auto', JSON.stringify(auto))
 console.log('errors', errs.slice(0, 5))
 await b.close()

@@ -102,6 +102,8 @@ export class FlightCraft {
   ground: (x: number, z: number) => number = groundH
   /** FREE ROAM: no hull loss, ever. */
   invincible = false
+  /** The ground cushion (HUNT: skimming is safe). FREE ROAM turns it off: the ground is where you land. */
+  cushionOn = true
 
   get mach(): number { return this.speed / MACH }
 
@@ -228,7 +230,7 @@ export class FlightCraft {
     const g = this.ground(this.pos.x, this.pos.z)
     this.agl = this.pos.y - g
     this.sinking = this.vel.y < -30 && this.agl < 250 + -this.vel.y * 2.5
-    if (this.agl < F.cushion) {
+    if (this.cushionOn && this.agl < F.cushion) {
       const k = 1 - Math.max(0, this.agl) / F.cushion
       if (this.vel.y < 0) this.vel.y *= 1 - Math.min(1, k * k * 6 * dt)
       if (this.fwd.y < 0) {

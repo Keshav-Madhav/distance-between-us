@@ -1087,7 +1087,7 @@ function showCourse(): void {
     $('#tp-name').textContent = 'FREE ROAM'
     $('#tp-blurb').textContent = 'No race, no clock, no damage. Drive up any rock and launch off it, take off and fly, land anywhere.'
     const cell = (v: string, l: string) => `<div><b>${v}</b><small>${l}</small></div>`
-    $('#tp-stats').innerHTML = cell(WORLDS.find((w) => w.id === BIOME)?.name ?? '', 'World') + cell('Off', 'Damage') + cell('Space', 'Take off · drop') + cell(String(shards.total), 'Crystals found')
+    $('#tp-stats').innerHTML = cell(WORLDS.find((w) => w.id === BIOME)?.name ?? '', 'World') + cell('Off', 'Damage') + cell('Space · C', 'Nose up · down') + cell(String(shards.total), 'Crystals found')
     $('#tp-info').textContent = ''
   } else drawTrackPreview(COURSES[pickedCourse])
 }
@@ -1497,12 +1497,12 @@ let freeAir = false, freeAirT = 0
 let camBlend = 0, landBlend = 0
 const camFromOff = new THREE.Vector3(), camFromQ = new THREE.Quaternion()
 const landQ = new THREE.Quaternion(), landTmpQ = new THREE.Quaternion()
-const FREE_HINTS = ['<b>W · SHIFT</b>THROTTLE · BURNER', '<b>A D · S</b>STEER · BRAKE', '<b>SPACE</b>TAKE OFF · DROP BACK DOWN', '<b>FLYING</b>W S PITCH · A D TURN · Q E ROLL', '<b>NO DAMAGE</b>DRIVE UP ANY ROCK, LAUNCH OFF THE TOP', '<b>BEAMS</b>CRYSTAL TRAILS · TAKE ALL FIVE'].map((h) => `<div>${h}</div>`).join('')
+const FREE_HINTS = ['<b>W · SHIFT</b>THROTTLE · BURNER (GROUND AND AIR)', '<b>A D · S</b>STEER · BRAKE', '<b>SPACE · C</b>NOSE UP · NOSE DOWN', '<b>AIRBORNE</b>YOU FLY · LET GO AND YOU GLIDE DOWN', '<b>NO DAMAGE</b>DRIVE UP ANY ROCK, LAUNCH OFF THE TOP', '<b>BEAMS</b>CRYSTAL TRAILS · TAKE ALL FIVE'].map((h) => `<div>${h}</div>`).join('')
 function camBlendStart(): void { camFromOff.subVectors(camera.position, renderPos); camFromQ.copy(camera.quaternion); camBlend = 1 }
 function freeOff(): void {
   freeAir = false
   player.ground = groundH; player.cliffs = false
-  flight.ground = groundH; flight.invincible = false
+  flight.ground = groundH; flight.invincible = false; flight.cushionOn = true
   shards.hide()
   document.body.classList.remove('free')
   $('#score .lab').textContent = 'SCORE'
@@ -1527,7 +1527,7 @@ function startFree(): void {
   for (const id of ['#aimring', '#velmark', '#gmark']) $(id).style.display = 'none'
   world.courseOn = false; course.group.visible = false
   player.ground = surf; player.cliffs = true
-  flight.ground = surf; flight.invincible = true
+  flight.ground = surf; flight.invincible = true; flight.cushionOn = false
   const c = course.cps[0]
   player.reset(c.x, c.z, Math.atan2(c.tx, c.tz), 1.5)
   shards.start(player.pos.x, player.pos.z, player.heading, groundH, surf)
@@ -1553,22 +1553,22 @@ function startFree(): void {
   hintsEl.style.opacity = '0.85'
   setTimeout(() => { if (mode === 'free') hintsEl.style.opacity = '0' }, 12000)
 }
-/** Space: off the ground into flight, or out of flight onto a ballistic fall (you land wherever). */
-function toggleFly(): void {
-  if (mode !== 'free' || paused) return
-  if (freeAir) { touchDown(); return }
+/** Into the air: the hover craft becomes the flying one, the nose along the travel (pitched to the
+ *  climb it left the ground with). Automatic — off a jump, a cliff, a crest, or Space at speed. */
+function takeOff(pitchUp: number): void {
   if (player.spin > 0 || player.crashing) return
   freeAir = true; freeAirT = 0
   camBlendStart()
-  tmp.copy(player.pos); tmp.y += 2
-  flight.launch(tmp, player.heading, Math.max(player.speed, 1.2 * MACH), player.airborne ? 0.12 : 0.32)
+  tmp.copy(player.pos)
+  const hs = Math.hypot(player.vel.x, player.vel.z)
+  const h = hs > 30 ? Math.atan2(player.vel.x, player.vel.z) : player.heading
+  flight.launch(tmp, h, Math.max(Math.hypot(hs, player.vy), 1.0 * MACH), pitchUp)
   flight.energy = FLIGHT.energyMax
   flight.ghost = 0
   fTurn = fPitch = 0
   fcam.snap()
-  sound.boostKick(); shake(0.3)
 }
-/** Back to the hover craft: same place, same velocity; the nose put along the travel (no crooked landing). */
+/** Back on the ground: the hover takes over where the craft touched, heading along the travel. */
 function touchDown(): void {
   freeAir = false
   camBlendStart()
@@ -1576,10 +1576,38 @@ function touchDown(): void {
   const hs = Math.hypot(flight.vel.x, flight.vel.z)
   const h = hs > 30 ? Math.atan2(flight.vel.x, flight.vel.z) : Math.atan2(flight.fwd.x, flight.fwd.z)
   player.reset(flight.pos.x, flight.pos.z, h, hs / MACH)
-  player.pos.copy(flight.pos); player.prev.copy(flight.prev)
-  player.airborne = true; player.airTime = 0.2
-  player.vy = flight.vel.y
+  player.prev.copy(flight.prev)
+  player.squash = Math.min(1, Math.max(0, -flight.vel.y) / 70)
   cam.snap(h)
+  sinceLand = 0
+}
+let sinceLand = 9
+/** FREE ROAM's controls, one set for ground and air: W throttle, S brake, Shift burner, A/D steer
+ *  (in the air: turn, the craft banks itself), Space nose up / C nose down, Q/E roll. Hands off the
+ *  pitch and the nose settles into a shallow glide — you come down on your own. */
+function readFree(): void {
+  const k = (c: string) => input.isDown(c)
+  fc.throttle = k('KeyW') || k('ArrowUp'); fc.brake = k('KeyS') || k('ArrowDown'); fc.burner = k('ShiftLeft') || k('ShiftRight')
+  fc.roll = (k('KeyE') ? 1 : 0) - (k('KeyQ') ? 1 : 0)
+  let turn = (k('KeyD') || k('ArrowRight') ? 1 : 0) - (k('KeyA') || k('ArrowLeft') ? 1 : 0)
+  let pitch = (k('Space') ? 1 : 0) - (k('KeyC') ? 1 : 0)
+  for (const p of navigator.getGamepads ? navigator.getGamepads() : []) {
+    if (!p) continue
+    const dz = (v: number) => (Math.abs(v) < 0.12 ? 0 : (v - Math.sign(v) * 0.12) / 0.88)
+    const ax = dz(p.axes[0] ?? 0), ay = dz(p.axes[1] ?? 0)
+    if (ax) turn = ax
+    if (ay) pitch = ay * (invertPitch ? -1 : 1) // stick back pulls up
+    if ((p.buttons[7]?.value ?? 0) > 0.3) fc.throttle = true
+    if ((p.buttons[6]?.value ?? 0) > 0.3) fc.brake = true
+    if (p.buttons[2]?.pressed) fc.burner = true
+    if (p.buttons[0]?.pressed) pitch = 1
+  }
+  fTurn += THREE.MathUtils.clamp(turn - fTurn, -STEP * 6, STEP * 6)
+  fPitch += THREE.MathUtils.clamp(pitch - fPitch, -STEP * 5, STEP * 5)
+  fc.turn = fTurn
+  // Flight assist: no pitch held → ease the nose toward a gentle glide (about 5° down).
+  fc.pitch = Math.abs(fPitch) > 0.05 ? fPitch : THREE.MathUtils.clamp(-(flight.fwd.y + 0.09) * 2.5, -0.35, 0.35)
+  fc.aim = null
 }
 
 // ───────────────────────── quality ─────────────────────────
@@ -1853,13 +1881,20 @@ function simStep(): void {
 
   } else if (mode === 'free') {
     if (freeAir) {
-      if (!flyForced) readFlight()
+      if (!flyForced) readFree()
       flight.step(STEP, fc, world)
       flight.syncTo(player)
       freeAirT += STEP
-      // Down at the surface with the nose not buried in it: touch down and drive on.
-      if (freeAirT > 1 && flight.agl < 9 && flight.fwd.y > -0.5) touchDown()
-    } else player.step(STEP, forced ?? input.c, world)
+      // Touched the surface: grip takes over, you drive on.
+      if (freeAirT > 0.3 && flight.agl < 6) touchDown()
+    } else {
+      player.step(STEP, forced ?? input.c, world)
+      sinceLand += STEP
+      const pullUp = !forced && !flyForced && (input.isDown('Space') || [...(navigator.getGamepads ? navigator.getGamepads() : [])].some((p) => p?.buttons[0]?.pressed))
+      // Properly airborne (a jump, a cliff edge, a rock's crest) — or pulling up at speed: you fly.
+      if (sinceLand > 0.4 && player.airborne && (player.airTime > 0.2 || player.vy > 15)) takeOff(Math.atan2(player.vy, Math.max(player.speed, 1)))
+      else if (pullUp && player.mach > 0.8 && !player.airborne) takeOff(0.25)
+    }
     player.hull = 100
     runTop = Math.max(runTop, player.topMach)
     shards.step(player.prev, player.pos, player.heading, groundH, surf)
@@ -2642,7 +2677,7 @@ function updateHud(dt: number, slow: boolean): void {
     if (slow) {
       scoreNum.textContent = String(shards.taken)
       const alt = Math.max(0, Math.round(player.pos.y - groundH(player.pos.x, player.pos.z)))
-      scoreSub.innerHTML = `${shards.total} FOUND IN ALL<br/>${freeAir ? '<b>FLYING</b> · SPACE TO DROP' : player.airborne ? '<b>AIRBORNE</b> · SPACE TO FLY' : 'SPACE TO TAKE OFF'}<br/>ALT ${alt} M · ${fmtTime(runTime)}`
+      scoreSub.innerHTML = `${shards.total} FOUND IN ALL<br/>${freeAir ? '<b>FLYING</b> · SPACE UP · C DOWN' : 'HOLD SPACE AT SPEED TO LIFT OFF'}<br/>ALT ${alt} M · ${fmtTime(runTime)}`
     }
   } else if (mode === 'hunt') {
     for (const { d } of tagEls) d.style.display = 'none'
@@ -2964,7 +2999,7 @@ addEventListener('keydown', (e) => {
     if (e.code === 'Enter') startRace()
     return
   }
-  if (mode === 'free') { if (e.code === 'Space' && !e.repeat) toggleFly(); return }
+  if (mode === 'free') return
   if (e.code === 'KeyR' && e.shiftKey) { if (mode === 'race') startRace(); else startHunt(); return }
   if (e.code === 'KeyR' && mode === 'race' && race.state === 'racing') {
     const me = race.racers[0]
@@ -3092,6 +3127,6 @@ const g = {
     place: race.racers[0].place, crashing: player.crashing, burning: player.burning, slip: +(player.slip * 57.3).toFixed(1), spin: +player.spin.toFixed(2), drift: +player.drift.toFixed(2), yaw: +player.yawRate.toFixed(2), lap: race.lapOf(race.racers[0]), passed: race.racers[0].passed, race: race.state, particles: fx.glow.count + fx.smoke.count,
   }),
   player, race, course, combat, flight, fc, CFG, world, scene, camera, post, fx, input, wreckage, shards,
-  free: () => startFree(), fly: () => toggleFly(), get freeAir() { return freeAir },
+  free: () => startFree(), fly: () => takeOff(0.3), get freeAir() { return freeAir },
 }
 ;(window as unknown as { __g: typeof g }).__g = g
