@@ -2012,6 +2012,8 @@ let flyForced = false
 
 /** Draw one racer's craft, flames, trails and dust. */
 function drawRacer(p: Player, alpha: number, dt: number, isMe: boolean): void {
+  // (The weather in the air round you — rain, snow, pollen, embers — stays down in the air.)
+  const airLow = mode !== 'free' || p.pos.y - groundH(p.pos.x, p.pos.z) < 3000
   const v = visuals.get(p)!
   const craft = v.craft
   if (!craft.root.visible) return
@@ -2125,7 +2127,7 @@ function drawRacer(p: Player, alpha: number, dt: number, isMe: boolean): void {
     }
   }
   // FROSTLINE: snow drifting through the air around you (a few flakes a frame, small, slow, wind-blown).
-  if (isMe && BIOME === 'ice') {
+  if (isMe && airLow && BIOME === 'ice') {
     // (Never right at the camera — near flakes were big soft discs — fine, many, streaking with speed.)
     for (let i = 0; i < 24; i++) {
       const e = resetE()
@@ -2138,7 +2140,7 @@ function drawRacer(p: Player, alpha: number, dt: number, isMe: boolean): void {
     }
   }
   // MONSOON: rain — streaks falling past you — and low mist drifting through the trunks.
-  if (isMe && BIOME === 'jungle') {
+  if (isMe && airLow && BIOME === 'jungle') {
     for (let i = 0; i < 26; i++) {
       const e = resetE()
       const ahead = -20 + Math.random() * 200, side = (Math.random() - 0.5) * 160
@@ -2159,7 +2161,7 @@ function drawRacer(p: Player, alpha: number, dt: number, isMe: boolean): void {
     }
   }
   // VERDANT: pollen and seed fluff drifting in the sun.
-  if (isMe && BIOME === 'forest') {
+  if (isMe && airLow && BIOME === 'forest') {
     for (let i = 0; i < 10; i++) {
       const e = resetE()
       const ahead = 25 + Math.random() * 235, side = (Math.random() - 0.5) * 180
@@ -2171,7 +2173,7 @@ function drawRacer(p: Player, alpha: number, dt: number, isMe: boolean): void {
     }
   }
   // CINDER: embers rising through the air around you, glowing, drifting with the heat.
-  if (isMe && BIOME === 'lava') {
+  if (isMe && airLow && BIOME === 'lava') {
     for (let i = 0; i < 14; i++) {
       const e = resetE()
       const ahead = 25 + Math.random() * 235, side = (Math.random() - 0.5) * 180

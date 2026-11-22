@@ -12,7 +12,7 @@
 // dissolves into the planet, the two agree.
 import * as THREE from 'three'
 import { FBMT_GLSL, NOISE_GLSL, NOISE_TEX } from './shaders'
-import { BIOME, MOUND_U, SUN_DIR, TERRAIN_GLSL } from './terrain'
+import { BIOME, MOUND_U, SKY, SUN_DIR, TERRAIN_GLSL } from './terrain'
 
 /** Earth-sized: at 10 km the horizon is nearly flat, at 150 km a gentle arc (a 600 km planet read as a toy globe). */
 export const PLANET_R = 6_371_000
@@ -20,11 +20,11 @@ export const ATMO_TOP = 100_000
 
 /** Per world: scattering (1/km), scale heights (km), Mie's forward lobe, the ground and cloud look. */
 export const LOOK = {
-  desert: { g3: [0.3, 0.13, 0.07], br: [5.8e-3, 13.5e-3, 33.1e-3], bm: 0.03, hr: 8, hm: 1.6, g: 0.76, mieTint: [1, 0.95, 0.88], g1: [0.62, 0.32, 0.15], g2: [0.4, 0.17, 0.09], water: [0.8, 0.64, 0.45], cloud: [0.95, 0.95, 0.97], cov: [0.6, 0.86], sun: 22 },
-  ice: { g3: [0.62, 0.74, 0.88], br: [5.8e-3, 13.5e-3, 33.1e-3], bm: 0.02, hr: 8, hm: 1.4, g: 0.76, mieTint: [1, 0.9, 0.95], g1: [0.86, 0.9, 0.97], g2: [0.55, 0.62, 0.75], water: [0.2, 0.34, 0.48], cloud: [0.95, 0.96, 1.0], cov: [0.7, 0.9], sun: 18 },
-  lava: { g3: [0.24, 0.12, 0.08], br: [26e-3, 13e-3, 7e-3], bm: 0.045, hr: 9, hm: 2.5, g: 0.7, mieTint: [0.8, 0.5, 0.35], g1: [0.13, 0.11, 0.1], g2: [0.07, 0.05, 0.05], water: [1.8, 0.45, 0.06], cloud: [0.32, 0.27, 0.26], cov: [0.48, 0.74], sun: 16 },
-  forest: { g3: [0.07, 0.15, 0.05], br: [5.8e-3, 13.5e-3, 33.1e-3], bm: 0.028, hr: 8, hm: 1.6, g: 0.76, mieTint: [1, 1, 0.95], g1: [0.2, 0.32, 0.1], g2: [0.33, 0.35, 0.15], water: [0.04, 0.12, 0.15], cloud: [0.96, 0.96, 0.98], cov: [0.52, 0.78], sun: 22 },
-  jungle: { g3: [0.03, 0.07, 0.025], br: [5e-3, 11e-3, 22e-3], bm: 0.05, hr: 8, hm: 2.2, g: 0.72, mieTint: [0.8, 0.92, 0.84], g1: [0.05, 0.12, 0.04], g2: [0.09, 0.15, 0.05], water: [0.16, 0.11, 0.06], cloud: [0.62, 0.66, 0.63], cov: [0.2, 0.5], sun: 15 },
+  desert: { amb: [0.3, 0.24, 0.2], g3: [0.3, 0.13, 0.07], br: [5.8e-3, 13.5e-3, 33.1e-3], bm: 0.03, hr: 8, hm: 1.6, g: 0.76, mieTint: [1, 0.95, 0.88], g1: [0.62, 0.32, 0.15], g2: [0.4, 0.17, 0.09], water: [0.8, 0.64, 0.45], cloud: [0.95, 0.95, 0.97], cov: [0.6, 0.86], sun: 22 },
+  ice: { amb: [0.0, 0.0, 0.0], g3: [0.62, 0.74, 0.88], br: [5.8e-3, 13.5e-3, 33.1e-3], bm: 0.02, hr: 8, hm: 1.4, g: 0.76, mieTint: [1, 0.9, 0.95], g1: [0.86, 0.9, 0.97], g2: [0.55, 0.62, 0.75], water: [0.2, 0.34, 0.48], cloud: [0.95, 0.96, 1.0], cov: [0.7, 0.9], sun: 18 },
+  lava: { amb: [0.75, 0.36, 0.2], g3: [0.24, 0.12, 0.08], br: [9e-3, 7e-3, 5e-3], bm: 0.05, hr: 9, hm: 2.5, g: 0.7, mieTint: [0.8, 0.5, 0.35], g1: [0.13, 0.11, 0.1], g2: [0.07, 0.05, 0.05], water: [1.8, 0.45, 0.06], cloud: [0.32, 0.27, 0.26], cov: [0.48, 0.74], sun: 16 },
+  forest: { amb: [0.2, 0.25, 0.24], g3: [0.06, 0.1, 0.04], br: [5.8e-3, 13.5e-3, 33.1e-3], bm: 0.028, hr: 8, hm: 1.6, g: 0.76, mieTint: [1, 1, 0.95], g1: [0.15, 0.21, 0.08], g2: [0.25, 0.26, 0.12], water: [0.04, 0.12, 0.15], cloud: [0.96, 0.96, 0.98], cov: [0.52, 0.78], sun: 22 },
+  jungle: { amb: [0.13, 0.16, 0.14], g3: [0.03, 0.07, 0.025], br: [5e-3, 11e-3, 22e-3], bm: 0.05, hr: 8, hm: 2.2, g: 0.72, mieTint: [0.8, 0.92, 0.84], g1: [0.05, 0.12, 0.04], g2: [0.09, 0.15, 0.05], water: [0.16, 0.11, 0.06], cloud: [0.62, 0.66, 0.63], cov: [0.2, 0.5], sun: 15 },
 }[BIOME]
 
 /** Cloud cover at a world (x, z) — the same layer everywhere: the sky pass's shell from orbit, the
@@ -134,9 +134,13 @@ export const SPACE_FN = /* glsl */ `
           float prov = fbmT(q * 1.7 + wq * 2.2 + 5.0);
           float n1 = fbmT(xz * 0.0000045 + 3.0 + wq * 3.0), n2 = fbmT(xz * 0.00003 + 7.0), n3 = fbmT(xz * 0.0002 + 1.0);
           vec3 c = mix(${v3(LOOK.g1)}, ${v3(LOOK.g2)}, smoothstep(0.35, 0.65, n1 * 0.6 + n2 * 0.4));
-          c = mix(c, ${v3(LOOK.g3)}, smoothstep(0.52, 0.7, prov) * 0.85);
+          // (VERDANT: the dark provinces read as water — so they are lakes, with shores.)
+          ${BIOME === 'forest' ? 'float lake = smoothstep(0.6, 0.62, prov); c = mix(c, vec3(0.025, 0.06, 0.08), lake);' : 'c = mix(c, ' + v3(LOOK.g3) + ', smoothstep(0.52, 0.7, prov) * 0.85);'}
           // (Fine texture fades with height: from orbit it aliased into a crosshatch.)
           c *= 0.8 + 0.4 * mix(n3, 0.5, smoothstep(15.0, 60.0, uSpAlt));
+          // A finer octave close in, faded by its footprint (the planet next to the crisp ground was mush).
+          float fineK = (1.0 - smoothstep(15000.0, 60000.0, length(xz - uSpCamXZ))) * (1.0 - smoothstep(8.0, 30.0, uSpAlt));
+          c *= 1.0 + (fbmT(xz * 0.0011 + 4.0) - 0.5) * 0.45 * fineK;
           // Rivers, the same ones the ground has.
           // (Only near you: at planet scale their regular meanders read as a pattern.)
           float rv = riverAt(xz) * (1.0 - smoothstep(12000.0, 24000.0, length(xz - uSpCamXZ))) * (1.0 - smoothstep(6.0, 14.0, uSpAlt));
@@ -196,7 +200,7 @@ export const SPACE_FN = /* glsl */ `
             float ds = seg / 20.0;
             vec3 sr = vec3(0.0), sm = vec3(0.0);
             float oR = 0.0, oM = 0.0;
-            float jit = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
+            float jit = 0.25 + 0.5 * hash12(gl_FragCoord.xy + 17.0); // (white, half-range: IGN's diagonal structure showed as hatching)
             for (int i = 0; i < 20; i++) {
               float t = tStart + ds * (float(i) + jit);
               vec3 p = o + d * t;
@@ -209,7 +213,7 @@ export const SPACE_FN = /* glsl */ `
             trans = exp(-(SP_BR * oR + SP_BM * 1.1 * oM));
             // (Paths that end on the ground are lighter: the full grazing haze laid over the ground turned
             //  the red desert pink and broke it away from the ground you just left.)
-            col = ${LOOK.sun.toFixed(1)} * 0.6 * (ground ? 0.38 : 1.0) * (sr * SP_BR * pr + sm * SP_BM * SP_MIE_T * pm);
+            col = ${LOOK.sun.toFixed(1)} * 0.6 * (ground ? mix(0.38, 1.0, smoothstep(40.0, 400.0, seg)) : 1.0) * (sr * SP_BR * pr + sm * SP_BM * SP_MIE_T * pm);
           }
           // ── what is behind the air: the ground (and clouds over it), or space ──
           vec3 back;
@@ -232,12 +236,14 @@ export const SPACE_FN = /* glsl */ `
               sunN = max(dot(n, SP_SUN), 0.0);
             }
             // Cloud shadows: the cover 2.6 km up, along the sun.
-            float shade = 1.0 - 0.55 * cloudAt(xz + SP_SUN.xz / max(SP_SUN.y, 0.08) * 2600.0);
+            float shade = 1.0 - 0.28 * cloudAt(xz + SP_SUN.xz / max(SP_SUN.y, 0.08) * 2600.0);
             // Light from the sky dome itself (twilight worlds are lit by it, not left black).
             vec3 skyL = vec3(0.55, 0.7, 1.0) * ${LOOK.sun.toFixed(1)} * ${BIOME === 'ice' ? '0.03' : '0.004'} * (0.3 + smoothstep(-0.1, 0.3, dot(n, SP_SUN)));
             // (Ice catches even a 2° sun: a grazing floor on the light — snow scatters it everywhere.)
             ${BIOME === 'ice' ? 'sunN = max(sunN, 0.22 * smoothstep(-0.05, 0.1, dot(n, SP_SUN)));' : ''}
-            back = gc * (lit * sunN * shade + skyL);
+            // Ambient: the light the ground's own shader gives it (sky fill, bounce, CINDER's lava glow) —
+            // without it the planet beyond the flat world went black where the ground was lit.
+            back = gc * (lit * sunN * shade + skyL + ${v3(LOOK.amb)});
             // (Snow is lit by the whole sky, not the low sun: the same cold ambient the ground's snow has.)
             ${BIOME === 'ice' ? 'back += gc * vec3(0.38, 0.44, 0.58) * 0.9;' : ''}
             // Sun glint off water, close in (rivers, lakes).
@@ -274,9 +280,18 @@ export const SPACE_FN = /* glsl */ `
             back = (spstars(ds) + spgalaxy(ds)) * exp(-dot(col, vec3(0.3, 0.5, 0.2)) * 30.0) * ${Math.min(0.3, 1 - 0.96 * Math.min(1, Math.max(0, (SUN_DIR[1] + 0.05) / 0.3))).toFixed(3)}; // (by day, or over a sunlit twilight planet, the exposure is set for it: few stars)
             // The sun's disc (and its glare is the bloom's job).
             float sd = dot(d, SP_SUN);
-            back += vec3(1.0, 0.96, 0.9) * (smoothstep(0.99996, 0.99999, sd) * 400.0 + pow(max(sd, 0.0), 2000.0) * 8.0);
+            back += vec3(1.0, 0.96, 0.9) * (smoothstep(0.99996, 0.99999, sd) * 600.0 + pow(max(sd, 0.0), 20000.0) * 6.0 + pow(max(sd, 0.0), 2000.0) * 0.6);
           }
           col += back * trans;
+          // The ground's own haze, shared: the same fog the flat world uses (thinned by height the same
+          // way), toward the same colour — low down both sides fade alike (CINDER's planet went black
+          // under its bright stylised dusk sky); up high it thins away and the physics above rules.
+          if (ground) {
+            float dm = gP.x * 1000.0, hm = uSpAlt * 1000.0;
+            float kf = dm * ${SKY.fogK.toFixed(7)} * exp(-max(0.5 * hm, 0.0) / 4500.0);
+            float fg = 1.0 - exp(-kf * kf);
+            col = mix(col, ${v3(SKY.haze.map((x) => x * 0.92 * 1.3))}, clamp(fg, 0.0, 1.0));
+          }
           ${BIOME === 'ice' ? `{
             // Aurora, seen from above or beside: green curtains 100-220 km up, along wavy arcs in the
             // world below, red at their tops; marched through that shell (POLAR SHELF only).
@@ -288,11 +303,11 @@ export const SPACE_FN = /* glsl */ `
             else if (a0.x > 0.0) tOut = min(tOut, a0.x);  // from above: stop where it enters it
             if (ground) tOut = min(tOut, gP.x);
             // Only where the sky is dark enough: faded on the sunlit side.
-            float night = 1.0 - smoothstep(-0.05, 0.25, dot(normalize(o + d * max(tIn, 0.0)), SP_SUN));
+            float night = 1.0 - smoothstep(-0.12, 0.08, dot(normalize(o + d * max(tIn, 0.0)), SP_SUN));
             if (tOut > tIn && night > 0.01) {
               float dsA = (tOut - tIn) / 16.0;
               vec3 em = vec3(0.0);
-              float ja = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
+              float ja = 0.25 + 0.5 * hash12(gl_FragCoord.xy + 41.0);
               for (int i = 0; i < 16; i++) {
                 vec3 pa = o + d * (tIn + dsA * (float(i) + ja));
                 float ha = length(pa) - SP_R;
@@ -305,7 +320,7 @@ export const SPACE_FN = /* glsl */ `
                 vec3 c = mix(vec3(0.15, 1.0, 0.45), vec3(0.85, 0.2, 0.55), smoothstep(0.45, 1.0, u)) * exp(-u * 2.2);
                 em += c * curtain * fold * dsA;
               }
-              col += em * 0.009 * night;
+              col += em * 0.006 * night;
             }
           }` : ''}
           return col;
