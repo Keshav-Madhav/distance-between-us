@@ -83,6 +83,18 @@ export function patchStandard(mat: THREE.MeshStandardMaterial, opts: PatchOpts =
     if (opts.shadow) {
       Object.assign(s.uniforms, SHADOW_U)
       Object.assign(s.uniforms, WORLD_FADE)
+      // Climbing: rocks and trees sink into the ground over the band where it turns into the planet
+      // (dithering them away showed as a checker).
+      s.vertexShader = s.vertexShader
+        .replace('#include <common>', '#include <common>\nuniform vec4 uWorldFade;')
+        .replace('#include <begin_vertex>', `#include <begin_vertex>
+        #ifdef USE_INSTANCING
+        {
+          float rr = length(instanceMatrix[3].xz - cameraPosition.xz);
+          float sk = max(uWorldFade.y, uWorldFade.x > 0.0 ? smoothstep(uWorldFade.x * 0.3, uWorldFade.x * 0.72, rr) : 0.0);
+          transformed.y = mix(transformed.y, -0.7, sk); // (well under: at ground level they showed as flat dark patches)
+        }
+        #endif`)
       // (After the full patch below has declared vFogW: appended at the end of this callback.)
     }
     if (opts.forest && opts.aur) s.uniforms.uWindT = opts.aur
@@ -136,7 +148,7 @@ export function patchStandard(mat: THREE.MeshStandardMaterial, opts: PatchOpts =
     s.fragmentShader = s.fragmentShader
       .replace('#include <common>', `#include <common>\nvarying vec3 vFogW;\nvarying vec3 vWN;\nvarying float vBaseY;\nvarying float vHt;\nfloat gIceSnow = 0.0;\n${opts.strata ? 'uniform sampler2D tRock;\nuniform sampler2D tSand;' : ''}\n${SKY_GLSL}\n${NOISE_GLSL}`)
       .replace('#include <fog_fragment>', 'gl_FragColor.rgb = applyFog(gl_FragColor.rgb, vFogW);')
-      .replace('#include <clipping_planes_fragment>', '#include <clipping_planes_fragment>\n      if (worldCut(vFogW, gl_FragCoord.xy)) discard;')
+      // (Climbing, rocks and trees sink into the ground in the vertex shader instead: see WORLD_FADE above.)
     if (opts.forest) {
       s.fragmentShader = s.fragmentShader.replace('#include <common>', `#include <common>\nvarying float vCrev;\nvarying vec2 vOrg;`)
         .replace('#include <color_fragment>', `#include <color_fragment>

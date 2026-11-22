@@ -274,7 +274,7 @@ vec3 applyFog(vec3 col, vec3 wpos) {
   float dist = length(d);
   float k = dist * ${SKY.fogK.toFixed(7)};
   // Up high there is less air between you and the ground: the haze thins with the mean height.
-  if (uWorldFade.z > 0.0) k *= mix(1.0, exp(-max(0.5 * (cameraPosition.y + wpos.y), 0.0) / 4500.0), uWorldFade.z);
+  if (uWorldFade.z > 0.0) k *= mix(1.0, exp(-max(0.5 * (cameraPosition.y + wpos.y), 0.0) / 2200.0), uWorldFade.z);
   float f = 1.0 - exp(-k * k);
   // Thinner up high: mesa tops stand clear of the ground haze.
   f *= mix(1.0, 0.55, smoothstep(0.0, 500.0, wpos.y));

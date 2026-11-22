@@ -58,10 +58,11 @@ const v3 = (a: number[]) => `vec3(${a.map((n) => n.toFixed(5)).join(', ')})`
  *  sky, through the atmosphere. Shared: the flat world's ground blends into exactly this at its rim, so
  *  where it dissolves the two sides are the same pixels (no seam). Needs uCloudOff, uTime, tNoise,
  *  TERRAIN_GLSL (riverAt) and fbmT declared by the host. */
-export const SPACE_U = { uSpAlt: { value: 0 }, uSpCamXZ: { value: new THREE.Vector2() } }
+export const SPACE_U = { uSpAlt: { value: 0 }, uSpCamXZ: { value: new THREE.Vector2() }, uSunView: { value: 0 } }
 export const SPACE_FN = /* glsl */ `
         uniform float uSpAlt;
         uniform vec2 uSpCamXZ;
+        uniform float uSunView;
         const float SP_R = ${(PLANET_R / 1000).toFixed(1)};
         const float SP_RA = ${((PLANET_R + ATMO_TOP) / 1000).toFixed(1)};
         const float SP_RC = SP_R + 2.6;
@@ -126,6 +127,7 @@ export const SPACE_FN = /* glsl */ `
           vec2 dir = length(n.xz) > 1e-6 ? normalize(n.xz) : vec2(0.0);
           return uSpCamXZ + dir * th * SP_R * 1000.0;
         }
+        float spLake = 0.0;
         vec3 spgroundCol(vec2 xz) {
           // Provinces at planet scale (hundreds of km, domain-warped so they never tile), then regions,
           // then texture — never one pattern repeated across the globe.
@@ -135,7 +137,7 @@ export const SPACE_FN = /* glsl */ `
           float n1 = fbmT(xz * 0.0000045 + 3.0 + wq * 3.0), n2 = fbmT(xz * 0.00003 + 7.0), n3 = fbmT(xz * 0.0002 + 1.0);
           vec3 c = mix(${v3(LOOK.g1)}, ${v3(LOOK.g2)}, smoothstep(0.35, 0.65, n1 * 0.6 + n2 * 0.4));
           // (VERDANT: the dark provinces read as water — so they are lakes, with shores.)
-          ${BIOME === 'forest' ? 'float lake = smoothstep(0.6, 0.62, prov); c = mix(c, vec3(0.025, 0.06, 0.08), lake);' : 'c = mix(c, ' + v3(LOOK.g3) + ', smoothstep(0.52, 0.7, prov) * 0.85);'}
+          ${BIOME === 'forest' ? 'float lake = smoothstep(0.6, 0.62, prov); spLake = lake; c = mix(c, vec3(0.025, 0.06, 0.08), lake);' : 'c = mix(c, ' + v3(LOOK.g3) + ', smoothstep(0.52, 0.7, prov) * 0.85);'}
           // (Fine texture fades with height: from orbit it aliased into a crosshatch.)
           c *= 0.8 + 0.4 * mix(n3, 0.5, smoothstep(15.0, 60.0, uSpAlt));
           // A finer octave close in, faded by its footprint (the planet next to the crisp ground was mush).
@@ -211,6 +213,8 @@ export const SPACE_FN = /* glsl */ `
               sr += att * dR; sm += att * dM;
             }
             trans = exp(-(SP_BR * oR + SP_BM * 1.1 * oM));
+            // (Over the ground the haze is greyer than the open sky: blue haze over red desert read lavender.)
+            if (ground) { vec3 sR = sr * SP_BR; sr = mix(sr, vec3(dot(sR, vec3(0.33)) / max(dot(SP_BR, vec3(0.33)), 1e-6)), 0.45); }
             // (Paths that end on the ground are lighter: the full grazing haze laid over the ground turned
             //  the red desert pink and broke it away from the ground you just left.)
             col = ${LOOK.sun.toFixed(1)} * 0.6 * (ground ? mix(0.38, 1.0, smoothstep(40.0, 400.0, seg)) : 1.0) * (sr * SP_BR * pr + sm * SP_BM * SP_MIE_T * pm);
@@ -245,10 +249,10 @@ export const SPACE_FN = /* glsl */ `
             // without it the planet beyond the flat world went black where the ground was lit.
             back = gc * (lit * sunN * shade + skyL + ${v3(LOOK.amb)});
             // (Snow is lit by the whole sky, not the low sun: the same cold ambient the ground's snow has.)
-            ${BIOME === 'ice' ? 'back += gc * vec3(0.38, 0.44, 0.58) * 0.9;' : ''}
+            ${BIOME === 'ice' ? 'back += gc * vec3(0.38, 0.44, 0.58) * 0.6;' : ''}
             // Sun glint off water, close in (rivers, lakes).
             float wet = smoothstep(0.35, 0.7, riverAt(xz)) * (1.0 - smoothstep(12000.0, 24000.0, length(xz - uSpCamXZ))) * (1.0 - smoothstep(6.0, 14.0, uSpAlt));
-            back += lit * 2.0 * pow(max(dot(reflect(d, n), SP_SUN), 0.0), 120.0) * wet;
+            back += lit * 2.0 * pow(max(dot(reflect(d, n), SP_SUN), 0.0), 120.0) * max(wet, spLake);
             ${BIOME === 'lava' ? `{
               // Near you, the ground's own cracks and lava rivers; across the planet, sparse volcanic
               // centres glowing (Io), not one crack pattern tiled over the globe.
@@ -259,7 +263,7 @@ export const SPACE_FN = /* glsl */ `
               float orbitK = smoothstep(12.0, 45.0, uSpAlt);
               back += vec3(2.4, 0.6, 0.08) * hot * 3.0 * orbitK;
               // Lava threads at regional scale (tens of km): what you see of the lava fields from orbit.
-              float thr = smoothstep(0.03, 0.0, abs(fbmT(xz * 0.000018 + 6.0) - 0.5)) * smoothstep(0.45, 0.65, fbmT(xz * 0.000006 + 2.0));
+              float thr = smoothstep(0.012, 0.0, abs(fbmT(xz * 0.000018 + 6.0) - 0.5)) * smoothstep(0.45, 0.65, fbmT(xz * 0.000006 + 2.0));
               back += vec3(2.2, 0.55, 0.07) * thr * 1.2 * orbitK;
             }` : ''}
             // The cloud shell 2.6 km up, over the ground (from above it).
@@ -277,7 +281,8 @@ export const SPACE_FN = /* glsl */ `
             // (A bright sky drowns the spstars: they fade with the light scattered in front of them.)
             // Day side: the sunlit world sets the exposure, and the sky is nearly black (ISS daylight).
             vec3 ds = SP_SKYROT * d;
-            back = (spstars(ds) + spgalaxy(ds)) * exp(-dot(col, vec3(0.3, 0.5, 0.2)) * 30.0) * ${Math.min(0.3, 1 - 0.96 * Math.min(1, Math.max(0, (SUN_DIR[1] + 0.05) / 0.3))).toFixed(3)}; // (by day, or over a sunlit twilight planet, the exposure is set for it: few stars)
+            // (The sun in view sets the exposure: no stars then, as in every photo.)
+            back = (spstars(ds) + spgalaxy(ds)) * (1.0 - 0.92 * uSunView) * exp(-dot(col, vec3(0.3, 0.5, 0.2)) * 30.0) * ${Math.min(0.3, 1 - 0.96 * Math.min(1, Math.max(0, (SUN_DIR[1] + 0.05) / 0.3))).toFixed(3)}; // (by day, or over a sunlit twilight planet, the exposure is set for it: few stars)
             // The sun's disc (and its glare is the bloom's job).
             float sd = dot(d, SP_SUN);
             back += vec3(1.0, 0.96, 0.9) * (smoothstep(0.99996, 0.99999, sd) * 600.0 + pow(max(sd, 0.0), 20000.0) * 6.0 + pow(max(sd, 0.0), 2000.0) * 0.6);
@@ -288,7 +293,7 @@ export const SPACE_FN = /* glsl */ `
           // under its bright stylised dusk sky); up high it thins away and the physics above rules.
           if (ground) {
             float dm = gP.x * 1000.0, hm = uSpAlt * 1000.0;
-            float kf = dm * ${SKY.fogK.toFixed(7)} * exp(-max(0.5 * hm, 0.0) / 4500.0);
+            float kf = dm * ${SKY.fogK.toFixed(7)} * exp(-max(0.5 * hm, 0.0) / 2200.0);
             float fg = 1.0 - exp(-kf * kf);
             col = mix(col, ${v3(SKY.haze.map((x) => x * 0.92 * 1.3))}, clamp(fg, 0.0, 1.0));
           }
@@ -393,6 +398,9 @@ export class Space {
     u.uCamRot.value.setFromMatrix4(camera.matrixWorld)
     SPACE_U.uSpAlt.value = Math.max(0.002, camera.position.y / 1000)
     SPACE_U.uSpCamXZ.value.set(camera.position.x, camera.position.z)
+    // The sun in view (or near it): 1 — the exposure is set for it.
+    const fwd = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion)
+    SPACE_U.uSunView.value = THREE.MathUtils.smoothstep(fwd.x * SUN_DIR[0] + fwd.y * SUN_DIR[1] + fwd.z * SUN_DIR[2], 0.55, 0.85)
     u.uCloudOff.value.copy(cloudOff)
     u.uTime.value = time
     this.dome?.position.copy(camera.position)

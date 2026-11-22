@@ -1656,7 +1656,7 @@ function updateSpace(): void {
   space.update(camera, sm.uCloudOff.value, time)
   // Above the air there is no sky to light you: the sun, and a little light back off the planet.
   world.hemi.intensity = world.hemiK * (1 - 0.8 * space.vac)
-  sm.uAir.value = 1 - THREE.MathUtils.smoothstep(alt, 2500, 14000)
+  sm.uAir.value = 1 - THREE.MathUtils.smoothstep(alt, 2500, 10000)
   // (Eased in from where the space layer takes over: at 2.5 km the full dip is 5° — a jump.)
   sm.uDip.value = Math.acos(PLANET_R / (PLANET_R + Math.max(0, alt))) * THREE.MathUtils.smoothstep(alt, 2500, 7000)
   // (From the moment the space pass is on: the ground's far ring turns into the planet behind it.)
@@ -2464,11 +2464,11 @@ function frame(now: number): void {
   P.uWhite.value = white * 0.45
   P.uDamage.value = damageFlash
   P.uTime.value = time
-  P.uGrain.value = settings.grain ? CFG.post.grain : 0
+  P.uGrain.value = settings.grain ? CFG.post.grain * (1 - 0.75 * space.vac) : 0
   P.uSharpen.value = settings.sharp + (1 - renderScale) * 1.2
   P.uExposure.value = CFG.post.exposure
   P.uVac.value = space.vac
-  post.bloom.strength = CFG.post.bloom
+  post.bloom.strength = CFG.post.bloom * (1 - 0.45 * space.vac) // (in vacuum the sun is a disc, not a halo)
   world.ground.uCloudOff.value.copy((world.sky.material as THREE.ShaderMaterial).uniforms.uCloudOff.value)
   post.bloom.threshold = CFG.post.bloomThreshold
   const onGrid = mode === 'race' && race.state === 'grid'
