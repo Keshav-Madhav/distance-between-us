@@ -11,7 +11,9 @@ import { LOOKS, PLANET_R, type PlanetBiome } from './space'
 export interface Planet { biome: PlanetBiome; name: string; pos: THREE.Vector3 }
 
 /** The star at the origin; the worlds round it (metres). */
-export const STAR_R = 520_000_000
+/** (70,000 km: about a degree across from the worlds — a 520,000 km star was 5-10°, and its glare
+ *  washed out the whole screen.) */
+export const STAR_R = 70_000_000
 const at = (dist: number, ang: number, y: number) => new THREE.Vector3(Math.sin(ang) * dist, y, Math.cos(ang) * dist)
 export const PLANETS: Planet[] = [
   { biome: 'lava', name: 'CINDER', pos: at(3.1e9, 4.0, 1.2e8) },
@@ -87,12 +89,12 @@ export class StarSystem {
           for (int k = 0; k < 3; k++) {
             float S = k == 0 ? 120.0 : k == 1 ? 300.0 : 700.0;
             vec3 p = d * S, c = floor(p), h = hash33(c + float(k) * 17.0);
-            if (h.z > (k == 0 ? 0.02 : k == 1 ? 0.022 : 0.025)) continue;
+            if (h.z > (k == 0 ? 0.012 : k == 1 ? 0.009 : 0.007)) continue;
             vec3 sp = c + 0.2 + 0.6 * hash33(c + 2.7);
             float px = max(length(fwidth(p)), 1e-4);
             float w = length(p - sp) / px;
             float m = pow(hash33(c + 4.1 + float(k)).x, 9.0);
-            vec3 tint = mix(vec3(1.0, 0.75, 0.55), vec3(0.7, 0.82, 1.0), hash33(c + 9.3).y);
+            vec3 tint = mix(vec3(1.0), mix(vec3(1.0, 0.78, 0.6), vec3(0.75, 0.85, 1.0), hash33(c + 9.3).y), 0.35);
             acc += tint * (0.04 + m) * exp(-w * w * 1.3) * (k == 0 ? 2.5 : k == 1 ? 0.9 : 0.4);
           }
           return acc;
@@ -160,7 +162,7 @@ export class StarSystem {
             for (int i = 0; i < NP; i++) if (i == hit) col = planetShade(i, d, best, uPl[i].xyz, uPl[i].w);
           } else if (starFirst) {
             float mu = sqrt(max(1.0 - pow(ang / max(sAng, 1e-6), 2.0), 0.0));
-            col = vec3(1.0, 0.93, 0.82) * 40.0 * (0.55 + 0.45 * mu); // limb-darkened
+            col = vec3(1.0, 0.95, 0.88) * 14.0 * (0.55 + 0.45 * mu); // limb-darkened
           } else {
             // Stars, hidden when the star is near the view (it sets the exposure).
             float glareK = smoothstep(0.6, 0.15, ang - sAng);
@@ -169,7 +171,7 @@ export class StarSystem {
           // The star's glare (over everything it is not hidden behind).
           if (!(hit >= 0 && !starFirst) || starFirst) {
             float k = sAng / max(ang, sAng);
-            col += vec3(1.0, 0.86, 0.68) * (k * k * 1.2 + k * 0.04);
+            col += vec3(1.0, 0.88, 0.72) * (k * k * k * 0.9 + k * 0.012);
           }
           // Each planet's thin limb, where the ray passes just above it (not behind a nearer body).
           for (int i = 0; i < NP; i++) {
@@ -181,7 +183,7 @@ export class StarSystem {
             vec3 L = normalize(uStar - d * b);
             float lit = smoothstep(-0.25, 0.3, dot(rn, L));
             float px = max(fwidth(m), 0.5);
-            col += uAtm[i].rgb * exp(-m / max(r * 0.012, px * 1.5)) * lit * 1.3 * uAtm[i].w;
+            col += uAtm[i].rgb * exp(-m / max(r * 0.008, px * 0.6)) * lit * 0.9 * uAtm[i].w;
           }
           gl_FragColor = vec4(col, 1.0);
         }`,

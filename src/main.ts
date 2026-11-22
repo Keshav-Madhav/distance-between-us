@@ -1674,6 +1674,9 @@ const _sv = new THREE.Vector3(), _sn = new THREE.Vector3(), _st = new THREE.Vect
  *  or RED MESA's sunlit side, 60,000 km out, facing it. */
 function startSystem(from: { biome: PlanetBiome; pitch: number; speed: number } | null): void {
   startFree()
+  // Out here the ship is lit by the star, not by a sky: its reflections of the world's sky turned it
+  // flat white.
+  for (const v of visuals.values()) v.craft.root.traverse((o) => { const m = (o as THREE.Mesh).material as THREE.MeshStandardMaterial | undefined; if (m && 'envMapIntensity' in m) m.envMapIntensity = Math.min(m.envMapIntensity, 0.22) })
   shards.hide()
   takeOff(0)
   flight.unbound = true
@@ -1721,11 +1724,14 @@ function systemStep(): void {
   if (fc.burner && safe > top) flight.cruise = safe
   else if (flight.speed > top) flight.cruise = Math.min(flight.speed * Math.exp(-1.4 * STEP), Math.max(safe, top))
   else flight.cruise = 0
+  if (testSpeed > 0) flight.cruise = testSpeed
   flight.step(STEP, fc, world)
   // The system moves, not the craft (it stays where the GPU's precision is).
   _sv.subVectors(flight.pos, ANCHOR)
   sysPos.add(_sv)
-  flight.pos.sub(_sv); flight.prev.sub(_sv)
+  // (prev too, onto the anchor: the frame blends prev → pos, and prev one step back drew the ship up
+  //  to 190 km behind the camera at cruise — it vanished.)
+  flight.pos.sub(_sv); flight.prev.copy(flight.pos)
   // Never into the star.
   if (sysPos.length() < STAR_R + 5e7) sysPos.setLength(STAR_R + 5e7)
   flight.syncTo(player)
@@ -1768,6 +1774,8 @@ function drawSysMarks(): void {
 post.attachSpace(space.scene, camera)
 /** Climbing: the sky dome thins, the flat world dissolves into the planet, the haze thins. */
 let spaceOff = false
+/** Tests: hold a speed (m/s; 0 = off). */
+let testSpeed = 0
 function updateSpace(): void {
   if (system) {
     post.setSpace(true)
@@ -2078,6 +2086,7 @@ function simStep(): void {
         if (flight.vac > 0.95 && fc.burner && safe > top) flight.cruise = safe
         else if (flight.speed > top) flight.cruise = Math.min(flight.speed * Math.exp(-1.4 * STEP), Math.max(safe, top))
         else flight.cruise = 0
+        if (testSpeed > 0) flight.cruise = testSpeed
       }
       flight.step(STEP, fc, world)
       flight.syncTo(player)
@@ -2619,7 +2628,8 @@ function frame(now: number): void {
   else white = Math.max(0, white - realDt * (player.barrier === 'boom' ? 1.6 : 4))
   P.uSpeed.value = play ? s : 0
   P.uBlur.value = play ? settings.blur * (cine ? 0.3 : 1) * CFG.post.radialBlur * (s * s * 1.2 + player.boost * 0.4 + white * 0.6 + impactPulse * 0.8) * (1 - space.vac) : 0
-  P.uAberr.value = play ? CFG.post.aberration * (s + player.boost * 0.5 + damageFlash + impactPulse * 2.5) : 0
+  // (Not in vacuum: at cruise speeds it split every star into red, green and blue copies.)
+  P.uAberr.value = play ? CFG.post.aberration * (s + player.boost * 0.5 + damageFlash + impactPulse * 2.5) * (1 - space.vac) : 0
   P.uStreak.value = play ? (cine ? 0.25 : 1) * (BIOME === 'ice' ? 0.45 : BIOME === 'lava' ? 0.6 : 1) * CFG.post.streaks * THREE.MathUtils.clamp((player.mach - 0.8) / 4, 0, 1) * (1 - space.vac) : 0
   P.uStreakT.value += realDt * (0.4 + player.mach * 0.45)
   P.uWhite.value = white * 0.45
@@ -2724,14 +2734,17 @@ function updateHud(dt: number, slow: boolean): void {
   if (mode === 'title') return
   const m = player.mach
   // Above the air Mach means nothing: the big number becomes km/s.
-  const orbital = mode === 'free' && space.vac > 0.5
-  machNum.textContent = orbital ? (player.speed / 1000).toFixed(2) : m.toFixed(2)
-  kmsEl.textContent = orbital ? `MACH ${m.toFixed(1)}` : `${(player.speed / 1000).toFixed(2)} KM/S`
-  if (machLab.textContent !== (orbital ? 'KM/S' : 'MACH')) machLab.textContent = orbital ? 'KM/S' : 'MACH'
-  // Cruising (ORBIT): thousands of km/s; past 100,000 km/s as a fraction of light speed.
-  if (orbital && player.speed > 1e5) {
-    machNum.textContent = player.speed > 1e8 ? `${(player.speed / 2.998e8).toFixed(2)}c` : Math.round(player.speed / 1000).toLocaleString('en')
-    kmsEl.textContent = player.speed > 1e8 ? `${Math.round(player.speed / 1000).toLocaleString('en')} KM/S` : 'CRUISE'
+  // Speed as a traveller reads it, in every mode: km/h, then km/s past 10,000 km/h, then the fraction
+  // of light speed past 10,000 km/s. Mach underneath (the bar and the barrier still count in Mach).
+  {
+    const v = player.speed, kmh = v * 3.6, kms = v / 1000
+    const [num, unit] = kmh < 10000 ? [Math.round(kmh).toLocaleString('en'), 'KM/H']
+      : kms < 10000 ? [kms < 100 ? kms.toFixed(2) : Math.round(kms).toLocaleString('en'), 'KM/S']
+        : [(v / 2.998e8).toFixed(v < 2.998e7 ? 3 : 2), 'LIGHT SPEED · C']
+    machNum.textContent = num
+    if (machLab.textContent !== unit) machLab.textContent = unit
+    const mt = `MACH ${m < 100 ? m.toFixed(m < 10 ? 2 : 1) : Math.round(m).toLocaleString('en')}`
+    kmsEl.textContent = mode === 'free' && flight.cruise > 0 ? `CRUISE · ${mt}` : mt
   }
   for (let i = 0; i < 6; i++) {
     barCells[i].classList.toggle('on', m >= i + 0.5 || m > i + 1)
@@ -3359,6 +3372,8 @@ const g = {
   }),
   player, race, course, combat, flight, fc, CFG, world, scene, camera, post, fx, input, wreckage, shards,
   spaceOff: (v: boolean) => { spaceOff = v },
+  setSpeed: (v: number) => { testSpeed = v },
+  get craftPos() { return visuals.get(player)!.craft.root.position },
   free: () => startFree(), system: () => startSystem(null), get sys() { return { pos: sysPos, planets: PLANETS, near: system?.nearest(sysPos) } }, fly: () => takeOff(0.3), get freeAir() { return freeAir },
 }
 ;(window as unknown as { __g: typeof g }).__g = g
