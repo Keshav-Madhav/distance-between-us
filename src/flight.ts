@@ -64,6 +64,9 @@ const _q = new THREE.Quaternion()
 const _v = new THREE.Vector3()
 const _w = new THREE.Vector3()
 const UP = new THREE.Vector3(0, 1, 0)
+/** "Up" for level flight, banking and the view: the world's — or, near a planet in ORBIT, the planet's
+ *  (set by the game; shared by the craft and its camera). */
+export const UP_REF = new THREE.Vector3(0, 1, 0)
 const AX = new THREE.Vector3(1, 0, 0), AY = new THREE.Vector3(0, 1, 0), AZ = new THREE.Vector3(0, 0, 1)
 
 export class FlightCraft {
@@ -134,6 +137,15 @@ export class FlightCraft {
     this.topMach = 0
   }
 
+  /** Set the attitude outright (a world handover): the nose and wings as given, velocity along the nose. */
+  setAttitude(q: THREE.Quaternion, speed: number): void {
+    this.quat.copy(q); this.prevQuat.copy(q); this.axes()
+    this.speed = speed
+    this.vel.copy(this.fwd).multiplyScalar(speed)
+    this.aim.copy(this.fwd)
+    this.rates.set(0, 0, 0)
+  }
+
   /** FREE ROAM: lift off from the hover — at pos, on heading, at speed (m/s), the nose up a little. */
   launch(pos: THREE.Vector3, heading: number, speed: number, pitchUp: number): void {
     this.reset(pos.x, pos.z, heading, 0, Math.max(FLIGHT.floorMach, speed / MACH))
@@ -173,7 +185,7 @@ export class FlightCraft {
     // (Equal to pitch: at 0.75× a Dart out-turned you on the keys.)
     const turnMax = pitchMax
     // Bank: the world's up seen from the cockpit (+ = rolled right).
-    const bank = Math.atan2(-UP.dot(this.right), UP.dot(this.up))
+    const bank = Math.atan2(-UP_REF.dot(this.right), UP_REF.dot(this.up))
     let rollCmd: number
     this.manualT = Math.max(0, this.manualT - dt)
     if (c.roll !== 0) { rollCmd = c.roll; this.manualT = 0.6 }
@@ -193,7 +205,7 @@ export class FlightCraft {
     this.rates.y += (turnIn * turnMax - this.rates.y) * ease
     this.rates.z += (rollCmd * F.rollRate - this.rates.z) * ease
     // Turn about the world's up (pre-multiplied: a world-axis rotation); pitch and roll in the craft.
-    _q.setFromAxisAngle(UP, -this.rates.y * dt); this.quat.premultiply(_q)
+    _q.setFromAxisAngle(UP_REF, -this.rates.y * dt); this.quat.premultiply(_q)
     _q.setFromAxisAngle(AX, -this.rates.x * dt); this.quat.multiply(_q)
     _q.setFromAxisAngle(AZ, this.rates.z * dt); this.quat.multiply(_q)
     this.quat.normalize()
@@ -210,7 +222,7 @@ export class FlightCraft {
     else { this.energyIdle += dt; if (this.energyIdle > 0.8) this.energy = Math.min(F.energyMax, this.energy + F.energyRefill * dt) }
     // (FREE ROAM: only where the world stops being drawn — the terrain reaches ~24 km.)
     // (FREE ROAM: up into space — src/space.ts; the limit is far beyond where the air ends.)
-    const soft = this.unbound ? Infinity : this.sandbox ? 1650000 : F.softCeiling, hard = this.unbound ? Infinity : this.sandbox ? 1700000 : F.hardCeiling
+    const soft = this.unbound ? Infinity : this.sandbox ? 4900000 : F.softCeiling, hard = this.unbound ? Infinity : this.sandbox ? 5000000 : F.hardCeiling
     /** 0 in the air … 1 in vacuum (FREE ROAM): no drag, the engines push harder, speed is free. */
     const vac = this.sandbox ? THREE.MathUtils.smoothstep(this.agl, 20000, 70000) : 0
     this.vac = vac
@@ -367,8 +379,8 @@ export class FlightCam {
     const wantBack = fwd.clone().multiplyScalar(0.7).addScaledVector(vdir, 0.3).normalize()
     // The view's up: the world's, taking a little of the craft's roll — and all of it when the craft
     // goes past vertical (through a loop the world's up would flip the view).
-    const lean = THREE.MathUtils.clamp(this.horizon + Math.max(0, -cUp.y) * 1.4, 0, 1)
-    const wantUp = UP.clone().lerp(cUp, lean)
+    const lean = THREE.MathUtils.clamp(this.horizon + Math.max(0, -cUp.dot(UP_REF)) * 1.4, 0, 1)
+    const wantUp = UP_REF.clone().lerp(cUp, lean)
     if (wantUp.lengthSq() < 1e-4) wantUp.copy(cUp)
     wantUp.normalize()
     if (!this.init) { this.back.copy(wantBack); this.upS.copy(wantUp); this.fwdS.copy(fwd); this.init = true }

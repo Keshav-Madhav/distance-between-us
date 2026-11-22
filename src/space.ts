@@ -12,6 +12,7 @@
 // dissolves into the planet, the two agree.
 import * as THREE from 'three'
 import { FBMT_GLSL, NOISE_GLSL, NOISE_TEX } from './shaders'
+import { SKY_GLSL_SHARED } from './sky'
 import { BIOME, MOUND_U, SKY, SUN_DIR, TERRAIN_GLSL } from './terrain'
 
 /** Earth-sized: at 10 km the horizon is nearly flat, at 150 km a gentle arc (a 600 km planet read as a toy globe). */
@@ -67,29 +68,29 @@ export const cloudGlsl = (alt: string) => /* glsl */ `
           return cov * smoothstep(0.25, 0.55, detail + cov * 0.4);
         }
 `
-/** A rotation of the star field per world (each world its own sky). */
-function skyRot(): string {
-  const seed = { desert: 0.3, ice: 1.9, lava: 3.1, forest: 4.4, jungle: 5.6, space: 0.3 }[BIOME]
-  const m = new THREE.Matrix3().setFromMatrix4(new THREE.Matrix4().makeRotationFromEuler(new THREE.Euler(seed * 1.3, seed * 2.1, seed * 0.7)))
-  return m.elements.map((x) => x.toFixed(5)).join(', ')
-}
+/** The star's angular radius from this world, as ORBIT draws it (its radius / this planet's distance). */
+const SUN_ANG = (() => {
+  const d = { lava: 3.1e9, desert: 4.7e9, forest: 6.4e9, jungle: 8.1e9, ice: 10.8e9, space: 4.7e9 }[BIOME]
+  return Math.asin(7e7 / d)
+})()
 const v3 = (a: number[]) => `vec3(${a.map((n) => n.toFixed(5)).join(', ')})`
 
 /** The space pass as a function of the view direction: the planet (and its clouds and aurora) or the
  *  sky, through the atmosphere. Shared: the flat world's ground blends into exactly this at its rim, so
  *  where it dissolves the two sides are the same pixels (no seam). Needs uCloudOff, uTime, tNoise,
  *  TERRAIN_GLSL (riverAt) and fbmT declared by the host. */
-export const SPACE_U = { uSpAlt: { value: 0 }, uSpCamXZ: { value: new THREE.Vector2() }, uSunView: { value: 0 } }
+export const SPACE_U = { uSpAlt: { value: 0 }, uSpCamXZ: { value: new THREE.Vector2() }, uSunView: { value: 0 }, uSkyM: { value: new THREE.Matrix3() } }
 export const SPACE_FN = /* glsl */ `
         uniform float uSpAlt;
         uniform vec2 uSpCamXZ;
         uniform float uSunView;
+        uniform mat3 uSkyM; // this world's directions → the star system's (the shared sky)
         const float SP_R = ${(PLANET_R / 1000).toFixed(1)};
         const float SP_RA = ${((PLANET_R + ATMO_TOP) / 1000).toFixed(1)};
         const float SP_RC = SP_R + 2.6;
         const vec3 SP_SUN = ${v3(SUN_DIR)};
-        // Each world under its own spstars.
-        const mat3 SP_SKYROT = mat3(${skyRot()});
+        const float SP_SUNANG = ${SUN_ANG.toFixed(6)}; // the star's angular radius from this world (ORBIT's size)
+        // (Each world's sky is the star system's, turned into its frame: uSkyM.)
         const vec3 SP_BR = ${v3(LOOK.br.map((x) => x * 0.75))};
         const float SP_BM = ${LOOK.bm.toFixed(5)};
         const vec3 SP_MIE_T = ${v3(LOOK.mieTint)};
@@ -177,39 +178,7 @@ export const SPACE_FN = /* glsl */ `
           return c;
         }
         ${cloudGlsl('uSpAlt')}
-        // Stars: three layers of cells on the spsphere of directions; most cells empty, the rest one star
-        // each, about a pixel wide (sized by the cell's footprint on screen), brightness a steep power
-        // law (a few bright, most faint), tinted by temperature.
-        vec3 sphash33(vec3 p) { p = fract(p * vec3(0.1031, 0.1030, 0.0973)); p += dot(p, p.yxz + 33.33); return fract((p.xxy + p.yxx) * p.zyx); }
-        vec3 spstars(vec3 d) {
-          vec3 acc = vec3(0.0);
-          for (int k = 0; k < 3; k++) {
-            float S = k == 0 ? 120.0 : k == 1 ? 300.0 : 700.0;
-            vec3 p = d * S, c = floor(p), h = sphash33(c + float(k) * 17.0);
-            if (h.z > (k == 0 ? 0.03 : k == 1 ? 0.035 : 0.04)) continue;
-            vec3 sp = c + 0.2 + 0.6 * sphash33(c + 2.7);
-            float px = max(length(fwidth(p)), 1e-4);
-            float w = length(p - sp) / px;
-            float m = pow(sphash33(c + 4.1 + float(k)).x, 9.0);
-            vec3 tint = mix(vec3(1.0, 0.75, 0.55), vec3(0.7, 0.82, 1.0), sphash33(c + 9.3).y);
-            acc += tint * (0.04 + m) * exp(-w * w * 1.3) * (k == 0 ? 2.5 : k == 1 ? 0.9 : 0.4);
-          }
-          return acc;
-        }
-        // The Milky Way: a band along a tilted great circle, clumpy, cut by dust lanes.
-        vec3 spgalaxy(vec3 d) {
-          vec3 nG = normalize(vec3(0.35, 0.62, -0.7));
-          float b = dot(d, nG);
-          vec3 t = normalize(cross(nG, vec3(0.0, 0.0, 1.0)));
-          vec2 uv = vec2(atan(dot(d, cross(nG, t)), dot(d, t)), b);
-          float band = exp(-b * b / 0.012) + 0.35 * exp(-b * b / 0.08);
-          // (Around the band, whole numbers of the noise's 8-unit tile: no seam where atan wraps.)
-          float clump = fbmT(vec2(uv.x * 2.5465, uv.y * 9.0) + 1.0) * 0.7 + fbmT(vec2(uv.x * 10.186, uv.y * 30.0) + 5.0) * 0.3;
-          float dust = smoothstep(0.45, 0.7, fbmT(vec2(uv.x * 6.3662, uv.y * 40.0) + 9.0)) * exp(-b * b / 0.004);
-          float core = exp(-pow(abs(uv.x - 0.6), 2.0) * 1.6);
-          vec3 col = mix(vec3(0.55, 0.6, 0.8), vec3(1.0, 0.85, 0.65), core);
-          return col * band * (0.35 + clump) * (1.0 - 0.45 * dust) * (0.05 + 0.1 * core);
-        }
+        ${SKY_GLSL_SHARED}
         vec3 spacePixel(vec3 d) {
           float h = uSpAlt;
           vec3 o = vec3(0.0, SP_R + h, 0.0);
@@ -305,14 +274,25 @@ export const SPACE_FN = /* glsl */ `
               }
             }
           } else {
-            // (A bright sky drowns the spstars: they fade with the light scattered in front of them.)
+            // (A bright sky drowns the stars: they fade with the light scattered in front of them.)
             // Day side: the sunlit world sets the exposure, and the sky is nearly black (ISS daylight).
-            vec3 ds = SP_SKYROT * d;
+            vec3 ds = uSkyM * d;
             // (The sun in view sets the exposure: no stars then, as in every photo.)
-            back = (spstars(ds) + spgalaxy(ds)) * (1.0 - 0.92 * uSunView) * exp(-dot(col, vec3(0.3, 0.5, 0.2)) * 30.0) * ${Math.min(0.3, 1 - 0.96 * Math.min(1, Math.max(0, (SUN_DIR[1] + 0.05) / 0.3))).toFixed(3)}; // (by day, or over a sunlit twilight planet, the exposure is set for it: few stars)
+            // Low down, the day sets the exposure (few stars); above the air the sky is ORBIT's own, star
+            // for star, dimmed the same way it is out there: only by the star's glare.
+            float vacK = smoothstep(40.0, 250.0, uSpAlt);
+            float sang = acos(clamp(dot(d, SP_SUN), -1.0, 1.0));
+            float glareK = smoothstep(0.6, 0.15, sang - SP_SUNANG);
+            float dayDim = ${Math.min(0.3, 1 - 0.96 * Math.min(1, Math.max(0, (SUN_DIR[1] + 0.05) / 0.3))).toFixed(3)} * (1.0 - 0.92 * uSunView);
+            back = skyBack(ds) * mix(dayDim * exp(-dot(col, vec3(0.3, 0.5, 0.2)) * 30.0), 1.0 - 0.95 * glareK, vacK);
             // The sun's disc (and its glare is the bloom's job).
             float sd = dot(d, SP_SUN);
-            back += vec3(1.0, 0.96, 0.9) * (smoothstep(0.99996, 0.99999, sd) * 600.0 + pow(max(sd, 0.0), 20000.0) * 6.0 + pow(max(sd, 0.0), 2000.0) * 0.6);
+            vec3 sunLow = vec3(1.0, 0.96, 0.9) * (smoothstep(0.99996, 0.99999, sd) * 600.0 + pow(max(sd, 0.0), 20000.0) * 6.0 + pow(max(sd, 0.0), 2000.0) * 0.6);
+            // Up there, ORBIT's star exactly: its size from here, limb-darkened, the same glare.
+            float sk = SP_SUNANG / max(sang, SP_SUNANG);
+            vec3 sunHi = sang < SP_SUNANG ? vec3(1.0, 0.95, 0.88) * 14.0 * (0.55 + 0.45 * sqrt(max(1.0 - pow(sang / SP_SUNANG, 2.0), 0.0))) : vec3(0.0);
+            sunHi += vec3(1.0, 0.88, 0.72) * (sk * sk * sk * 0.9 + sk * 0.012);
+            back += mix(sunLow, sunHi, vacK);
           }
           col += back * trans;
           // The ground's own haze, shared: the same fog the flat world uses (thinned by height the same
@@ -422,13 +402,13 @@ export class Space {
     this.scene.add(this.dome)
   }
   /** Follow the main camera (call before rendering). */
-  update(camera: THREE.PerspectiveCamera, cloudOff: THREE.Vector2, time: number): void {
+  update(camera: THREE.PerspectiveCamera, cloudOff: THREE.Vector2, time: number, shift?: THREE.Vector2): void {
     const u = this.mat.uniforms
     camera.updateMatrixWorld()
     u.uInvProj.value.copy(camera.projectionMatrixInverse)
     u.uCamRot.value.setFromMatrix4(camera.matrixWorld)
     SPACE_U.uSpAlt.value = Math.max(0.002, camera.position.y / 1000)
-    SPACE_U.uSpCamXZ.value.set(camera.position.x, camera.position.z)
+    SPACE_U.uSpCamXZ.value.set(camera.position.x - (shift?.x ?? 0), camera.position.z - (shift?.y ?? 0))
     // The sun in view (or near it): 1 — the exposure is set for it.
     const fwd = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion)
     SPACE_U.uSunView.value = THREE.MathUtils.smoothstep(fwd.x * SUN_DIR[0] + fwd.y * SUN_DIR[1] + fwd.z * SUN_DIR[2], 0.55, 0.85)

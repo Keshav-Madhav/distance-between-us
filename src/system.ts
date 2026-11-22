@@ -7,6 +7,7 @@ import * as THREE from 'three'
 import { BIOME } from './terrain'
 import { FBMT_GLSL, NOISE_GLSL, NOISE_TEX } from './shaders'
 import { LOOKS, PLANET_R, type PlanetBiome } from './space'
+import { SKY_GLSL_SHARED } from './sky'
 
 export interface Planet { biome: PlanetBiome; name: string; pos: THREE.Vector3 }
 
@@ -83,22 +84,7 @@ export class StarSystem {
           //  cover never reached its threshold and the planets read as smooth balls.)
           return clamp((v - 0.5) * 1.9 + 0.5, 0.0, 1.0);
         }
-        vec3 hash33(vec3 p) { p = fract(p * vec3(0.1031, 0.1030, 0.0973)); p += dot(p, p.yxz + 33.33); return fract((p.xxy + p.yxx) * p.zyx); }
-        vec3 stars(vec3 d) {
-          vec3 acc = vec3(0.0);
-          for (int k = 0; k < 3; k++) {
-            float S = k == 0 ? 120.0 : k == 1 ? 300.0 : 700.0;
-            vec3 p = d * S, c = floor(p), h = hash33(c + float(k) * 17.0);
-            if (h.z > (k == 0 ? 0.012 : k == 1 ? 0.009 : 0.007)) continue;
-            vec3 sp = c + 0.2 + 0.6 * hash33(c + 2.7);
-            float px = max(length(fwidth(p)), 1e-4);
-            float w = length(p - sp) / px;
-            float m = pow(hash33(c + 4.1 + float(k)).x, 9.0);
-            vec3 tint = mix(vec3(1.0), mix(vec3(1.0, 0.78, 0.6), vec3(0.75, 0.85, 1.0), hash33(c + 9.3).y), 0.35);
-            acc += tint * (0.04 + m) * exp(-w * w * 1.3) * (k == 0 ? 2.5 : k == 1 ? 0.9 : 0.4);
-          }
-          return acc;
-        }
+        ${SKY_GLSL_SHARED}
         // Ray (from the camera, along d) to a sphere at c, radius r: the near distance, or −1.
         // (Closest-approach form: no |c|² − r² cancellation at ten million km.)
         float hitSphere(vec3 c, float r, vec3 d, out float miss) {
@@ -136,7 +122,9 @@ export class StarSystem {
           }
           // The air over the disc: thicker toward the limb, lit on the day side.
           float graze = 1.0 - max(dot(n, -d), 0.0);
-          col = mix(col, uAtm[i].rgb * (term * 1.2 + 0.01), pow(graze, 4.0) * 0.5 * uAtm[i].w);
+          // (Some of the air over the whole disc, as a world's own view of itself from orbit shows it — the
+          //  handover then morphs between two pictures of the same planet, not two planets.)
+          col = mix(col, uAtm[i].rgb * (term * 1.2 + 0.01), (0.2 + pow(graze, 4.0) * 0.45) * uAtm[i].w);
           return col;
         }
         void main() {
@@ -166,7 +154,7 @@ export class StarSystem {
           } else {
             // Stars, hidden when the star is near the view (it sets the exposure).
             float glareK = smoothstep(0.6, 0.15, ang - sAng);
-            col = stars(d) * (1.0 - 0.95 * glareK);
+            col = skyBack(d) * (1.0 - 0.95 * glareK);
           }
           // The star's glare (over everything it is not hidden behind).
           if (!(hit >= 0 && !starFirst) || starFirst) {

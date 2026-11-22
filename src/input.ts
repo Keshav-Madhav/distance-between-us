@@ -5,6 +5,8 @@ const THREE_clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b,
 
 export class Input {
   readonly down = new Set<string>()
+  /** Keys held over a world handover (the new instance never saw them pressed). */
+  hold(codes: string[]): void { for (const c of codes) this.down.add(c) }
   private readonly pressed = new Set<string>()
   readonly c: Controls = { steer: 0, boost: false, burner: false, brake: false, strafe: 0, dodgeL: false, dodgeR: false }
   fire = false
