@@ -1395,6 +1395,7 @@ let runTop = 0
 let driftLvl = 0
 let secK = 0, pinUntil = 0
 function startRace(): void {
+  ;(document.activeElement as HTMLElement | null)?.blur?.() // (see Input: a focused START restarted the run on Space)
   freeOff()
   world.courseOn = true; course.group.visible = true
   missedCount = 0
@@ -1438,6 +1439,7 @@ function startRace(): void {
 }
 
 function startHunt(): void {
+  ;(document.activeElement as HTMLElement | null)?.blur?.() // (see Input: a focused START restarted the run on Space)
   freeOff()
   applyPending()
   runTop = 0
@@ -1508,6 +1510,7 @@ function freeOff(): void {
   $('#score .lab').textContent = 'SCORE'
 }
 function startFree(): void {
+  ;(document.activeElement as HTMLElement | null)?.blur?.() // (see Input: a focused START restarted the run on Space)
   freeOff()
   applyPending()
   runTop = 0

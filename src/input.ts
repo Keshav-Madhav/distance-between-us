@@ -18,13 +18,17 @@ export class Input {
   mouseAt = -99
 
   constructor() {
+    // In play, the game owns Space, Enter and the arrows — on press, on every auto-repeat and on release.
+    // (A menu button clicked to start kept the focus, and a browser clicks a focused button when Space is
+    //  RELEASED: letting go of Space restarted the run at the spawn — "the reset", in HUNT and FREE ROAM.)
+    const owned = (e: KeyboardEvent) => ['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code) || (e.code === 'Enter' && document.body.classList.contains('playing') && !document.querySelector('#pause:not(.hide), #over:not(.hide)'))
     addEventListener('keydown', (e) => {
+      if (owned(e)) e.preventDefault()
       if (e.repeat) return
       this.down.add(e.code)
       this.pressed.add(e.code)
-      if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) e.preventDefault()
     })
-    addEventListener('keyup', (e) => this.down.delete(e.code))
+    addEventListener('keyup', (e) => { if (owned(e)) e.preventDefault(); this.down.delete(e.code) })
     addEventListener('blur', () => this.down.clear())
     addEventListener('mousedown', (e) => { if (e.button === 0) this.down.add('Mouse0'); if (e.button === 2) this.down.add('Mouse2') })
     addEventListener('mouseup', (e) => { if (e.button === 0) this.down.delete('Mouse0'); if (e.button === 2) this.down.delete('Mouse2') })
