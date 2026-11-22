@@ -1,5 +1,11 @@
 import { Vector4 } from 'three'
 
+/** Climbing out to space (src/space.ts): x the radius where the flat world dissolves into the planet
+ *  (0 = off), y how much of all of it is gone (0…1), z climbing (0…1: the haze thins, the ground bends
+ *  to the planet's curvature), w the far
+ *  mountain ring gone (0…1). Zero (a material without it) = nothing changes. */
+export const WORLD_FADE = { uWorldFade: { value: new Vector4() } }
+
 /** The course this page was loaded for (a switch is a reload): picks the light and the world. */
 const COURSE_ID: string = (() => {
   try { return new URLSearchParams(location.search).get('course') ?? localStorage.getItem('dbu-course') ?? 'sprint' } catch { return 'sprint' }
@@ -244,10 +250,26 @@ vec3 skyColor(vec3 d) {
   c = mix(c, SKY_HAZE * 0.92, 1.0 - smoothstep(-0.12, 0.0, up));
   return c * 1.3;
 }
+uniform vec4 uWorldFade;
+/** Interleaved-gradient dither (a per-pixel threshold for dissolving geometry). */
+float ign(vec2 p) { return fract(52.9829189 * fract(dot(p, vec2(0.06711056, 0.00583715)))); }
+float wfHash(vec2 p) { vec3 p3 = fract(vec3(p.xyx) * 0.1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
+float wfNoise(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f); return mix(mix(wfHash(i), wfHash(i + vec2(1.0, 0.0)), f.x), mix(wfHash(i + vec2(0.0, 1.0)), wfHash(i + 1.0), f.x), f.y); }
+/** Fragment-only: is this point of the flat world dissolved into the planet? (pass gl_FragCoord.xy) */
+bool worldCut(vec3 w, vec2 fc) {
+  if (uWorldFade.x <= 0.0 && uWorldFade.y <= 0.0) return false;
+  float r = length(w.xz - cameraPosition.xz);
+  float cut = max(uWorldFade.y, uWorldFade.x > 0.0 ? smoothstep(uWorldFade.x * 0.45, uWorldFade.x, r) : 0.0);
+  // Patches kilometres across (with a fine dither only at their edges), not a stipple ring.
+  float th = mix(wfNoise(w.xz * 0.0007) * 0.6 + wfNoise(w.xz * 0.0031) * 0.4, ign(fc), 0.18);
+  return th < cut;
+}
 vec3 applyFog(vec3 col, vec3 wpos) {
   vec3 d = wpos - cameraPosition;
   float dist = length(d);
   float k = dist * ${SKY.fogK.toFixed(7)};
+  // Up high there is less air between you and the ground: the haze thins with the mean height.
+  if (uWorldFade.z > 0.0) k *= mix(1.0, exp(-max(0.5 * (cameraPosition.y + wpos.y), 0.0) / 4500.0), uWorldFade.z);
   float f = 1.0 - exp(-k * k);
   // Thinner up high: mesa tops stand clear of the ground haze.
   f *= mix(1.0, 0.55, smoothstep(0.0, 500.0, wpos.y));

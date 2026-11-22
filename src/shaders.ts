@@ -1,6 +1,6 @@
 // Shared shader helpers: fog patching for three's standard materials, and small noise functions.
 import * as THREE from 'three'
-import { SKY_GLSL, TERRAIN_GLSL } from './terrain'
+import { SKY_GLSL, TERRAIN_GLSL, WORLD_FADE } from './terrain'
 import { SHADOW_GLSL, SHADOW_U } from './shadow'
 
 export const NOISE_GLSL = /* glsl */ `
@@ -82,6 +82,7 @@ export function patchStandard(mat: THREE.MeshStandardMaterial, opts: PatchOpts =
     if (opts.aur) s.uniforms.uAurT = opts.aur
     if (opts.shadow) {
       Object.assign(s.uniforms, SHADOW_U)
+      Object.assign(s.uniforms, WORLD_FADE)
       // (After the full patch below has declared vFogW: appended at the end of this callback.)
     }
     if (opts.forest && opts.aur) s.uniforms.uWindT = opts.aur
@@ -135,6 +136,7 @@ export function patchStandard(mat: THREE.MeshStandardMaterial, opts: PatchOpts =
     s.fragmentShader = s.fragmentShader
       .replace('#include <common>', `#include <common>\nvarying vec3 vFogW;\nvarying vec3 vWN;\nvarying float vBaseY;\nvarying float vHt;\nfloat gIceSnow = 0.0;\n${opts.strata ? 'uniform sampler2D tRock;\nuniform sampler2D tSand;' : ''}\n${SKY_GLSL}\n${NOISE_GLSL}`)
       .replace('#include <fog_fragment>', 'gl_FragColor.rgb = applyFog(gl_FragColor.rgb, vFogW);')
+      .replace('#include <clipping_planes_fragment>', '#include <clipping_planes_fragment>\n      if (worldCut(vFogW, gl_FragCoord.xy)) discard;')
     if (opts.forest) {
       s.fragmentShader = s.fragmentShader.replace('#include <common>', `#include <common>\nvarying float vCrev;\nvarying vec2 vOrg;`)
         .replace('#include <color_fragment>', `#include <color_fragment>

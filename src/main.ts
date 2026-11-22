@@ -21,7 +21,8 @@ import { KINDS, Darts, type Kind } from './hunt/enemies'
 import { Sound } from './audio'
 import { Input } from './input'
 import { Post } from './post'
-import { BIOME, biomeOf, type Biome, DUST, GREEN, groundH, SUN_DIR } from './terrain'
+import { BIOME, biomeOf, type Biome, DUST, GREEN, groundH, SUN_DIR, WORLD_FADE } from './terrain'
+import { PLANET_R, Space } from './space'
 /** Shadows are cast along the sun, but never stretched past a ~17° sun (a sun on the horizon threw them 100 m off). */
 const SHADOW_Y = Math.max(SUN_DIR[1], 0.3)
 import { loadTextures } from './textures'
@@ -1631,6 +1632,34 @@ let tier: Tier = tierName === 'auto' ? 'high' : tierName
 let renderScale = 1
 bootMark('mid')
 const post = new Post(renderer, scene, camera, TIERS[tier].samples)
+// Space (src/space.ts): behind everything, only once you climb in FREE ROAM.
+const space = new Space()
+space.addSky(world.sky)
+post.attachSpace(space.scene, camera)
+/** Climbing: the sky dome thins, the flat world dissolves into the planet, the haze thins. */
+let spaceOff = false
+function updateSpace(): void {
+  const alt = camera.position.y
+  const on = mode === 'free' && alt > 2500 && !spaceOff
+  post.setSpace(on)
+  const sm = (world.sky.material as THREE.ShaderMaterial).uniforms
+  const wf = WORLD_FADE.uWorldFade.value
+  world.sky.visible = !on
+  // The cloud layer: painted on the sky from below, a real deck from just under it upward.
+  const deckK = mode === 'free' && !spaceOff ? THREE.MathUtils.smoothstep(alt, 1700, 2500) : 0
+  sm.uCloudFade.value = 1 - deckK
+  world.deck.visible = deckK > 0
+  const du = (world.deck.material as THREE.ShaderMaterial).uniforms
+  du.uDeck.value = deckK; du.uAlt.value = alt / 1000
+  if (!on) { sm.uAir.value = 1; sm.uDip.value = 0; wf.set(0, 0, 0, 0); space.vac = 0; world.hemi.intensity = world.hemiK; return }
+  space.update(camera, sm.uCloudOff.value, time)
+  // Above the air there is no sky to light you: the sun, and a little light back off the planet.
+  world.hemi.intensity = world.hemiK * (1 - 0.8 * space.vac)
+  sm.uAir.value = 1 - THREE.MathUtils.smoothstep(alt, 2500, 14000)
+  // (Eased in from where the space layer takes over: at 2.5 km the full dip is 5° — a jump.)
+  sm.uDip.value = Math.acos(PLANET_R / (PLANET_R + Math.max(0, alt))) * THREE.MathUtils.smoothstep(alt, 2500, 7000)
+  wf.set(alt > 5000 ? THREE.MathUtils.lerp(30000, 16000, THREE.MathUtils.smoothstep(alt, 5000, 16000)) : 0, THREE.MathUtils.smoothstep(alt, 12000, 26000), THREE.MathUtils.smoothstep(alt, 2500, 8000), THREE.MathUtils.smoothstep(alt, 2500, 9000))
+}
 // Sun shadows (src/shadow.ts): mesas, trees, towers and ships cast them; off on the low tier.
 const sunShadow = new SunShadow()
 const markAllCasters = () => { markCasters(world.group); markCasters(course.group); for (const v of visuals.values()) markCasters(v.craft.root); markCasters(darts.mesh) }
@@ -2426,7 +2455,7 @@ function frame(now: number): void {
   P.uSpeed.value = play ? s : 0
   P.uBlur.value = play ? settings.blur * (cine ? 0.3 : 1) * CFG.post.radialBlur * (s * s * 1.2 + player.boost * 0.4 + white * 0.6 + impactPulse * 0.8) : 0
   P.uAberr.value = play ? CFG.post.aberration * (s + player.boost * 0.5 + damageFlash + impactPulse * 2.5) : 0
-  P.uStreak.value = play ? (cine ? 0.25 : 1) * (BIOME === 'ice' ? 0.45 : BIOME === 'lava' ? 0.6 : 1) * CFG.post.streaks * THREE.MathUtils.clamp((player.mach - 0.8) / 4, 0, 1) : 0
+  P.uStreak.value = play ? (cine ? 0.25 : 1) * (BIOME === 'ice' ? 0.45 : BIOME === 'lava' ? 0.6 : 1) * CFG.post.streaks * THREE.MathUtils.clamp((player.mach - 0.8) / 4, 0, 1) * (1 - space.vac) : 0
   P.uStreakT.value += realDt * (0.4 + player.mach * 0.45)
   P.uWhite.value = white * 0.45
   P.uDamage.value = damageFlash
@@ -2434,6 +2463,7 @@ function frame(now: number): void {
   P.uGrain.value = settings.grain ? CFG.post.grain : 0
   P.uSharpen.value = settings.sharp + (1 - renderScale) * 1.2
   P.uExposure.value = CFG.post.exposure
+  P.uVac.value = space.vac
   post.bloom.strength = CFG.post.bloom
   world.ground.uCloudOff.value.copy((world.sky.material as THREE.ShaderMaterial).uniforms.uCloudOff.value)
   post.bloom.threshold = CFG.post.bloomThreshold
@@ -2507,6 +2537,7 @@ function frame(now: number): void {
 
   sunShadow.enabled = tier !== 'low' && settings.shadows
   sunShadow.update(renderer, scene, camera.position, tmp.set(camera.matrixWorld.elements[8] * -1, 0, camera.matrixWorld.elements[10] * -1))
+  updateSpace()
   post.render(realDt)
   if (freezeWanted) {
     freezeWanted = false
@@ -2686,7 +2717,9 @@ function updateHud(dt: number, slow: boolean): void {
     if (slow) {
       scoreNum.textContent = String(shards.taken)
       const alt = Math.max(0, Math.round(player.pos.y - groundH(player.pos.x, player.pos.z)))
-      scoreSub.innerHTML = `${shards.total} FOUND IN ALL<br/>${freeAir ? '<b>FLYING</b> · SPACE UP · C DOWN' : 'HOLD SPACE AT SPEED TO LIFT OFF'}<br/>ALT ${alt} M · ${fmtTime(runTime)}`
+      const altTxt = alt < 10000 ? `${alt} M` : `${(alt / 1000).toFixed(alt < 100000 ? 1 : 0)} KM`
+      const zone = alt > 80000 ? '<b style="color:#9fd2ff">IN SPACE</b>' : alt > 25000 ? '<b style="color:#9fd2ff">EDGE OF SPACE</b>' : freeAir ? '<b>FLYING</b> · SPACE UP · C DOWN' : 'HOLD SPACE AT SPEED TO LIFT OFF'
+      scoreSub.innerHTML = `${shards.total} FOUND IN ALL<br/>${zone}<br/>ALT ${altTxt} · ${fmtTime(runTime)}`
     }
   } else if (mode === 'hunt') {
     for (const { d } of tagEls) d.style.display = 'none'
@@ -3136,6 +3169,7 @@ const g = {
     place: race.racers[0].place, crashing: player.crashing, burning: player.burning, slip: +(player.slip * 57.3).toFixed(1), spin: +player.spin.toFixed(2), drift: +player.drift.toFixed(2), yaw: +player.yawRate.toFixed(2), lap: race.lapOf(race.racers[0]), passed: race.racers[0].passed, race: race.state, particles: fx.glow.count + fx.smoke.count,
   }),
   player, race, course, combat, flight, fc, CFG, world, scene, camera, post, fx, input, wreckage, shards,
+  spaceOff: (v: boolean) => { spaceOff = v },
   free: () => startFree(), fly: () => takeOff(0.3), get freeAir() { return freeAir },
 }
 ;(window as unknown as { __g: typeof g }).__g = g

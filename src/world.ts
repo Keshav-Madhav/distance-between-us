@@ -3,11 +3,12 @@
 // boulders and mesas (both collide, against their true lumpy profile), the env map.
 import * as THREE from 'three'
 import { REBASE } from './config'
-import { BIOME, groundH, LIGHT, MOUND_U, SUN_DIR } from './terrain'
+import { BIOME, groundH, LIGHT, MOUND_U, SUN_DIR, WORLD_FADE } from './terrain'
 import { ICE_VARIANTS, iceGeometry } from './ice'
 import { LAVA_VARIANTS, lavaGeometry } from './lava'
 import { FOREST_VARIANTS, forestGeometry } from './forest'
 import { JUNGLE_VARIANTS, jungleGeometry } from './jungle'
+import { CLOUD_GLSL, LOOK, PLANET_R } from './space'
 
 /** The world's own landform shapes (ice or basalt) — the desert's mesas come from mesaGeometry. */
 const landGeometry = (kind: 'mesa' | 'butte' | 'spire', seed: number, v: number) => BIOME === 'lava' ? lavaGeometry(kind, seed, v) : BIOME === 'forest' ? forestGeometry(kind, seed, v) : BIOME === 'jungle' ? jungleGeometry(kind, seed, v) : iceGeometry(kind, seed, v)
@@ -38,7 +39,8 @@ function skyMaterial(ground: boolean): THREE.ShaderMaterial {
   return new THREE.ShaderMaterial({
     side: THREE.BackSide,
     depthWrite: false,
-    uniforms: { uTime: { value: 0 }, uAurT: AUR_T, uCloudOff: { value: new THREE.Vector2() }, tNoise: { value: NOISE_TEX }, ...MOUND_U },
+    // (Fades out as you climb to space: the space pass behind it shows through.)
+    uniforms: { uTime: { value: 0 }, uAurT: AUR_T, uCloudOff: { value: new THREE.Vector2() }, tNoise: { value: NOISE_TEX }, uAir: { value: 1 }, uDip: { value: 0 }, uCloudFade: { value: 1 }, ...MOUND_U },
     vertexShader: /* glsl */ `
       varying vec3 vDir;
       void main() {
@@ -50,13 +52,19 @@ function skyMaterial(ground: boolean): THREE.ShaderMaterial {
       ${WORLD_GLSL}
       uniform float uTime;
       uniform vec2 uCloudOff;
+      uniform float uAir;
+      uniform float uDip;
+      uniform float uCloudFade;
       varying vec3 vDir;
       ${FBMT_GLSL}
       // (Baked: three of these per pixel were 48 hashes — the costliest thing in the frame.)
       float fbm(vec2 p) { return fbmT(p); }
       void main() {
         vec3 d = normalize(vDir);
-        vec3 c = skyColor(d);
+        // Up high the true horizon is below level (the dip): the dome's horizon follows it down.
+        // (The gradient and the alpha only: shifting the sun and clouds too drew a second sun.)
+        vec3 dh = normalize(vec3(d.x, d.y + uDip, d.z));
+        vec3 c = skyColor(dh);
         float s = max(dot(d, SUN_DIR), 0.0);
         ${ground ? `c = mix(c, ${BIOME === 'lava' ? 'vec3(0.06, 0.04, 0.035)' : BIOME === 'ice' ? 'vec3(0.6, 0.66, 0.8)' : BIOME === 'forest' ? 'vec3(0.2, 0.3, 0.12)' : BIOME === 'jungle' ? 'vec3(0.05, 0.08, 0.05)' : 'vec3(0.62, 0.3, 0.13)'}, 1.0 - smoothstep(-0.08, 0.0, d.y));` : ''}
         // Fair-weather cumulus on a plane 2.6 km up: fbm coverage, lit tops, grey-blue bases,
@@ -76,6 +84,8 @@ function skyMaterial(ground: boolean): THREE.ShaderMaterial {
           #endif
           float detail = fbm(cp * 0.0016 + 3.0);
           cov *= smoothstep(0.25, 0.55, detail + cov * 0.4);
+          // (Climbing to the cloud layer: the painted clouds give way to the real deck — src/world.ts.)
+          cov *= uCloudFade;
           float lit = clamp(fbm(cp * 0.00032 + SUN_DIR.xz * 0.06) - base + 0.55, 0.0, 1.0);
           vec3 cc = mix(vec3(0.62, 0.68, 0.8) * mix(vec3(1.0), SUN_TINT, 0.5), vec3(1.9, 1.8, 1.65) * SUN_TINT, lit);
           cc += vec3(1.0, 0.8, 0.55) * pow(s, 6.0) * 0.6;
@@ -145,7 +155,8 @@ function skyMaterial(ground: boolean): THREE.ShaderMaterial {
         #else
         c += vec3(1.0, 0.9, 0.75) * (smoothstep(0.99955, 0.9998, s) * 40.0 + pow(s, 900.0) * 4.0 + (pow(s, 30.0) * 0.4 + pow(s, 4.0) * 0.1) * ${BIOME === 'forest' ? '0.45' : '1.0'});
         #endif
-        gl_FragColor = vec4(c, 1.0);
+        // (In space mode only the sky above the horizon: below it the planet shows, not a painted ground.)
+        gl_FragColor = vec4(c, uAir < 0.999 ? uAir * smoothstep(-0.04, 0.01, dh.y) : 1.0);
       }`,
   })
 }
@@ -193,7 +204,7 @@ function mountains(): THREE.Mesh {
   const mat = new THREE.ShaderMaterial({
     side: THREE.DoubleSide,
     depthWrite: false,
-    uniforms: { ...MOUND_U },
+    uniforms: { ...MOUND_U, ...WORLD_FADE },
     vertexShader: /* glsl */ `
       attribute vec2 aT;
       attribute vec2 aH;
@@ -212,6 +223,7 @@ function mountains(): THREE.Mesh {
       varying vec2 vH;
       varying vec3 vDir;
       void main() {
+        if (ign(gl_FragCoord.xy) < uWorldFade.w) discard;
         vec3 d = normalize(vDir);
         float far = vT.x, v = vT.y;
         float hTop = vH.x, slope = vH.y;
@@ -316,7 +328,7 @@ export interface GroundUniforms {
 
 function terrainMaterial(shared: GroundUniforms, snap: { value: THREE.Vector2 }, drop: number): THREE.ShaderMaterial {
   return new THREE.ShaderMaterial({
-    uniforms: { ...shared, ...MOUND_U, ...SHADOW_U, uSnap: snap, uDrop: { value: drop } },
+    uniforms: { ...shared, ...MOUND_U, ...SHADOW_U, ...WORLD_FADE, uSnap: snap, uDrop: { value: drop } },
     vertexShader: /* glsl */ `
       ${WORLD_GLSL}
       uniform vec2 uSnap;
@@ -336,6 +348,9 @@ function terrainMaterial(shared: GroundUniforms, snap: { value: THREE.Vector2 },
         vH = h;
         vRiver = riverAt(xz);
         vec3 w = vec3(xz.x, h - uDrop * smoothstep(0.0, 400.0, d), xz.y);
+        // Climbing (src/space.ts): the ground bends away to the planet's curvature, so its edge meets
+        // the planet drawn behind it. (Zero on the ground: nothing changes there.)
+        w.y -= uWorldFade.z * d * d / ${(2 * PLANET_R).toFixed(1)};
         vW = w;
         gl_Position = projectionMatrix * viewMatrix * vec4(w, 1.0);
       }`,
@@ -363,6 +378,7 @@ function terrainMaterial(shared: GroundUniforms, snap: { value: THREE.Vector2 },
       varying float vH;
       varying float vRiver;
       void main() {
+        if (worldCut(vW, gl_FragCoord.xy)) discard;
         vec2 p = vW.xz;
         vec3 n = normalize(vN);
         float h0 = vH;
@@ -632,7 +648,7 @@ function pebbles(count: number, tile: number): THREE.InstancedMesh {
   const r = rng(77)
   for (let i = 0; i < p.count; i++) p.setXYZ(i, p.getX(i) * (0.8 + r() * 0.5), p.getY(i) * (0.55 + r() * 0.3), p.getZ(i) * (0.8 + r() * 0.5))
   const mat = new THREE.ShaderMaterial({
-    uniforms: { uTile: { value: tile }, ...MOUND_U },
+    uniforms: { uTile: { value: tile }, ...MOUND_U, ...WORLD_FADE },
     vertexShader: /* glsl */ `
       ${WORLD_GLSL}
       uniform float uTile;
@@ -656,6 +672,7 @@ function pebbles(count: number, tile: number): THREE.InstancedMesh {
       varying vec3 vW;
       varying float vTint;
       void main() {
+        if (worldCut(vW, gl_FragCoord.xy)) discard;
         vec3 cr = cross(dFdx(vW), dFdy(vW));
         vec3 n = dot(cr, cr) > 1e-12 ? normalize(cr) : vec3(0.0, 1.0, 0.0);
         if (n.y < 0.0) n = -n;
@@ -742,7 +759,7 @@ function canopy(count: number, tile: number, shared: GroundUniforms, wind: { val
   geo.setAttribute('normal', new THREE.Float32BufferAttribute(nrm, 3))
   geo.setAttribute('aTrunk', new THREE.Float32BufferAttribute(trunkFlag, 1))
   const mat = new THREE.ShaderMaterial({
-    uniforms: { uTile: { value: tile }, tTrack: shared.tTrack, uTrackBox: shared.uTrackBox, uTrackOn: shared.uTrackOn, uWind: wind, ...MOUND_U },
+    uniforms: { uTile: { value: tile }, tTrack: shared.tTrack, uTrackBox: shared.uTrackBox, uTrackOn: shared.uTrackOn, uWind: wind, ...MOUND_U, ...WORLD_FADE },
     vertexShader: /* glsl */ `
       ${WORLD_GLSL}
       uniform float uTile;
@@ -807,6 +824,7 @@ function canopy(count: number, tile: number, shared: GroundUniforms, wind: { val
         return mix(mix(a, b, f.z), mix(c, d, f.z), f.y);
       }
       void main() {
+        if (worldCut(vW, gl_FragCoord.xy)) discard;
         // Leaves: clumps of foliage as bumps on the round mass, fading out with distance.
         float dist = length(vW - cameraPosition);
         float near = 1.0 - smoothstep(300.0, 1400.0, dist);
@@ -850,6 +868,60 @@ function canopy(count: number, tile: number, shared: GroundUniforms, wind: { val
   mesh.count = i
   mesh.frustumCulled = false
   return mesh
+}
+
+/**
+ * The cloud deck: the same cloud layer the sky paints, as a real sheet 2.6 km up that you fly through
+ * and look down on (FREE ROAM, climbing). A disc round the camera, bent to the planet's curvature,
+ * dissolving at its rim into the planet's own clouds drawn by the space pass (the same cover there).
+ */
+export function cloudDeck(cloudOff: { value: THREE.Vector2 }): THREE.Mesh {
+  // (Rings of vertices out to the rim, so the curvature bends it.)
+  const ring = new THREE.RingGeometry(1, 40000, 160, 48)
+  ring.rotateX(-Math.PI / 2)
+  const mat = new THREE.ShaderMaterial({
+    transparent: true,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+    uniforms: { uCloudOff: cloudOff, tNoise: { value: NOISE_TEX }, uAlt: { value: 0 }, uDeck: { value: 0 }, ...WORLD_FADE, ...MOUND_U },
+    vertexShader: /* glsl */ `
+      ${WORLD_GLSL}
+      varying vec3 vW;
+      void main() {
+        vec4 w = modelMatrix * vec4(position, 1.0);
+        float d = length(w.xz - cameraPosition.xz);
+        w.y -= uWorldFade.z * d * d / ${(2 * PLANET_R).toFixed(1)};
+        vW = w.xyz;
+        gl_Position = projectionMatrix * viewMatrix * w;
+      }`,
+    fragmentShader: /* glsl */ `
+      ${WORLD_GLSL}
+      ${FBMT_GLSL}
+      uniform vec2 uCloudOff;
+      uniform float uAlt;
+      uniform float uDeck;
+      varying vec3 vW;
+      ${CLOUD_GLSL}
+      void main() {
+        if (worldCut(vW, gl_FragCoord.xy)) discard;
+        float cov = cloudAt(vW.xz);
+        if (cov < 0.01) discard;
+        float r = length(vW.xz - cameraPosition.xz);
+        bool above = cameraPosition.y > vW.y;
+        // Tops: lit by the sun, a little relief from the cover itself; bases: grey.
+        float relief = fbmT((vW.xz + uCloudOff) * 0.0012 + 7.0);
+        vec3 top = vec3(${LOOK.cloud.map((x) => x.toFixed(3)).join(', ')}) * (SUN_COL * (0.5 + 0.35 * relief) * 0.55 + skyColor(vec3(0.0, 1.0, 0.0)) * 0.35);
+        vec3 base = vec3(${LOOK.cloud.map((x) => x.toFixed(3)).join(', ')}) * (skyColor(vec3(0.0, -0.2, 0.0)) * 0.45 + SUN_COL * 0.12);
+        vec3 col = applyFog(above ? top : base, vW);
+        float a = smoothstep(0.0, 0.6, cov) * uDeck * (1.0 - smoothstep(30000.0, 40000.0, r));
+        gl_FragColor = vec4(col, a);
+      }`,
+  })
+  const m = new THREE.Mesh(ring, mat)
+  m.frustumCulled = false
+  m.renderOrder = 2
+  m.visible = false
+  return m
 }
 
 // ───────────────────────────── mesas + boulders (CPU-wrapped) ─────────────────────────────
@@ -1091,6 +1163,8 @@ export class World {
     }
 
     this.group.add(pebbles(1800, 1500))
+    this.deck = cloudDeck((this.sky.material as THREE.ShaderMaterial).uniforms.uCloudOff as { value: THREE.Vector2 })
+    this.group.add(this.deck)
     if (BIOME === 'jungle') this.group.add(canopy(2000, 4400, this.ground, AUR_T))
 
     const mesaMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.92, metalness: 0, flatShading: true })
@@ -1231,10 +1305,17 @@ export class World {
       const sky = new THREE.Color(LIGHT.zenith[0], LIGHT.zenith[1], LIGHT.zenith[2]).lerp(new THREE.Color(LIGHT.horizon[0], LIGHT.horizon[1], LIGHT.horizon[2]), 0.55)
       const ground = BIOME === 'ice' ? new THREE.Color(0.55, 0.6, 0.72) : BIOME === 'lava' ? new THREE.Color(0.3, 0.09, 0.03) : BIOME === 'forest' ? new THREE.Color(0.2, 0.28, 0.1) : BIOME === 'jungle' ? new THREE.Color(0.06, 0.1, 0.04) : new THREE.Color(0.6, 0.32, 0.16)
       const k = BIOME === 'ice' ? 0.45 : BIOME === 'lava' ? 0.6 : BIOME === 'forest' ? 0.75 : BIOME === 'jungle' ? 0.8 : 0.9
-      this.group.add(new THREE.HemisphereLight(sky, ground, k))
+      this.hemi = new THREE.HemisphereLight(sky, ground, k)
+      this.hemiK = k
+      this.group.add(this.hemi)
     }
   }
 
+  /** The real cloud layer (FREE ROAM, climbing). */
+  deck!: THREE.Mesh
+  /** The sky's fill light (dims in space: src/space.ts). */
+  hemi!: THREE.HemisphereLight
+  hemiK = 1
   /** Rocks that stand where they are put (the course's spires). */
   /** Everything the course placed (spires, trackside landforms): hidden in HUNT, where you fly the
    *  open world — from the air they were rows along a course you are not on, and they did not wrap
@@ -1362,6 +1443,7 @@ export class World {
   update(cam: THREE.Vector3, time: number): void {
     this.sky.position.copy(cam)
     this.hills.position.set(cam.x, 0, cam.z)
+    this.deck.position.set(cam.x, 2600, cam.z)
     const sm = this.sky.material as THREE.ShaderMaterial
     sm.uniforms.uTime.value = time
     sm.uniforms.uCloudOff.value.set(time * 14, time * 5)

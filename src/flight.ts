@@ -108,6 +108,8 @@ export class FlightCraft {
    *  dives change it), W pushes toward Mach 8.5 and Shift toward 12 with no energy limit, the ceiling is
    *  7 km, the auto-bank goes to ~77°. */
   sandbox = false
+  /** 0 in the air … 1 in vacuum (set each step). */
+  vac = 0
 
   get mach(): number { return this.speed / MACH }
 
@@ -203,16 +205,21 @@ export class FlightCraft {
     if (this.burning && !this.sandbox) { this.energy = Math.max(0, this.energy - F.burnDrain * dt); this.energyIdle = 0 }
     else { this.energyIdle += dt; if (this.energyIdle > 0.8) this.energy = Math.min(F.energyMax, this.energy + F.energyRefill * dt) }
     // (FREE ROAM: only where the world stops being drawn — the terrain reaches ~24 km.)
-    const soft = this.sandbox ? 22000 : F.softCeiling, hard = this.sandbox ? 24000 : F.hardCeiling
+    // (FREE ROAM: up into space — src/space.ts; the limit is far beyond where the air ends.)
+    const soft = this.sandbox ? 380000 : F.softCeiling, hard = this.sandbox ? 400000 : F.hardCeiling
+    /** 0 in the air … 1 in vacuum (FREE ROAM): no drag, the engines push harder, speed is free. */
+    const vac = this.sandbox ? THREE.MathUtils.smoothstep(this.agl, 20000, 70000) : 0
+    this.vac = vac
     const thin = THREE.MathUtils.clamp((this.agl - soft) / (hard - soft), 0, 1)
     // Off the throttle the speed creeps toward cruise; Shift pushes hard (energy), or toward the
     // throttle speed when the energy is gone.
     if (this.sandbox) {
       // Held off the throttle (a little drag); W and Shift push toward their speeds, never pull back.
-      if (c.brake) this.speed += Math.max(F.brakeMach * MACH - this.speed, -F.decel * 1.6 * dt)
-      else if (this.burning && this.speed < 12 * MACH) this.speed += F.accel * 1.5 * dt
-      else if (c.throttle && this.speed < 8.5 * MACH) this.speed += F.accel * dt
-      this.speed -= this.speed * 0.012 * dt
+      const boost = 1 + 3 * vac
+      if (c.brake) this.speed += Math.max(F.brakeMach * MACH - this.speed, -F.decel * 1.6 * boost * dt)
+      else if (this.burning && this.speed < THREE.MathUtils.lerp(12, 80, vac) * MACH) this.speed += F.accel * 1.5 * boost * dt
+      else if (c.throttle && this.speed < THREE.MathUtils.lerp(8.5, 30, vac) * MACH) this.speed += F.accel * boost * dt
+      this.speed -= this.speed * 0.012 * (1 - vac) * dt
       this.speed *= 1 - thin * 0.5 * dt
     } else {
       let target = (c.brake ? F.brakeMach : this.burning ? F.burnerMach : c.throttle || c.burner ? F.throttleMach : F.cruiseMach) * MACH
@@ -222,10 +229,10 @@ export class FlightCraft {
     }
     // Climbing costs, diving gains; turning bleeds a little.
     const gamma = Math.asin(THREE.MathUtils.clamp(this.vel.y / Math.max(1, this.vel.length()), -1, 1))
-    this.speed -= F.gravity * Math.sin(gamma) * dt
+    this.speed -= F.gravity * Math.sin(gamma) * (1 - 0.8 * (this.vac ?? 0)) * dt
     // Drag in manoeuvres: pulling, turning and rolling hard all bleed speed (turns cost, straights pay).
     this.speed -= this.speed * (0.1 * Math.min(1, Math.abs(this.rates.x) / pitchMax) + 0.07 * Math.min(1, Math.abs(this.rates.y) / turnMax) + 0.02 * Math.min(1, Math.abs(this.rates.z) / F.rollRate)) * dt
-    this.speed = THREE.MathUtils.clamp(this.speed, F.floorMach * MACH, (this.sandbox ? 14 : F.diveMach) * MACH)
+    this.speed = THREE.MathUtils.clamp(this.speed, F.floorMach * MACH, (this.sandbox ? THREE.MathUtils.lerp(14, 85, this.vac) : F.diveMach) * MACH)
     this.topMach = Math.max(this.topMach, this.mach)
 
     // ── velocity follows the nose ──

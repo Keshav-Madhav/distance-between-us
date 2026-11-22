@@ -36,6 +36,7 @@ const FINAL = {
     uTime: { value: 0 },
     uAspect: { value: 1 },
     uExposure: { value: 1 },
+    uVac: { value: 0 },
     uGrain: { value: 0.03 },
     uCenter: { value: new THREE.Vector2(0.5, 0.52) },
     uSharpen: { value: 0.35 },
@@ -50,7 +51,7 @@ const FINAL = {
   vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }',
   fragmentShader: /* glsl */ `
     uniform sampler2D tDiffuse;
-    uniform float uSpeed, uBlur, uAberr, uStreak, uStreakT, uWhite, uDamage, uTime, uAspect, uExposure, uGrain, uSharpen;
+    uniform float uSpeed, uBlur, uAberr, uStreak, uStreakT, uWhite, uDamage, uTime, uAspect, uExposure, uGrain, uSharpen, uVac;
     uniform vec2 uTexel;
     uniform vec2 uCenter;
     uniform vec3 uJet[3];
@@ -165,7 +166,7 @@ const FINAL = {
       float l = dot(c, vec3(0.2126, 0.7152, 0.0722));
       c = mix(vec3(l), c, ${GRADE.sat});
       c *= mix(${GRADE.sh}, ${GRADE.hi}, smoothstep(0.1, 0.8, l));
-      c += ${GRADE.lift};
+      c += ${GRADE.lift} * (1.0 - uVac); // (not in space: lifted blacks turned the void grey)
       c = clamp(c, 0.0, 1.0);
       c = mix(c, c * c * (3.0 - 2.0 * c), 0.25);
       // Tunnel vision: the vignette closes in with speed.
@@ -183,11 +184,26 @@ export class Post {
   readonly bloom: UnrealBloomPass
   readonly final: ShaderPass
   private readonly target: THREE.WebGLRenderTarget
+  private readonly main: RenderPass
+  private space: RenderPass | null = null
+  /** Space (src/space.ts): drawn first, the game's scene over it without clearing. */
+  attachSpace(scene: THREE.Scene, camera: THREE.Camera): void {
+    this.space = new RenderPass(scene, camera)
+    this.space.enabled = false
+    this.composer.insertPass(this.space, 0)
+  }
+  setSpace(on: boolean): void {
+    if (!this.space || this.space.enabled === on) return
+    this.space.enabled = on
+    this.main.clear = !on
+    this.main.clearDepth = on
+  }
 
   constructor(readonly renderer: THREE.WebGLRenderer, scene: THREE.Scene, camera: THREE.Camera, samples: number) {
     this.target = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples })
     this.composer = new EffectComposer(renderer, this.target)
-    this.composer.addPass(new RenderPass(scene, camera))
+    this.main = new RenderPass(scene, camera)
+    this.composer.addPass(this.main)
     // (VERDANT's bright sky bloomed the sun over the ship and HUD: a higher threshold there.)
     this.bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), CFG.post.bloom, 0.55, BIOME === 'forest' || BIOME === 'jungle' ? 3.0 : CFG.post.bloomThreshold)
     // (Bloom's blur spreads one NaN/inf pixel over the whole frame — a black screen. Its bright-pass
