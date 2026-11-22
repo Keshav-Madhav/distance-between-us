@@ -92,7 +92,9 @@ export function patchStandard(mat: THREE.MeshStandardMaterial, opts: PatchOpts =
         {
           float rr = length(instanceMatrix[3].xz - cameraPosition.xz);
           float sk = max(uWorldFade.y, uWorldFade.x > 0.0 ? smoothstep(uWorldFade.x * 0.3, uWorldFade.x * 0.72, rr) : 0.0);
-          transformed.y = mix(transformed.y, -0.7, sk); // (well under: at ground level they showed as flat dark patches)
+          // (Sink and shrink: above ~20 km the ground they sank into is gone, and sunk rocks showed as debris.)
+          transformed.y = mix(transformed.y, -0.7, sk);
+          transformed.xz *= 1.0 - smoothstep(0.6, 1.0, sk);
         }
         #endif`)
       // (After the full patch below has declared vFogW: appended at the end of this callback.)

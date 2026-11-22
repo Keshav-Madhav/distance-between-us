@@ -22,7 +22,7 @@ import { Sound } from './audio'
 import { Input } from './input'
 import { Post } from './post'
 import { BIOME, biomeOf, type Biome, DUST, GREEN, groundH, SUN_DIR, WORLD_FADE } from './terrain'
-import { PLANET_R, Space } from './space'
+import { PLANET_R, Space, SPACE_U } from './space'
 /** Shadows are cast along the sun, but never stretched past a ~17° sun (a sun on the horizon threw them 100 m off). */
 const SHADOW_Y = Math.max(SUN_DIR[1], 0.3)
 import { loadTextures } from './textures'
@@ -2468,7 +2468,8 @@ function frame(now: number): void {
   P.uSharpen.value = settings.sharp + (1 - renderScale) * 1.2
   P.uExposure.value = CFG.post.exposure
   P.uVac.value = space.vac
-  post.bloom.strength = CFG.post.bloom * (1 - 0.45 * space.vac) // (in vacuum the sun is a disc, not a halo)
+  // (In vacuum the sun is a disc, not a halo; looking at it, less again — the grey veil.)
+  post.bloom.strength = CFG.post.bloom * (1 - 0.45 * space.vac) * (1 - 0.35 * space.vac * SPACE_U.uSunView.value)
   world.ground.uCloudOff.value.copy((world.sky.material as THREE.ShaderMaterial).uniforms.uCloudOff.value)
   post.bloom.threshold = CFG.post.bloomThreshold
   const onGrid = mode === 'race' && race.state === 'grid'

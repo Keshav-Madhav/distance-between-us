@@ -40,6 +40,22 @@ export const cloudGlsl = (alt: string) => /* glsl */ `
           // Weather: large clear regions and cloud bands, not an even scatter of puffs.
           float wx = fbmT(xz * 0.000011 + 4.0) * 0.7 + fbmT(xz * 0.0000037 + 9.0) * 0.3;
           base += (wx - 0.5) * 0.45;
+          // Fronts: long, curved bands of cloud (a warped ridge, thousands of km).
+          float fr = 1.0 - abs(fbmT(xz * 0.0000016 + vec2(fbmT(xz * 0.0000009 + 3.3), 0.0) * 2.5 + 6.1) * 2.0 - 1.0);
+          base += smoothstep(0.82, 0.97, fr) * 0.32;
+          // Cyclones: one per ~1,400 km cell, a spiral of arms winding in to a clear eye.
+          {
+            vec2 cell = floor(xz / 1400000.0);
+            vec2 ctr = (cell + 0.25 + 0.5 * vec2(fbmT(cell * 0.37 + 1.1), fbmT(cell * 0.37 + 5.9))) * 1400000.0;
+            vec2 dv = xz - ctr;
+            float rk = length(dv) / 1000.0;
+            if (rk < 520.0 && fbmT(cell * 0.53 + 2.4) > 0.5) {
+              float ang = atan(dv.y, dv.x);
+              float arm = 0.5 + 0.5 * sin(ang * 2.0 + log(rk + 8.0) * 4.2 + fbmT(xz * 0.00002) * 2.0);
+              float body = smoothstep(520.0, 140.0, rk) * smoothstep(12.0, 45.0, rk);
+              base += (arm - 0.35) * 0.55 * body;
+            }
+          }
           float cov = smoothstep(${LOOK_COV[0].toFixed(2)}, ${LOOK_COV[1].toFixed(2)}, base);
           // (The fine detail fades with height: from orbit it was glitter, finer than a pixel.)
           float detail = mix(fbmT((xz + uCloudOff) * 0.0016 + 3.0), 0.55, smoothstep(25.0, 120.0, ${alt}));
@@ -136,6 +152,12 @@ export const SPACE_FN = /* glsl */ `
           float prov = fbmT(q * 1.7 + wq * 2.2 + 5.0);
           float n1 = fbmT(xz * 0.0000045 + 3.0 + wq * 3.0), n2 = fbmT(xz * 0.00003 + 7.0), n3 = fbmT(xz * 0.0002 + 1.0);
           vec3 c = mix(${v3(LOOK.g1)}, ${v3(LOOK.g2)}, smoothstep(0.35, 0.65, n1 * 0.6 + n2 * 0.4));
+          // Ranges: ridged noise along warped lines — mountain chains hundreds of km long, darker rock
+          // with pale crests (from orbit, the folds that give a continent its grain).
+          float rg = 1.0 - abs(fbmT(xz * 0.0000028 + wq * 1.6 + 2.2) * 2.0 - 1.0);
+          float range = smoothstep(0.78, 0.95, rg) * smoothstep(0.35, 0.6, fbmT(xz * 0.0000011 + 7.7));
+          c = mix(c, c * 0.55, range * 0.7);
+          c = mix(c, c * 1.35 + 0.04, smoothstep(0.95, 0.99, rg) * range * 0.6);
           // (VERDANT: the dark provinces read as water — so they are lakes, with shores.)
           ${BIOME === 'forest' ? 'float lake = smoothstep(0.6, 0.62, prov); spLake = lake; c = mix(c, vec3(0.025, 0.06, 0.08), lake);' : 'c = mix(c, ' + v3(LOOK.g3) + ', smoothstep(0.52, 0.7, prov) * 0.85);'}
           // (Fine texture fades with height: from orbit it aliased into a crosshatch.)
@@ -252,7 +274,7 @@ export const SPACE_FN = /* glsl */ `
             ${BIOME === 'ice' ? 'back += gc * vec3(0.38, 0.44, 0.58) * 0.6;' : ''}
             // Sun glint off water, close in (rivers, lakes).
             float wet = smoothstep(0.35, 0.7, riverAt(xz)) * (1.0 - smoothstep(12000.0, 24000.0, length(xz - uSpCamXZ))) * (1.0 - smoothstep(6.0, 14.0, uSpAlt));
-            back += lit * 2.0 * pow(max(dot(reflect(d, n), SP_SUN), 0.0), 120.0) * max(wet, spLake);
+            back += lit * 2.0 * pow(max(dot(reflect(d, n), SP_SUN), 0.0), 120.0) * max(wet * (1.0 - smoothstep(4.0, 12.0, gP.x)), spLake);
             ${BIOME === 'lava' ? `{
               // Near you, the ground's own cracks and lava rivers; across the planet, sparse volcanic
               // centres glowing (Io), not one crack pattern tiled over the globe.
@@ -316,14 +338,15 @@ export const SPACE_FN = /* glsl */ `
               for (int i = 0; i < 16; i++) {
                 vec3 pa = o + d * (tIn + dsA * (float(i) + ja));
                 float ha = length(pa) - SP_R;
-                if (ha < 100.0 || ha > 220.0) continue;
+                if (ha < 85.0 || ha > 220.0) continue;
+                float feet = smoothstep(85.0, 112.0, ha); // (soft feet: a hard 100 km cut drew a ruler line)
                 vec2 wxz = sptoWorld(normalize(pa));
                 float arc = sin(wxz.x * 0.000006 + 2.0 * sin(wxz.y * 0.0000045 + uTime * 0.05) + wxz.y * 0.0000025);
                 float curtain = exp(-arc * arc * 30.0) * (0.5 + 0.5 * fbmT(wxz * 0.00004 + vec2(uTime * 0.02, 0.0)));
                 float fold = 0.75 + 0.25 * fbmT(wxz * 0.00003 + vec2(0.0, uTime * 0.03)); // (a soft fold, not a fine sine: it beat into moiré)
                 float u = (ha - 100.0) / 120.0;
                 vec3 c = mix(vec3(0.15, 1.0, 0.45), vec3(0.85, 0.2, 0.55), smoothstep(0.45, 1.0, u)) * exp(-u * 2.2);
-                em += c * curtain * fold * dsA;
+                em += c * curtain * fold * feet * dsA;
               }
               col += em * 0.006 * night;
             }
