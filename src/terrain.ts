@@ -225,7 +225,7 @@ vec3 aurora(vec3 d) {
   }
   // Dimmer, and stronger in some stretches than others (it comes and goes along the course).
   float swell = 0.55 + 0.45 * sin(cameraPosition.x * 0.00011 + 1.3) * sin(cameraPosition.z * 0.00009 + 0.4);
-  return acc * 0.56 * swell * smoothstep(0.05, 0.16, d.y);
+  return acc * 0.9 * swell * smoothstep(0.05, 0.16, d.y);
 }
 #endif
 vec3 skyColor(vec3 d) {

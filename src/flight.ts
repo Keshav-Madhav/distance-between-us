@@ -145,7 +145,8 @@ export class FlightCraft {
     const m = this.mach
     const corner = THREE.MathUtils.clamp((m - 2.6) / (5 - 2.6), 0, 1)
     const pitchMax = THREE.MathUtils.lerp(F.pitchRate, F.pitchFast, corner) * (c.brake ? 1.25 : 1)
-    const turnMax = pitchMax * 0.75
+    // (Equal to pitch: at 0.75× a Dart out-turned you on the keys.)
+    const turnMax = pitchMax
     // Bank: the world's up seen from the cockpit (+ = rolled right).
     const bank = Math.atan2(-UP.dot(this.right), UP.dot(this.up))
     let rollCmd: number

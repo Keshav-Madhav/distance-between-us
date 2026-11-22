@@ -88,10 +88,11 @@ const TIPS: Tip[] = [
   { id: 'any-hull', where: 'race', text: 'Hull low. It heals if you stay out of trouble for a few seconds.', when: (c) => c.hull < 45 },
   // ── hunt ──
     { id: 'hunt-keys', where: 'hunt', text: 'Fly with the keys: [W] [S] nose down and pull up, [A] [D] turn (the craft banks itself), [Q] [E] roll.', when: (c) => c.t > 1 },
-  { id: 'hunt-speed', where: 'hunt', text: '[Shift] is the throttle. Off it you cruise; hard turns bleed speed. [C] air brake for the tightest turns.', when: (c) => c.t > 15 },
+  { id: 'hunt-speed', where: 'hunt', text: 'Hold [Shift] to accelerate (it spends the energy bar). Off it you settle to a cruise; hard turns bleed speed. [C] air brake.', when: (c) => c.t > 15 },
   { id: 'hunt-pipper', where: 'hunt', text: 'The gold ring is where to aim: put your nose on it and fire with [Space].', when: (c) => c.dartNear },
   { id: 'hunt-missiles', where: 'hunt', text: 'Hold [F] to paint up to four locks. Release to fire them.', when: (c) => c.darts > 0 && c.t > 25 },
   { id: 'hunt-heat', where: 'hunt', text: 'Overheated. Fire in short bursts — the cannon cools fast between them.', when: (c) => c.overheat },
+  { id: 'hunt-lancer', where: 'hunt', text: 'A lancer glows before it fires down its nose. Climb or turn out of its line, then get behind it.', when: (c) => c.t > 60 && c.darts > 0 },
   { id: 'hunt-engine', where: 'hunt', text: 'Hits from behind, into the engine, count double. Get on their tail.', when: (c) => c.kills >= 1 },
   { id: 'hunt-speedscore', where: 'hunt', text: 'Speed is score: every kill pays more the faster you are flying.', when: (c) => c.kills >= 3 },
   { id: 'hunt-low', where: 'hunt', text: 'Skimming low is legal — but the rock is solid.', when: (c) => c.agl < 40 && c.t > 5 },
@@ -121,7 +122,8 @@ export class Tips {
       this.checkT -= dt
       if (this.checkT > 0) return
       this.checkT = 0.3
-      for (const tip of TIPS) if (tip.where === c.course && !this.seen.has(tip.id) && tip.when(c)) { this.show(tip, true); return }
+      // (Course tips only in a race: in HUNT they played over the fight and were then marked seen.)
+      if (c.mode === 'race') for (const tip of TIPS) if (tip.where === c.course && !this.seen.has(tip.id) && tip.when(c)) { this.show(tip, true); return }
       return
     }
     if (!this.enabled || c.mode === 'title') return

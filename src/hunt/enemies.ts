@@ -12,7 +12,7 @@ import { leadDir, segDist, type Rounds, type Shooter, type Target } from './weap
 export type Kind = 'dart' | 'lancer' | 'interceptor'
 /** Per kind: hit points, speed band (Mach), turn rate, points, size, glint colour. */
 export const KINDS: Record<Kind, { hp: number; minMach: number; maxMach: number; turn: number; points: number; scale: number; glow: [number, number, number] }> = {
-  dart: { hp: 3, minMach: 2.2, maxMach: 3.0, turn: 1.1, points: 100, scale: 1, glow: [6, 0.9, 0.3] },
+  dart: { hp: 3, minMach: 2.2, maxMach: 3.0, turn: 0.9, points: 100, scale: 1, glow: [6, 0.9, 0.3] },
   // Head-on jouster: slow to turn, lines up from ahead, glows, fires a beam down its nose.
   lancer: { hp: 6, minMach: 2.4, maxMach: 2.8, turn: 0.6, points: 150, scale: 1.35, glow: [6, 3.2, 0.4] },
   // Comes from behind, faster than your throttle: locks you, fires two homing missiles.
@@ -190,7 +190,10 @@ export class Darts {
       const turnSide = before.cross(fwd).y
       d.bank += (THREE.MathUtils.clamp(-turnSide * 40, -1.2, 1.2) - d.bank) * Math.min(1, dt * 4)
       // Speed: keep up with you, within its band.
-      const target = THREE.MathUtils.clamp(me.vel.length() * (d.leader ? 1.05 : d.kind === 'interceptor' ? 1.15 : 0.98), K.minMach * MACH, K.maxMach * MACH)
+      // Their own speed (mid band), a little more to keep formation or close a long gap — not yours:
+      // matching it tethered every fight (you could never extend away or line up a clean pass).
+      const far = d.pos.distanceTo(me.pos) > 4500 ? 0.25 : 0
+      const target = THREE.MathUtils.clamp(((K.minMach + K.maxMach) / 2 + far + (d.leader ? 0.08 : 0)) * MACH, K.minMach * MACH, K.maxMach * MACH)
       const sp = d.vel.length() + THREE.MathUtils.clamp(target - d.vel.length(), -150 * dt, 120 * dt)
       d.vel.copy(fwd).multiplyScalar(sp)
       d.pos.addScaledVector(d.vel, dt)

@@ -587,6 +587,7 @@ darts.onLockOn = () => { sound.beep(false) }
 darts.onLaunch = (d) => { if (d.kind === 'lancer') { sound.cannon(d.pos.distanceTo(flight.pos)); shake(0.2) } else { sound.missile(); warn('MISSILES', 'TURN HARD · AIR BRAKE TO SHAKE THEM'); warnT = 1.6 } }
 darts.onPlayerHit = (dmg, from) => {
   if (player.dead) return
+  if (dmg >= 10) chain = Math.max(1, chain / 2)
   flight.damage(dmg); damageFlash = Math.min(1, damageFlash + dmg / 30); shake(Math.min(1, dmg / 20)); sound.hit(true)
   dmgFrom(tmp3.subVectors(flight.pos, from))
 }
@@ -621,7 +622,7 @@ function huntCombatStep(): void {
   const nt = noseTarget()
   cannon.step(STEP, fireGun && !player.dead, flight, nt, rounds)
   if (cannon.fired) { if (Math.random() < 0.5) sound.pulse(); cannon.fired = 0 }
-  missiles.step(STEP, fireMsl && !player.dead, flight, darts.list, (m, t) => { t.hit(4, tmp3.copy(m.vel).normalize()); sound.hit(true) })
+  missiles.step(STEP, fireMsl && !player.dead, flight, darts.list, (m, t) => { t.hit(3, tmp3.copy(m.vel).normalize()); sound.hit(true) })
   darts.step(STEP, flight, rounds, (x, z, r) => world.topAt(x, z, r))
   darts.stepSeekers(STEP, flight)
   // Being locked: a tone that quickens as the lock builds.
@@ -640,15 +641,20 @@ function huntCombatStep(): void {
     if (!d.killed) continue
     d.killed = false
     kills++
-    const pts = Math.round(KINDS[d.kind].points * speedMul() * (d.rearHit ? 1.5 : 1))
+    // The chain: kills within 3.5 s of each other build it (+0.25 each, up to ×4); a big hit halves it.
+    chain = chainT > 0 ? Math.min(4, chain + 0.25) : 1
+    chainT = 3.5
+    const pts = Math.round(KINDS[d.kind].points * speedMul() * chain * (d.rearHit ? 1.5 : 1))
     score += pts
-    pop(`+${pts}  ${d.kind.toUpperCase()}${d.rearHit ? ' · ENGINE' : ''}`)
+    pop(`+${pts}  ${d.kind.toUpperCase()}${d.rearHit ? ' · ENGINE' : ''}${chain > 1 ? ` · CHAIN ×${chain.toFixed(2)}` : ''}`)
     fx.explosion(d.pos.x, d.pos.y, d.pos.z, d.vel.x * 0.5, d.vel.y * 0.5, d.vel.z * 0.5, 1.4)
     sound.explosion(d.pos.distanceTo(flight.pos), 1, 0)
     hitstop = 0.04
     hitMark(true)
     flightPunch = 6
   }
+  chainT = Math.max(0, chainT - STEP); if (chainT === 0) chain = 1
+  waveAge += STEP
   // Darts ripping past close: a whoosh from their side (the closer, the louder).
   for (const d of darts.list) {
     if (!d.alive) { passSide.delete(d); continue }
@@ -662,10 +668,12 @@ function huntCombatStep(): void {
     }
   }
   // The run: six waves, each a mix, sent when the last is down; after the sixth, the hunt is won.
-  if (darts.alive === 0 && directorOn && !huntDone) {
+  // (A wave never stalls: after 75 s the next comes anyway — a straggler that wandered off held up the run.)
+  if ((darts.alive === 0 || waveAge > 75) && directorOn && !huntDone) {
     waveT -= STEP
     if (waveT <= 0) {
       if (huntWave >= HUNT_WAVES.length) { huntDone = true; setTimeout(() => showHuntOver(true), 1600); flash('HUNT COMPLETE'); sound.fanfare(true); return }
+      waveAge = 0
       const w = HUNT_WAVES[huntWave++]
       const h = Math.atan2(flight.fwd.x, flight.fwd.z)
       for (const [kind, n] of w.groups) {
@@ -683,6 +691,7 @@ function huntCombatStep(): void {
 let autoFire = false
 let huntDone = false
 let craftLeft = 3
+let chain = 1, chainT = 0, waveAge = 0
 let lockBeepT = 0
 /** HUNT's waves: [kind, how many] groups, and a banner for a new arrival. */
 const HUNT_WAVES: { groups: [Kind, number][]; note?: [string, string] }[] = [
@@ -958,7 +967,8 @@ function showCourse(): void {
     const n = COURSES.filter((c) => biomeOf(c.id) === w.id).length
     el.tabIndex = 0
     el.onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); el.click() } }
-    el.innerHTML = `<i class="sun"></i><i class="hz"></i><b>${w.name}</b><small>${w.blurb}, ${n} ${n === 1 ? 'course' : 'courses'}</small>`
+    el.innerHTML = `<i class="sun"></i><i class="hz"></i><b>${w.name}</b><small>${w.blurb}</small>`
+    void n
     worlds.append(el)
   }
   for (const el of worlds.children) (el as HTMLElement).classList.toggle('on', (el as HTMLElement).dataset.w === pickedWorld)
@@ -1386,7 +1396,7 @@ function startHunt(): void {
   // The open world: no course, no course-placed landforms (see World.courseRocks).
   world.courseOn = false; course.group.visible = false
   rings.passed = 0; rings.missed = 0; rings.sets = 0
-  rounds.clear(); cannon.reset(); missiles.reset(); darts.clear(); waveT = 3; huntWave = 0; kills = 0; huntDone = false; craftLeft = 3
+  rounds.clear(); cannon.reset(); missiles.reset(); darts.clear(); waveT = 3; huntWave = 0; kills = 0; huntDone = false; craftLeft = 3; chain = 1; chainT = 0; waveAge = 0
   hintsEl.innerHTML = FLY_HINTS
   document.body.classList.add('flying')
   hintsEl.style.opacity = tips.enabled ? '0' : '0.85'
@@ -1692,8 +1702,8 @@ let invertPitch = false
 let fTurn = 0, fPitch = 0
 function readFlight(): void {
   const k = (c: string) => input.isDown(c)
-  // HUNT keys: W/S (and ↑/↓) pitch like a stick, A/D turn, Q/E roll, Shift throttle, C/Ctrl air brake.
-  fc.throttle = false; fc.brake = k('KeyC') || k('ControlLeft') || k('ControlRight'); fc.burner = k('ShiftLeft') || k('ShiftRight')
+  // HUNT keys: W/S (and ↑/↓) pitch like a stick, A/D turn, Q/E roll, Shift throttle, C air brake (never Ctrl: Ctrl+W closes the tab).
+  fc.throttle = false; fc.brake = k('KeyC'); fc.burner = k('ShiftLeft') || k('ShiftRight')
   fc.roll = (k('KeyE') ? 1 : 0) - (k('KeyQ') ? 1 : 0)
   let turn = (k('KeyD') || k('ArrowRight') ? 1 : 0) - (k('KeyA') || k('ArrowLeft') ? 1 : 0)
   let pitch = ((k('ArrowDown') || k('KeyS') ? 1 : 0) - (k('ArrowUp') || k('KeyW') ? 1 : 0)) * (invertPitch ? -1 : 1)
@@ -2418,7 +2428,17 @@ function updateHud(dt: number, slow: boolean): void {
     $('#gmark').style.display = 'none'
     $('#gmark2').style.display = 'none'
     scoreNum.textContent = String(score)
-    scoreSub.textContent = `CRAFT ${'▮'.repeat(Math.max(0, craftLeft))}${'▯'.repeat(3 - Math.max(0, craftLeft))} · ALT ${Math.round(flight.agl)} M · ENERGY ${Math.round(flight.energy)} · HEAT ${cannon.lockout > 0 ? 'VENT' : Math.round((cannon.heat / 3) * 100) + '%'} · MSL ${'▮'.repeat(missiles.rack)}${'▯'.repeat(8 - missiles.rack)} · WAVE ${Math.min(huntWave, HUNT_WAVES.length)}/${HUNT_WAVES.length} · ${kills} DOWN · ${fmtTime(runTime)}`
+    scoreSub.innerHTML = `${chain > 1 ? `<b style="color:#ffd23a">CHAIN ×${chain.toFixed(2)}</b><br/>` : ''}WAVE ${Math.min(huntWave, HUNT_WAVES.length)} / ${HUNT_WAVES.length} · ${kills} DOWN<br/>ALT ${Math.round(flight.agl)} M · ${fmtTime(runTime)}`
+    // The HUNT HUD: bars and pips, not text.
+    ;($('#hhud .en i') as HTMLElement).style.width = `${flight.energy}%`
+    const ht = $('#hhud .ht'); (ht.firstElementChild as HTMLElement).style.width = `${cannon.lockout > 0 ? 100 : (cannon.heat / 3) * 100}%`
+    ht.classList.toggle('hot', cannon.lockout > 0 || cannon.heat > 2.2); $('#hhud .vent').classList.toggle('on', cannon.lockout > 0)
+    const pipBox = $('#hhud .pips')
+    if (pipBox.childElementCount !== 6) pipBox.innerHTML = '<i></i>'.repeat(6)
+    for (let i = 0; i < 6; i++) { const e = pipBox.children[i] as HTMLElement; e.classList.toggle('on', i < missiles.rack); e.classList.toggle('lock', i < missiles.locks.length) }
+    const lives = $('#craftlives')
+    if (lives.childElementCount !== 3) lives.innerHTML = '<i></i>'.repeat(3)
+    for (let i = 0; i < 3; i++) (lives.children[i] as HTMLElement).classList.toggle('gone', i >= craftLeft)
     rings.draw(time)
     // Flight marks: the aim ring, the velocity cross, the next ring.
     const place = (el: HTMLElement, v: THREE.Vector3) => {
@@ -2482,6 +2502,12 @@ function updateHud(dt: number, slow: boolean): void {
     const pb = $('#paintbox')
     pb.style.display = missiles.painting && !player.dead ? 'block' : 'none'
     if (missiles.painting) { proj.copy(flight.pos).addScaledVector(flight.fwd, 1000).project(camera); pb.style.left = `${(proj.x * 0.5 + 0.5) * innerWidth}px`; pb.style.top = `${(-proj.y * 0.5 + 0.5) * innerHeight}px` }
+    // Overlapping tags: the later one hides its text (only its chevron stays).
+    for (let i = 0; i < ei; i++) {
+      const A = enemyEls[i]; let hide = false
+      for (let j = 0; j < i; j++) { const B = enemyEls[j]; if (Math.abs(parseFloat(A.style.left) - parseFloat(B.style.left)) < 70 && Math.abs(parseFloat(A.style.top) - parseFloat(B.style.top)) < 18) { hide = true; break } }
+      ;(A.firstElementChild as HTMLElement).style.visibility = hide ? 'hidden' : ''
+    }
     for (; ei < enemyEls.length; ei++) enemyEls[ei].style.display = 'none'
     const t = combat.lockTarget
     if (t && !player.dead) {
@@ -2499,7 +2525,7 @@ function updateHud(dt: number, slow: boolean): void {
     } else lockEl.style.display = 'none'
     if (nearRun && !player.dead) {
       proj.copy(nearRun).project(camera)
-      arrowTo(proj, `DARTS ${(nearD / 1000).toFixed(1)} KM`)
+      arrowTo(proj, `ENEMY ${nearD < 1000 ? Math.round(nearD) + ' M' : (nearD / 1000).toFixed(1) + ' KM'}`)
     } else if (!rings.items.length) arrowEl.style.display = 'none'
   }
   if (debugEl.style.display === 'block' && slow) {

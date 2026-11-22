@@ -48,7 +48,7 @@ const heat = await p.evaluate(() => new Promise((res) => {
   setTimeout(() => { const locked = g.cannon.lockout > 0; const n0 = g.cannon.firedTotal; setTimeout(() => { g.autoFire(false); res({ locked, during: g.cannon.firedTotal - n0 }) }, 600) }, 3150)
 }))
 check('overheat after 3 s, nothing during the lockout', heat.locked && heat.during === 0, JSON.stringify(heat))
-// Rack: 5 dumb-fire salvos quickly → at most 8 leave.
+// Rack: 5 dumb-fire salvos quickly → at most 6 leave.
 const rack = await p.evaluate(() => new Promise((res) => {
   const g = window.__g; g.missiles.reset()
   let launched = 0; const ol = g.missiles.onLaunch; g.missiles.onLaunch = () => { launched++; ol?.() }
@@ -56,7 +56,7 @@ const rack = await p.evaluate(() => new Promise((res) => {
   const salvo = () => { window.__g.input.down.add('KeyK'); setTimeout(() => { window.__g.input.down.delete('KeyK'); if (++i < 12) setTimeout(salvo, 60); else setTimeout(() => res({ launched, rack: g.missiles.rack }), 200) }, 60) }
   salvo()
 }))
-check('missile rack: at most 8 quickly', rack.launched <= 8 && rack.launched >= 7, JSON.stringify(rack))
+check('missile rack: at most 6 quickly', rack.launched <= 6 && rack.launched >= 5, JSON.stringify(rack))
 // Arming: a dummy 150 m ahead, one missile: no hit.
 const arm = await p.evaluate(() => new Promise((res) => {
   const g = window.__g, f = g.flight, d = g.darts.list[0]

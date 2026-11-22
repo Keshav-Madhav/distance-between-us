@@ -274,10 +274,11 @@ export class Race {
       }
       // A missed gate is paid for on the spot: the speed is ripped away (and no time is added).
       if (missed) {
-        r.p.speed *= 0.38
-        r.p.lateral *= 0.38
-        r.p.side *= 0.38
-        if (r.p.spin > 0 || r.p.recover > 0) { r.p.spinVx *= 0.38; r.p.spinVz *= 0.38 }
+        // (×0.6, not ×0.38: one miss in a bunched pack was 1st to 10th.)
+        r.p.speed *= 0.6
+        r.p.lateral *= 0.6
+        r.p.side *= 0.6
+        if (r.p.spin > 0 || r.p.recover > 0) { r.p.spinVx *= 0.6; r.p.spinVz *= 0.6 }
         this.ev.missedGate?.(r)
       }
       return
@@ -455,7 +456,8 @@ export class Race {
     // (Raised again, 2026-11-21: "I crashed twice and still won". Ahead of you they ease a little;
     // behind, they push hard.)
     // (Up again after a playtest win from 10th: the field must hold Mach 6 like you do.)
-    const band = THREE.MathUtils.clamp(-gap / 2500, -0.4, 0.6)
+    // (Narrowed: at -0.4…+0.6 the pack stayed within a second of you all race — places felt assigned.)
+    const band = THREE.MathUtils.clamp(-gap / 2500, -0.2, 0.3)
     p.maxMach = THREE.MathUtils.clamp(5.3 + r.skill * 0.8 + band, 4.6, 6.3) + (this.course.def.aiPace ?? 0)
     const corner = p.mach > safe * 0.92
     ctl.boost = !corner && Math.abs(err) < 0.5

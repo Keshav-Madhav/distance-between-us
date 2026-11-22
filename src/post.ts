@@ -13,11 +13,11 @@ import { BIOME } from './terrain'
 
 /** A grade per world: shadow tint, highlight tint, saturation, black lift. */
 const GRADE = BIOME === 'ice'
-  ? { sh: 'vec3(0.85, 0.95, 1.15)', hi: 'vec3(1.0, 0.98, 1.04)', sat: '1.05', lift: '0.0' }
+  ? { sh: 'vec3(0.9, 0.95, 1.08)', hi: 'vec3(1.02, 0.98, 1.04)', sat: '1.15', lift: '0.0' }
   : BIOME === 'forest'
     ? { sh: 'vec3(0.9, 0.98, 1.06)', hi: 'vec3(1.05, 1.02, 0.93)', sat: '1.1', lift: '0.0' }
   : BIOME === 'lava'
-    ? { sh: 'vec3(0.75, 0.82, 1.02)', hi: 'vec3(1.12, 0.95, 0.8)', sat: '1.22', lift: '-0.02' }
+    ? { sh: 'vec3(0.85, 0.84, 0.97)', hi: 'vec3(1.12, 0.95, 0.8)', sat: '1.2', lift: '0.012' }
     : { sh: 'vec3(0.92, 0.98, 1.1)', hi: 'vec3(1.05, 1.0, 0.94)', sat: '1.12', lift: '0.0' }
 
 const FINAL = {
@@ -150,7 +150,7 @@ const FINAL = {
         // (Mostly below the horizon, where the ground rushes: across the sky they were clutter.)
         edge *= mix(0.35, 1.0, smoothstep(-0.1, 0.15, -da.y));
         float sk = thin * dash * on * edge * uStreak;
-        c = mix(c, c * 1.6 + vec3(0.25, 0.27, 0.3), clamp(sk, 0.0, 0.7));
+        c = mix(c, c * 1.6 + vec3(0.25, 0.27, 0.3), clamp(sk, 0.0, 0.45));
       }
 
       c *= uExposure;
@@ -166,7 +166,7 @@ const FINAL = {
       c = clamp(c, 0.0, 1.0);
       c = mix(c, c * c * (3.0 - 2.0 * c), 0.25);
       // Tunnel vision: the vignette closes in with speed.
-      c *= 1.0 - mix(0.22, 0.6, uSpeed * uSpeed) * smoothstep(mix(0.55, 0.32, uSpeed), 1.1, r);
+      c *= 1.0 - mix(0.2, 0.42, uSpeed * uSpeed) * smoothstep(mix(0.55, 0.32, uSpeed), 1.1, r);
       // Hurt: red at the edges.
       c = mix(c, vec3(0.9, 0.05, 0.02), uDamage * smoothstep(0.3, 0.95, r) * 0.75);
       c = toSrgb(clamp(c, 0.0, 1.0));
@@ -185,7 +185,8 @@ export class Post {
     this.target = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples })
     this.composer = new EffectComposer(renderer, this.target)
     this.composer.addPass(new RenderPass(scene, camera))
-    this.bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), CFG.post.bloom, 0.55, CFG.post.bloomThreshold)
+    // (VERDANT's bright sky bloomed the sun over the ship and HUD: a higher threshold there.)
+    this.bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), CFG.post.bloom, 0.55, BIOME === 'forest' ? 3.0 : CFG.post.bloomThreshold)
     // (Bloom's blur spreads one NaN/inf pixel over the whole frame — a black screen. Its bright-pass
     // input is sanitised and clamped, which also tames fireflies.)
     const hp = this.bloom.materialHighPassFilter

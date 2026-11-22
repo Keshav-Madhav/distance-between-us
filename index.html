@@ -223,7 +223,7 @@
   #worlds .w .hz { position: absolute; left: 0; right: 0; top: 57%; height: 1px; background: rgba(255,255,255,0.55); }
   #worlds .w .sun { position: absolute; border-radius: 50%; }
   #worlds .w[data-w=desert] { background: linear-gradient(180deg, #2f6fcf 0%, #7fb0e6 50%, #d9b48a 57%, #b45a2c 58%, #6e2d16 100%); }
-  #worlds .w[data-w=desert] .sun { width: 14px; height: 14px; right: 22%; top: 16%; background: #fffbe8; box-shadow: 0 0 18px 6px rgba(255,250,220,0.75); }
+  #worlds .w[data-w=desert] .sun { width: 14px; height: 14px; right: 14%; top: 36%; background: #fffbe8; box-shadow: 0 0 18px 6px rgba(255,250,220,0.75); }
   #worlds .w[data-w=ice] { background: linear-gradient(180deg, #05081a 0%, #16224a 30%, #4a4f8a 50%, #c9a3b4 56.5%, #dfe6f5 57.5%, #8ea2c8 100%); }
   #worlds .w[data-w=ice] .sun { left: 8%; right: 8%; top: 10%; height: 34%; border-radius: 40%; background: radial-gradient(ellipse at 50% 100%, rgba(80,255,160,0.55), rgba(170,80,230,0.18) 55%, rgba(0,0,0,0) 72%); filter: blur(2px); }
   #worlds .w[data-w=lava] { background: linear-gradient(180deg, #120c0d 0%, #3b1a12 32%, #a3401a 52%, #ff8a2a 56.5%, #1a1112 58%, #0b0808 100%); }
@@ -370,6 +370,36 @@
   #title .paints { left: auto; right: 32px; top: 80px; bottom: auto; transform: translateX(24px); }
   #title .paints.open { transform: none; }
   @media (max-height: 800px) { #title .paints { top: 72px; bottom: auto; } }
+  /* HUNT's own HUD: energy, heat and missiles under the Mach readout; craft left beside the hull. */
+  #hhud { position: absolute; left: 50%; bottom: 1.5vh; width: 300px; margin-left: -150px; display: none; }
+  body.flying #hhud, body.flying #craftlives { display: block; }
+  body.flying #mach #bar, body.flying #mach #drift { display: none; }
+  #hhud .row { display: flex; align-items: center; gap: 10px; height: 18px; }
+  #hhud .lab { width: 74px; font-size: 10px; letter-spacing: 0.24em; opacity: 0.8; text-align: right; }
+  #hhud .bar { flex: 1; height: 6px; background: rgba(255,255,255,0.14); transform: skewX(-20deg); }
+  #hhud .bar i { display: block; height: 100%; width: 100%; transition: width 0.1s; }
+  #hhud .en i { background: #5fe6ff; box-shadow: 0 0 8px #5fe6ff; }
+  #hhud .ht i { background: #ffb02a; }
+  #hhud .ht.hot i { background: #ff3b30; box-shadow: 0 0 10px #ff3b30; }
+  #hhud .vent { font-size: 10px; letter-spacing: 0.2em; color: #ff3b30; visibility: hidden; }
+  #hhud .vent.on { visibility: visible; animation: lockblink 0.25s steps(2) infinite; }
+  #hhud .pips { display: flex; gap: 5px; }
+  #hhud .pips i { width: 9px; height: 9px; transform: rotate(45deg); border: 1.5px solid #fff4ea; }
+  #hhud .pips i.on { background: #fff4ea; box-shadow: 0 0 6px rgba(255,240,220,0.8); }
+  #hhud .pips i.lock { background: #ff6a1a; border-color: #ff6a1a; }
+  #craftlives { position: absolute; left: 4vw; bottom: calc(5.5vh + 34px); display: none; font-size: 0; }
+  #craftlives i { display: inline-block; width: 0; height: 0; margin-right: 8px; border-left: 9px solid transparent; border-right: 9px solid transparent; border-bottom: 16px solid #fff4ea; opacity: 0.95; }
+  #craftlives i.gone { opacity: 0.18; }
+  body.flying #mach { bottom: calc(1.5vh + 60px); }
+  body.flying #score .sub { font-size: 14px; opacity: 1; line-height: 1.6; }
+  /* Readable over bright sky and sand: a soft dark backing on the secondary HUD text. */
+  #gaps div, #pops div, #align, #warn .small, #score .sub { background: rgba(0,0,0,0.38); padding: 2px 8px; }
+  #gaps div { display: inline-block; }
+  .etag { font-size: 12px; -webkit-text-stroke: 0.5px rgba(0,0,0,0.6); text-shadow: 0 1px 3px #000, 0 0 8px rgba(0,0,0,0.8); }
+  #pipper { width: 30px; height: 30px; margin: -15px 0 0 -15px; border-width: 2.5px; }
+  #pipper::after { left: 12px; top: 12px; }
+  #pause select#mus { width: 210px; }
+  #title.hunt .keys .race-keys { display: none; } #title:not(.hunt) .keys .hunt-keys { display: none; }
 </style>
 </head>
 <body>
@@ -405,6 +435,8 @@
   <div id="pops"></div>
   <div id="flash"></div>
   <div id="warn"><div class="big">WALKER</div><div class="small">ON THE HORIZON · HIT ITS FOUR CORES</div></div>
+  <div id="hhud"><div class="row"><span class="lab">ENERGY</span><div class="bar en"><i></i></div></div><div class="row"><span class="lab">HEAT</span><div class="bar ht"><i></i></div><b class="vent">VENT</b></div><div class="row"><span class="lab">MISSILES</span><div class="pips"></div></div></div>
+  <div id="craftlives"></div>
   <div id="hull"><div class="lab">HULL</div><div class="track"><div class="fill"></div></div></div>
   <div id="mach"><div id="grip"><i></i><b></b><span>GRIP</span></div><div class="lab">MACH</div><div class="num">0.00</div><div class="kms">0.00 KM/S</div><div id="bar"><i></i><i></i><i></i><i></i><i></i><i></i></div><div id="drift"><i></i><b style="left:34.6%"></b><b style="left:76.9%"></b></div></div>
 </div>
@@ -433,7 +465,7 @@
     <div class="info"><div class="ph"><b id="tp-name"></b><span id="tp-blurb"></span></div><div id="tp-stats"></div><div id="tp-info"></div></div>
     <button id="start" class="big">START</button>
   </footer>
-  <div class="keys"><span class="kc">Enter</span> start <span class="kc">Esc</span> pause <span class="kc">drag</span> look around <span class="kc">W</span> throttle <span class="kc">Shift</span> burner <span class="kc">A D</span> steer</div>
+  <div class="keys"><span class="kc">Enter</span> start <span class="kc">Esc</span> pause <span class="race-keys"><span class="kc">drag</span> look around <span class="kc">W</span> throttle <span class="kc">Shift</span> burner <span class="kc">A D</span> steer</span><span class="hunt-keys"><span class="kc">W S</span> pitch <span class="kc">A D</span> turn <span class="kc">Shift</span> throttle <span class="kc">Space</span> cannon <span class="kc">F</span> missiles</span></div>
 </div>
 <div id="over" class="screen hide">
   <h2 id="over-h">SIGNAL LOST</h2>

@@ -436,7 +436,7 @@ function terrainMaterial(shared: GroundUniforms, snap: { value: THREE.Vector2 },
         // CINDER: black basalt sand, grey ash drifts where the gravel was, crusted banks to the lava.
         {
           float lumS = dot(sandT, vec3(0.333));
-          vec3 basalt = vec3(0.085, 0.078, 0.08) * (0.7 + 0.6 * lumS) * (0.88 + 0.24 * fbmT(p * 0.0011 + 3.1));
+          vec3 basalt = vec3(0.16, 0.14, 0.14) * (0.7 + 0.6 * lumS) * (0.88 + 0.24 * fbmT(p * 0.0011 + 3.1));
           vec3 ashG = vec3(0.34, 0.31, 0.3) * (0.85 + 0.3 * dot(grav, vec3(0.333)));
           alb = mix(basalt, ashG, gm * 0.7);
           alb = mix(alb, vec3(0.04, 0.025, 0.02), smoothstep(0.1, 0.32, river));
@@ -450,7 +450,7 @@ function terrainMaterial(shared: GroundUniforms, snap: { value: THREE.Vector2 },
           #if defined(BIOME_ICE)
           alb = mix(alb, alb * vec3(0.8, 0.86, 0.97), pack * 0.8);
           #elif defined(BIOME_LAVA)
-          alb = mix(alb, vec3(0.2, 0.185, 0.18), pack * 0.75); // packed ash: a grey road on black sand
+          alb = mix(alb, vec3(0.32, 0.3, 0.29), pack * 0.75); // packed ash: a grey road on black sand
           #elif defined(BIOME_FOREST)
           alb = mix(alb, vec3(0.36, 0.27, 0.17), pack * 0.85); // a dirt road through the grass
           #else
@@ -515,7 +515,7 @@ function terrainMaterial(shared: GroundUniforms, snap: { value: THREE.Vector2 },
         #endif
         #ifdef BIOME_LAVA
         // The lava: flowing, glowing, crusting over in plates; and its glow on the sand beside it.
-        col += alb * vec3(0.16, 0.12, 0.12);
+        col += alb * vec3(0.16, 0.12, 0.12) + alb * vec3(0.35, 0.12, 0.04) * 0.6; // the orange sky's light on the ground
         if (river > 0.01) {
           float fl = fbmT(p * 0.0035 + vec2(uTime * 0.012, uTime * 0.008));
           float crust = smoothstep(0.5, 0.62, fbmT(p * 0.018 + vec2(uTime * 0.03, uTime * 0.01)));

@@ -92,7 +92,8 @@ export const CFG = {
   post: {
     bloom: 0.5,
     bloomThreshold: 2.4,
-    radialBlur: 0.032,
+    // (0.032 smeared the ground to mush past Mach 6: critique 2026-11-22.)
+    radialBlur: 0.022,
     aberration: 0.0025,
     streaks: 1,
     grain: 0.022,
