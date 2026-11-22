@@ -1659,7 +1659,8 @@ function updateSpace(): void {
   sm.uAir.value = 1 - THREE.MathUtils.smoothstep(alt, 2500, 14000)
   // (Eased in from where the space layer takes over: at 2.5 km the full dip is 5° — a jump.)
   sm.uDip.value = Math.acos(PLANET_R / (PLANET_R + Math.max(0, alt))) * THREE.MathUtils.smoothstep(alt, 2500, 7000)
-  wf.set(alt > 5000 ? THREE.MathUtils.lerp(30000, 16000, THREE.MathUtils.smoothstep(alt, 5000, 16000)) : 0, THREE.MathUtils.smoothstep(alt, 12000, 26000), THREE.MathUtils.smoothstep(alt, 2500, 8000), THREE.MathUtils.smoothstep(alt, 2500, 9000))
+  // (From the moment the space pass is on: the ground's far ring turns into the planet behind it.)
+  wf.set(THREE.MathUtils.lerp(30000, 16000, THREE.MathUtils.smoothstep(alt, 5000, 16000)), THREE.MathUtils.smoothstep(alt, 12000, 26000), THREE.MathUtils.smoothstep(alt, 2500, 8000), THREE.MathUtils.smoothstep(alt, 800, 2600))
 }
 // Sun shadows (src/shadow.ts): mesas, trees, towers and ships cast them; off on the low tier.
 const sunShadow = new SunShadow()

@@ -256,14 +256,19 @@ float ign(vec2 p) { return fract(52.9829189 * fract(dot(p, vec2(0.06711056, 0.00
 float wfHash(vec2 p) { vec3 p3 = fract(vec3(p.xyx) * 0.1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
 float wfNoise(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f); return mix(mix(wfHash(i), wfHash(i + vec2(1.0, 0.0)), f.x), mix(wfHash(i + vec2(0.0, 1.0)), wfHash(i + 1.0), f.x), f.y); }
 /** Fragment-only: is this point of the flat world dissolved into the planet? (pass gl_FragCoord.xy) */
-bool worldCut(vec3 w, vec2 fc) {
+bool worldCutBand(vec3 w, vec2 fc, float a, float b) {
   if (uWorldFade.x <= 0.0 && uWorldFade.y <= 0.0) return false;
   float r = length(w.xz - cameraPosition.xz);
-  float cut = max(uWorldFade.y, uWorldFade.x > 0.0 ? smoothstep(uWorldFade.x * 0.45, uWorldFade.x, r) : 0.0);
+  float cut = max(uWorldFade.y, uWorldFade.x > 0.0 ? smoothstep(uWorldFade.x * a, uWorldFade.x * b, r) : 0.0);
   // Patches kilometres across (with a fine dither only at their edges), not a stipple ring.
   float th = mix(wfNoise(w.xz * 0.0007) * 0.6 + wfNoise(w.xz * 0.0031) * 0.4, ign(fc), 0.18);
   return th < cut;
 }
+/** Things standing on the flat world (rocks, trees, pebbles): gone over the band where the ground
+ *  turns into the planet (they have no planet colour to turn into). */
+bool worldCut(vec3 w, vec2 fc) { return worldCutBand(w, fc, 0.3, 0.75); }
+/** The ground itself: it has already become the planet's colour by its rim; cut only there. */
+bool worldCutGround(vec3 w, vec2 fc) { return worldCutBand(w, fc, 0.88, 1.0); }
 vec3 applyFog(vec3 col, vec3 wpos) {
   vec3 d = wpos - cameraPosition;
   float dist = length(d);

@@ -8,7 +8,7 @@ import { ICE_VARIANTS, iceGeometry } from './ice'
 import { LAVA_VARIANTS, lavaGeometry } from './lava'
 import { FOREST_VARIANTS, forestGeometry } from './forest'
 import { JUNGLE_VARIANTS, jungleGeometry } from './jungle'
-import { CLOUD_GLSL, LOOK, PLANET_R } from './space'
+import { cloudGlsl, LOOK, PLANET_R, SPACE_FN, SPACE_U } from './space'
 
 /** The world's own landform shapes (ice or basalt) — the desert's mesas come from mesaGeometry. */
 const landGeometry = (kind: 'mesa' | 'butte' | 'spire', seed: number, v: number) => BIOME === 'lava' ? lavaGeometry(kind, seed, v) : BIOME === 'forest' ? forestGeometry(kind, seed, v) : BIOME === 'jungle' ? jungleGeometry(kind, seed, v) : iceGeometry(kind, seed, v)
@@ -331,7 +331,7 @@ export interface GroundUniforms {
 
 function terrainMaterial(shared: GroundUniforms, snap: { value: THREE.Vector2 }, drop: number): THREE.ShaderMaterial {
   return new THREE.ShaderMaterial({
-    uniforms: { ...shared, ...MOUND_U, ...SHADOW_U, ...WORLD_FADE, uSnap: snap, uDrop: { value: drop } },
+    uniforms: { ...shared, ...MOUND_U, ...SHADOW_U, ...WORLD_FADE, ...SPACE_U, uSnap: snap, uDrop: { value: drop } },
     vertexShader: /* glsl */ `
       ${WORLD_GLSL}
       uniform vec2 uSnap;
@@ -380,8 +380,9 @@ function terrainMaterial(shared: GroundUniforms, snap: { value: THREE.Vector2 },
       varying vec3 vN;
       varying float vH;
       varying float vRiver;
+      ${SPACE_FN}
       void main() {
-        if (worldCut(vW, gl_FragCoord.xy)) discard;
+        if (worldCutGround(vW, gl_FragCoord.xy)) discard;
         vec2 p = vW.xz;
         vec3 n = normalize(vN);
         float h0 = vH;
@@ -638,7 +639,15 @@ function terrainMaterial(shared: GroundUniforms, snap: { value: THREE.Vector2 },
         float behind = exp(-sd * sd) * (1.0 - smoothstep(-4.0, 0.0, ba)) * exp(min(ba, 0.0) / 26.0) * near;
         col += vec3(1.4, 0.55, 0.18) * behind * (0.1 + 0.6 * uBoost);
 
-        gl_FragColor = vec4(applyFog(col, vW), 1.0);
+        col = applyFog(col, vW);
+        // Climbing: over the outer part of the flat world the ground turns into exactly what the space
+        // pass draws behind it along this ray — so where it dissolves, both sides are the same pixels.
+        if (uWorldFade.x > 0.0) {
+          float rr = length(vW.xz - cameraPosition.xz);
+          float k = smoothstep(uWorldFade.x * 0.35, uWorldFade.x * 0.85, rr);
+          if (k > 0.002) col = mix(col, spacePixel(normalize(vW - cameraPosition)), k);
+        }
+        gl_FragColor = vec4(col, 1.0);
       }`,
   })
 }
@@ -904,7 +913,7 @@ export function cloudDeck(cloudOff: { value: THREE.Vector2 }): THREE.Mesh {
       uniform float uAlt;
       uniform float uDeck;
       varying vec3 vW;
-      ${CLOUD_GLSL}
+      ${cloudGlsl('uAlt')}
       void main() {
         if (worldCut(vW, gl_FragCoord.xy)) discard;
         float cov = cloudAt(vW.xz);
