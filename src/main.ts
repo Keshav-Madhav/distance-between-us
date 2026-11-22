@@ -963,6 +963,7 @@ const kmsEl = $('#mach .kms')
 const barCells = Array.from(document.querySelectorAll<HTMLElement>('#bar i'))
 const hullEl = $('#hull')
 const hullFill = $('#hull .fill')
+const machLab = $('#mach .lab')
 const scoreEl = $('#score')
 const scoreNum = $('#score .num')
 const scoreSub = $('#score .sub')
@@ -2557,8 +2558,11 @@ function frame(now: number): void {
 function updateHud(dt: number, slow: boolean): void {
   if (mode === 'title') return
   const m = player.mach
-  machNum.textContent = m.toFixed(2)
-  kmsEl.textContent = `${(player.speed / 1000).toFixed(2)} KM/S`
+  // Above the air Mach means nothing: the big number becomes km/s.
+  const orbital = mode === 'free' && space.vac > 0.5
+  machNum.textContent = orbital ? (player.speed / 1000).toFixed(2) : m.toFixed(2)
+  kmsEl.textContent = orbital ? `MACH ${m.toFixed(1)}` : `${(player.speed / 1000).toFixed(2)} KM/S`
+  if (machLab.textContent !== (orbital ? 'KM/S' : 'MACH')) machLab.textContent = orbital ? 'KM/S' : 'MACH'
   for (let i = 0; i < 6; i++) {
     barCells[i].classList.toggle('on', m >= i + 0.5 || m > i + 1)
     barCells[i].classList.toggle('white', m >= 5.9)

@@ -466,8 +466,8 @@
     <button id="open-settings" aria-label="Settings">SETTINGS</button>
   </header>
   <div class="menu">
-    <div class="sec race-only">World</div>
-    <div id="worlds" class="race-only"></div>
+    <div class="sec">World</div>
+    <div id="worlds"></div>
     <div class="sec race-only course-only">Course</div>
     <div id="courses" class="race-only course-only"></div>
     <div class="free-only huntinfo"><b>HOW IT PLAYS</b><p>The whole world and nothing to win. Leave the ground — off a jump, a cliff, a rock's top, or Space at speed — and you fly; touch down anywhere and drive on. Same keys on the ground and in the air. Nothing hurts.</p><p class="soon">Beams mark trails of five crystals: on the ground, on the summits, up in the sky.</p></div>
@@ -498,19 +498,22 @@
   <div class="btns" id="pause-btns"><button id="p-resume" class="big">RESUME</button><button id="p-restart">RESTART</button><button id="p-menu">MENU</button></div>
   <button id="p-close" class="big">✕ CLOSE</button>
   <h2>SETTINGS</h2>
-  <label>QUALITY <select id="q"><option value="auto">AUTO</option><option value="low">LOW</option><option value="medium">MEDIUM</option><option value="high">HIGH</option><option value="ultra">ULTRA</option></select></label>
+  <div class="sub">AUDIO</div>
   <label>MASTER <input id="vm" type="range" min="0" max="1" step="0.05" value="0.8" /></label>
   <label>MUSIC <input id="vmu" type="range" min="0" max="1" step="0.05" value="0.7" /></label>
   <label>SOUNDTRACK <select id="mus"><option value="auto" selected>AUTO (PER COURSE)</option><option value="neon-circuit">NEON SIGN CIRCUIT</option><option value="hot-roadway">HOT ROADWAY</option><option value="cool-highway">COOL HIGHWAY</option><option value="drive">DRIVE</option><option value="hyperflight">HYPERFLIGHT</option><option value="synth">SYNTH (GENERATED)</option></select></label>
   <label>EFFECTS <input id="vs" type="range" min="0" max="1" step="0.05" value="1" /></label>
+  <div class="sub">CONTROLS</div>
   <label>STEERING ASSIST <select id="as"><option value="0">OFF</option><option value="0.35">LOW</option><option value="0.6" selected>MEDIUM</option><option value="0.85">HIGH</option></select></label>
-  <label>FIELD OF VIEW <input id="fov" type="range" min="80" max="120" step="1" value="98" /></label>
-  <label>REDUCE SHAKE <input id="rs" type="checkbox" /></label>
-  <label>SHADOWS <input id="shadows" type="checkbox" checked /></label>
   <label>INVERT FLIGHT PITCH <input id="invp" type="checkbox" /></label>
+  <label>FIELD OF VIEW <input id="fov" type="range" min="80" max="120" step="1" value="98" /></label>
+  <div class="sub">COMFORT &amp; TIPS</div>
+  <label>REDUCE SHAKE <input id="rs" type="checkbox" /></label>
   <label>SHOW TIPS <input id="tipson" type="checkbox" checked /></label>
   <label>TIPS SEEN <button id="tipsreset" type="button">RESET</button></label>
   <div class="sub">GRAPHICS</div>
+  <label>QUALITY <select id="q"><option value="auto">AUTO</option><option value="low">LOW</option><option value="medium">MEDIUM</option><option value="high">HIGH</option><option value="ultra">ULTRA</option></select></label>
+  <label>SHADOWS <input id="shadows" type="checkbox" checked /></label>
   <label>FRAME RATE <select id="g-fps"><option value="auto" selected>AUTO (STEADY)</option><option value="60">60</option><option value="120">120</option><option value="max">MAX</option></select></label>
   <label>RENDER SCALE <input id="g-scale" type="range" min="50" max="100" step="5" value="100" /></label>
   <label>DRAW DISTANCE <select id="g-dist"><option value="12">NEAR</option><option value="16">MEDIUM</option><option value="20" selected>FAR</option><option value="26">MAX</option></select></label>
