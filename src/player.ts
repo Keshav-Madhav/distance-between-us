@@ -227,7 +227,12 @@ export class Player {
     // ── speed ──
     // W accelerates to Mach 6.3. Shift is the afterburner: speed with no ceiling, at the price of the
     // steering (mostly locked while it burns — the HUD says so).
-    const burning = !!c.burner && this.barrier !== 'silence'
+    // The barrier's half-second of silence pauses the burner's thrust only. (It used to switch the
+    // burner off outright: its steering lock let go for exactly that half-second — full authority,
+    // half the damping — and the craft snapped across from whatever steer you held; then the burner
+    // 'restarted' at the boom and kicked again.)
+    const burning = !!c.burner
+    const thrust = burning && this.barrier !== 'silence'
     if (burning && !this.wasBurn) {
       this.speed += S.boostKick
       this.onBoostStart?.()
@@ -261,8 +266,8 @@ export class Player {
     // The burner's push fades as you near its soft limit (thin air, not a wall); in a slipstream the
     // limit rises — that is how you close on someone faster.
     const soft = S.burnSoft * this.burnMul * (1 + 0.22 * this.draftMul * this.wake)
-    if (burning) this.speed += S.burnAccel * dt * (this.airborne ? 0.5 : 1) * Math.max(0, 1 - (m / soft) ** 2)
-    if (!burning || this.speed < target) this.speed += (target - this.speed) * (1 - Math.exp(-k * dt))
+    if (thrust) this.speed += S.burnAccel * dt * (this.airborne ? 0.5 : 1) * Math.max(0, 1 - (m / soft) ** 2)
+    if (!thrust || this.speed < target) this.speed += (target - this.speed) * (1 - Math.exp(-k * dt))
     this.speed -= Math.abs(this.yawRate) * S.turnBleed * this.speed * dt
 
     // ── the barrier (the player only) ──
