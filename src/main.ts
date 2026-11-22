@@ -158,6 +158,8 @@ const WORLDS = [
   { id: 'space', name: 'ORBIT', blurb: 'The star and its worlds' },
 ] as const
 let pickedWorld: Biome = biomeOf(courseDef.id)
+/** ORBIT (src/system.ts) is loaded: the star system, not a world's ground. */
+const IN_SYSTEM = BIOME === 'space'
 const bestKey = (id: string) => `dbu-best-${id}`
 /** The medal a time earns on a course: 3 gold, 2 silver, 1 bronze, 0 none. */
 const medalOf = (d: (typeof COURSES)[number], t: number | null) => { if (t === null) return 0; const [g, sv, b] = medals(d); return t <= g ? 3 : t <= sv ? 2 : t <= b ? 1 : 0 }
@@ -1009,6 +1011,8 @@ function showCourse(): void {
     el.className = 'w'
     el.dataset.w = w.id
     el.onclick = () => {
+      // ORBIT is somewhere to fly, not to race: picking it switches to FREE ROAM.
+      if (w.id === 'space' && menuMode !== 'free') { menuMode = 'free'; showCourse() }
       if (pickedWorld === w.id) return
       pickedWorld = w.id
       // Back to the course last raced in that world, else its first.
@@ -1032,8 +1036,6 @@ function showCourse(): void {
   for (const el of worlds.children) {
     const e = el as HTMLElement
     e.classList.toggle('on', e.dataset.w === pickedWorld)
-    // ORBIT is somewhere to fly, not to race: FREE ROAM only.
-    if (e.dataset.w === 'space') e.style.display = menuMode === 'free' ? '' : 'none'
   }
   const cards = $('#courses')
   if (!cards.childElementCount) COURSES.forEach((_d, i) => {
@@ -1082,7 +1084,7 @@ function showCourse(): void {
     })
     names.forEach((_n, i) => (box.children[i] as HTMLElement).classList.toggle('on', i === (myPaint[key] ?? 0)))
   }
-  $('#start').textContent = swapPending ? `LOADING ${swapPending}…` : menuMode === 'hunt' ? 'START HUNT' : menuMode === 'free' ? 'START FREE ROAM' : `START · ${COURSES[pickedCourse].name}`
+  $('#start').textContent = swapPending ? `LOADING ${swapPending}…` : menuMode === 'hunt' ? 'START HUNT' : menuMode === 'free' ? (IN_SYSTEM ? 'LAUNCH INTO ORBIT' : 'START FREE ROAM') : `START · ${COURSES[pickedCourse].name}`
   $('#ship-name').textContent = MODELS[shipPick]
   $('#ship-desc').textContent = SHIP_DESC[shipPick]
   $('#ship-desc').title = 'Every craft handles the same: the choice is looks.'
@@ -1094,6 +1096,7 @@ function showCourse(): void {
     $('#tp-stats').innerHTML = cell(WORLDS.find((w) => w.id === BIOME)?.name ?? '', 'World') + cell('× Mach', 'Score multiplier') + cell('6 waves', 'Then it ends') + cell((() => { try { return localStorage.getItem('dbu-hunt-best') ?? '—' } catch { return '—' } })(), 'Your best')
     $('#tp-info').textContent = '' // (the keys are in the footer: they showed twice)
   } else if (menuMode === 'free' && IN_SYSTEM) {
+    $('#title .free-only.huntinfo').innerHTML = '<b>HOW IT PLAYS</b><p>You start in orbit beside RED MESA. Every world is marked with its name and distance: point the nose at one and hold Shift to cruise — you slow down by yourself as you arrive.</p><p>Fly below 1,500 km of a world and you are there, coming down to its ground. Climb back out past 1,500 km to return here and pick another.</p>'
     $('#tp-name').textContent = 'ORBIT'
     $('#tp-blurb').textContent = 'A star and its five worlds. Hold Shift to cruise between them; fly down to any one and you are there.'
     const cell = (v: string, l: string) => `<div><b>${v}</b><small>${l}</small></div>`
@@ -1657,7 +1660,6 @@ const space = new Space()
 space.addSky(world.sky)
 // ORBIT (src/system.ts): the star system, drawn where the planet view would be; nothing of the
 // flat world shows (only its lights are kept, to light the ship).
-const IN_SYSTEM = BIOME === 'space'
 const system = IN_SYSTEM ? new StarSystem() : null
 if (system) {
   space.quad.material = system.mat
