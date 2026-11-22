@@ -540,6 +540,13 @@ export const TIMBERLINE: CourseDef = {
   sections: [],
 }
 
+/** Medal times (s) for a course: its whole race distance at average speeds of Mach 6.6 / 5.9 / 5.2
+ *  (gold, silver, bronze); the drag at 9.6 / 8.6 / 7.6. */
+export function medals(d: CourseDef): [number, number, number] {
+  const dist = d.km * 1000 * (d.laps ?? 1)
+  const m = d.drag ? [9.6, 8.6, 7.6] : [6.6, 5.9, 5.2]
+  return m.map((x) => Math.round((dist / (x * 343)) * 10) / 10) as [number, number, number]
+}
 export const COURSES: CourseDef[] = [SPRINT, DRY_RIVER, DRAG, CIRCUIT, OVAL, CANYON, FROSTLINE, ICEFALL, WHITEOUT, CALDERA, FAULTLINE, OBSIDIAN, GREENWAY, RIVERRUN, TIMBERLINE]
 
 /** The race's line as points (x, z) every ~200 m, start to finish — for previews. */
@@ -923,7 +930,7 @@ export class Course {
             // (Thin lines far off alias into flicker: they fade out with distance as well as the fog.)
             float d = length(vW - cameraPosition);
             a *= (1.0 - fogAmount(vW)) * (1.0 - smoothstep(2500.0, 6000.0, d));
-            gl_FragColor = vec4(vC * a * 0.55, 1.0);
+            gl_FragColor = vec4(vC * a * 0.32, 1.0); // (softer: at 0.55 they read as debug lines)
           }`,
       })
       const mesh = new THREE.Mesh(g, mat)

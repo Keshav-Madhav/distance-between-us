@@ -390,7 +390,7 @@
   #craftlives { position: absolute; left: 4vw; bottom: calc(5.5vh + 34px); display: none; font-size: 0; }
   #craftlives i { display: inline-block; width: 0; height: 0; margin-right: 8px; border-left: 9px solid transparent; border-right: 9px solid transparent; border-bottom: 16px solid #fff4ea; opacity: 0.95; }
   #craftlives i.gone { opacity: 0.18; }
-  body.flying #mach { bottom: calc(1.5vh + 60px); }
+  body.flying #mach { bottom: calc(1.5vh + 74px); }
   body.flying #score .sub { font-size: 14px; opacity: 1; line-height: 1.6; }
   /* Readable over bright sky and sand: a soft dark backing on the secondary HUD text. */
   #gaps div, #pops div, #align, #warn .small, #score .sub { background: rgba(0,0,0,0.38); padding: 2px 8px; }
@@ -400,6 +400,11 @@
   #pipper::after { left: 12px; top: 12px; }
   #pause select#mus { width: 210px; }
   #title.hunt .keys .race-keys { display: none; } #title:not(.hunt) .keys .hunt-keys { display: none; }
+  .medal { display: inline-block; vertical-align: -3px; margin-right: 7px; filter: drop-shadow(0 1px 2px rgba(0,0,0,0.55)); }
+  .medalbig { display: inline-flex; align-items: center; gap: 10px; margin-top: 10px; font-size: 18px; letter-spacing: 0.3em; }
+  .medalbig .medal { vertical-align: middle; margin: 0; filter: drop-shadow(0 2px 6px rgba(0,0,0,0.6)) drop-shadow(0 0 12px rgba(255,210,120,0.35)); }
+  #title .plan #tp-stats b { white-space: nowrap; }
+  #title .plan #tp-stats .medal { width: 11px; height: 14px; margin-right: 5px; }
 </style>
 </head>
 <body>

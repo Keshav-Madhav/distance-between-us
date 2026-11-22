@@ -108,7 +108,7 @@ function skyMaterial(ground: boolean): THREE.ShaderMaterial {
           #ifdef BIOME_LAVA
           bank = mix(vec3(0.12, 0.07, 0.06), vec3(0.55, 0.2, 0.08), puff);
           #endif
-          c = mix(c, bank, inBank * smoothstep(0.0, 0.012, d.y + 0.005) * 0.7);
+          c = mix(c, bank, inBank * smoothstep(0.004, 0.02, d.y) * 0.45);
         }
         #endif
         #ifdef BIOME_ICE
@@ -376,6 +376,8 @@ function terrainMaterial(shared: GroundUniforms, snap: { value: THREE.Vector2 },
         alb *= mix(vec3(1.0), vec3(0.78, 0.55, 0.5), smoothstep(0.45, 0.75, big) * 0.7);
         alb *= mix(vec3(1.0), vec3(1.12, 1.1, 1.05), smoothstep(3.0, 12.0, h0) * 0.6);
         alb *= 0.9 + 0.21 * fbmT(p * 0.03 + 1.7);
+        // Big slow patches (rotated, a much larger scale): no repeating pattern shows from the air.
+        alb *= 0.84 + 0.32 * fbmT(mat2(0.8, 0.6, -0.6, 0.8) * p * 0.00025 + 13.0);
         #ifdef BIOME_ICE
         // Snow (the sand texture becomes its drift detail), dark rock where the gravel was, and the
         // dry riverbeds frozen: black-teal ice with white cracks.
@@ -942,7 +944,7 @@ export class World {
           // Massifs wide and low; cones broad (their slopes flare); stacks tall. Any size.
           if (kind === 'mesa') { rad *= 1.1; h *= 0.55 }
           else if (kind === 'butte') { rad *= 1.8; h *= 0.9 }
-          else { rad *= 0.6; h *= 1.1 }
+          else { rad *= 0.85; h *= 0.38 } // stacks: squat crags (tall hex towers read as skyscrapers)
           const sc = 0.5 + 1.8 * Math.pow(r(), 2)
           rad *= sc; h *= 0.6 + 0.4 * sc
         }

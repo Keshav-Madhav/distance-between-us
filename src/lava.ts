@@ -82,7 +82,8 @@ function massif(seed: number, v: number) {
     const th = Math.atan2(z, x), e = edge(th) * (1 + elong)
     const rho = Math.hypot(x, z) / e
     if (rho > 1) continue
-    const y = H(rho, th) * (0.94 + 0.12 * r())
+    // Ragged tops (each column its own height, some snapped short): even tops read as a skyline.
+    const y = H(rho, th) * (0.62 + 0.5 * r()) * (r() < 0.12 ? 0.55 : 1)
     column(pos, glow, x, z, cr * 0.97, y, rot, rho > 0.85 && r() < 0.12 ? 1 : 0)
   }
   const prof: Profile = (th, t) => {

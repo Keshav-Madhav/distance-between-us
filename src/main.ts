@@ -24,7 +24,7 @@ import { BIOME, biomeOf, type Biome, DUST, groundH, SUN_DIR } from './terrain'
 /** Shadows are cast along the sun, but never stretched past a ~17° sun (a sun on the horizon threw them 100 m off). */
 const SHADOW_Y = Math.max(SUN_DIR[1], 0.3)
 import { loadTextures } from './textures'
-import { centerline, Course, COURSES, LAPS } from './course'
+import { centerline, Course, COURSES, LAPS, medals } from './course'
 import { Race, type Racer } from './race'
 import { ChaseCam } from './camera'
 import { Debris } from './debris'
@@ -153,6 +153,30 @@ const WORLDS = [
 ] as const
 let pickedWorld: Biome = biomeOf(courseDef.id)
 const bestKey = (id: string) => `dbu-best-${id}`
+/** The medal a time earns on a course: 3 gold, 2 silver, 1 bronze, 0 none. */
+const medalOf = (d: (typeof COURSES)[number], t: number | null) => { if (t === null) return 0; const [g, sv, b] = medals(d); return t <= g ? 3 : t <= sv ? 2 : t <= b ? 1 : 0 }
+/** A medal, drawn: a two-tone ribbon, a metal disc (light from the top left), a rim, an inner ring,
+ *  an embossed star. k: 1 bronze, 2 silver, 3 gold. */
+function medalSvg(k: number, size = 16): string {
+  const M = [
+    null,
+    { hi: '#ffd9b0', mid: '#c27a3e', lo: '#6e3a17', rim: '#4a250e', rib: ['#7a2c1e', '#c4462a'] },
+    { hi: '#ffffff', mid: '#b9c2cc', lo: '#5f6873', rim: '#3d444d', rib: ['#1f3c6e', '#3b6fc4'] },
+    { hi: '#fff6c2', mid: '#f0b62a', lo: '#8a5a06', rim: '#5c3b02', rib: ['#7a1220', '#d0283d'] },
+  ][k]
+  if (!M) return ''
+  const id = 'm' + k
+  const star = 'M12 13.2l1.18 2.4 2.65.38-1.92 1.87.45 2.64L12 19.25l-2.37 1.25.45-2.64-1.92-1.87 2.65-.38z'
+  return `<svg class="medal" width="${size * 0.8}" height="${size}" viewBox="0 0 24 30" aria-label="${['', 'bronze', 'silver', 'gold'][k]} medal"><defs>` +
+    `<linearGradient id="${id}g" x1="0.2" y1="0" x2="0.8" y2="1"><stop offset="0" stop-color="${M.hi}"/><stop offset="0.45" stop-color="${M.mid}"/><stop offset="1" stop-color="${M.lo}"/></linearGradient>` +
+    `<linearGradient id="${id}r" x1="0.8" y1="0" x2="0.2" y2="1"><stop offset="0" stop-color="${M.lo}"/><stop offset="1" stop-color="${M.hi}"/></linearGradient></defs>` +
+    `<path d="M5 0h6l3 9H8z" fill="${M.rib[0]}"/><path d="M13 0h6l-3 9h-6z" fill="${M.rib[1]}"/>` +
+    `<circle cx="12" cy="18" r="10" fill="${M.rim}"/><circle cx="12" cy="18" r="9" fill="url(#${id}g)"/>` +
+    `<circle cx="12" cy="18" r="6.6" fill="none" stroke="url(#${id}r)" stroke-width="1.1"/>` +
+    `<path d="${star}" fill="${M.hi}" opacity="0.95"/><path d="${star}" fill="none" stroke="${M.lo}" stroke-width="0.5" opacity="0.6"/>` +
+    `<ellipse cx="8.6" cy="13.8" rx="3.2" ry="1.6" fill="#fff" opacity="0.35" transform="rotate(-30 8.6 13.8)"/></svg>`
+}
+const MEDAL_HTML = ['', medalSvg(1), medalSvg(2), medalSvg(3)]
 const bestOf = (id: string): number | null => { try { const v = localStorage.getItem(bestKey(id)); return v ? +v : null } catch { return null } }
 // Mesas clear of the course corridor — tested at every wrapped copy of each one that falls along the
 // 140 km line (the world repeats every 72 km).
@@ -321,6 +345,8 @@ let fovMax = CFG.camera.fovMax
 /** After the finish: autopilot + cinematic camera, until Esc hands control back. */
 let spectate = false
 /** Graphics settings (the Esc panel). */
+// (Declared up here: restoring saved settings at boot runs their handlers before the HUNT code below.)
+let invertPitch = false
 const settings = { shadows: !params.has('noshadow'), fps: 'auto' as 'auto' | '60' | '120' | 'max', map: true, scale: 1, dist: 20, part: 1, bloom: true, blur: 1, sharp: 0.4, grain: true, cloud: true }
 let crashBreak = 0
 const rivalVoices: import('./audio').RivalVoice[] = []
@@ -989,7 +1015,7 @@ function showCourse(): void {
     const words = d.blurb.split(' · ').map((t) => t.toLowerCase())
     const line = words.join(', ').replace(/^./, (c) => c.toUpperCase()) + '.'
     const laps = d.laps && d.laps > 1 ? ` · ${d.laps} laps` : ''
-    el.innerHTML = `<b>${d.name}</b><span class="best">${b !== null ? 'best ' + fmtLap(b) : d.km + ' km' + laps}</span><small>${line}</small>`
+    el.innerHTML = `<b>${MEDAL_HTML[medalOf(d, b)]}${d.name}</b><span class="best">${b !== null ? 'best ' + fmtLap(b) : d.km + ' km' + laps}</span><small>${line}</small>`
   })
   // Paint swatches (built once; the picked ones ringed).
   for (const [id, list, key] of [['#sw-body', BODY_COLORS, 'body'], ['#sw-trim', TRIM_COLORS, 'trim']] as const) {
@@ -1175,7 +1201,7 @@ function drawTrackPreview(d: (typeof COURSES)[number]): void {
   const gates = d === course.def ? course.cps.length : Math.round((d.km * 1000 * (d.laps ?? 1)) / d.gateEvery) + 1
   $('#tp-stats').innerHTML = cell(`${d.km} km`, d.loop ? ((d.laps ?? 1) > 1 ? `Loop, ${d.laps} laps` : 'Loop') : 'Sprint') + cell(String(gates), 'Gates') + cell(String(d.racers ?? 10), 'Racers') +
     cell(`${Math.round((turning / L) * 100)}%`, 'Turning') + cell(rmin > 20000 ? '—' : `${(rmin / 1000).toFixed(1)} km`, 'Tightest bend') +
-    (d.jumps.length ? cell(String(d.jumps.length), 'Jumps') : spires ? cell(`~${spires}`, 'Spires') : '') + cell(bestOf(d.id) !== null ? fmtLap(bestOf(d.id)!) : '—', 'Your best')
+    (d.jumps.length ? cell(String(d.jumps.length), 'Jumps') : spires ? cell(`~${spires}`, 'Spires') : '') + cell(bestOf(d.id) !== null ? fmtLap(bestOf(d.id)!) : '—', 'Your best') + cell(`${medalSvg(3, 14)}${fmtLap(medals(d)[0])}`, 'Gold time')
   const best = bestOf(d.id)
   $('#tp-info').innerHTML = ''
   void best
@@ -1302,7 +1328,9 @@ function showResults(): void {
   }
   const rows = [...race.racers].sort((a, b) => a.place - b.place)
   $('#over-h').textContent = `${ord(race.racers[0].place)} PLACE`
-  $('#over-stats').innerHTML = `${course.def.name} · ${course.def.km} KM IN ${fmtLap(race.racers[0].finishTime)}${newBest ? ' · <b style="color:#ffb070">NEW BEST</b>' : ''} · TOP SPEED MACH ${Math.max(runTop, player.topMach).toFixed(2)}`
+  const md = me0.finished ? medalOf(course.def, me0.finishTime) : 0, [mg, ms, mb] = medals(course.def)
+  const next = md === 3 ? '' : ` · NEXT: ${['BRONZE', 'SILVER', 'GOLD'][md]} ${fmtLap([mb, ms, mg][md])}`
+  $('#over-stats').innerHTML = `${course.def.name} · ${course.def.km} KM IN ${fmtLap(race.racers[0].finishTime)}${newBest ? ' · <b style="color:#ffb070">NEW BEST</b>' : ''} · TOP SPEED MACH ${Math.max(runTop, player.topMach).toFixed(2)}<br/>${md ? `<span class="medalbig">${medalSvg(md, 44)}<b>${['', 'BRONZE', 'SILVER', 'GOLD'][md]}</b></span>` : 'NO MEDAL'}${next}`
   $('#res').innerHTML = rows.map((r) => `<tr class="${r.ai ? '' : 'me'}"><td>${r.place}</td><td>${r.name}</td><td>${r.finished ? fmtLap(r.finishTime) : (race.toGo(r) / 1000).toFixed(1) + ' KM TO GO'}</td></tr>`).join('')
   $('#over .go').textContent = 'R TO RACE AGAIN · H FOR HUNT · ESC TO KEEP FLYING'
   $('#over').classList.remove('hide')
@@ -1698,7 +1726,6 @@ function simStep(): void {
  *  keys — W/S throttle and air brake, A/D or ←/→ turn (the craft banks itself), ↑/↓ pitch
  *  (↑ = nose down, as on a stick; "Invert flight pitch" in settings), Q/E roll, Shift boost;
  *  pad — left stick fly, right stick roll, triggers throttle / brake, X boost. */
-let invertPitch = false
 let fTurn = 0, fPitch = 0
 function readFlight(): void {
   const k = (c: string) => input.isDown(c)
