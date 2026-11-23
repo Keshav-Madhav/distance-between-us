@@ -95,10 +95,12 @@ const DETAIL_APPLY = /* glsl */ `
     vec3 w = abs(vWN); w /= (w.x + w.y + w.z + 1e-4);
     // Two octaves (grain ~1 m and ~0.25 m) plus a coarse blotch: stone, bark, crust — the colour
     // the shape already has, given a surface.
-    float h = dnTri(vFogW, w, 0.9) * 0.55 + dnTri(vFogW, w, 3.7) * 0.3 + dnTri(vFogW, w, 0.17) * 0.15;
-    diffuseColor.rgb *= mix(1.0, 0.74 + 0.5 * h, dAmt);
+    // (Broad and calm: a fine 0.25 m octave at high contrast read as speckle noise on the striped
+    // spires — "cheap up close". Now ~2 m and ~0.6 m grain, gentler.)
+    float h = dnTri(vFogW, w, 0.45) * 0.6 + dnTri(vFogW, w, 1.6) * 0.3 + dnTri(vFogW, w, 0.12) * 0.1;
+    diffuseColor.rgb *= mix(1.0, 0.86 + 0.26 * h, dAmt);
     vec3 sp = -vViewPosition, dX = dFdx(sp), dY = dFdy(sp);
-    vec2 dH = vec2(dFdx(h), dFdy(h)) * 1.4 * dAmt;
+    vec2 dH = vec2(dFdx(h), dFdy(h)) * 2.2 * dAmt;
     vec3 sX = cross(dY, normal), sY = cross(normal, dX);
     float det = dot(dX, sX) * faceDirection;
     normal = normalize(abs(det) * normal - sign(det) * (dH.x * sX + dH.y * sY));
