@@ -2294,6 +2294,7 @@ try {
 for (const id of ['#g-fps', '#g-scale', '#g-dist', '#g-part', '#g-bloom', '#g-blur', '#g-sharp', '#g-grain', '#g-cloud', '#g-map']) $(id).addEventListener('input', applyGraphics), $(id).addEventListener('change', applyGraphics)
 applyGraphics()
 $<HTMLSelectElement>('#as').onchange = (e) => { player.assist = +(e.target as HTMLSelectElement).value }
+$<HTMLSelectElement>('#rivals').onchange = (e) => { race.aiBoost = +(e.target as HTMLSelectElement).value }
 $<HTMLInputElement>('#fov').oninput = (e) => { fovMax = +(e.target as HTMLInputElement).value }
 try {
   const saved = localStorage.getItem('dbu-fov')
@@ -3597,11 +3598,22 @@ function drawMini(): void {
   // bright ahead of you and dimmer behind, with a centre line.
   const trace = (a: number, b: number) => { g.beginPath(); for (let i = a; i <= b; i++) { const x = SX(course.px[i], course.pz[i]), y = SY(course.px[i], course.pz[i]); if (i === a) g.moveTo(x, y); else g.lineTo(x, y) } }
   g.lineJoin = 'round'; g.lineCap = 'round'
-  const bandW = Math.max(7, course.gateHalf * 2 * kk)
+  // (No painted band over it any more: the top-down render underneath shows the course as it is — the
+  // worn floor, its grooves, the lava seams, the river — with only its edges and centre line drawn.)
   const me0 = Math.max(i0, Math.min(i1, me.idx))
-  trace(i0, i1); g.strokeStyle = 'rgba(0,0,0,0.55)'; g.lineWidth = bandW + 4; g.stroke()
-  trace(i0, me0); g.strokeStyle = 'rgba(255,240,225,0.28)'; g.lineWidth = bandW; g.stroke()
-  trace(me0, i1); g.strokeStyle = 'rgba(255,240,225,0.62)'; g.lineWidth = bandW; g.stroke()
+  const edge = (side: number, a: number, b: number) => {
+    g.beginPath()
+    for (let i = a; i <= b; i++) {
+      const [tx, tz] = course.tangent(i), o = course.gateHalf * side
+      const x = SX(course.px[i] + tz * o, course.pz[i] - tx * o), y = SY(course.px[i] + tz * o, course.pz[i] - tx * o)
+      if (i === a) g.moveTo(x, y); else g.lineTo(x, y)
+    }
+  }
+  for (const side of [1, -1]) {
+    edge(side, i0, i1); g.strokeStyle = 'rgba(0,0,0,0.5)'; g.lineWidth = 3.5; g.stroke()
+    edge(side, i0, me0); g.strokeStyle = 'rgba(255,240,225,0.3)'; g.lineWidth = 1.5; g.stroke()
+    edge(side, me0, i1); g.strokeStyle = 'rgba(255,240,225,0.75)'; g.lineWidth = 1.5; g.stroke()
+  }
   trace(me0, i1); g.strokeStyle = 'rgba(255,170,90,0.95)'; g.lineWidth = 1.6; g.setLineDash(DASH); g.stroke(); g.setLineDash(NODASH)
   // Spires: a thin ring round each (the render shows the rock; the ring makes it pop at this size).
   for (const rk of course.rocks) {

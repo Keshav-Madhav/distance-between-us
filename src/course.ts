@@ -284,8 +284,9 @@ export const CANYON: CourseDef = {
 /** BLUE HOLLOW — POLAR SHELF's gorge: a glacier cave, roofed the whole way round, lamplit (src/canyon.ts). */
 const icecavePath = (u: number): [number, number] => {
   const a = 2 * Math.PI * u
-  const r = 10200 + 1900 * Math.cos(2 * a + 0.8) + 800 * Math.sin(3 * a + 0.2) + 260 * Math.sin(7 * a + 1.0)
-  return [Math.sin(a) * r, -Math.cos(a) * r + 10200]
+  // (Longer: ~90 km round — 2026-11-24, the player: 'a little longer'.)
+  const r = 14000 + 2600 * Math.cos(2 * a + 0.8) + 1000 * Math.sin(3 * a + 0.2) + 300 * Math.sin(7 * a + 1.0)
+  return [Math.sin(a) * r, -Math.cos(a) * r + 14000]
 }
 export const ICECAVE: CourseDef = {
   id: 'icecave',
@@ -706,7 +707,7 @@ export const ORBIT: CourseDef = {
  * Medals hang off it: gold about the player's best, silver a solid race, bronze a finish. (They were a
  * fixed average Mach per course, blind to how hard the course is: a bronze 11 s ahead of the field.)
  */
-export const MEDAL_H: Record<string, number> = {'sprint': 87.43, 'dry-river': 46.02, 'drag': 51.86, 'circuit': 79.1, 'oval': 68.5, 'canyon': 35.18, 'frostline': 80.75, 'icefall': 67.55, 'whiteout': 39.17, 'caldera': 72.41, 'faultline': 51.37, 'obsidian': 63.58, 'greenway': 73.61, 'riverrun': 44.39, 'timberline': 59.51, 'mistriver': 40.94, 'understory': 62.26, 'icecave': 33.16, 'magma': 34.43, 'whitewater': 33.04}
+export const MEDAL_H: Record<string, number> = {'sprint': 87.43, 'dry-river': 46.02, 'drag': 51.86, 'circuit': 79.1, 'oval': 68.5, 'canyon': 35.18, 'frostline': 80.75, 'icefall': 67.55, 'whiteout': 39.17, 'caldera': 72.41, 'faultline': 51.37, 'obsidian': 63.58, 'greenway': 73.61, 'riverrun': 44.39, 'timberline': 59.51, 'mistriver': 40.94, 'understory': 62.26, 'icecave': 45.3, 'magma': 34.43, 'whitewater': 33.04}
 export function medals(d: CourseDef): [number, number, number] {
   const h = MEDAL_H[d.id]
   if (h) return [0.97, 1.03, 1.1].map((k) => Math.round(h * k * 10) / 10) as [number, number, number]
@@ -1065,6 +1066,28 @@ export class Course {
       }
     }
     for (const im of [pylons, tips]) { im.frustumCulled = false; im.count = pi; this.group.add(im) }
+    // CINDER: the route's edges were lost on its dark ash floor in the haze (pylons every 320 m read as
+    // a few specks). Low glowing markers every 80 m along both edges — amber left, white right, like the
+    // pylon tips — so the edges stream past.
+    if (BIOME === 'lava') {
+      const every = 2, nm = Math.ceil(n / every) * 2
+      const mk = new THREE.InstancedMesh(new THREE.BoxGeometry(2.2, 0.7, 5).translate(0, 0.3, 0), new THREE.MeshBasicMaterial({ color: 0xffffff }), nm)
+      let mi = 0
+      for (let i = 0; i < n; i += every) {
+        const [tx, tz] = this.tangent(i)
+        for (const side of [-1, 1]) {
+          const edge = Math.min(this.gateHalf - 10, 250 + Math.max(0, this.gateHalf - 260))
+          const x = this.px[i] + tz * edge * side, z = this.pz[i] - tx * edge * side
+          q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.atan2(tx, tz))
+          m.compose(v.set(x, groundH(x, z), z), q, s)
+          mk.setMatrixAt(mi, m)
+          mk.setColorAt(mi, this.col.setRGB(side < 0 ? 6 : 3.4, side < 0 ? 1.8 : 3.4, side < 0 ? 0.35 : 3.8))
+          mi++
+        }
+      }
+      q.identity()
+      mk.count = mi; mk.frustumCulled = false; this.group.add(mk)
+    }
 
     // ── route ribbons ──
     // Two glowing lines on the ground at the edges (amber left, white right, like the pylon tips) and

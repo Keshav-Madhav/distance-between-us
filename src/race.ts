@@ -84,6 +84,9 @@ export class Race {
   state: RaceState = 'grid'
   /** Tests: the field's natural pace, with no pull toward the player (tools/aitune.mjs). */
   noBand = false
+  /** The player's rivals setting (Settings → RIVALS), added to every course's AI level: NORMAL 0 is the
+   *  calibrated field; HARD and up for someone who has played a lot. */
+  aiBoost = 0
   clock = 0
   /** Seconds left on the countdown (3 … 0). */
   countdown = 0
@@ -470,7 +473,7 @@ export class Race {
     const H = CFG.handling, kap = bend / 1000
     // The course's AI level (1 = par; see CourseDef.aiLevel): how hard they corner, how readily they
     // light the burner, how strong their engines are. Never a speed cap — they race your physics.
-    const L = c.def.aiLevel ?? 1
+    const L = (c.def.aiLevel ?? 1) + this.aiBoost
     const gripSafe = kap > H.gripQ ? (H.gripK / (kap - H.gripQ)) * (0.84 + r.skill * 0.08 + (L - 1) * 0.3) / MACH : 99
     const safe = Math.max((H.yawHigh * 1000) / Math.max(bend, 1e-3) / MACH, gripSafe)
     // Rubber band toward the player (mild): ahead → a lower ceiling, behind → a higher one.

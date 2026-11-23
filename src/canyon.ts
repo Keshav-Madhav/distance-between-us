@@ -27,6 +27,9 @@ interface Style {
   jit: number
   /** A roof over the floor at this height (the cave). */
   roof?: number
+  /** Along the loop (u): the walls' height scale, the roof's rise above the walls' tops (m), and how flat
+   *  the roof is (0 an arch, 1 a flat ceiling) — the cave changes shape as it goes. */
+  vary?: (u: number) => { wall: number; rise: number; flat: number }
 }
 
 const STYLES: Record<GorgeStyle, Style> = {
@@ -38,8 +41,14 @@ const STYLES: Record<GorgeStyle, Style> = {
   // A tube of ice: the walls lean in and the roof (built across, see build) closes over the floor.
   ice: {
     profile: [[0, -4, 0.15], [30, 60, 0.15], [70, 150, 0.15], [140, 230, 0.1], [260, 290, 0.05], [700, 230, 0], [1100, 90, 0], [1400, -6, 0]],
-    half: (u) => { const a = u * Math.PI * 2; return 760 + 120 * Math.sin(a * 3 + 0.4) + 60 * Math.sin(a * 9 + 1.7) },
-    rim: 300, outer: 1400, hk: 0.08, jit: 18, roof: 330,
+    half: (u) => { const a = u * Math.PI * 2; return 780 + 340 * Math.sin(a * 5 + 0.7) + 120 * Math.sin(a * 11 + 1.7) },
+    rim: 450, outer: 1400, hk: 0.08, jit: 18, roof: 330,
+    // Low passages (a ceiling just over the walls, flat), tall arched halls, wide flat-roofed chambers.
+    vary: (u) => {
+      const a = u * Math.PI * 2
+      const big = 0.5 + 0.5 * Math.sin(a * 5 + 0.7), wob = 0.5 + 0.5 * Math.sin(a * 13 + 2.1)
+      return { wall: 0.55 + 0.9 * big, rise: 20 + 380 * big * (0.6 + 0.4 * wob), flat: 0.5 + 0.5 * Math.sin(a * 7 + 1.3) }
+    },
   },
   // Basalt, sheer: aCrev is the molten glow (1 at the foot — lava pooled along the walls).
   lava: {
@@ -69,6 +78,10 @@ export class Canyon {
   readonly tz: Float64Array
   /** Half-width of the floor (m): the wall's foot from the line. */
   readonly half: Float64Array
+  /** The cave's shape along the loop (see Style.vary). */
+  readonly wallK: Float64Array
+  readonly rise: Float64Array
+  readonly flat: Float64Array
   readonly m: number
   readonly st: Style
   private last = 0
@@ -81,6 +94,7 @@ export class Canyon {
     const m = Math.max(64, Math.round(L / 200))
     this.m = m
     this.rx = new Float64Array(m); this.rz = new Float64Array(m); this.tx = new Float64Array(m); this.tz = new Float64Array(m); this.half = new Float64Array(m)
+    this.wallK = new Float64Array(m); this.rise = new Float64Array(m); this.flat = new Float64Array(m)
     for (let i = 0; i < m; i++) {
       const u = i / m
       const [x, z] = loop(u)
@@ -88,6 +102,7 @@ export class Canyon {
       const dl = Math.hypot(x2 - x0, z2 - z0) || 1
       this.rx[i] = x; this.rz[i] = z; this.tx[i] = (x2 - x0) / dl; this.tz[i] = (z2 - z0) / dl
       this.half[i] = this.st.half(u)
+      const v = this.st.vary?.(u); this.wallK[i] = v?.wall ?? 1; this.rise[i] = v?.rise ?? ((this.st.roof ?? 0) - this.st.profile[Math.min(4, this.st.profile.length - 1)][1]); this.flat[i] = v?.flat ?? 0
     }
   }
 
@@ -155,7 +170,7 @@ export class Canyon {
           const off = W + d + jit
           const o = (r * P + k) * 3
           pos[o] = this.rx[r] + sx * off
-          pos[o + 1] = base + hgt * (hgt > 0 ? hk : 1)
+          pos[o + 1] = base + hgt * (hgt > 0 ? hk * this.wallK[r] : 1)
           pos[o + 2] = this.rz[r] + sz * off
           // MAGMA GORGE: seams of lava up the walls here and there.
           crev[r * P + k] = cv
@@ -174,7 +189,7 @@ export class Canyon {
     }
     if (st.roof) {
       // BLUE HOLLOW: the roof, an arch from the top of one wall to the other, over the whole loop.
-      const top = st.profile[4], A = 9
+      const top = st.profile[4], A = 13
       const pos = new Float32Array(rows * A * 3), crev = new Float32Array(rows * A)
       for (let r = 0; r < rows; r++) {
         // (Its edges on the walls' own tops — they wander in height — and a little into them: a gap let the
@@ -182,8 +197,7 @@ export class Canyon {
         const W = this.half[r] + top[0] + 6, base = groundH(this.rx[r], this.rz[r])
         for (let k = 0; k < A; k++) {
           const t = k / (A - 1), across = (t * 2 - 1) * W
-          const edge = top[1] * (H(r, -1) + (H(r, 1) - H(r, -1)) * t) - 4
-          const lift = edge + Math.sin(t * Math.PI) * (st.roof - top[1])
+          const lift = this.roofLift(r, t) - 4 * (k === 0 || k === A - 1 ? 1 : 0)
           const o = (r * A + k) * 3
           pos[o] = this.rx[r] + this.tz[r] * across
           pos[o + 1] = base + lift + (k > 0 && k < A - 1 ? 6 * Math.sin(r * 0.8 + k * 2.1) : 0)
@@ -220,6 +234,17 @@ export class Canyon {
     return m
   }
 
+  /** Height of the cave roof over the floor at row r, across fraction t (0 one wall's top … 1 the other's):
+   *  an arch, or a flat ceiling with rounded shoulders, by the cave's shape there. */
+  roofLift(r: number, t: number): number {
+    const st = this.st, top = st.profile[4][1]
+    const H = (side: number) => (1 - st.hk + st.hk * Math.sin(r * 0.09 * side + 1.3) + st.hk * 0.5 * Math.sin(r * 0.37 + side)) * this.wallK[r]
+    const edge = top * (H(-1) + (H(1) - H(-1)) * t)
+    const arch = Math.sin(t * Math.PI)
+    const flatTop = Math.min(1, Math.sin(t * Math.PI) * 3.2)
+    return edge + this.rise[r] * (arch + (flatTop - arch) * this.flat[r])
+  }
+
   /** Lamps along both walls of the cave, every ~200 m, warm; and a cold strip high under the roof. */
   private lamps(): THREE.Group {
     const g = new THREE.Group()
@@ -246,7 +271,7 @@ export class Canyon {
         pool.setMatrixAt(k++, m.compose(v, q, s.set(70, 1, 70)))
         s.set(1, 1, 1)
       }
-      v.set(this.rx[r], base + (this.st.roof ?? 300) - 12, this.rz[r])
+      v.set(this.rx[r], base + this.roofLift(r, 0.5) - 12, this.rz[r])
       cold.setMatrixAt(r, m.compose(v, q, s))
     }
     for (const x of [warm, cold, post, pool]) { x.frustumCulled = false; g.add(x) }
@@ -255,14 +280,14 @@ export class Canyon {
 
   /** Icicles hanging from the roof (low-poly cones, a faint blue). */
   private icicles(): THREE.InstancedMesh {
-    const n = this.m * 10, roof = this.st.roof!, top = this.st.profile[4]
+    const n = this.m * 10, top = this.st.profile[4]
     const ic = new THREE.InstancedMesh(new THREE.ConeGeometry(4, 1, 5).rotateX(Math.PI).translate(0, -0.5, 0), new THREE.MeshBasicMaterial({ color: new THREE.Color(0.35, 0.62, 0.95) }), n)
     const m = new THREE.Matrix4(), q = new THREE.Quaternion(), s = new THREE.Vector3(), v = new THREE.Vector3()
     for (let i = 0; i < n; i++) {
       const r = Math.floor(i / 10), hh = Math.sin(i * 12.9898) * 43758.5453, f = hh - Math.floor(hh)
       const W = this.half[r] + top[0], across = (f * 2 - 1) * this.half[r] * 0.8, t = across / W * 0.5 + 0.5
       // (Into the roof, so they hang from it: they floated just below before.)
-      const y = groundH(this.rx[r], this.rz[r]) + top[1] + Math.sin(t * Math.PI) * (roof - top[1]) + 8
+      const y = groundH(this.rx[r], this.rz[r]) + this.roofLift(r, t) + 8
       v.set(this.rx[r] + this.tz[r] * across, y, this.rz[r] - this.tx[r] * across)
       const w = 3 + 4 * ((f * 3.1) % 1)
       s.set(w, 40 + 110 * ((f * 7.3) % 1) ** 2, w)
