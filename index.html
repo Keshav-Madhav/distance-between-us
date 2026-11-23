@@ -70,7 +70,9 @@
   #lock.locked .d { background: rgba(255,40,40,0.18); border-width: 3px; }
   #lock .t { position: absolute; top: 64px; left: 50%; transform: translateX(-50%); font-size: 11px; letter-spacing: 0.3em; color: var(--red); white-space: nowrap; font-weight: 700; }
   #arrow { position: absolute; width: 0; height: 0; border-left: 14px solid transparent; border-right: 14px solid transparent; border-bottom: 26px solid var(--red); display: none; filter: drop-shadow(0 0 8px var(--red)); }
-  #arrow .t { position: absolute; top: 30px; left: 50%; transform: translateX(-50%); color: var(--red); font-size: 11px; letter-spacing: 0.3em; font-weight: 700; white-space: nowrap; }
+  #arrowlbl { position: absolute; display: none; color: var(--red); font-size: 11px; letter-spacing: 0.3em; font-weight: 700; white-space: nowrap; text-shadow: 0 0 6px rgba(0,0,0,0.8); }
+  #arrow .t { display: none; }
+  #arrow .t.keep { position: absolute; top: 30px; left: 50%; transform: translateX(-50%); color: var(--red); font-size: 11px; letter-spacing: 0.3em; font-weight: 700; white-space: nowrap; }
   #flash { position: absolute; left: 50%; top: 34%; transform: translate(-50%, -50%); font-size: 34px; font-weight: 700; letter-spacing: 0.3em; opacity: 0; text-shadow: 0 0 30px rgba(255,150,60,0.9); white-space: nowrap; }
   /* (Warnings sit high, the WRECKED / MACH callout lower: they shared one strip and overprinted.) */
   #warn { position: absolute; left: 0; right: 0; top: 11vh; text-align: center; color: var(--red); font-weight: 700; opacity: 0; }
@@ -460,6 +462,7 @@
   <div id="reticle"></div>
   <div id="lock"><div class="d"></div><div class="t">LOCK</div></div>
   <div id="arrow"><div class="t">WALKER</div></div>
+  <div id="arrowlbl"></div>
   <div id="hints">
     <div><b>W</b>THROTTLE (OFF IT, YOU COAST)</div>
     <div><b>SHIFT</b>AFTERBURNER: NO TOP SPEED · STEERING LOCKS</div>

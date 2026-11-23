@@ -1040,7 +1040,7 @@ const scoreEl = $('#score')
 const scoreNum = $('#score .num')
 const scoreSub = $('#score .sub')
 const lockEl = $('#lock')
-const arrowEl = $('#arrow')
+const arrowEl = $('#arrow'), arrowLbl = $('#arrowlbl')
 const flashEl = $('#flash')
 const warnEl = $('#warn')
 const hintsEl = $('#hints')
@@ -3149,8 +3149,8 @@ function updateHud(dt: number, slow: boolean): void {
       const nc = shards.nearest(player.pos.x, player.pos.y, player.pos.z, tmp2)
       const nd = nc ? nc.distanceTo(player.pos) : 0
       if (nc && nd > 250) { proj.copy(nc).project(camera); arrowTo(proj, `CRYSTAL · ${nd < 1000 ? Math.round(nd) + ' M' : (nd / 1000).toFixed(1) + ' KM'}`) }
-      else arrowEl.style.display = 'none'
-    } else arrowEl.style.display = 'none'
+      else (arrowEl.style.display = arrowLbl.style.display = 'none')
+    } else (arrowEl.style.display = arrowLbl.style.display = 'none')
     if (slow && system) {
       const nb = system.nearest(sysPos)
       const name = nb.i >= 0 ? PLANETS[nb.i].name : 'THE STAR'
@@ -3198,7 +3198,7 @@ function updateHud(dt: number, slow: boolean): void {
     if (nr) {
       tmp2.set(nr.x, nr.y, nr.z)
       const dist = tmp2.distanceTo(flight.pos)
-      if (place(gmEl, tmp2)) { (gmEl.querySelector('.t') as HTMLElement).textContent = `RING ${rings.next + 1} · ${(dist / 1000).toFixed(1)} KM`; arrowEl.style.display = 'none' }
+      if (place(gmEl, tmp2)) { (gmEl.querySelector('.t') as HTMLElement).textContent = `RING ${rings.next + 1} · ${(dist / 1000).toFixed(1)} KM`; (arrowEl.style.display = arrowLbl.style.display = 'none') }
       else { proj.copy(tmp2).project(camera); arrowTo(proj, `RING ${rings.next + 1} · ${(dist / 1000).toFixed(1)} KM`) }
     } else gmEl.style.display = 'none'
     // Enemy markers: a chevron over each on screen (gold for runners), the nearest runner off screen.
@@ -3268,7 +3268,7 @@ function updateHud(dt: number, slow: boolean): void {
     if (nearRun && !player.dead) {
       proj.copy(nearRun).project(camera)
       arrowTo(proj, `ENEMY ${nearD < 1000 ? Math.round(nearD) + ' M' : (nearD / 1000).toFixed(1) + ' KM'}`)
-    } else if (!rings.items.length) arrowEl.style.display = 'none'
+    } else if (!rings.items.length) (arrowEl.style.display = arrowLbl.style.display = 'none')
   }
   if (debugEl.style.display === 'block' && slow) {
     const i = renderer.info
@@ -3282,14 +3282,26 @@ function arrowTo(p: THREE.Vector3, label: string): void {
   let x = p.x, y = p.y
   if (behind) { x = -x; y = -y }
   const on = !behind && Math.abs(x) < 0.9 && Math.abs(y) < 0.9
-  if (on || !label) { arrowEl.style.display = 'none'; return }
+  if (on || !label) { arrowEl.style.display = 'none'; arrowLbl.style.display = 'none'; return }
   const a = Math.atan2(y, x)
   const ex = Math.cos(a) * 0.86, ey = Math.sin(a) * 0.8
   arrowEl.style.display = 'block'
   arrowEl.style.left = `${(ex * 0.5 + 0.5) * innerWidth - 14}px`
   arrowEl.style.top = `${(-ey * 0.5 + 0.5) * innerHeight - 13}px`
   arrowEl.style.transform = `rotate(${Math.PI / 2 - a}rad)`
-  ;(arrowEl.querySelector('.t') as HTMLElement).textContent = label
+  // The label stays level (it turned with the arrow: vertical text down the screen edges), just inside
+  // the arrow toward the middle, and out of the map and standings' boxes.
+  if (arrowLbl.textContent !== label) arrowLbl.textContent = label
+  arrowLbl.style.display = 'block'
+  const lw = arrowLbl.offsetWidth || 120, lh = 14
+  const px = (ex * 0.5 + 0.5) * innerWidth, py = (-ey * 0.5 + 0.5) * innerHeight
+  let lx = px - Math.cos(a) * 46 - lw / 2, ly = py + Math.sin(a) * 40 - lh / 2
+  lx = Math.min(innerWidth - lw - 16, Math.max(16, lx)); ly = Math.min(innerHeight - lh - 16, Math.max(16, ly))
+  for (const el of [mini, $('#stand')]) {
+    const r = el.getBoundingClientRect()
+    if (r.width && lx < r.right + 8 && lx + lw > r.left - 8 && ly < r.bottom + 8 && ly + lh > r.top - 8) ly = r.bottom + 12
+  }
+  arrowLbl.style.left = `${lx}px`; arrowLbl.style.top = `${ly}px`
 }
 
 // Map (top left): a wide top-down window of the course — 1.5 km behind you to 7 km ahead, the line

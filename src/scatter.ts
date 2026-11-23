@@ -280,7 +280,7 @@ vec3 scPos; float scS; float scA; float scT;`
         ${k.where === 'river' || k.debris ? 'float dens = ' + k.density.toFixed(3) + ';' : `// Nothing grows on the worn floor; the growth gathers along its shoulder instead (a raced-over
         // track with a thick verge, not bushes in the middle of the line).
         float edge = smoothstep(0.02, 0.15, wear.r) * (1.0 - smoothstep(0.25, 0.6, wear.r));
-        float dens = min(0.95, ${k.density.toFixed(3)} * (1.0 + 1.3 * edge));`}
+        float dens = min(0.95, ${k.density.toFixed(3)} * (1.0 + 2.0 * edge));`}
         float keep = step(h1, dens) * (1.0 - smoothstep(uScatR * 0.72, uScatR * 0.96, d)) * uScatOn;
         ${k.where === 'river' || k.debris ? '' : 'keep *= 1.0 - smoothstep(0.25, 0.6, wear.r);'}
         ${k.far ? 'keep *= 1.0 - smoothstep(0.05, 0.4, wear.b); // (tall ones only outside the corridor: far, sparse)' : ''}
