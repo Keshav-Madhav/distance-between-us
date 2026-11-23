@@ -287,3 +287,24 @@ def smooth_loft(name, rings, around=48, steps=60, material=None, cap0=False, cap
     dense.reverse()   # front to back, like ring_loft
     ob = ring_loft(name, dense, around=around, cap0=cap0, cap1=cap1, material=material)
     return smooth(ob, angle)
+
+def poly_loft(name, stations, profile, steps=48, material=None, cap1=True, angle=28):
+    """A loft of a hard-edged polygon section: profile = [(u, v)] in −1..1 (u across, v up; v>0 scales
+    by t, v<0 by b), stations = [(z, cx, cy, a, t, b)] smoothed along z (monotone cubic). Edges sharper
+    than `angle` stay crisp (chines), the rest shade smooth."""
+    rs = sorted(stations, key=lambda r: r[0]); zs = [r[0] for r in rs]
+    fs = [_mono_cubic(zs, [r[k] for r in rs]) for k in range(1, 6)]
+    bm = bmesh.new(); loops = []
+    z0, z1 = zs[-1], zs[0]
+    for i in range(steps + 1):
+        u = i / steps; z = z0 + (z1 - z0) * (0.5 - 0.5 * math.cos(math.pi * u))
+        cx, cy, a, t, b = [f(z) for f in fs]
+        loops.append([bm.verts.new(G(cx + pu * a, cy + (pv * t if pv >= 0 else pv * b), z)) for (pu, pv) in profile])
+    n = len(profile)
+    for A, B in zip(loops, loops[1:]):
+        for j in range(n):
+            j1 = (j + 1) % n
+            bm.faces.new((A[j], A[j1], B[j1], B[j]))
+    if cap1: bm.faces.new(list(reversed(loops[-1])))
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+    return smooth(obj_from_bm(name, bm, material), angle)
