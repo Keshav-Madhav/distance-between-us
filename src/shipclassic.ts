@@ -1,14 +1,14 @@
-// The classic racer (the first model): one smooth lens hull with the spine grown out of it, side intakes, a canopy, canted fins,
+// The classic racer (the first model): stepped slab hull, side intakes, a framed canopy, canted fins,
 // three nacelles with petal rings. Restored as its own family beside the lofted ships, at about
 // twice the polygon count, with every box rounded (raw boxes read as programmer art).
 import * as THREE from 'three'
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js'
+import { mergeVertices, toCreasedNormals } from 'three/addons/utils/BufferGeometryUtils.js'
 import type { Parts, ShipSpec } from './shipdesign'
-import { loft, mirrorX, nacelle, sample, X, Y, Z, type Key } from './shipgeo'
+import { mirrorX, nacelle } from './shipgeo'
 
 const NOZZLE_Z = -4.3
-const NOZZLES: [number, number][] = [[-1.2, 0.4], [0, 0.52], [1.2, 0.4]]
-const NR = 0.52
+const NOZZLES: [number, number][] = [[-1.08, 0.36], [0, 0.6], [1.08, 0.36]]
 const _m = new THREE.Matrix4(), _q = new THREE.Quaternion(), _e = new THREE.Euler(), _s = new THREE.Vector3(), _p = new THREE.Vector3()
 
 /** A rounded box: radius a fraction of the smallest side. */
@@ -50,109 +50,37 @@ function hullShape(k: number): THREE.Shape {
   return s
 }
 
-
-/** The whole hull as ONE surface: the hull outline's half-width at each station, a flat lens section
- *  (thin knife chines at the rim, deepest on the centre line), the spine grown out of its top as a
- *  ridge from the very tip. SR-71 front: a flat pancake that thickens slowly over most of the length,
- *  the tip drooped a little. From above the outline is the classic one; side-on and head-on it is thin.
- *  (It was three stacked slabs and a capsule: every step and every join read as a separate panel.) */
-const OUTLINE = hullShape(1).getSpacedPoints(800)
-function halfWidth(z: number): number {
-  let w = 0
-  for (let i = 1; i < OUTLINE.length; i++) {
-    const a = OUTLINE[i - 1], b = OUTLINE[i]
-    if ((a.y - z) * (b.y - z) <= 0 && a.y !== b.y) { const t = (z - a.y) / (b.y - a.y); w = Math.max(w, Math.abs(a.x + (b.x - a.x) * t)) }
-  }
-  return w
-}
-/** The trailing edge: the outline's z at half-width x, on its rear (swept-forward) stretch. */
-function edgeZ(x: number): number {
-  let z = -4.15
-  for (let i = 1; i < OUTLINE.length; i++) {
-    const a = OUTLINE[i - 1], b = OUTLINE[i]
-    if (a.y < -2.6 && b.y < -2.6 && a.x > 0 && (a.x - x) * (b.x - x) <= 0 && a.x !== b.x) z = a.y + (b.y - a.y) * ((x - a.x) / (b.x - a.x))
-  }
-  return z
-}
-const ZN = 5.6, ZT = -4.15
-let HULL: Key[] | null = null
-function hullKeys(): Key[] {
-  if (HULL) return HULL
-  const keys: Key[] = [], N = 30
-  for (let i = 0; i <= N; i++) {
-    const u = i / N, z = ZN + (ZT - ZN) * (0.5 - 0.5 * Math.cos(Math.PI * u))
-    const w = i === 0 ? 0.02 : Math.max(0.02, halfWidth(z))
-    const tail = Math.min(1, (z - ZT) / 2.6)
-    const d = Math.pow(Math.min(1, (ZN - z) / 6), 0.8) * Math.sqrt(Math.max(0, tail))
-    const r = Math.min(1, (ZN - z) / 4.5) * THREE.MathUtils.smoothstep(z, -4.3, -2.6)
-    const n = 2.6 - THREE.MathUtils.smoothstep(z, -0.5, 4.0)
-    const droop = 0.08 * Math.pow(1 - Math.min(1, (ZN - z) / 2.5), 2)
-    keys.push({ s: -z, c: [0, 0.18 - droop, z], a: w, t: 0.34 * d + 0.01, b: 0.26 * d + 0.01, n, h: 0.42 * r, hw: 0.3 + 0.42 * Math.min(1, (ZN - z) / 4.5) })
-  }
-  return (HULL = keys)
-}
-/** The hull's top (or underside) height at (x, z): for seating parts on the skin, not in the air. */
-function hullY(x: number, z: number, top = true): number {
-  const k = sample(hullKeys(), -z)
-  const ax = Math.abs(x)
-  if (ax >= k.a) return k.c[1]
-  const ca = Math.pow(ax / k.a, k.n / 2), sa = Math.sqrt(Math.max(0, 1 - ca * ca))
-  const e = 2 / k.n
-  if (!top) return k.c[1] - k.b * Math.pow(sa, e)
-  const q = ax / (k.hw || 1)
-  return k.c[1] + k.t * Math.pow(sa, e) + (k.h ?? 0) * Math.exp(-q * q) * sa * sa
-}
-function hullLoft(rings: number, around: number): THREE.BufferGeometry {
-  return loft(hullKeys(), { A: X, B: Y, rings, around })
-}
-
-/** A blended fairing along z that grows out of the hull top: centre on the skin plus lift, half-width
- *  a, height t — the keys run front to back. Open ends are for intakes; capped for tails. */
-function fairing(x: number, stations: [number, number, number, number][], o: { capStart?: boolean; capEnd?: boolean; n?: number; around?: number } = {}): THREE.BufferGeometry {
-  const keys: Key[] = stations.map(([z, lift, a, t]) => ({ s: -z, c: [x, hullY(x, z) + lift, z], a, t, b: t, n: o.n ?? 2.2 }))
-  return loft(keys, { A: X, B: Y, rings: 18, around: o.around ?? 20, capStart: o.capStart, capEnd: o.capEnd })
-}
-
-/** An engine pod (intake at the front, nozzle at the back): an open loft with a dark duct inside the
- *  lip and a half-cone spike in the mouth; a flared metal nozzle, the hot throat. Centre (x, y). */
-function pod(B: B0, x: number, y: number, zf: number, zr: number, r: number, sym: boolean): void {
-  const L = zf - zr
-  const keys: Key[] = [
-    { s: 0, c: [0, 0, zf], a: r * 0.86, t: r * 0.82, b: r * 0.82, n: 2 },
-    { s: 0.12 * L, c: [0, 0, zf - 0.12 * L], a: r, t: r * 0.95, b: r * 0.95, n: 2 },
-    { s: 0.6 * L, c: [0, 0, zf - 0.6 * L], a: r * 0.98, t: r * 0.92, b: r * 0.92, n: 2 },
-    { s: L, c: [0, 0, zr], a: r * 0.74, t: r * 0.7, b: r * 0.7, n: 2 },
-  ]
-  const add = sym ? B.addSym.bind(B) : B.add.bind(B)
-  add('paint', loft(keys, { A: X, B: Y, rings: 16, around: 24 }), x, y, 0)
-  const duct = loft([{ s: 0, c: [0, 0, zf - 0.005], a: r * 0.8, t: r * 0.76, b: r * 0.76, n: 2 }, { s: 1, c: [0, 0, zf - 0.35], a: r * 0.72, t: r * 0.68, b: r * 0.68, n: 2 }], { A: X, B: Y, rings: 1, around: 20, capEnd: true })
-  add('carbon', duct, x, y, 0)
-  add('metal', new THREE.ConeGeometry(r * 0.42, r * 1.3, 16).rotateX(Math.PI / 2), x, y, zf - 0.12)
-  const sk = [new THREE.Vector2(r * 0.74, 0.02), new THREE.Vector2(r * 0.78, -0.1), new THREE.Vector2(r * 0.8, -0.24), new THREE.Vector2(r * 0.7, -0.26), new THREE.Vector2(r * 0.66, -0.04)]
-  add('metal', new THREE.LatheGeometry(sk, 24).rotateX(Math.PI / 2), x, y, zr)
-  add('hot', new THREE.CircleGeometry(r * 0.62, 16), x, y, zr - 0.05, 0, Math.PI, 0)
-}
-
-const KK = (s: number, c: [number, number, number], a: number, h: number): Key => ({ s, c, a, t: h, b: h, n: 2 })
-/** One more key past the tip: shorter and much thinner — a rounded end, not a sawn-off plank. */
-function tipRound(k0: Key, k1: Key, d: number): Key {
-  const f = d
-  return { s: k1.s + (k1.s - k0.s) * f, c: [k1.c[0] + (k1.c[0] - k0.c[0]) * f, k1.c[1] + (k1.c[1] - k0.c[1]) * f, k1.c[2] + (k1.c[2] - k0.c[2]) * f], a: k1.a * 0.72, t: k1.t * 0.3, b: k1.b * 0.3, n: 2 }
+function slab(shape: THREE.Shape, depth: number, bevel: number, segs = 4): THREE.BufferGeometry {
+  const g = new THREE.ExtrudeGeometry(shape, { depth, bevelEnabled: true, bevelThickness: bevel, bevelSize: bevel * 0.9, bevelSegments: segs * 2, curveSegments: 64 })
+  // rotateX(+90°): shape-y → +z (nose forward), extrusion → −y; lifted so it sits on y = 0.
+  g.rotateX(Math.PI / 2)
+  g.translate(0, depth, 0)
+  // Smooth across the bevel, creased only at real edges (flat per-face normals showed bands).
+  g.deleteAttribute('uv'); g.deleteAttribute('normal')
+  return toCreasedNormals(mergeVertices(g), Math.PI / 5)
 }
 
 /** A swept, tapered fin: root (length rl) flat on local y = 0 from z = 0 back, tip (length tl) at
- *  height h, swept back by sw; thickness t. An airfoil loft (round leading edge, sharp trailing edge,
- *  a rounded tip) — the extruded slab had hard edges all round. Thickness along x. */
+ *  height h, swept back by sw; thickness t; bevelled. Built in the y/z plane, thickness along x. */
 function fin(rl: number, tl: number, h: number, sw: number, t: number): THREE.BufferGeometry {
-  const k0 = KK(0, [0, -0.04, -rl / 2], rl / 2, t / 2), k1 = KK(1, [0, h, -sw - tl / 2], tl / 2, t * 0.38)
-  return loft([k0, k1, tipRound(k0, k1, 0.05)], { A: Z, B: X, rings: 10, around: 24, foil: true, capStart: true, capEnd: true })
+  const sh = new THREE.Shape()
+  sh.moveTo(0, 0); sh.lineTo(rl, 0); sh.lineTo(sw + tl, h); sh.lineTo(sw, h); sh.closePath()
+  const g = new THREE.ExtrudeGeometry(sh, { depth: t, bevelEnabled: true, bevelThickness: t * 0.3, bevelSize: Math.min(0.05, t * 0.4), bevelSegments: 3 })
+  g.translate(0, 0, -t / 2)
+  g.rotateY(Math.PI / 2) // shape x → −z (back), depth → x
+  g.deleteAttribute('uv')
+  return g
 }
 
-/** A flat swept surface (canard, winglet): span s outward along +x, root chord rc, tip chord tc, swept;
- *  an airfoil loft like the fins. */
+/** A flat swept surface (canard, winglet): span s outward along +x, root chord rc, tip chord tc, swept. */
 function blade(s: number, rc: number, tc: number, sw: number, t: number): THREE.BufferGeometry {
-  const k0 = KK(0, [0, 0, -rc / 2], rc / 2, t / 2), k1 = KK(s, [s, 0, -sw - tc / 2], tc / 2, t * 0.38)
-  return loft([k0, k1, tipRound(k0, k1, 0.06)], { A: Z, B: Y, rings: 8, around: 20, foil: true, capStart: true, capEnd: true })
+  const sh = new THREE.Shape()
+  sh.moveTo(0, 0); sh.lineTo(s, -sw); sh.lineTo(s, -sw - tc); sh.lineTo(0, -rc); sh.closePath()
+  const g = new THREE.ExtrudeGeometry(sh, { depth: t, bevelEnabled: true, bevelThickness: t * 0.3, bevelSize: Math.min(0.04, t * 0.4), bevelSegments: 2 })
+  g.translate(0, 0, -t / 2)
+  g.rotateX(Math.PI / 2) // shape y → z (the chord runs back, toward −z); depth → −y
+  g.deleteAttribute('uv')
+  return g
 }
 
 export function buildClassic(variant: number, hi: boolean): { parts: Parts; spec: ShipSpec } {
@@ -161,124 +89,121 @@ export function buildClassic(variant: number, hi: boolean): { parts: Parts; spec
   let wingtip: [number, number, number] = [3.45, 0.25, -2.9]
   if (hi) {
     const B = new B0(parts)
-    B.add('paint', hullLoft(72, 60))
-    // ── Canopy: a narrow bubble sunk into the spine (its sides meet the skin — no collar, no gap),
-    // tilted with the spine's slope, a windscreen bow, and a fairing that runs it back into the spine.
-    const cz = 1.35, cL = 1.45, cw = 0.44, cH = 0.5
-    const slope = Math.atan2(hullY(0, cz + cL) - hullY(0, cz - cL), 2 * cL)
-    const cy = hullY(cw * 0.92, cz) - 0.02
-    const cRot = slope
-    B.add('glass', new THREE.SphereGeometry(1, 36, 12, 0, Math.PI * 2, 0, Math.PI / 2), 0, cy, cz, cRot, 0, 0, cw, cH, cL)
+    // ── hull: three stepped slabs, each smaller and higher ──
+    B.add('paint', slab(hullShape(1), 0.3, 0.24, 5))
+    B.add('carbon', slab(hullShape(0.93), 0.2, 0.12), 0, -0.3, -0.05)
+    B.add('paint', slab(hullShape(0.7), 0.22, 0.16, 4), 0, 0.42, -0.35)
+    // Spine.
+    B.add('paint', new THREE.CapsuleGeometry(0.62, 4.0, 16, 40), 0, 0.66, -0.7, Math.PI / 2, 0, 0, 1.15, 1, 0.55)
+    // Canopy: a dome (not a whole ellipsoid buried in the spine — that showed the hull through the
+    // glass), a sill round its base, a frame bow following its crown.
+    B.add('glass', new THREE.SphereGeometry(0.72, 56, 24, 0, Math.PI * 2, 0, Math.PI / 2), 0, 0.92, 1.45, 0, 0, 0, 0.86, 0.56, 2.15)
+    B.add('carbon', new THREE.TorusGeometry(0.72, 0.035, 10, 72).rotateX(Math.PI / 2).scale(0.86, 1, 2.15), 0, 0.93, 1.45)
     {
-      const dz = cL * 0.42, k = Math.sqrt(1 - (dz / cL) ** 2), pts: THREE.Vector3[] = []
-      for (let i = 0; i <= 24; i++) { const ph = (Math.PI * i) / 24; pts.push(new THREE.Vector3(cw * k * Math.cos(ph) * 1.01, cH * k * Math.sin(ph) * 1.01, dz)) }
-      B.add('carbon', new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 20, 0.022, 6), 0, cy, cz, cRot, 0, 0)
+      const pts: THREE.Vector3[] = []
+      for (let i = 0; i <= 24; i++) { const dz = -1.5 + (3 * i) / 24; pts.push(new THREE.Vector3(0, 0.92 + 0.403 * Math.sqrt(Math.max(0, 1 - (dz / 1.548) ** 2)) + 0.012, 1.45 + dz)) }
+      B.add('carbon', new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 48, 0.028, 8))
     }
-    B.add('paint', fairing(0, [[cz - cL * 0.55, 0.0, cw * 0.82, cH * 0.62], [cz - cL - 0.4, -0.04, cw * 0.6, cH * 0.34], [cz - cL - 1.7, -0.1, 0.12, 0.05]], { capStart: true, capEnd: true }))
-    // Inside: a dark tub, seat back with headrest, the pilot's helmet with a visor.
-    B.add('carbon', new THREE.SphereGeometry(1, 20, 6, 0, Math.PI * 2, Math.PI / 2, Math.PI / 2), 0, cy + 0.02, cz, cRot, 0, 0, cw * 0.95, 0.25, cL * 0.92)
-    B.add('carbon', rbox(0.44, 0.42, 0.1), 0, cy + 0.22, cz - 0.55, cRot - 0.2, 0, 0)
-    B.add('trim', new THREE.SphereGeometry(0.15, 16, 10), 0, cy + 0.32, cz - 0.38, 0, 0, 0, 0.92, 1, 1.05)
-    B.add('glass', new THREE.SphereGeometry(0.155, 12, 6, -0.9, 1.8, 0.9, 0.9), 0, cy + 0.32, cz - 0.38)
-    // ── Chine inlets (SR-71): fairings grown out of the hull with an open mouth, a dark duct and a
-    // half-cone spike; they run back and sink into the skin.
-    for (const sx of [1, -1]) {
-      const ix = 1.12 * sx
-      B.add('paint', fairing(ix, [[1.25, 0.15, 0.2, 0.17], [1.0, 0.16, 0.25, 0.2], [0.0, 0.12, 0.25, 0.19], [-1.2, 0.02, 0.17, 0.1], [-2.2, -0.04, 0.05, 0.02]], { capEnd: true }))
-      const my = hullY(ix, 1.25) + 0.15
-      B.add('carbon', loft([{ s: 0, c: [ix, my, 1.245], a: 0.185, t: 0.155, b: 0.155, n: 2.2 }, { s: 1, c: [ix, my, 0.95], a: 0.16, t: 0.13, b: 0.13, n: 2.2 }], { A: X, B: Y, rings: 1, around: 20, capEnd: true }))
-      B.add('metal', new THREE.ConeGeometry(0.09, 0.32, 14).rotateX(Math.PI / 2), ix, my, 1.2)
+    // The pilot: seat back, torso, helmet — all under the dome.
+    B.add('carbon', rbox(0.5, 0.42, 0.12), 0, 1.02, 0.78)
+    B.add('carbon', new THREE.CapsuleGeometry(0.16, 0.18, 8, 16), 0, 1.0, 0.98)
+    B.add('trim', new THREE.SphereGeometry(0.17, 32, 20), 0, 1.13, 1.08, 0, 0, 0, 0.95, 1, 1.1)
+    // Nose: a sensor strip inside the outline, a splitter under it.
+    B.add('glow', rbox(0.5, 0.04, 0.08), 0, 0.5, 4.2)
+    B.add('carbon', rbox(1.0, 0.06, 1.1), 0, -0.36, 3.9)
+    // Side intakes: a rounded fairing with a dark mouth and a lip, not a box.
+    B.addSym('paint', new THREE.CapsuleGeometry(0.24, 1.1, 10, 24), 1.08, 0.66, 0.15, Math.PI / 2, -0.18, 0, 1.05, 1, 0.8)
+    B.addSym('carbon', new THREE.CircleGeometry(0.2, 32).scale(1, 0.75, 1), 1.18, 0.66, 0.97, 0, -0.18, 0)
+    B.addSym('trim', new THREE.TorusGeometry(0.21, 0.03, 8, 32).scale(1, 0.75, 1), 1.18, 0.66, 0.96, 0, -0.18, 0)
+    // Strakes on the top deck, ending well ahead of the engines.
+    B.addSym('trim', rbox(0.14, 0.06, 3.8), 0.92, 0.8, 0.2, 0, -0.12, 0)
+    // A glowing line in the team colour round the lower deck's front edge (on the surface).
+    {
+      const pts: THREE.Vector3[] = []
+      for (const p of hullShape(1).getSpacedPoints(240)) if (p.x > 0.05 && p.y > -1.5 && p.y < 3.6) { const k = (p.x - 0.26) / p.x; pts.push(new THREE.Vector3(p.x * k, 0.548, p.y)) }
+      pts.sort((a, b) => b.z - a.z)
+      const tube = new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 80, 0.028, 6)
+      B.add('neon', tube)
+      B.add('neon', tube.clone().scale(-1, 1, 1))
     }
-    // ── Engines: one aft body the three nozzles come out of (they sat on the deck as separate cans).
-    B.add('paint', loft([
-      { s: 0.8, c: [0, hullY(0, -0.8) - 0.12, -0.8], a: 0.45, t: 0.1, b: 0.1, n: 2.4 },
-      { s: 1.8, c: [0, 0.62, -1.8], a: 1.25, t: 0.36, b: 0.3, n: 2.8 },
-      { s: 2.9, c: [0, 0.55, -2.9], a: 1.78, t: 0.5, b: 0.4, n: 3.2 },
-      { s: 4.2, c: [0, 0.48, -4.2], a: 1.72, t: 0.46, b: 0.36, n: 3.4 },
-    ], { A: X, B: Y, rings: 20, around: 40, capEnd: true }))
+    // Hover emitters just under the belly.
+    B.addSym('glow', rbox(0.22, 0.04, 3.2), 1.9, -0.445, -0.6, 0, -0.5, 0)
+    B.add('glow', rbox(0.6, 0.04, 0.18), 0, -0.445, 3.0)
+    // Engines: closed nacelles, overlapping petals tilted in, a team-colour band, the hot throat.
     for (const [x, y] of NOZZLES) {
-      B.add('carbon', nacelle(NR), x, y, NOZZLE_Z)
-      // Flared petal skirt round the throat, the hot core inside.
-      const k = NR / 0.6
-      const sk = [new THREE.Vector2(0.6 * k, 0), new THREE.Vector2(0.63 * k, -0.12), new THREE.Vector2(0.64 * k, -0.28), new THREE.Vector2(0.58 * k, -0.3), new THREE.Vector2(0.56 * k, -0.05)]
-      B.add('metal', new THREE.LatheGeometry(sk, 32).rotateX(Math.PI / 2), x, y, NOZZLE_Z)
-      B.add('hot', new THREE.CircleGeometry(0.47 * k, 24), x, y, NOZZLE_Z + 0.4, 0, Math.PI, 0)
+      B.add('carbon', nacelle(0.6), x, y, NOZZLE_Z)
+      B.add('trim', new THREE.TorusGeometry(0.575, 0.028, 8, 48), x, y, NOZZLE_Z + 1.25)
+      // A continuous flared skirt: a round outline (tiles read as a bottle cap, ribs as tyre tread).
+      const sk = [new THREE.Vector2(0.6, 0), new THREE.Vector2(0.63, -0.12), new THREE.Vector2(0.64, -0.28), new THREE.Vector2(0.58, -0.3), new THREE.Vector2(0.56, -0.05)]
+      B.add('metal', new THREE.LatheGeometry(sk, 64).rotateX(Math.PI / 2), x, y, NOZZLE_Z)
+
+      B.add('hot', new THREE.CircleGeometry(0.47, 40), x, y, NOZZLE_Z + 0.4, 0, Math.PI, 0)
     }
-    // ── Trailing-edge elevons: their own surfaces just behind the hull's edge — a real hinge gap,
-    // not a painted line — drooped a touch.
-    {
-      const x0 = 1.8, x1 = 2.95, z0 = edgeZ(x0), z1 = edgeZ(x1)
-      const ev = blade(x1 - x0, 0.42, 0.3, z0 - z1, 0.06)
-      B.add('paint', ev, x0, 0.17, z0 - 0.035, -0.05, 0, 0)
-      B.add('paint', mirrorX(ev), -x0, 0.17, z0 - 0.035, -0.05, 0, 0)
-    }
-    // ── Belly: a nose sensor blister and landing light, two flush hover-emitter slots on the chines.
-    B.add('carbon', new THREE.SphereGeometry(1, 14, 7), 0, hullY(0, 3.2, false) + 0.02, 3.2, 0, 0, 0, 0.16, 0.07, 0.34)
-    B.add('glow', new THREE.CircleGeometry(0.05, 16), 0, hullY(0, 3.6, false) - 0.004, 3.6, Math.PI / 2, 0, 0)
-    for (const sx of [1, -1]) B.add('glow', loft([0.8, -0.6, -2.0].map((z, i) => ({ s: -z, c: [1.25 * sx, hullY(1.25, z, false) + 0.012, z] as [number, number, number], a: i === 1 ? 0.07 : 0.04, t: 0.012, b: 0.012, n: 2 })), { A: X, B: Y, rings: 10, around: 8, capStart: true, capEnd: true }))
-    // ── A pitot at the tip.
-    if (variant !== 2) B.add('metal', new THREE.CylinderGeometry(0.012, 0.022, 0.55, 8).rotateX(Math.PI / 2), 0, hullY(0, 5.5) - 0.03, 5.8)
-    // Fins: swept and tapered, roots seated on the skin outboard of the engines; numbers on the
-    // outer faces.
-    const finAt = (fx: number, fz: number, rz: number, rl: number, tl: number, h: number, sw: number) => {
-      const fy = hullY(fx, fz - rl / 2) - 0.03
-      B.addSym('paint', fin(rl, tl, h, sw, 0.14), fx, fy, fz, 0, 0, rz)
-      const u = 0.42 * h, back = sw * 0.42 + (rl + tl) * 0.25, off = 0.14 / 2 + 0.05
+    if (variant !== 2) B.add('carbon', new THREE.CylinderGeometry(0.02, 0.03, 0.9, 16), -0.5, 1.4, -1.6, -0.3, 0, 0)
+    // A shallow ventral keel: depth under the pancake.
+    B.add('carbon', slab(hullShape(0.45), 0.15, 0.08, 3), 0, -0.55, -0.4)
+    // Fins: swept and tapered, roots flat on the lower deck outboard of the engines (they grew out
+    // of the boosters before). Racing numbers on their outer faces.
+    const finAt = (fx: number, fy: number, fz: number, rz: number, rl: number, tl: number, h: number, sw: number, cap: boolean) => {
+      B.addSym('paint', fin(rl, tl, h, sw, 0.13), fx, fy, fz, 0, 0, rz)
+      if (cap) B.addSym('trim', fin(tl + 0.08, tl, 0.16, 0.04, 0.15), fx - Math.sin(rz) * (h - 0.16), fy + Math.cos(rz) * (h - 0.16), fz - sw + 0.02, 0, 0, rz)
+      // Number plate: on the outer face, mid fin.
+      const u = 0.42 * h, back = sw * 0.42 + (rl + tl) * 0.25, off = 0.13 / 2 + 0.05
       number = { pos: [fx + Math.cos(rz) * off - Math.sin(rz) * u, fy + Math.sin(rz) * off + Math.cos(rz) * u, fz - back], rotY: Math.PI / 2, tilt: -rz, size: Math.min(0.85, h * 0.62) }
     }
+    // (Roots kept over the deck: the rear of the hull rounds off at x ≈ 1.9.)
+    if (variant !== 1) finAt(1.85, 0.5, -2.2, -0.3, 1.5, 0.8, 1.25, 0.9, true)
+    // Wingtip side-thruster pods, mounted outboard on pylons (they were buried in the hull edge).
     if (variant !== 1) {
-      finAt(1.75, -2.1, -0.3, 1.5, 0.8, 1.25, 0.9)
-      // Wingtip pods, faired into the tips (they hung off them on struts).
-      for (const sx of [1, -1]) B.add('paint', loft([
-        { s: 0, c: [3.02 * sx, 0.19, -1.4], a: 0.02, t: 0.02, b: 0.02, n: 2 },
-        { s: 0.8, c: [3.02 * sx, 0.19, -2.2], a: 0.15, t: 0.13, b: 0.13, n: 2 },
-        { s: 1.6, c: [3.02 * sx, 0.19, -3.0], a: 0.13, t: 0.12, b: 0.12, n: 2 },
-      ], { A: X, B: Y, rings: 12, around: 16, capEnd: true }))
-      B.addSym('glow', new THREE.CircleGeometry(0.09, 20), 3.02, 0.19, -3.005, 0, Math.PI, 0)
-      wingtip = [3.02, 0.19, -3.0]
+      // Sunk a little into the hull bevel, with a paint fairing onto the deck edge.
+      B.addSym('paint', new THREE.CapsuleGeometry(0.16, 0.7, 8, 20), 3.18, 0.42, -2.2, Math.PI / 2, 0, 0)
+      B.addSym('carbon', new THREE.CapsuleGeometry(0.22, 1.2, 8, 24), 3.32, 0.3, -2.2, Math.PI / 2, 0, 0)
+      B.addSym('glow', new THREE.CircleGeometry(0.12, 20), 3.32, 0.3, -1.38)
     }
     if (variant === 1) {
-      // BULWARK: side sponsons on swept airfoil pylons, two tall fins.
-      const py = blade(1.25, 1.2, 0.45, 0.55, 0.12)
-      B.add('paint', py, 2.4, 0.22, 0.2); B.add('paint', mirrorX(py), -2.4, 0.22, 0.2)
-      pod(B, 3.6, 0.24, 1.0, -2.3, 0.26, true)
-      finAt(1.75, -2.0, -0.14, 1.6, 0.9, 1.9, 1.0)
-      wingtip = [3.6, 0.24, -2.6]
+      // BULWARK: side sponsons on pylons, two tall fins.
+      // Out past the hull's flare on visible pylons; the exhaust stands clear of the rear dome.
+      // Pylon angled along the hull edge (a straight one only met the hull at its rear half).
+      B.addSym('paint', rbox(0.9, 0.1, 1.6), 3.05, 0.35, -0.9, 0, 0.36, 0)
+      B.addSym('trim', rbox(0.06, 0.03, 1.5), 3.05, 0.41, -0.9, 0, 0.36, 0)
+      B.addSym('paint', new THREE.CapsuleGeometry(0.34, 2.6, 12, 32), 3.7, 0.3, -0.6, Math.PI / 2, 0, 0, 1, 1, 0.75)
+      B.addSym('trim', rbox(0.1, 0.035, 2.4), 3.7, 0.555, -0.6)
+      B.addSym('carbon', nacelle(0.27), 3.7, 0.3, -2.85, 0, 0, 0, 1, 0.75, 1)
+      B.addSym('hot', new THREE.CircleGeometry(0.19, 28), 3.7, 0.3, -2.45, 0, Math.PI, 0, 1, 0.75, 1)
+      finAt(1.85, 0.5, -2.1, -0.14, 1.6, 0.9, 1.9, 1.0, true)
+      wingtip = [3.7, 0.3, -3.0]
     } else if (variant === 2) {
-      // LANCE: a long pitot boom, canards off the chines, a dorsal fin on the engine body.
-      B.add('metal', new THREE.CylinderGeometry(0.018, 0.05, 2.0, 8).rotateX(Math.PI / 2), 0, hullY(0, 5.5) - 0.03, 6.5)
-      const cz2 = 3.1, cx = halfWidth(cz2) - 0.08
-      const cn = blade(0.95, 0.7, 0.28, 0.4, 0.07)
-      B.add('paint', cn, cx, hullY(cx, cz2 - 0.3) - 0.03, cz2, 0, 0, 0.05)
-      B.add('paint', mirrorX(cn), -cx, hullY(cx, cz2 - 0.3) - 0.03, cz2, 0, 0, -0.05)
-      B.add('paint', fin(1.3, 0.6, 1.1, 0.9, 0.14), 0, 1.0, -1.8)
+      // LANCE: a nose probe, canards on the deck, a dorsal fin on the spine ahead of the engines.
+      B.add('metal', new THREE.ConeGeometry(0.11, 2.2, 24).rotateX(-Math.PI / 2), 0, 0.3, 6.3)
+      B.add('metal', new THREE.TorusGeometry(0.13, 0.04, 8, 24), 0, 0.3, 5.25)
+      B.add('neon', new THREE.SphereGeometry(0.07, 16, 12), 0, 0.3, 7.42)
+      // (Each side built on its own: addSym only mirrors position, so the left one pointed inboard.)
+      const cn = blade(1.1, 0.75, 0.32, 0.35, 0.06)
+      B.add('paint', cn, 0.95, 0.5, 3.35, 0, 0, 0.12)
+      B.add('paint', mirrorX(cn), -0.95, 0.5, 3.35, 0, 0, -0.12)
+      B.add('paint', fin(1.55, 0.7, 1.45, 1.0, 0.14), 0, 0.97, -0.55)
+      B.add('trim', fin(0.78, 0.7, 0.14, 0.04, 0.16), 0, 0.97 + 1.33, -0.55 - 0.98)
     }
   } else {
     const L = new B0(parts)
-    L.add('paint', hullLoft(26, 18))
-    L.add('paint', loft([
-      { s: 0.8, c: [0, 0.75, -0.8], a: 0.45, t: 0.1, b: 0.1, n: 2.4 },
-      { s: 2.9, c: [0, 0.55, -2.9], a: 1.78, t: 0.5, b: 0.4, n: 3.2 },
-      { s: 3.95, c: [0, 0.5, -3.95], a: 1.74, t: 0.48, b: 0.38, n: 3.4 },
-    ], { A: X, B: Y, rings: 6, around: 14, capEnd: true }))
+    L.add('paint', slab(hullShape(1), 0.45, 0.2, 1))
+    L.add('paint', new THREE.CapsuleGeometry(0.6, 4.0, 2, 8), 0, 0.66, -0.7, Math.PI / 2, 0, 0, 1.1, 1, 0.55)
     for (const [x, y] of NOZZLES) {
-      L.add('carbon', new THREE.CylinderGeometry(NR * 0.92, NR, 0.6, 10), x, y, NOZZLE_Z + 0.3, Math.PI / 2, 0, 0)
-      L.add('hot', new THREE.CircleGeometry(NR * 0.78, 10), x, y, NOZZLE_Z - 0.04, 0, Math.PI, 0)
+      L.add('carbon', new THREE.CylinderGeometry(0.55, 0.6, 2.0, 10), x, y, NOZZLE_Z + 1.0, Math.PI / 2, 0, 0)
+      L.add('hot', new THREE.CircleGeometry(0.47, 10), x, y, NOZZLE_Z - 0.04, 0, Math.PI, 0)
     }
     // Same silhouette as the detailed ship (no pop when the detail switches).
     if (variant === 1) {
-      L.addSym('paint', new THREE.CapsuleGeometry(0.26, 2.8, 3, 8), 3.6, 0.24, -0.65, Math.PI / 2, 0, 0)
-      L.addSym('paint', new THREE.BoxGeometry(0.14, 1.9, 1.3), 1.9, 1.45, -2.8, 0, 0, -0.14)
+      L.addSym('paint', new THREE.CapsuleGeometry(0.42, 2.6, 3, 8), 3.7, 0.3, -0.6, Math.PI / 2, 0, 0, 1, 1, 0.75)
+      L.addSym('paint', new THREE.BoxGeometry(0.14, 1.9, 1.3), 1.95, 1.45, -2.9, 0, 0, -0.14)
     } else {
-      L.addSym('paint', new THREE.BoxGeometry(0.14, 1.25, 1.2), 1.9, 1.1, -2.8, 0, 0, -0.3)
+      L.addSym('paint', new THREE.BoxGeometry(0.14, 1.25, 1.2), 2.0, 1.1, -2.9, 0, 0, -0.3)
+      L.addSym('carbon', new THREE.CapsuleGeometry(0.22, 1.2, 2, 6), 3.32, 0.3, -2.2, Math.PI / 2, 0, 0)
     }
-    if (variant === 2) L.add('paint', new THREE.BoxGeometry(0.14, 1.1, 1.2), 0, 1.5, -2.2)
-  }
-  if (hi) {
-    // Navigation lights at the wingtips (red to port, green to starboard).
-    const B = new B0(parts)
-    B.add('navG', new THREE.SphereGeometry(0.07, 16, 12), wingtip[0], wingtip[1] + 0.12, wingtip[2] + 0.5)
-    B.add('navR', new THREE.SphereGeometry(0.07, 16, 12), -wingtip[0], wingtip[1] + 0.12, wingtip[2] + 0.5)
+    if (variant === 2) {
+      L.add('paint', new THREE.BoxGeometry(0.14, 1.45, 1.4), 0, 1.7, -1.6)
+      L.add('metal', new THREE.ConeGeometry(0.11, 2.2, 6).rotateX(-Math.PI / 2), 0, 0.3, 6.3)
+    }
   }
   const spec: ShipSpec = {
     nozzles: NOZZLES,

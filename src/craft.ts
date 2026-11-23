@@ -53,7 +53,7 @@ function liveryPatch(m: THREE.MeshPhysicalMaterial, u: { uLiv: { value: number }
         else if (L == 2) { mk = 1.0 - smoothstep(0.08, 0.14, q.y); lc = uLivC2; }
         else if (L == 3) mk = step(0.72, fract(q.z * 0.32 + ax * 0.42)) * step(-3.6, q.z);
         else if (L == 4) mk = max(smoothstep(1.6, 1.75, q.z), smoothstep(2.9, 3.05, ax));
-        else if (L == 5) { vec3 w = q * vec3(0.9, 1.4, 0.55); float n = sin(w.x * 2.1 + sin(w.z * 1.3)) * 0.5 + sin(w.z * 1.7 + w.y * 2.3 + sin(w.x * 1.9)) * 0.35 + sin((w.x + w.z) * 3.1) * 0.15; mk = smoothstep(-0.05, 0.12, n); lc = uLivC2; }
+        else if (L == 5) { vec3 c = floor(q * vec3(1.4, 2.2, 1.1)); float h = fract(sin(dot(c, vec3(12.9898, 78.233, 37.719))) * 43758.5453); mk = step(0.5, h); lc = uLivC2; }
         else if (L == 6) mk = max(1.0 - smoothstep(0.03, 0.05, abs(q.y - 0.28)), (1.0 - smoothstep(0.025, 0.045, ax)) * smoothstep(0.3, 0.45, q.y));
         diffuseColor.rgb = mix(diffuseColor.rgb, lc, mk);
       }`)
@@ -208,8 +208,8 @@ export class Craft {
     this.body.add(this.hi, this.lo)
     const mats: Record<string, THREE.Material> = {
       // (Shell surfaces double-sided: an open loft end can never show as a see-through hole.)
-      paint: new THREE.MeshPhysicalMaterial({ side: THREE.DoubleSide, color: paint.body, roughness: 0.3, metalness: 0.3, clearcoat: 1, clearcoatRoughness: 0.16, envMap: env, envMapIntensity: 1.5 }),
-      trim: new THREE.MeshStandardMaterial({ side: THREE.DoubleSide, color: paint.trim, roughness: 0.32, metalness: 0.45, emissive: paint.trim, emissiveIntensity: 0.18, envMap: env, envMapIntensity: 1.5 }),
+      paint: new THREE.MeshPhysicalMaterial({ side: THREE.DoubleSide, color: paint.body, roughness: 0.16, metalness: 0.35, clearcoat: 1, clearcoatRoughness: 0.04, envMap: env, envMapIntensity: 1.7 }),
+      trim: new THREE.MeshStandardMaterial({ side: THREE.DoubleSide, color: paint.trim, roughness: 0.2, metalness: 0.45, emissive: paint.trim, emissiveIntensity: 0.18, envMap: env, envMapIntensity: 1.5 }),
       carbon: new THREE.MeshStandardMaterial({ side: THREE.DoubleSide, color: 0x15171b, roughness: 0.3, metalness: 0.75, envMap: env, envMapIntensity: 1.3 }),
       metal: new THREE.MeshStandardMaterial({ side: THREE.DoubleSide, color: 0x9aa0a8, roughness: 0.12, metalness: 1, envMap: env, envMapIntensity: 1.5 }),
       // (Tinted and see-through: the pilot shows inside.)
@@ -222,9 +222,6 @@ export class Craft {
     mats.glow = this.glow
     mats.hot = new THREE.MeshBasicMaterial({ color: new THREE.Color(1.5, 0.42, 0.1) })
     mats.neon = new THREE.MeshBasicMaterial({ color: new THREE.Color(paint.trim).multiplyScalar(2.4) })
-    // Navigation lights: red to port (left, −x), green to starboard.
-    mats.navR = new THREE.MeshBasicMaterial({ color: new THREE.Color(3.2, 0.25, 0.2) })
-    mats.navG = new THREE.MeshBasicMaterial({ color: new THREE.Color(0.2, 3.0, 0.6) })
 
     this.mats = mats
     this.numMat = new THREE.MeshBasicMaterial({ map: numberTexture(paint.number, '#' + new THREE.Color(paint.trim).getHexString()), transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2 })
@@ -272,12 +269,12 @@ export class Craft {
     // Finish.
     const pm = m.paint as THREE.MeshPhysicalMaterial
     const F = [
-      { r: 0.3, mt: 0.3, cc: 1, ccr: 0.16, env: 1.5, ir: 0 },
+      { r: 0.16, mt: 0.35, cc: 1, ccr: 0.04, env: 1.7, ir: 0 },
       { r: 0.6, mt: 0.05, cc: 0, ccr: 0.5, env: 0.7, ir: 0 },
-      { r: 0.36, mt: 0.85, cc: 0.6, ccr: 0.2, env: 1.5, ir: 0 },
-      { r: 0.16, mt: 1, cc: 1, ccr: 0.14, env: 2.1, ir: 0 },
-      { r: 0.3, mt: 0.3, cc: 1, ccr: 0.16, env: 1.6, ir: 1 },
-    ][p.finish ?? 0] ?? { r: 0.3, mt: 0.3, cc: 1, ccr: 0.16, env: 1.5, ir: 0 }
+      { r: 0.28, mt: 0.85, cc: 0.6, ccr: 0.1, env: 1.6, ir: 0 },
+      { r: 0.05, mt: 1, cc: 1, ccr: 0.02, env: 2.3, ir: 0 },
+      { r: 0.2, mt: 0.3, cc: 1, ccr: 0.05, env: 1.8, ir: 1 },
+    ][p.finish ?? 0] ?? { r: 0.16, mt: 0.35, cc: 1, ccr: 0.04, env: 1.7, ir: 0 }
     const irChanged = (pm.iridescence > 0) !== (F.ir > 0)
     pm.roughness = F.r; pm.metalness = F.mt; pm.clearcoat = F.cc; pm.clearcoatRoughness = F.ccr; pm.envMapIntensity = F.env
     pm.iridescence = F.ir; pm.iridescenceIOR = 1.6; pm.iridescenceThicknessRange = [200, 600]

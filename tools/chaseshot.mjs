@@ -1,0 +1,12 @@
+// The chase view in a race, throttle held: OUT png, SHIP model. (Checks the exhaust isn't hidden.)
+import { chromium } from 'playwright-core'
+const [out] = process.argv.slice(2)
+const b = await chromium.launch({ channel: 'chrome', headless: true, args: ['--mute-audio', '--use-gl=angle'] })
+const ctx = await b.newContext({ viewport: { width: 960, height: 540 } })
+await ctx.addInitScript((s) => localStorage.setItem('dbu-ship', s), process.env.SHIP ?? '0')
+const p = await ctx.newPage(); const errs = []; p.on('pageerror', (e) => errs.push(e.message))
+await p.goto('http://localhost:5417/'); await p.waitForFunction('window.__g && window.__g.ready', null, { timeout: 120000 })
+await p.click('#start'); await p.waitForTimeout(4500)
+await p.keyboard.down('KeyW'); await p.keyboard.down('ShiftLeft'); await p.waitForTimeout(2500)
+await p.screenshot({ path: out }); console.log('errors', errs.slice(0, 3))
+await b.close()
