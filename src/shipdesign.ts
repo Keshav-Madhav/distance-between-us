@@ -95,7 +95,7 @@ export function buildShip(variant: number, hi: boolean): { parts: Parts; spec: S
     K(nose - 1.6, [0, 0.2, nose - 1.6], bodyW * 0.38, 0.27, 0.22, 2.4),
     K(nose, [0, 0.12, nose], 0.03, 0.03, 0.03, 2),
   ]
-  const F = { A: X, B: Y, rings: ring(44), around: ring(18), capStart: !hi }
+  const F = { A: X, B: Y, rings: ring(44), around: ring(30), capStart: !hi }
   // Livery split by section angle: paint shoulders, a trim stripe down the spine, a carbon belly.
   put('paint', loft(fus, { ...F, th0: 0, th1: PI / 2 - 0.13 }))
   put('trim', loft(fus, { ...F, th0: PI / 2 - 0.13, th1: PI / 2 + 0.13, around: ring(3) }))
@@ -111,7 +111,7 @@ export function buildShip(variant: number, hi: boolean): { parts: Parts; spec: S
     K(cz + 1.25, [0, 0.76, cz + 1.25], 0.34, 0.36, 0.08, 2.2),
     K(cz + 1.8, [0, 0.66, cz + 1.8], 0.04, 0.03, 0.02, 2),
   ]
-  const C = { A: X, B: Y, rings: ring(28), around: ring(12) }
+  const C = { A: X, B: Y, rings: ring(28), around: ring(20) }
   put('glass', loft(can, { ...C, th0: 0.32, th1: PI - 0.32 }))
   put('carbon', loft(can, { ...C, th0: 0, th1: 0.32, around: ring(3) }))
   put('carbon', loft(can, { ...C, th0: PI - 0.32, th1: PI, around: ring(3) }))
@@ -130,7 +130,7 @@ export function buildShip(variant: number, hi: boolean): { parts: Parts; spec: S
     K(pz0, [podX - 0.06, NY - 0.04, pz0], podW * 0.7, podH * 0.63, podH * 0.63, 2.2),
   ]
   // (Low detail: closed at both ends — the far field must not be see-through tubes.)
-  const P = { A: X, B: Y, rings: ring(36), around: ring(12), capStart: !hi, capEnd: !hi }
+  const P = { A: X, B: Y, rings: ring(36), around: ring(22), capStart: !hi, capEnd: !hi }
   put('paint', loft(pod, { ...P, th0: 0.22, th1: PI }), true)
   put('neon', loft(pod, { ...P, th0: 0.12, th1: 0.22, around: 1 }), true)
   put('trim', loft(pod, { ...P, th0: -0.25, th1: 0.12, around: ring(3) }), true)
