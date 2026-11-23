@@ -77,6 +77,7 @@ function swapTo(id: string, go: boolean | string): void {
 }
 let hosting: { frame: HTMLIFrameElement | null; busy: boolean } = { frame: null, busy: false }
 /** The course the visible instance is running (the top page's own at first). */
+let frameZ = 1000
 let hostCourse = new URLSearchParams(location.search).get('course') ?? ''
 function makeFrame(id: string, go: boolean | string, warm: boolean): HTMLIFrameElement {
   const u = new URL(location.href)
@@ -124,18 +125,29 @@ function hostSwap(id: string, go: boolean | string): void {
   if (!warm && warmSlot) { warmSlot.f.remove(); warmSlot = null }
   warmSlot = null
   const f = warm ? warm.f : makeFrame(id, go, false)
+  const prevId = hostCourse || course.def.id
   hostCourse = id
   const prev = hosting.frame
   // (A flying handover morphs slower: the two pictures of the planet blend rather than cut.)
-  const fadeMs = live ? 1400 : 700
+  // (Menu switches 0.3 s: the world is already loaded by then — the fade was most of the wait.)
+  const fadeMs = live ? 1400 : 300
   const fadeIn = () => {
+    f.style.zIndex = String(++frameZ) // (above a sleeping one: moving an iframe in the DOM reloads it)
     f.style.transition = `opacity ${fadeMs}ms ease`
     f.style.opacity = '1'
     // The one being replaced fades its sound out under the fade.
-    if (prev) prev.contentWindow?.postMessage({ type: 'dbu-retire' }, location.origin)
+    // The world left behind sleeps (kept loaded, no frames, no sound): going back to it is a fade, not a load.
+    // One kept at a time; the top page's own instance retires (it cannot be put back in front).
+    if (prev && !live) { prev.contentWindow?.postMessage({ type: 'dbu-sleep' }, location.origin) }
+    else if (prev) prev.contentWindow?.postMessage({ type: 'dbu-retire' }, location.origin)
     else retire()
     setTimeout(() => {
-      prev?.remove()
+      if (prev && !live) {
+        // Into the warm slot (replacing whatever was there): the id it is running is what it was loaded as.
+        if (warmSlot && warmSlot.f !== f) warmSlot.f.remove()
+        prev.style.opacity = '0'; prev.style.pointerEvents = 'none'
+        warmSlot = { id: prevId, go: false, f: prev, ready: true }
+      } else prev?.remove()
       f.style.pointerEvents = 'auto'
       f.contentWindow?.focus()
       hosting = { frame: f, busy: false }
@@ -197,8 +209,20 @@ addEventListener('message', (e) => {
   if (e.data?.type === 'dbu-retire') retire()
   if (e.data?.type === 'dbu-state?') window.parent.postMessage({ type: 'dbu-state', state: getHandoff() }, location.origin)
   if (e.data?.type === 'dbu-arrive') applyHandoff(e.data.state)
+  if (e.data?.type === 'dbu-sleep') {
+    sound.fadeOut(0.3)
+    setTimeout(() => { dormant = true; sound.suspend(true) }, 320)
+    // Back to its menu, so waking it lands where a world switch would.
+    if (mode !== 'title') toTitle()
+  }
   if (e.data?.type === 'dbu-wake' && dormant) {
-    dormant = false; sound.start()
+    // (Woken after it had asked to switch away: that request is done — clear it, unfreeze, back to drawing.)
+    swapPending = null; freezeWanted = false
+    if (frozen) { frozen = false; $('#freeze').classList.remove('on'); last = performance.now(); requestAnimationFrame(frame) }
+    // (Its menu picks back to its own course: it had picked the world it left for, so picking that again did nothing.)
+    pickedCourse = COURSES.indexOf(course.def); pickedWorld = biomeOf(course.def.id)
+    showCourse()
+    dormant = false; sound.fadeIn(0.3)
     if (e.data.go === true || e.data.go === '1') startRace()
     // Flying in or out: a stand-in state until the real one arrives (dbu-arrive) with the cross-fade.
     else if (e.data.go === 'live-arrive' || e.data.go === 'live-sys') { menuMode = 'free'; showCourse(); applyHandoff({ alt: 1500000, speed: 2e5, pitch: -0.3, sx: 1, sy: 0.3, sz: 0, biome: 'desert', keys: [] }) }
