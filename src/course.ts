@@ -993,8 +993,9 @@ export class Course {
           along += STEP
         }
       }
-      strip(-this.gateHalf + 10, 7, [2.2, 0.75, 0.2], false)
-      strip(this.gateHalf - 10, 7, [1.6, 1.8, 2.1], false)
+      // (Wider and brighter: at Mach 6 the 7 m lines were too thin to steer by.)
+      strip(-this.gateHalf + 12, 12, [2.8, 0.95, 0.25], false)
+      strip(this.gateHalf - 12, 12, [2.0, 2.2, 2.6], false)
       strip(0, 2.2, [0.9, 1.1, 1.4], true)
       const g = new THREE.BufferGeometry()
       g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3))

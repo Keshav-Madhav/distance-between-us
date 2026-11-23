@@ -494,8 +494,9 @@ for (const [i, r] of race.racers.entries()) {
   const nT = r.ai ? 1 : 3
   for (let k = 0; k < nT; k++) {
     // (Rivals' a touch longer and brighter: clearly told apart at a glance, not a laser show.)
-    const t = new Trail(r.ai ? 64 : 56, r.ai ? new THREE.Color(r.color).multiplyScalar(1.9) : new THREE.Color(1.6, 0.5, 0.12), true, r.ai ? 1.8 : 0.9)
-    t.width = r.ai ? 0.9 : 0.42
+    const t = new Trail(r.ai ? 40 : 56, r.ai ? new THREE.Color(r.color).multiplyScalar(1.9) : new THREE.Color(1.6, 0.5, 0.12), true, r.ai ? 1.8 : 0.9)
+    // (Rivals' thinner: on the dark worlds their wide ribbons lay on the ground like painted lanes.)
+    t.width = r.ai ? 0.45 : 0.42
     trail.push(t)
     scene.add(t.mesh)
   }
@@ -1103,7 +1104,7 @@ function showCourse(): void {
     })
     names.forEach((_n, i) => (box.children[i] as HTMLElement).classList.toggle('on', i === (myPaint[key] ?? 0)))
   }
-  $('#start').textContent = swapPending ? `LOADING ${swapPending}…` : menuMode === 'hunt' ? 'START HUNT' : menuMode === 'free' ? (IN_SYSTEM ? 'LAUNCH INTO ORBIT' : 'START FREE ROAM') : `START · ${COURSES[pickedCourse].name}`
+  $('#start').textContent = swapPending ? `LOADING ${swapPending}…` : menuMode === 'hunt' ? 'START HUNT' : menuMode === 'free' ? (IN_SYSTEM ? 'LAUNCH INTO ORBIT' : 'START FREE ROAM') : 'START RACE'
   $('#ship-name').textContent = MODELS[shipPick]
   $('#ship-desc').textContent = SHIP_DESC[shipPick]
   $('#ship-desc').title = 'Every craft handles the same: the choice is looks.'
@@ -1112,7 +1113,7 @@ function showCourse(): void {
     $('#tp-name').textContent = 'HUNT'
     $('#tp-blurb').textContent = 'Six waves in the sky: darts, lancers, interceptors. Kills score more the faster you fly.'
     const cell = (v: string, l: string) => `<div><b>${v}</b><small>${l}</small></div>`
-    $('#tp-stats').innerHTML = cell(WORLDS.find((w) => w.id === BIOME)?.name ?? '', 'World') + cell('× Mach', 'Score multiplier') + cell('6 waves', 'Then it ends') + cell((() => { try { return localStorage.getItem('dbu-hunt-best') ?? '—' } catch { return '—' } })(), 'Your best')
+    $('#tp-stats').innerHTML = cell(WORLDS.find((w) => w.id === BIOME)?.name ?? '', 'World') + cell('× Mach', 'Score multiplier') + cell('6 waves', 'Then it ends') + cell((() => { try { return localStorage.getItem('dbu-hunt-best') ?? 'No run yet' } catch { return 'No run yet' } })(), 'Your best')
     $('#tp-info').textContent = '' // (the keys are in the footer: they showed twice)
   } else if (menuMode === 'free' && IN_SYSTEM) {
     $('#title .free-only.huntinfo').innerHTML = '<b>HOW IT PLAYS</b><p>You start in orbit beside RED MESA. Every world is marked with its name and distance: point the nose at one and hold Shift to cruise — you slow down by yourself as you arrive.</p><p>Fly below 1,500 km of a world and you are there, coming down to its ground. Climb back out past 1,500 km to return here and pick another.</p>'
@@ -1271,8 +1272,8 @@ function drawTrackPreview(d: (typeof COURSES)[number]): void {
   // (Gates for the whole race, as the race screen counts them: the loaded course knows exactly.)
   const gates = d === course.def ? course.cps.length : Math.round((d.km * 1000 * (d.laps ?? 1)) / d.gateEvery) + 1
   $('#tp-stats').innerHTML = cell(`${d.km} km`, d.loop ? ((d.laps ?? 1) > 1 ? `Loop, ${d.laps} laps` : 'Loop') : 'Sprint') + cell(String(gates), 'Gates') + cell(String(d.racers ?? 10), 'Racers') +
-    cell(`${Math.round((turning / L) * 100)}%`, 'Turning') + cell(rmin > 20000 ? '—' : `${(rmin / 1000).toFixed(1)} km`, 'Tightest') +
-    (d.jumps.length ? cell(String(d.jumps.length), 'Jumps') : spires ? cell(`~${spires}`, 'Spires') : '') + cell(bestOf(d.id) !== null ? fmtLap(bestOf(d.id)!) : '—', 'Your best') + cell(`${medalSvg(3, 14)}${fmtLap(medals(d)[0])}`, 'Gold time')
+    cell(`${Math.round((turning / L) * 100)}%`, 'Turning') + cell(rmin > 20000 ? 'Straight' : `${(rmin / 1000).toFixed(1)} km`, 'Tightest') +
+    (d.jumps.length ? cell(String(d.jumps.length), 'Jumps') : spires ? cell(`~${spires}`, 'Spires') : '') + cell(bestOf(d.id) !== null ? fmtLap(bestOf(d.id)!) : 'No run yet', 'Your best') + cell(`${medalSvg(3, 14)}${fmtLap(medals(d)[0])}`, 'Gold time')
   const best = bestOf(d.id)
   $('#tp-info').innerHTML = ''
   void best
@@ -1409,7 +1410,7 @@ function showResults(): void {
   $('#over-h').textContent = `${ord(race.racers[0].place)} PLACE`
   const md = me0.finished ? medalOf(course.def, me0.finishTime) : 0, [mg, ms, mb] = medals(course.def)
   const next = md === 3 ? '' : ` · NEXT: ${['BRONZE', 'SILVER', 'GOLD'][md]} ${fmtLap([mb, ms, mg][md])}`
-  $('#over-stats').innerHTML = `${course.def.name} · ${course.def.km} KM IN ${fmtLap(race.racers[0].finishTime)}${newBest ? ' · <b style="color:#ffb070">NEW BEST</b>' : ''} · TOP SPEED MACH ${Math.max(runTop, player.topMach).toFixed(2)}<br/>${md ? `<span class="medalbig">${medalSvg(md, 44)}<b>${['', 'BRONZE', 'SILVER', 'GOLD'][md]} TIME</b></span>` : 'NO MEDAL TIME'}${next}`
+  $('#over-stats').innerHTML = `${course.def.name} · ${course.def.km} KM IN ${fmtLap(race.racers[0].finishTime)}${newBest ? ' · <b style="color:#ffb070">NEW BEST</b>' : ''} · TOP SPEED MACH ${Math.max(runTop, player.topMach).toFixed(2)}<br/>${md ? `<span class="medalbig">${medalSvg(md, 44)}<b>${['', 'BRONZE', 'SILVER', 'GOLD'][md]} TIME</b><small style="opacity:.7;margin-left:10px;letter-spacing:.12em">UNDER ${fmtLap([0, mb, ms, mg][md])}</small></span>` : 'NO MEDAL TIME'}${next}`
   // (A big field: the podium, then you and your neighbours — twenty rows ran off the screen.)
   const myIdx = rows.findIndex((r) => !r.ai)
   const keep = rows.map((_, i) => i < 3 || Math.abs(i - myIdx) <= 2 || rows.length <= 10)
@@ -2749,7 +2750,8 @@ function frame(now: number): void {
   P.uTime.value = time
   P.uGrain.value = settings.grain ? CFG.post.grain * (1 - 0.75 * space.vac) : 0
   P.uSharpen.value = settings.sharp + (1 - renderScale) * 1.2
-  P.uExposure.value = CFG.post.exposure
+  // (VERDANT a stop under: its pale grass and bright sky washed out, the craft lost in the bloom.)
+  P.uExposure.value = CFG.post.exposure * (BIOME === 'forest' ? 0.85 : 1)
   P.uVac.value = space.vac
   // (In vacuum the sun is a disc, not a halo; looking at it, less again — the grey veil.)
   post.bloom.strength = CFG.post.bloom * (1 - 0.45 * space.vac) * (1 - 0.35 * space.vac * SPACE_U.uSunView.value)
@@ -2928,7 +2930,7 @@ function updateHud(dt: number, slow: boolean): void {
         if (N > standEls.length && k >= 3 && Math.abs(k + 1 - myP) > 3 && !(myP <= 7 && k < 10)) continue
         const r = standRows[k], row = standEls[shown++]
         row.el.style.display = ''
-        const gap = r.finished ? (r === top ? 'WINNER ' : '') + fmtLap(r.finishTime) : top.finished ? `${(race.toGo(r) / 1000).toFixed(1)} KM` : r === top ? 'LEADER' : `+${((lead - race.progress(r)) / Math.max(800, player.speed)).toFixed(1)}`
+        const gap = r.finished ? (r === top ? 'WINNER ' : '') + fmtLap(r.finishTime) : top.finished ? `${(race.toGo(r) / 1000).toFixed(1)} KM` : r === top ? 'LEADER' : `+${((lead - race.progress(r)) / Math.max(800, player.speed)).toFixed(2)}`
         const name = `${r.place}\u00a0\u00a0${r.name}`
         if (row.who !== r) { row.who = r; row.el.className = r.ai ? '' : 'me'; row.el.style.setProperty('--c', hex(r.color)) }
         if (row.name.textContent !== name) row.name.textContent = name
@@ -2938,8 +2940,8 @@ function updateHud(dt: number, slow: boolean): void {
       // Who is just ahead and just behind, in seconds at your speed.
       const ahead = standRows[myP - 2], behind = standRows[myP]
       const sec = (a: Racer, b: Racer) => ((race.progress(a) - race.progress(b)) / Math.max(300, player.speed)).toFixed(2)
-      $('#gap-a').innerHTML = ahead && !me.finished ? `<span class="up">▲ ${ahead.name} +${sec(ahead, me)} S</span>` : ''
-      $('#gap-b').innerHTML = behind && !me.finished ? `<span class="dn">▼ ${behind.name} −${sec(me, behind)} S</span>` : ''
+      $('#gap-a').innerHTML = ahead && !me.finished ? `<span class="up">▲ ${ahead.name} +${sec(ahead, me)}</span>` : ''
+      $('#gap-b').innerHTML = behind && !me.finished ? `<span class="dn">▼ ${behind.name} −${sec(me, behind)}</span>` : ''
     }
     drawMini()
     // Section banners as you enter each (course 2), and a warning ~3 s before a hairpin.
@@ -3193,9 +3195,11 @@ const mapQuad = new FullScreenQuad(new THREE.ShaderMaterial({
   depthWrite: false,
 }))
 let mapFrame = 0
+const overEl = $('#over')
 /** The real top-down render under the map overlay: an orthographic camera straight down. */
 function renderMap(): void {
-  if (mode !== 'race' || !mini.classList.contains('on') || !settings.map) return
+  // (Not behind the results: it is drawn into the 3D canvas, so CSS cannot hide it.)
+  if (mode !== 'race' || !mini.classList.contains('on') || !settings.map || !overEl.classList.contains('hide')) return
   if (!mapLayersSet) {
     mapLayersSet = true
     for (const o of world.group.children) {
