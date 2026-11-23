@@ -50,8 +50,8 @@ poly_loft('gondola', [(z, cx, cy, a, t, b) for (z, cx, cy, a, t, b, n) in gond],
 smooth_loft('gond_glass', [(3.08, 0, GY + 0.02, 0.04, 0.03, 0.03, 2.0), (2.95, 0, GY + 0.02, 0.22, 0.17, 0.12, 2.2), (2.7, 0, GY + 0.02, 0.33, 0.24, 0.17, 2.3), (2.45, 0, GY + 0.02, 0.37, 0.27, 0.19, 2.3)], 36, 18, M['glass'], cap1=False, angle=70)
 for sx in (1, -1):
     for k, zc in enumerate((1.9, 1.3, 0.7, 0.1)):  # framed panes set into the flank
-        box('pane_frame', (0.04, 0.2, 0.5), (sx * 0.475, GY + 0.1, zc), material=M['gun'], bevel=0.01)
-        box('pane', (0.04, 0.15, 0.42), (sx * 0.482, GY + 0.1, zc), material=M['glass'])
+        box('pane_frame', (0.04, 0.2, 0.5), (sx * 0.448, GY + 0.1, zc), material=M['gun'], bevel=0.01)
+        box('pane', (0.04, 0.15, 0.42), (sx * 0.452, GY + 0.1, zc), material=M['glass'])
     poly_loft('gond_stripe', [(z, sx * 0.47, GY - 0.1, 0.012, 0.035, 0.035) for z in (2.3, 1.2, 0.0, -0.9)], [(1, 0), (0, 1), (-1, 0), (0, -1)], 24, M['trim'], cap1=True, angle=80)
 # The gondola's pylon into the body.
 poly_loft('gond_pylon', [(2.5, 0, GY + 0.28, 0.06, 0.08, 0.08), (1.8, 0, GY + 0.34, 0.36, 0.26, 0.2), (-0.6, 0, GY + 0.36, 0.38, 0.26, 0.2), (-1.3, 0, GY + 0.34, 0.1, 0.08, 0.08)], [(1, 0), (0.5, 1), (-0.5, 1), (-1, 0), (-0.5, -1), (0.5, -1)], 32, M['paint'], angle=50)
@@ -107,7 +107,7 @@ for sx in (1, -1):
 join_mirror(right)
 
 # Game hooks.
-empty('nozzle_0', (-PX, PY, NZ)); empty('nozzle_1@1.2', (0, EY, NZ)); empty('nozzle_2', (PX, PY, NZ))
+empty('nozzle_0@0.6', (-PX, PY, NZ)); empty('nozzle_1@0.95', (0, EY, NZ)); empty('nozzle_2@0.6', (PX, PY, NZ))
 empty('wingtip', (PX + 1.12, PY, -2.9))
 empty('number@0.55', (0.3 + 0.55 * math.sin(0.42) + 0.06, BY + 0.3 + 0.55 * math.cos(0.42), -1.85))
 
