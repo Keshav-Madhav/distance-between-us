@@ -119,7 +119,8 @@ const cinderHeap = (): Build => () => {
     const k = 1 + 0.22 * Math.sin(x * 7.1 + z * 3.3) * Math.cos(z * 5.7 - x * 2.1)
     p.setXYZ(i, x * k * 0.95, Math.max(0, y) * 0.42 * k, z * k * 0.8)
   }
-  return col(g.translate(0, -0.02, 0), [0.3, 0.26, 0.25], 0.45)
+  // (Dark warm clinker: flat grey stood out of CINDER's palette.)
+  return col(g.translate(0, -0.02, 0), [0.2, 0.14, 0.12], 0.45)
 }
 const lilies = (): Build => () => col(new THREE.CircleGeometry(0.7, 7).rotateX(-Math.PI / 2).translate(0, 0.05, 0), [0.25, 0.5, 0.2], 0.3)
 
@@ -156,8 +157,8 @@ const KINDS: Record<string, Kind[]> = {
     { name: 'pillar', build: pillar([0.14, 0.11, 0.1]), cell: 32, grid: 24, density: 0.4, scale: [0.6, 1.4], near: 30 },
     { name: 'spatter', build: ember(), cell: 6, grid: 90, density: 0.45, scale: [0.6, 1.6], glow: true, where: 'river' },
     { name: 'charred', build: charred(), cell: 12, grid: 60, density: 0.5, scale: [1.0, 2.0], tilt: 0.15 },
-    { name: 'vent', build: vent(), cell: 20, grid: 36, density: 0.4, scale: [0.8, 1.6] },
-    { name: 'ventglow', build: ventGlow(), cell: 20, grid: 36, density: 0.4, scale: [0.8, 1.6], glow: true },
+    { name: 'vent', build: vent(), cell: 20, grid: 36, density: 0.4, scale: [0.8, 1.6], near: 14 },
+    { name: 'ventglow', build: ventGlow(), cell: 20, grid: 36, density: 0.4, scale: [0.8, 1.6], glow: true, near: 14 },
     FLAGS,
     { name: 'heap', build: cinderHeap(), cell: 24, grid: 28, density: 0.5, scale: [3.0, 6.0], near: 18 },
   ]),
@@ -261,10 +262,11 @@ vec3 scPos; float scS; float scA; float scT;`
         // View cull (see update): the instance's angular half-width widens the cone a little.
         { vec2 dv = xz - uScatC; float dl = length(dv);
           if (dl > 40.0 && dot(dv, uScatView.xy) < (uScatView.z - ${(k.scale[1] * 3).toFixed(1)} / dl) * dl) keep = 0.0; }
-        ${k.scale[1] >= 4 && !k.near ? `// Giants off the racing line (the wear map's packing, where the simulated races ran): a bush
+        ${k.scale[1] >= 4 && !k.near || k.near === 18 ? `// (Giants only: the camera rides the racing line, so clearing it of 2.5 m props halved the
+        // near field that sells the speed — measured 4.1% → 1.8% of the screen.) Giants off the racing line (the wear map's packing, where the simulated races ran): a bush
         // in the exhaust or a drift dome dead ahead read as an obstacle you were about to hit.
         { vec2 tuv = (xz - uTrackBox.xy) / uTrackBox.zw;
-          if (uTrackOn > 0.01 && keep > 0.0 && tuv.x > 0.0 && tuv.y > 0.0 && tuv.x < 1.0 && tuv.y < 1.0) keep *= 1.0 - smoothstep(0.08, 0.22, texture2D(tTrack, tuv).r); }` : ''}
+          if (uTrackOn > 0.01 && keep > 0.0 && tuv.x > 0.0 && tuv.y > 0.0 && tuv.x < 1.0 && tuv.y < 1.0) keep *= 1.0 - smoothstep(0.35, 0.55, texture2D(tTrack, tuv).r); }` : ''}
         ${k.where === 'river' ? 'keep *= smoothstep(0.25, 0.45, riverAt(xz));' : BIOME === 'ice' ? '' : 'keep *= 1.0 - smoothstep(0.08, 0.2, riverAt(xz));'} // (POLAR SHELF's rivers are frozen: props sit on them, or whole stretches were bare)
         scS = mix(${k.scale[0].toFixed(2)}, ${k.scale[1].toFixed(2)}, fract(h1 * 13.7)) * keep;
         scA = h2 * 6.2832;
