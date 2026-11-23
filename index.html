@@ -375,7 +375,7 @@
   #pipper::after { content: ''; position: absolute; left: 8px; top: 8px; width: 2px; height: 2px; background: #ffd23a; }
   #paintbox { position: absolute; left: 0; top: 0; width: 28vh; height: 28vh; margin: -14vh 0 0 -14vh; border: 1.5px dashed rgba(255,110,60,0.8); display: none; pointer-events: none; }
   /* Tips: one quiet line low on the left, fading in and out. */
-  #tip { position: absolute; left: 50%; top: calc(15vh + 28px); width: max-content; max-width: min(520px, 46vw); margin-left: 0; translate: -50% 0; padding: 8px 12px; font-size: 13px; letter-spacing: 0.03em; line-height: 1.45; color: #fff4ea; background: rgba(8,10,14,0.72); border-left: 2px solid var(--hot); opacity: 0; transform: translateY(6px); transition: opacity 0.4s, transform 0.4s; pointer-events: none; text-shadow: 0 1px 6px rgba(0,0,0,0.6); }
+  #tip { position: absolute; left: 50%; top: calc(15vh + 28px); width: max-content; max-width: min(520px, calc(100vw - 6vw - 500px)); margin-left: 0; /* (clear of the standings on both sides, at any width) */ translate: -50% 0; padding: 8px 12px; font-size: 13px; letter-spacing: 0.03em; line-height: 1.45; color: #fff4ea; background: rgba(8,10,14,0.72); border-left: 2px solid var(--hot); opacity: 0; transform: translateY(6px); transition: opacity 0.4s, transform 0.4s; pointer-events: none; text-shadow: 0 1px 6px rgba(0,0,0,0.6); }
   #tip.on { opacity: 1; transform: none; }
   body.warning #tip.on { opacity: 0; } /* (a warning or callout owns the top while it shows) */
   #tip .kc, #pause .kc { display: inline-block; padding: 0 5px; margin: 0 1px; border: 1px solid rgba(255,255,255,0.4); border-radius: 3px; font-size: 11px; line-height: 1.45; }
