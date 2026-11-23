@@ -9,6 +9,7 @@ import * as THREE from 'three'
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
 import { patchStandard } from './shaders'
 import { buildModelArrays, type ModelArrays } from './shipbuild'
+import { GLB_MODELS, loadShipGlb } from './glbship'
 
 /** The ships: three classics (the first model, refined) and three lofted. */
 export const MODELS = ['VANGUARD', 'BULWARK', 'LANCE', 'ARROW', 'BRUTE', 'NEEDLE'] as const
@@ -85,7 +86,12 @@ function modelGeo(model: number): ModelGeo {
 }
 /** Build these models' geometry in a worker; resolves when they are all cached (or built here if a
  *  worker cannot start). */
-export function primeModels(models: number[]): Promise<void> {
+export async function primeModels(models: number[]): Promise<void> {
+  // Blender-built ships: fetched and read here (a few hundred KB, no maths); the rest in the worker.
+  await Promise.all(models.filter((m) => GLB_MODELS[m] && !MODEL_CACHE.has(m)).map((m) => loadShipGlb(m).then((a) => { MODEL_CACHE.set(m, fromArrays(a)) }).catch((e) => console.warn('ship glb', m, e))))
+  return primeProcedural(models)
+}
+function primeProcedural(models: number[]): Promise<void> {
   const want = models.filter((m) => !MODEL_CACHE.has(m))
   if (!want.length) return Promise.resolve()
   return new Promise((done) => {

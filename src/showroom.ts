@@ -1,7 +1,7 @@
 // Dev only: the three ship silhouettes side by side, for judging the model. /showroom.html?view=N
 import * as THREE from 'three'
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js'
-import { Craft } from './craft'
+import { Craft, primeModels } from './craft'
 import { SUN_DIR } from './terrain'
 
 const renderer = new THREE.WebGLRenderer({ antialias: true })
@@ -31,6 +31,7 @@ const paints = [
 ]
 // Row 1 (front): the classics 0–2; row 2 (behind): the lofted 3–5. ?only=N shows one, centred.
 const only = new URLSearchParams(location.search).get('only')
+await primeModels(only ? [+only] : [0, 1, 2, 3, 4, 5])
 const crafts = (only ? [+only] : [0, 1, 2, 3, 4, 5]).map((v) => {
   const c = new Craft(env, paints[v], v)
   c.root.position.set(only ? 0 : ((v % 3) - 1) * 9, 0, only ? 0 : v < 3 ? 7 : -7)
