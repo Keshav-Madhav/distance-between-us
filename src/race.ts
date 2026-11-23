@@ -77,11 +77,12 @@ export interface RaceEvents {
   missedGate?(r: Racer): void
 }
 
-const bandOf = (r: Racer) => r.band ?? 0
 
 export class Race {
   readonly racers: Racer[] = []
   state: RaceState = 'grid'
+  /** Tests: the field's natural pace, with no pull toward the player (tools/aitune.mjs). */
+  noBand = false
   clock = 0
   /** Seconds left on the countdown (3 … 0). */
   countdown = 0
@@ -145,7 +146,7 @@ export class Race {
       r.laneT = 0
       r.stuck = 0
       r.respawnT = 0
-      r.p.maxMach = r.ai ? 4.7 + r.skill * 1.3 : CFG.speed.boostMach
+      r.p.maxMach = CFG.speed.boostMach
       // The drag race tops out around Mach 11 (flat out with the burner); elsewhere the usual ceiling.
       r.p.burnMul = 1
       r.p.draftMul = r.ai ? 1 : 1.7
@@ -385,7 +386,9 @@ export class Race {
     // gap search below works inside the same limit — clamping after it pushed racers into spires.
     const nextGate = this.course.cps[Math.min(r.next, this.K - 1)]
     const toGate = (nextGate.i - r.idx) * 40
-    const laneLim = toGate > 0 && toGate < p.speed * 2 + 600 ? 175 : 220
+    // (Squeezed only in the last ~1 s before a gate: at Mach 6 the old 2 s + 600 m window held it for
+    // 4.7 km, leaving no room beside spires near the edge — the field crossed through them instead.)
+    const laneLim = toGate > 0 && toGate < p.speed * 1.0 + 300 ? 175 : 220
     lane = THREE.MathUtils.clamp(lane, -laneLim, laneLim)
     const horizon = r.idx + Math.round((p.speed * 3.5 + 400) / 40)
     // Where it actually is across the line (right = +).
@@ -397,7 +400,9 @@ export class Race {
       if (rk.i < r.idx - 1 || rk.i > horizon) continue
       const soon = (rk.i - r.idx) * 40 < p.speed * 1.6 + 200
       // (Spires flare to ~1.7× their radius at the base: the footprint is r·1.8.)
-      if (Math.abs(lane - rk.lat) >= rk.r * 1.8 + 55 && !(soon && Math.abs(myLat - rk.lat) < rk.r * 1.8 + 30)) continue
+      // (Where it actually is matters as far out as it looks: tested only in the last 1.6 s, a craft that
+      // lagged its drifting lane saw the spire too late to move ~100 m across at Mach 6.)
+      if (Math.abs(lane - rk.lat) >= rk.r * 1.8 + 55 && Math.abs(myLat - rk.lat) >= rk.r * 1.8 + 40) continue
       // The free gaps across the line at this spire (and any partner standing with it): block each
       // rock's width plus a margin, then take the clear point nearest to where the craft already is.
       // (Preallocated: this runs per racer per tick — fresh arrays here were GC pauses mid-race.)
@@ -410,8 +415,11 @@ export class Race {
         BLK0[j] = b0; BLK1[j] = b1
         if (nb >= BLK0.length - 1) break
       }
-      BLK0[nb] = laneLim; BLK1[nb] = laneLim; nb++
-      let best = NaN, bestD = Infinity, lo = -laneLim
+      // A spire coming up soon may be passed on the side the craft is already on even outside the
+      // squeeze (crossing through it is never the way round): search a wider band then.
+      const lim = soon ? Math.max(laneLim, 280) : laneLim
+      BLK0[nb] = lim; BLK1[nb] = lim; nb++
+      let best = NaN, bestD = Infinity, lo = -lim
       for (let q = 0; q < nb; q++) {
         const b0 = BLK0[q], b1 = BLK1[q]
         if (b0 - lo > 16) {
@@ -426,7 +434,8 @@ export class Race {
       // (The nearest conflict decides; a farther spire overwriting the lane put it back into this one.)
       break
     }
-    lane = THREE.MathUtils.clamp(lane, -laneLim, laneLim)
+    // (Not after a spire's gap was chosen: clamping that pushed racers back into the spire.)
+    if (aimI < 0) lane = THREE.MathUtils.clamp(lane, -laneLim, laneLim)
     r.aimLane = lane
     // Stanley-style steering: the line's heading a little ahead, plus a correction that closes the
     // cross-track error to the lane fast (the old far-point aim drifted 80 m off its own lane).
@@ -458,7 +467,10 @@ export class Race {
     // radius of ~3 km grip holds anything. Take most of it (the yaw limit alone braked to Mach ~2.3
     // for a bend grip holds at 3.5+).
     const H = CFG.handling, kap = bend / 1000
-    const gripSafe = kap > H.gripQ ? (H.gripK / (kap - H.gripQ)) * (0.84 + r.skill * 0.08) / MACH : 99
+    // The course's AI level (1 = par; see CourseDef.aiLevel): how hard they corner, how readily they
+    // light the burner, how strong their engines are. Never a speed cap — they race your physics.
+    const L = c.def.aiLevel ?? 1
+    const gripSafe = kap > H.gripQ ? (H.gripK / (kap - H.gripQ)) * (0.84 + r.skill * 0.08 + (L - 1) * 0.3) / MACH : 99
     const safe = Math.max((H.yawHigh * 1000) / Math.max(bend, 1e-3) / MACH, gripSafe)
     // Rubber band toward the player (mild): ahead → a lower ceiling, behind → a higher one.
     const gap = this.progress(r) - this.progress(this.racers[0])
@@ -466,16 +478,30 @@ export class Race {
     // behind, they push hard.)
     // (Up again after a playtest win from 10th: the field must hold Mach 6 like you do.)
     // (Narrowed: at -0.4…+0.6 the pack stayed within a second of you all race — places felt assigned.)
-    const band = THREE.MathUtils.clamp(-gap / 2500, -0.2, 0.3)
+    // (No speed cap, 2026-11-23: the player asked for none. The pull toward you is a few per cent of
+    // engine strength — ahead of you a little weaker, behind a little stronger — not a ceiling.)
+    const band = this.noBand ? 0 : THREE.MathUtils.clamp(-gap / 2500, -0.2, 0.3)
     r.band = band
-    p.maxMach = THREE.MathUtils.clamp(5.3 + r.skill * 0.8 + band, 4.6, 6.3) + (this.course.def.aiPace ?? 0)
+    // Throttle commitment by level (and more when behind you): how close to full cruise they hold. The
+    // burner on top has no ceiling — a bold or trailing rival goes past any speed you reach.
+    p.maxMach = CFG.speed.boostMach * Math.min(1, 0.8 + 0.2 * L + Math.max(0, band) * 0.15)
+    p.burnMul = (1 + (L - 1) * 0.35) * (1 + (r.skill - 0.95) * 0.05) * (1 + band * 0.12)
     const corner = p.mach > safe * 0.92
     ctl.boost = !corner && Math.abs(err) < 0.5
     // The afterburner on the long straights only (it locks the steering), and only when the line
     // and their lane are clear for a while; the bolder ones light it more.
-    const clearAhead = !this.course.rocks.some((rk) => rk.i > r.idx && rk.i < r.idx + (p.speed * 3) / 40 && Math.abs(rk.lat - lane) < rk.r * 1.8 + 80)
+    // (In bursts, as you do: clear means nothing in its own lane for ~1.2 s — 3 s and anything near the
+    // lane kept them off the burner 97% of the time on the spire courses, at Mach 4 while you ran 7+.)
+    const clearAhead = !this.course.rocks.some((rk) => rk.i > r.idx && rk.i < r.idx + (p.speed * (0.9 + 0.3 * L)) / 40 && Math.abs(rk.lat - lane) < rk.r * 1.3 + 35)
     // (The rubber band reaches the burner too: well ahead of you it lights it less.)
-    ctl.burner = ctl.boost && bend < 0.06 && Math.abs(err) < 0.08 && clearAhead && p.mach > 3.5 && p.mach < 5.6 + r.skill * 2.4 + bandOf(r) * 2
+    // (No upper limit: on a straight they burn as you would. A bolder level lights it in gentler bends.)
+    // (Settled in its lane first: the burner locks the stick, and lit mid-swerve it could not finish the
+    // move into the gap — straight into the spire.)
+    // Through a bend as long as the burner's steering (a tenth of full lock) can hold the turn it needs
+    // here — speed × curvature — with a margin set by the level. (A flat 'bend < 0.06/km' kept them off it
+    // 64-91% of the time: on a straight-ish course at Mach 6 while you burned to 9.)
+    const burnTurn = (p.burning ? p.turnMax * 10 : p.turnMax) * 0.1
+    ctl.burner = ctl.boost && p.speed * kap < burnTurn * (0.45 + 0.4 * L) && Math.abs(err) < 0.12 && Math.abs(lane - myLat) < 25 && clearAhead && p.mach > 3.5
     ctl.brake = p.mach > safe * 1.08
     // Drag race: they race their own race, flat out — the same physics as you, a skill spread of a few
     // per cent in the burner's soft limit, and the slipstream. Nobody waits for you: drop to Mach 4 and
@@ -485,12 +511,17 @@ export class Race {
       const gap = this.progress(r) - this.progress(this.racers[0])
       p.maxMach = 30
       // (A spread of ±1–2%: a 6% spread strung the field out over 90 km.)
-      p.burnMul = 0.985 + (r.skill - 0.78) * 0.06 + THREE.MathUtils.clamp(-gap / 40000, 0, 0.03)
+      p.burnMul = (0.985 + (r.skill - 0.78) * 0.06 + (this.noBand ? 0 : THREE.MathUtils.clamp(-gap / 40000, 0, 0.03))) * (1 + (L - 1) * 0.35)
       ctl.boost = true
       ctl.burner = p.mach > 1.5 && !p.airborne
       ctl.brake = false
     }
     ctl.strafe = 0
+    // Side thrusters toward the gap when a spire decides the lane (as you dodge: steering alone moves a
+    // craft across too slowly at Mach 6 — the field ran into the spires it was aiming round).
+    if (aimI >= 0 && Math.abs(lane - myLat) > 15) ctl.strafe = THREE.MathUtils.clamp((lane - myLat) / 40, -1, 1)
+    // A long way to go across for the gap: lift, as you would (no burner past 40 m off it, no throttle past 80).
+    if (aimI >= 0 && Math.abs(lane - myLat) > 40 && !c.def.drag) { ctl.burner = false; if (Math.abs(lane - myLat) > 80) ctl.boost = false }
     // Drag race: dodge on the side thrusters (the burner locks the stick, not the thrusters) — a
     // racer closing in your lane ahead, or one right beside you.
     if (c.def.drag && this.state === 'racing' && this.clock > 8) {

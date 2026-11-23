@@ -1,0 +1,138 @@
+{
+  "sprint": {
+    "level": 2.017,
+    "target": 91.8,
+    "best": 84.07,
+    "estimated": false,
+    "world": 0,
+    "order": 0
+  },
+  "dry-river": {
+    "level": 1.245,
+    "target": 46.94,
+    "best": 44.25,
+    "estimated": false,
+    "world": 0,
+    "order": 1
+  },
+  "drag": {
+    "level": 0.514,
+    "target": 51.86,
+    "best": 49.87,
+    "estimated": false,
+    "world": 0,
+    "order": 2
+  },
+  "circuit": {
+    "level": 0.717,
+    "target": 79.1,
+    "best": null,
+    "estimated": true,
+    "world": 0,
+    "order": 3
+  },
+  "oval": {
+    "level": 2.18,
+    "target": 34.25,
+    "best": 32.93,
+    "estimated": false,
+    "world": 0,
+    "order": 4
+  },
+  "canyon": {
+    "level": 2.18,
+    "target": 35.18,
+    "best": 33.83,
+    "estimated": false,
+    "world": 0,
+    "order": 5
+  },
+  "frostline": {
+    "level": 0.433,
+    "target": 84.79,
+    "best": null,
+    "estimated": true,
+    "world": 1,
+    "order": 0
+  },
+  "icefall": {
+    "level": -0.055,
+    "target": 68.9,
+    "best": 64.95,
+    "estimated": false,
+    "world": 1,
+    "order": 1
+  },
+  "whiteout": {
+    "level": 0.555,
+    "target": 39.17,
+    "best": null,
+    "estimated": true,
+    "world": 1,
+    "order": 2
+  },
+  "caldera": {
+    "level": 0.27,
+    "target": 76.03,
+    "best": null,
+    "estimated": true,
+    "world": 2,
+    "order": 0
+  },
+  "faultline": {
+    "level": -0.339,
+    "target": 52.4,
+    "best": 49.4,
+    "estimated": false,
+    "world": 2,
+    "order": 1
+  },
+  "obsidian": {
+    "level": 0.758,
+    "target": 63.58,
+    "best": null,
+    "estimated": true,
+    "world": 2,
+    "order": 2
+  },
+  "greenway": {
+    "level": -0.177,
+    "target": 77.29,
+    "best": 70.78,
+    "estimated": false,
+    "world": 3,
+    "order": 0
+  },
+  "riverrun": {
+    "level": 0.23,
+    "target": 45.28,
+    "best": null,
+    "estimated": true,
+    "world": 3,
+    "order": 1
+  },
+  "timberline": {
+    "level": 0.23,
+    "target": 59.51,
+    "best": 57.22,
+    "estimated": false,
+    "world": 3,
+    "order": 2
+  },
+  "mistriver": {
+    "level": 0.311,
+    "target": 42.99,
+    "best": null,
+    "estimated": true,
+    "world": 4,
+    "order": 0
+  },
+  "understory": {
+    "level": 0.758,
+    "target": 63.51,
+    "best": 59.87,
+    "estimated": false,
+    "world": 4,
+    "order": 1
+  }
+}

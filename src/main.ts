@@ -3628,6 +3628,11 @@ const g = {
   hold: (v: boolean) => { paused = v },
   draw: () => { post.render(0) },
   snapCam: () => { cam.snap(player.heading) },
+  /** Tests: run the simulation `sec` seconds as fast as it goes (no frames drawn). */
+  fastSim: (sec: number) => {
+    const n = Math.round(sec / STEP)
+    for (let i = 0; i < n; i++) { simStep(); if (i % 15 === 0) world.update(player.pos, 0, undefined, player.vel) }
+  },
   scatterVis: (v: boolean) => { scatter.group.visible = v; scatterForceOff = !v },
   force: (c: import('./player').Controls | null) => { forced = c },
   sound,

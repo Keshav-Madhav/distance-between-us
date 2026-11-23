@@ -67,7 +67,9 @@ export interface CourseDef {
   /** Laps of a loop (default 1). */
   laps?: number
   /** Extra AI top speed on this course (Mach). */
-  aiPace?: number
+  /** AI difficulty on this course (1 = par: the field's winner near a normal human's time). Tuned by
+   *  tools/aitune.mjs against the player's own best times. */
+  aiLevel?: number
   /** How far mesas keep from the line (m, default 850): small → a canyon. */
   clearance?: number
   /** Gate width (half, m) and tower height × (default 260, 1). */
@@ -294,7 +296,6 @@ export const FROSTLINE: CourseDef = {
   gateEvery: 5500,
   // Two laps: the world is on screen for more than 40 s. (Jumps are fractions of the whole race.)
   laps: 2,
-  aiPace: 0.45,
   // (Listed once: the mounds are physical — lap two drives over the same ones.)
   jumps: [0.21, 0.225],
   whoops: [],
@@ -328,7 +329,6 @@ export const ICEFALL: CourseDef = {
   laps: 2,
   // (Tighter bends were tried — ~550-850 m: a good driver tumbled off them at Mach 7, past 'not
   //  too hard'. The challenge here is a faster pack instead.)
-  aiPace: 0.35,
   // On its straightest stretch (half a lap in), and lower: the loop bends everywhere, and a long
   // flight landed off the course.
   jumps: [0.243, 0.255],
@@ -363,7 +363,6 @@ export const CALDERA: CourseDef = {
   loop: calderaPath,
   gateEvery: 5500,
   laps: 2,
-  aiPace: 0.4,
   jumps: [0.12, 0.132],
   rampH: 0.8,
   whoops: [],
@@ -393,7 +392,6 @@ export const FAULTLINE: CourseDef = {
     const wander = 1200 * Math.sin((2 * Math.PI * z) / 41000 + 0.3) - 1200 * Math.sin(0.3)
     return ramp8(z) * (wander + sweep)
   },
-  aiPace: -0.2,
   gateEvery: 5000,
   jumps: [0.45, 0.465],
   rampH: 0.9,
@@ -424,7 +422,6 @@ export const GREENWAY: CourseDef = {
   blurb: 'A NEW WORLD · MEADOWS · GRANITE DOMES · FOREST BELTS',
   km: Math.round(loopLength(greenPath) / 100) / 10,
   loop: greenPath,
-  aiPace: 0.3,
   gateEvery: 5500,
   laps: 2,
   jumps: [0.1, 0.112],
@@ -454,7 +451,6 @@ export const RIVERRUN: CourseDef = {
     const wander = 1100 * Math.sin((2 * Math.PI * z) / 37000 + 0.9) - 1100 * Math.sin(0.9)
     return ramp8(z) * (wander + sweep + slalom)
   },
-  aiPace: 0,
   gateEvery: 5000,
   jumps: [0.4, 0.415],
   rampH: 0.85,
@@ -480,7 +476,6 @@ export const WHITEOUT: CourseDef = {
     const wander = 1000 * Math.sin((2 * Math.PI * z) / 43000 + 0.5) - 1000 * Math.sin(0.5)
     return ramp8(z) * (wander + sweep)
   },
-  aiPace: -0.1,
   gateEvery: 5000,
   jumps: [0.52, 0.535],
   rampH: 0.8,
@@ -506,7 +501,6 @@ export const OBSIDIAN: CourseDef = {
   blurb: 'BLACK GLASS FIELDS · BROAD AND FAST · LAVA CROSSINGS',
   km: Math.round(loopLength(obsidianPath) / 100) / 10,
   loop: obsidianPath,
-  aiPace: 0.2,
   gateEvery: 5500,
   laps: 2,
   jumps: [0.2, 0.212],
@@ -534,7 +528,6 @@ export const TIMBERLINE: CourseDef = {
   blurb: 'THE OLD FOREST · TREES CLOSE IN · FLOWING',
   km: Math.round(loopLength(timberPath) / 100) / 10,
   loop: timberPath,
-  aiPace: 0.2,
   gateEvery: 5000,
   laps: 2,
   jumps: [0.15, 0.162],
@@ -565,7 +558,6 @@ export const MISTRIVER: CourseDef = {
     const wander = 1200 * Math.sin((2 * Math.PI * z) / 31000 + 1.7) - 1200 * Math.sin(1.7)
     return ramp8(z) * (wander + sweep + linked)
   },
-  aiPace: -0.05,
   gateEvery: 5000,
   jumps: [0.33, 0.345],
   rampH: 0.8,
@@ -592,7 +584,6 @@ export const UNDERSTORY: CourseDef = {
   blurb: 'UNDER THE CANOPY · TREES CLOSE IN · MIST · FLOWING',
   km: Math.round(loopLength(understoryPath) / 100) / 10,
   loop: understoryPath,
-  aiPace: 0.15,
   gateEvery: 5000,
   laps: 2,
   jumps: [0.4, 0.412],
@@ -632,7 +623,16 @@ export function medals(d: CourseDef): [number, number, number] {
   const m = (d.drag ? [9.6, 8.6, 7.6] : [6.6, 5.9, 5.2]).map((x) => x * pace)
   return m.map((x) => Math.round((dist / (x * 343)) * 10) / 10) as [number, number, number]
 }
+/**
+ * AI difficulty per course (CourseDef.aiLevel), calibrated by tools/aicalib.mjs on 2026-11-23: the field's
+ * winner (rubber band off) on a normal human's time — the player's best × 1.04 (estimated from their pace
+ * elsewhere where they had no valid best) — and the first two courses of each world 5% / 2% easier.
+ * THE OVAL and CANYON RUN are at the top of the range and still ~7% / 3% short of their target.
+ */
+export const AI_LEVEL: Record<string, number> = {'sprint': 2.02, 'dry-river': 1.25, 'drag': 0.51, 'circuit': 0.72, 'oval': 2.2, 'canyon': 2.2, 'frostline': 0.43, 'icefall': -0.06, 'whiteout': 0.56, 'caldera': 0.27, 'faultline': -0.34, 'obsidian': 0.76, 'greenway': -0.18, 'riverrun': 0.23, 'timberline': 0.23, 'mistriver': 0.31, 'understory': 0.76}
 export const COURSES: CourseDef[] = [SPRINT, DRY_RIVER, DRAG, CIRCUIT, OVAL, CANYON, FROSTLINE, ICEFALL, WHITEOUT, CALDERA, FAULTLINE, OBSIDIAN, GREENWAY, RIVERRUN, TIMBERLINE, MISTRIVER, UNDERSTORY, ORBIT]
+for (const d of COURSES) d.aiLevel ??= AI_LEVEL[d.id]
+
 
 /** The race's line as points (x, z) every ~200 m, start to finish — for previews. */
 export function centerline(def: CourseDef): { xs: number[]; zs: number[] } {
