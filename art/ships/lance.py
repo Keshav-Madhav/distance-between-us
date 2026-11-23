@@ -33,11 +33,14 @@ cyl('probe', 0.025, 1.3, (0, FY - 0.06, 7.2), 'z', 10, M['metal'], r2=0.005)
 for z in (6.75, 7.0):
     cyl('probe_collar', 0.045, 0.06, (0, FY - 0.06, z), 'z', 12, M['gun'])
 # Long canopy set into the spine.
+smooth_loft('canopy_sill', [(2.5, 0, _top(2.2) - 0.08, 0.06, 0.05, 0.02, 2.0), (1.9, 0, _top(1.8) - 0.08, 0.34, 0.07, 0.02, 2.4), (0.9, 0, _top(0.9) - 0.08, 0.44, 0.08, 0.02, 2.4), (0.0, 0, _top(0.0) - 0.08, 0.38, 0.07, 0.02, 2.4), (-0.6, 0, _top(-0.4) - 0.08, 0.06, 0.05, 0.02, 2.0)], 24, 20, M['gun'])
 smooth_loft('canopy', [(2.4, 0, _top(2.2) - 0.06, 0.04, 0.03, 0.02, 2.0), (1.9, 0, _top(1.8) - 0.06, 0.28, 0.16, 0.02, 2.3), (0.9, 0, _top(0.9) - 0.06, 0.38, 0.26, 0.02, 2.3), (0.0, 0, _top(0.0) - 0.06, 0.32, 0.18, 0.02, 2.3), (-0.5, 0, _top(-0.4) - 0.06, 0.04, 0.03, 0.02, 2.0)], 28, 22, M['glass'])
+for f in (1.7, 0.6):
+    k = 0.85 if f > 1 else 1.0
+    tube('canopy_bow', [(0.36 * k * math.cos(t), _top(f) - 0.06 + 0.25 * k * math.sin(t), f) for t in [i * math.pi / 10 for i in range(11)]], 0.016, M['gun'])
 # Livery: a sweeping orange line and a dark band along each flank.
-for sx in (1, -1):
-    tube('flank_line', [(sx * _hw(z) * 0.98, FY + 0.18 - 0.05 * (z - 1) / 4, z) for z in (4.6, 3.0, 1.4, 0.0, -1.4, -2.6)], 0.022, M['trim'])
-    poly_loft('flank_band', [(z, sx * _hw(z) * 0.94, FY - 0.04, 0.03, 0.06, 0.06) for z in (3.4, 1.6, -0.2, -2.0)], [(1, 0), (0, 1), (-1, 0), (0, -1)], 24, M['gun'], cap1=True, angle=70)
+poly_loft('top_stripe', [(z, 0, _top(z) + 0.004, 0.06, 0.01, 0.01) for z in (4.8, 3.2, 2.6)], [(1, 0), (0.9, 1), (-0.9, 1), (-1, 0), (-0.9, -1), (0.9, -1)], 24, M['trim'], cap1=True, angle=80)
+poly_loft('top_stripe2', [(z, 0, _top(z) + 0.004, 0.06, 0.01, 0.01) for z in (-0.6, -1.4)], [(1, 0), (0.9, 1), (-0.9, 1), (-1, 0), (-0.9, -1), (0.9, -1)], 12, M['trim'], cap1=True, angle=80)
 
 # ── Wings: thin, swept, mid-fuselage, with orange edge lines.
 for sx in (1, -1):
@@ -63,6 +66,7 @@ for sx in (1, -1):
     bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
     smooth(obj_from_bm('wing', bm, M['paint']), 40)
     tube('wing_edge', [(sx * 0.62, FY - 0.1, 0.38), (sx * 2.95, FY - 0.13, -1.33)], 0.02, M['trim'])
+    tube('flap_line', [(sx * 1.2, FY - 0.08, -1.65), (sx * 2.7, FY - 0.11, -1.95)], 0.012, M['gun'])
     box('wingtip_cap', (0.06, 0.07, 0.75), (sx * 3.03, FY - 0.14, -1.68), material=M['gun'], bevel=0.02)
 
 # ── Tail fin: tall, raked, on the spine.
@@ -80,7 +84,11 @@ smooth(lathe('main_nozzle', [(MZ1, 0.42), (MZ1 - 0.12, 0.46), (NZ + 0.05, 0.44),
 petals('main_petals', 0, FY + 0.05, NZ + 0.05, 0.4, 12, 0.22, 0.2, -0.2, 0.012, M['gun'])
 cyl('main_hot', 0.32, 0.02, (0, FY + 0.05, MZ1 - 0.1), 'z', 28, M['hot'])
 for sx in (1, -1):
-    tube('top_pipe', [(sx * 0.32, FY + 0.38, MZ0 + 0.3), (sx * 0.36, FY + 0.42, MZ0 - 0.6), (sx * 0.32, FY + 0.38, MZ1 + 0.2)], 0.035, M['brass'])
+    tube('top_pipe', [(sx * 0.3, FY + 0.32, MZ0 + 0.2), (sx * 0.42, FY + 0.4, MZ0 - 0.5), (sx * 0.38, FY + 0.36, MZ0 - 1.0), (sx * 0.3, FY + 0.3, MZ1 + 0.1)], 0.035, M['brass'])
+    for z in (MZ0 - 0.4, MZ1 + 0.4):
+        cyl('collar', 0.06, 0.06, (sx * 0.4, FY + 0.38, z), 'z', 10, M['gun'])
+for z in (MZ0 - 0.4, MZ0 - 0.95):
+    ring('mflange', 0.45, 0.02, (0, FY + 0.05, z), 22, M['metal'], minor=3)
 
 # ── Under-slung engines: a white intake can, exposed machinery, nozzle.
 right.append(smooth(lathe('ecan', [(-0.6, ER - 0.05), (-0.55, ER), (-0.62, ER + 0.03), (-1.6, ER + 0.03), (-1.7, ER)], EX, EY, 36, M['paint'], cap1=True), 30))
@@ -91,8 +99,13 @@ right.append(smooth(lathe('espinner', [(-0.6, 0.006), (-0.63, 0.06), (-0.7, 0.11
 for (z0, z1, r, m) in [(-1.75, -2.1, 0.4, 'gun'), (-2.2, -2.4, 0.36, 'brass'), (-2.5, -3.1, 0.41, 'gun')]:
     right.append(smooth(lathe('estage', [(z0, r * 0.94), (z0 - 0.03, r), (z1 + 0.03, r), (z1, r * 0.94)], EX, EY, 24, M[m], cap0=True, cap1=True), 40))
     right.append(ring('eflange', r + 0.01, 0.018, (EX, EY, z0 - 0.02), 20, M['metal'], minor=3))
-right.append(cyl('ecanister', 0.08, 1.0, (EX + 0.46, EY + 0.05, -2.4), 'z', 12, M['metal']))
-right.append(box('estrap', (0.1, 0.16, 0.1), (EX + 0.4, EY + 0.05, -2.4), material=M['gun']))
+for (z, r) in ((-1.9, 0.45), (-2.15, 0.43), (-2.45, 0.46), (-2.75, 0.44), (-3.0, 0.46)):  # flange lips on each step
+    right.append(ring('eflange2', r, 0.022, (EX, EY, z), 22, M['metal'], minor=3))
+for k, a in enumerate((0.5, 2.6)):  # coolant pipes bent over the steps, clamped
+    pts = [(EX + (0.47 + 0.04 * math.sin(q * 1.4)) * math.cos(a), EY + (0.47 + 0.04 * math.sin(q * 1.4)) * math.sin(a), -1.75 - q * 0.14) for q in range(10)]
+    right.append(tube('epipe', pts, 0.03, M['brass' if k else 'trim']))
+    for z in (-1.8, -3.0):
+        right.append(box('eclamp', (0.09, 0.09, 0.07), (EX + 0.47 * math.cos(a), EY + 0.47 * math.sin(a), z), material=M['gun']))
 right.append(smooth(lathe('enozzle', [(-3.1, 0.4), (-3.2, 0.42), (NZ + 0.05, 0.4), (NZ, 0.36)], EX, EY, 32, M['gun']), 30))
 right.append(smooth(lathe('eliner', [(NZ, 0.34), (-3.3, 0.28), (-3.2, 0.0)], EX, EY, 28, M['carbon']), 60))
 right.append(cyl('ehot', 0.28, 0.02, (EX, EY, -3.25), 'z', 24, M['hot']))
@@ -100,6 +113,7 @@ right.append(cyl('ehot', 0.28, 0.02, (EX, EY, -3.25), 'z', 24, M['hot']))
 right.append(poly_loft('epylon', [(-0.4, EX * 0.6, (FY + EY) / 2 + 0.05, 0.03, 0.04, 0.04), (-0.9, EX * 0.6, (FY + EY) / 2 + 0.05, 0.12, 0.22, 0.22), (-2.9, EX * 0.6, (FY + EY) / 2 + 0.05, 0.12, 0.22, 0.22), (-3.3, EX * 0.6, (FY + EY) / 2 + 0.05, 0.03, 0.04, 0.04)], [(1, 0), (0.5, 1), (-0.5, 1), (-1, 0), (-0.5, -1), (0.5, -1)], 30, M['paint'], angle=50))
 right.append(box('eglow', (0.06, 0.012, 1.4), (EX, EY - ER - 0.04, -1.3), material=M['glow']))
 join_mirror(right)
+poly_loft('keel', [(0.2, 0, FY - 0.36, 0.03, 0.04, 0.04), (-0.5, 0, FY - 0.4, 0.14, 0.06, 0.08), (-2.6, 0, FY - 0.4, 0.14, 0.06, 0.08), (-3.2, 0, FY - 0.38, 0.03, 0.04, 0.04)], [(1, 0), (0.5, 1), (-0.5, 1), (-1, 0), (-0.5, -1), (0.5, -1)], 24, M['gun'], angle=50)
 
 # Game hooks.
 empty('nozzle_0', (-EX, EY, NZ)); empty('nozzle_1', (0, FY + 0.05, NZ)); empty('nozzle_2', (EX, EY, NZ))

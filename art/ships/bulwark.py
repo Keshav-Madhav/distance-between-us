@@ -28,21 +28,19 @@ WING = [(5.0, 0, BY - 0.05, 0.05, 0.03, 0.03, 1.8), (4.0, 0, BY - 0.02, 0.45, 0.
 smooth_loft('body', WING, 64, 60, M['paint'], cap1=True, angle=60)
 # Cockpit hump down the centre, the canopy set into it.
 HUMP = [(4.4, 0, BY, 0.1, 0.05, 0.05, 2.0), (3.4, 0, BY + 0.04, 0.46, 0.34, 0.12, 2.6), (1.6, 0, BY + 0.06, 0.62, 0.6, 0.14, 3.0),
-        (-0.6, 0, BY + 0.06, 0.66, 0.64, 0.14, 3.2), (-2.2, 0, BY + 0.05, 0.6, 0.56, 0.12, 3.0), (-2.8, 0, BY + 0.05, 0.42, 0.42, 0.12, 2.6)]
+        (-0.4, 0, BY + 0.06, 0.66, 0.6, 0.14, 3.2), (-1.05, 0, BY + 0.05, 0.6, 0.4, 0.12, 3.0), (-1.3, 0, BY + 0.05, 0.42, 0.18, 0.1, 2.6)]
 smooth_loft('hump', HUMP, 36, 50, M['paint'], cap1=True)
 _zs = sorted(r[0] for r in HUMP); _top = _mono_cubic(_zs, [next(r[2] + r[4] for r in HUMP if r[0] == z) for z in _zs])
 smooth_loft('canopy', [(2.9, 0, _top(2.7) - 0.08, 0.05, 0.03, 0.02, 2.0), (2.5, 0, _top(2.4) - 0.08, 0.34, 0.16, 0.02, 2.4), (1.6, 0, _top(1.6) - 0.08, 0.46, 0.24, 0.02, 2.4), (0.6, 0, _top(0.6) - 0.08, 0.42, 0.18, 0.02, 2.4), (0.2, 0, _top(0.3) - 0.08, 0.05, 0.03, 0.02, 2.0)], 28, 20, M['glass'])
-poly_loft('hump_strip', [(z, 0, _top(z) + 0.003, 0.18, 0.012, 0.012) for z in (0.0, -1.2, -2.5)], [(1, 0), (0.9, 1), (-0.9, 1), (-1, 0), (-0.9, -1), (0.9, -1)], 20, M['gun'], cap1=True, angle=80)
+poly_loft('hump_strip', [(z, 0, _top(z) + 0.003, 0.18, 0.012, 0.012) for z in (0.2, -0.5, -1.0)], [(1, 0), (0.9, 1), (-0.9, 1), (-1, 0), (-0.9, -1), (0.9, -1)], 20, M['gun'], cap1=True, angle=80)
 for sx in (1, -1):  # cockpit side vents
     for dz in (0.0, 0.16, 0.32):
-        box('hump_vent', (0.04, 0.16, 0.08), (sx * 0.65, BY + 0.38, -0.3 - dz), (0.3, 0, 0), M['gun'])
+        box('hump_vent', (0.04, 0.16, 0.08), (sx * 0.65, BY + 0.38, 0.2 - dz), (0.3, 0, 0), M['gun'])
 
 # ── Nacelles: big fan intakes at the front, a white can, then exposed machinery and a large nozzle.
 lip = [(NF + 0.06, NR - 0.06), (NF + 0.1, NR), (NF + 0.06, NR + 0.06), (NF - 0.1, NR + 0.08)]
 right.append(smooth(lathe('can', lip + [(NF - 0.35, NR + 0.12), (NF - 0.9, NR + 0.1), (NB + 0.3, NR + 0.06), (NB, NR + 0.02)], NX, NY, 48, M['paint'], cap1=True), 30))
 right.append(ring('can_seam', NR + 0.095, 0.012, (NX, NY, (NF + NB) / 2), 48, M['gun']))
-right.append(box('acc_block', (0.2, 0.3, 0.7), (NX + NR + 0.12, NY + 0.1, (NF + NB) / 2 - 0.1), material=M['gun'], bevel=0.03))
-right.append(cyl('acc_can', 0.07, 0.6, (NX + NR + 0.24, NY + 0.1, (NF + NB) / 2 - 0.1), 'z', 12, M['metal']))
 right.append(smooth(lathe('can_band', [(NF - 0.12, NR + 0.09), (NF - 0.3, NR + 0.11)], NX, NY, 48, M['trim']), 30))
 right.append(smooth(lathe('can_band2', [(NB + 0.4, NR + 0.065), (NB + 0.22, NR + 0.063)], NX, NY, 48, M['trim']), 30))
 right.append(smooth(lathe('duct', [(NF + 0.06, NR - 0.06), (NF - 0.3, NR - 0.08)], NX, NY, 36, M['carbon'], cap1=True), 60))
@@ -68,19 +66,17 @@ right.append(cyl('hot', 0.48, 0.02, (NX, NY, NB - 1.15), 'z', 32, M['hot']))
 right.append(plate('ventral', [(NF - 0.4, NY - NR - 0.02), (NB + 0.1, NY - NR - 0.02), (NB - 0.2, NY - NR - 0.5), (NF - 0.9, NY - NR - 0.46)], 0.12, M['paint'], 'x', NX, 0.04))
 right.append(box('foot_glow', (0.06, 0.012, 0.9), (NX, NY - NR - 0.5, (NF + NB) / 2 - 0.35), material=M['glow']))
 # Wingtip end cap with vents; wing panels.
-right.append(box('tip_cap', (0.1, 0.18, 0.85), (3.63, BY, -1.62), material=M['gun'], bevel=0.03))
-for dz in (-0.25, -0.08, 0.09, 0.26):
-    right.append(box('tip_slot', (0.03, 0.06, 0.1), (3.69, BY, -1.62 + dz), material=M['carbon']))
-right.append(box('wing_panel', (0.5, 0.012, 0.45), (2.85, BY + 0.17, -1.0), (0, -0.4, 0), M['carbon'], bevel=0.004))
+right.append(smooth_loft('tip_pod', [(-1.0, 3.6, BY, 0.04, 0.04, 0.04, 2.0), (-1.3, 3.6, BY, 0.09, 0.11, 0.1, 2.2), (-2.0, 3.6, BY, 0.09, 0.11, 0.1, 2.2), (-2.25, 3.6, BY, 0.04, 0.05, 0.05, 2.0)], 16, 12, M['paint']))
+right.append(cyl('tip_light', 0.05, 0.02, (3.64, BY + 0.1, -1.4), 'y', 12, M['glow']))
 right.append(tube('wing_edge', [(1.2, BY + 0.05, 0.75), (2.4, BY + 0.06, 0.0), (3.55, BY + 0.05, -1.0)], 0.022, M['trim']))
 join_mirror(right)
 
 # ── Rear centre machinery block between the nacelles, and the centre thruster.
-box('rear_bay', (0.9, 0.12, 1.4), (0, BY + 0.2, -1.9), material=M['carbon'], bevel=0.02)
+box('rear_bay', (0.9, 0.1, 1.1), (0, BY + 0.14, -1.85), material=M['carbon'], bevel=0.02)
 for dx in (-0.25, 0.0, 0.25):
-    tube('bay_pipe', [(dx, BY + 0.28, -1.25), (dx * 1.1, BY + 0.32, -1.9), (dx, BY + 0.28, -2.55)], 0.04, M['brass' if dx == 0 else 'trim'])
-for z in (-1.5, -2.3):
-    box('bay_manifold', (0.8, 0.1, 0.12), (0, BY + 0.3, z), material=M['gun'])
+    tube('bay_pipe', [(dx, BY + 0.22, -1.4), (dx * 1.1, BY + 0.26, -1.9), (dx, BY + 0.22, -2.3)], 0.04, M['brass' if dx == 0 else 'trim'])
+for z in (-1.55, -2.2):
+    box('bay_manifold', (0.7, 0.08, 0.1), (0, BY + 0.24, z), material=M['gun'])
 smooth(lathe('tail_nozzle', [(-2.4, 0.24), (-2.55, 0.26), (NZ, 0.24)], 0, BY + 0.12, 28, M['metal']), 40)
 smooth(lathe('tail_liner', [(NZ, 0.22), (-2.5, 0.18), (-2.42, 0.0)], 0, BY + 0.12, 24, M['carbon']), 60)
 cyl('tail_hot', 0.17, 0.02, (0, BY + 0.12, -2.45), 'z', 20, M['hot'])
