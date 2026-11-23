@@ -21,6 +21,7 @@ import { KINDS, Darts, type Kind } from './hunt/enemies'
 import { Sound } from './audio'
 import { Input } from './input'
 import { Post } from './post'
+import { Scatter } from './scatter'
 import { BIOME, biomeOf, type Biome, DUST, GREEN, groundH, SUN_DIR, WORLD_FADE } from './terrain'
 import { PLANET_R, Space, SPACE_U } from './space'
 import { PLANETS, StarSystem, STAR_R } from './system'
@@ -322,6 +323,9 @@ if (BIOME !== 'desert') {
   world.addHeroes(heroes)
 }
 scene.add(world.group)
+// Near-field scatter: harmless ground clutter round the camera (pebbles, grass, scrub, mounds, vents, flags).
+const scatter = new Scatter()
+scene.add(scatter.group)
 scene.add(course.group)
 const env = world.makeEnv(renderer)
 bootMark('heroes+env')
@@ -2696,6 +2700,7 @@ function frame(now: number): void {
   sound.slide(mode === 'title' || player.airborne ? 0 : player.drifting ? 0.4 + Math.min(0.6, Math.abs(player.slip)) : 0, player.drift / 2.6, player.spin > 0 ? player.yawRate : 0)
 
   world.update(camera.position, time)
+  scatter.update(camera.position, BIOME !== 'space' && WORLD_FADE.uWorldFade.value.y < 0.5 && camera.position.y - groundH(camera.position.x, camera.position.z) < 2500)
   updateTips(realDt)
   const G = world.ground
   G.uCraft.value.copy(renderPos)
