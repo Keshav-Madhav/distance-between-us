@@ -6,7 +6,7 @@ import * as THREE from 'three'
 import type { ModelArrays } from './shipbuild'
 
 /** Which models are Blender-built, and their files (served from public/). */
-export const GLB_MODELS: Record<number, string> = { 3: 'ships/arrow.glb', 4: 'ships/brute.glb', 5: 'ships/needle.glb' }
+export const GLB_MODELS: Record<number, string> = { 0: 'ships/vanguard.glb', 3: 'ships/arrow.glb', 4: 'ships/brute.glb', 5: 'ships/needle.glb' }
 
 interface GltfNode { mesh?: number; name?: string; children?: number[]; translation?: number[]; rotation?: number[]; scale?: number[]; matrix?: number[] }
 interface Gltf {
@@ -77,7 +77,7 @@ export function parseShipGlb(model: number, buf: ArrayBuffer): ModelArrays {
   const num = H('number', [1.5, 0.8, 0])
   return {
     model, hi, lo: hi.map(([k, p, n]) => [k, p.slice(), n.slice()]),
-    spec: { nozzles: nz.map((q) => [q[0], q[1]] as [number, number]), nozzleZ: nz[1][2], nozzleR: [0, 1, 2].map((i) => hookVal.get(`nozzle_${i}`) ?? 1), wingtip: H('wingtip', [3, 0.6, -3]), number: { pos: num, rotY: Math.PI / 2, tilt: 0, size: 0.8 } },
+    spec: { nozzles: nz.map((q) => [q[0], q[1]] as [number, number]), nozzleZ: nz[1][2], nozzleR: [0, 1, 2].map((i) => hookVal.get(`nozzle_${i}`) ?? 1), wingtip: H('wingtip', [3, 0.6, -3]), number: { pos: num, rotY: Math.PI / 2, tilt: 0, size: hookVal.get('number') ?? 0.8 } },
   }
 }
 
