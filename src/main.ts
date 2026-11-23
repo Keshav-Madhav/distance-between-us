@@ -538,10 +538,11 @@ const race = new Race(course, player, {
       cam.impulse(Math.sign(player.pos.x - o.pos.x) * 0.5, 0.2, Math.sign(player.pos.z - o.pos.z) * 0.5, 0.6 + sev)
     } else if (camera.position.distanceTo(a.p.pos) < 500) sound.clang(0.3)
   },
-  missedGate(r) {
+  missedGate(r, wide) {
     if (r.p !== player) return
     missedCount++
-    warn('MISSED GATE', 'SPEED LOST')
+    // (Wide: it counted — 'MISSED GATE' beside 'GATE 3/21' read as a penalty for a gate you made.)
+    warn(wide ? 'WIDE OF THE GATE' : 'MISSED GATE', wide ? 'COUNTED · SPEED LOST' : 'SPEED LOST')
     sound.missed()
     sound.crash(false)
     damageFlash = Math.max(damageFlash, 0.7)

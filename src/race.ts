@@ -74,7 +74,8 @@ export interface RaceEvents {
   bumped(a: Racer, b: Racer, sev: number, x: number, y: number, z: number): void
   countdown(n: number): void
   go(perfect: boolean): void
-  missedGate?(r: Racer): void
+  /** `wide`: through the gate's line but outside its towers (it counts, at a price); else a gate skipped. */
+  missedGate?(r: Racer, wide: boolean): void
 }
 
 
@@ -285,7 +286,7 @@ export class Race {
         r.p.lateral *= 0.6
         r.p.side *= 0.6
         if (r.p.spin > 0 || r.p.recover > 0) { r.p.spinVx *= 0.6; r.p.spinVz *= 0.6 }
-        this.ev.missedGate?.(r)
+        this.ev.missedGate?.(r, wide && ahead === 0)
       }
       return
     }
