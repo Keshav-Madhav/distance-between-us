@@ -186,6 +186,15 @@ export class Post {
   private readonly target: THREE.WebGLRenderTarget
   private readonly main: RenderPass
   private space: RenderPass | null = null
+  /**
+   * Dynamic resolution without a stall: the targets are allocated once at full size; the scene is
+   * drawn into the lower-left `scale` of it and one cheap pass stretches that to the whole frame.
+   * Bloom, grading and sharpening then run at full resolution. (Resizing the targets mid-race cost
+   * a 194 ms stall; this changes every frame for free.)
+   */
+  private readonly up: ShaderPass
+  private scale = 1
+  private full = new THREE.Vector2(1, 1)
   /** Space (src/space.ts): drawn first, the game's scene over it without clearing. */
   attachSpace(scene: THREE.Scene, camera: THREE.Camera): void {
     this.space = new RenderPass(scene, camera)
@@ -204,6 +213,14 @@ export class Post {
     this.composer = new EffectComposer(renderer, this.target)
     this.main = new RenderPass(scene, camera)
     this.composer.addPass(this.main)
+    this.up = new ShaderPass({
+      uniforms: { tDiffuse: { value: null }, uScale: { value: new THREE.Vector2(1, 1) }, uMax: { value: new THREE.Vector2(1, 1) } },
+      vertexShader: 'varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+      // (Clamped half a texel inside the drawn region: past it the target holds last frame's pixels.)
+      fragmentShader: 'uniform sampler2D tDiffuse; uniform vec2 uScale; uniform vec2 uMax; varying vec2 vUv; void main() { gl_FragColor = texture2D(tDiffuse, min(vUv * uScale, uMax)); }',
+    })
+    this.up.enabled = false
+    this.composer.addPass(this.up)
     // (VERDANT's bright sky bloomed the sun over the ship and HUD: a higher threshold there.)
     this.bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), CFG.post.bloom, 0.55, BIOME === 'forest' || BIOME === 'jungle' ? 3.0 : CFG.post.bloomThreshold)
     // (Bloom's blur spreads one NaN/inf pixel over the whole frame — a black screen. Its bright-pass
@@ -226,11 +243,36 @@ export class Post {
     this.bloom.setSize(Math.max(1, Math.round((w * pixelRatio) / 2)), Math.max(1, Math.round((h * pixelRatio) / 2)))
     this.final.uniforms.uAspect.value = w / h
     this.final.uniforms.uTexel.value.set(1 / (w * pixelRatio), 1 / (h * pixelRatio))
+    this.full.set(Math.max(1, Math.floor(w * pixelRatio)), Math.max(1, Math.floor(h * pixelRatio)))
+    this.floor = Math.min(1, Math.max(0.55, 1.1 / pixelRatio))
   }
+
+  /** Fraction of the full resolution the scene is drawn at this frame (floor … 1). */
+  setScale(s: number): void { this.scale = Math.min(1, Math.max(this.floor, s)) }
+  /** Never under ~1.1 drawn pixels per screen pixel: below that the ship's edges stair-step. */
+  private floor = 0.55
+  get renderScale(): number { return this.scale }
 
   setSamples(n: number): void { this.target.samples = n }
 
-  render(dt: number): void { this.composer.render(dt) }
+  render(dt: number): void {
+    const c = this.composer, W = this.full.x, H = this.full.y
+    // (Whole pixels: a fractional viewport smeared the stretch by a texel.)
+    const w = Math.max(1, Math.round(W * this.scale)), h = Math.max(1, Math.round(H * this.scale))
+    const on = w < W - 1 || h < H - 1
+    this.up.enabled = on
+    // The pass swaps the buffers, so which one is read alternates per frame: both set every frame.
+    c.readBuffer.viewport.set(0, 0, on ? w : W, on ? h : H)
+    c.writeBuffer.viewport.set(0, 0, W, H)
+    if (on) {
+      this.up.uniforms.uScale.value.set(w / W, h / H)
+      this.up.uniforms.uMax.value.set((w - 0.5) / W, (h - 0.5) / H)
+    }
+    c.render(dt)
+    // (Leave both full-size: anything else drawing into them between frames expects the whole target.)
+    c.readBuffer.viewport.set(0, 0, W, H)
+    c.writeBuffer.viewport.set(0, 0, W, H)
+  }
   /** Every material the passes use (for compiling them ahead of the first frame, off the hitch). */
   materials(): THREE.Material[] {
     const out = new Set<THREE.Material>()

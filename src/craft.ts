@@ -363,10 +363,10 @@ export class Craft {
 
   setFlames(throttle: number, boost: number, time: number): void {
     // (Shorter and cooler than they were: the plumes ran down over the Mach readout, blown white.)
-    // (The burner plume stays short: seen from the chase camera a long one ran back over the ship and
-    // its additive glow washed the hull out; the speed reads from the streaks and the shock diamonds.)
-    const len = 0.9 + throttle * 0.9 + boost * 1.5
-    const wid = 0.8 + boost * 0.15
+    // (Long again on the burner, as it was before the ship rework: the user missed the long plume —
+    // "a real drag". The short one read as an idle engine at Mach 7.)
+    const len = 1.0 + throttle * 1.4 + boost * 4.2
+    const wid = 0.85 + boost * 0.3
     const j = 1 + Math.sin(time * 41) * 0.05 + Math.sin(time * 23) * 0.04
     for (const [m, k] of [[this.flameMat, 1], [this.innerMat, 0.55]] as const) {
       m.uniforms.uThrottle.value = throttle

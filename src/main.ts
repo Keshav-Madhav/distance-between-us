@@ -1702,13 +1702,21 @@ type Tier = 'low' | 'medium' | 'high' | 'ultra'
 const TIERS: Record<Tier, { pr: number; samples: number; bloom: boolean; density: number }> = {
   low: { pr: 0.75, samples: 0, bloom: false, density: 0.5 },
   medium: { pr: 1, samples: 2, bloom: true, density: 0.75 },
-  high: { pr: 1.6, samples: 2, bloom: true, density: 1 },
+  // (Full Retina now: at speed the scene drops to ~0.6 of it by itself — see dynScale — so the cost
+  // lands only where the detail can actually be seen.)
+  high: { pr: 2, samples: 2, bloom: true, density: 1 },
   // (MSAA 4 at native Retina was the single biggest GPU cost: 12.4 → 8.4 ms without it.)
   ultra: { pr: 2, samples: 2, bloom: true, density: 1 },
 }
 let tierName = ((params.get('q') as Tier | null) ?? 'auto') as Tier | 'auto'
 let tier: Tier = tierName === 'auto' ? 'high' : tierName
 let renderScale = 1
+/**
+ * Speed LOD for the pixels: at a standstill and cruising, full resolution; flat out, the scene is drawn
+ * at ~0.6 of it (the radial blur and streaks hide it, and the upscale is sharpened). A frame-time trim
+ * sits on top. Both change every frame for free (src/post.ts draws into part of a full-size target).
+ */
+let dynScale = 1, dynPerf = 1
 bootMark('mid')
 const post = new Post(renderer, scene, camera, TIERS[tier].samples)
 // Space (src/space.ts): behind everything, only once you climb in FREE ROAM.
@@ -2012,7 +2020,10 @@ function governor(frameMs: number): void {
   if (govAcc < 500) return
   const avg = govAcc / govN
   govAcc = 0; govN = 0
-  govBad = avg > 19 ? govBad + 1 : 0
+  // (The free, instant knob first: the scene's share of the target.)
+  if (avg > 19) dynPerf = Math.max(0.6, dynPerf - 0.08)
+  else if (avg < 14) dynPerf = Math.min(1, dynPerf + 0.04)
+  govBad = avg > 19 && dynPerf <= 0.6 ? govBad + 1 : 0
   govGood = avg < 13 ? govGood + 1 : 0
   const now = performance.now()
   if (now - govLast < 3000) return
@@ -2746,8 +2757,8 @@ function frame(now: number): void {
   sound.scrape(mode === 'title' ? 0 : Math.max(player.scrape, player.drifting || player.spin > 0 ? 0.25 + Math.abs(player.slip) * 0.35 : 0))
   sound.slide(mode === 'title' || player.airborne ? 0 : player.drifting ? 0.4 + Math.min(0.6, Math.abs(player.slip)) : 0, player.drift / 2.6, player.spin > 0 ? player.yawRate : 0)
 
-  world.update(camera.position, time, camera)
-  scatter.update(camera.position, !scatterForceOff && BIOME !== 'space' && WORLD_FADE.uWorldFade.value.y < 0.5 && camera.position.y - groundH(camera.position.x, camera.position.z) < 2500)
+  world.update(camera.position, time, camera, mode === 'title' ? 0 : player.mach)
+  scatter.update(camera.position, !scatterForceOff && BIOME !== 'space' && WORLD_FADE.uWorldFade.value.y < 0.5 && camera.position.y - groundH(camera.position.x, camera.position.z) < 2500, mode === 'title' ? 0 : player.mach)
   updateTips(realDt)
   const G = world.ground
   G.uCraft.value.copy(renderPos)
@@ -2803,7 +2814,13 @@ function frame(now: number): void {
   P.uDamage.value = damageFlash
   P.uTime.value = time
   P.uGrain.value = settings.grain ? CFG.post.grain * (1 - 0.75 * space.vac) : 0
-  P.uSharpen.value = settings.sharp + (1 - renderScale) * 1.2
+  {
+    const speedS = play ? 1 - 0.4 * THREE.MathUtils.smoothstep(player.mach, 1.5, 6.5) : 1
+    const want = tierName === 'auto' || settings.scale >= 1 ? speedS * dynPerf : 1
+    dynScale += (want - dynScale) * Math.min(1, realDt * 2.5)
+    post.setScale(dynScale)
+  }
+  P.uSharpen.value = settings.sharp + Math.min(0.6, (1 - renderScale * dynScale) * 0.9)
   // (VERDANT a stop under: its pale grass and bright sky washed out, the craft lost in the bloom.)
   P.uExposure.value = CFG.post.exposure * (BIOME === 'forest' ? 0.85 : 1)
   P.uVac.value = space.vac
@@ -3221,7 +3238,7 @@ function updateHud(dt: number, slow: boolean): void {
   }
   if (debugEl.style.display === 'block' && slow) {
     const i = renderer.info
-    debugEl.textContent = `${fps.toFixed(0)} fps  ${lastMs.toFixed(1)} ms\ncalls ${i.render.calls}  tris ${(i.render.triangles / 1000).toFixed(0)}k\ntier ${tier} (${tierName})  scale ${renderScale.toFixed(2)}  pr ${pixelRatio().toFixed(2)}\ncap ${frameCap() ? '60' : 'max'}  mach ${m.toFixed(2)}  agl ${player.agl.toFixed(1)}  air ${player.airborne}\nslip ${(player.slip * 57.3).toFixed(0)}°  yaw ${player.yawRate.toFixed(2)}  drift ${player.drift.toFixed(2)}  spin ${player.spin.toFixed(1)}\nparticles ${fx.glow.count}+${fx.smoke.count}`
+    debugEl.textContent = `${fps.toFixed(0)} fps  ${lastMs.toFixed(1)} ms\ncalls ${i.render.calls}  tris ${(i.render.triangles / 1000).toFixed(0)}k\ntier ${tier} (${tierName})  scale ${renderScale.toFixed(2)}  dyn ${dynScale.toFixed(2)}  pr ${pixelRatio().toFixed(2)}\ncap ${frameCap() ? '60' : 'max'}  mach ${m.toFixed(2)}  agl ${player.agl.toFixed(1)}  air ${player.airborne}\nslip ${(player.slip * 57.3).toFixed(0)}°  yaw ${player.yawRate.toFixed(2)}  drift ${player.drift.toFixed(2)}  spin ${player.spin.toFixed(1)}\nparticles ${fx.glow.count}+${fx.smoke.count}`
   }
 }
 
@@ -3575,7 +3592,7 @@ const g = {
   debug: (on: boolean) => { debugEl.style.display = on ? 'block' : 'none' },
   stats: () => ({
     fps: Math.round(fps), ms: +lastMs.toFixed(1), bank: +player.bank.toFixed(3), calls: renderer.info.render.calls, tris: renderer.info.render.triangles, mach: +player.mach.toFixed(2),
-    tier, scale: renderScale, hull: Math.round(player.hull), air: player.airborne, agl: +player.agl.toFixed(1),
+    tier, scale: renderScale, dyn: +dynScale.toFixed(2), px: [renderer.domElement.width, renderer.domElement.height], hull: Math.round(player.hull), air: player.airborne, agl: +player.agl.toFixed(1),
     place: race.racers[0].place, crashing: player.crashing, burning: player.burning, slip: +(player.slip * 57.3).toFixed(1), spin: +player.spin.toFixed(2), drift: +player.drift.toFixed(2), yaw: +player.yawRate.toFixed(2), lap: race.lapOf(race.racers[0]), passed: race.racers[0].passed, race: race.state, particles: fx.glow.count + fx.smoke.count,
   }),
   player, race, course, combat, flight, fc, CFG, world, scene, camera, post, fx, input, wreckage, shards,

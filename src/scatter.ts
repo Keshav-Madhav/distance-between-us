@@ -166,6 +166,7 @@ export class Scatter {
   readonly group = new THREE.Group()
   private readonly cam = { value: new THREE.Vector2() }
   private readonly on = { value: 1 }
+  private readonly lods: { g: THREE.InstancedBufferGeometry; n: number; R: number; cell: number; radius: { value: number }; fine: boolean }[] = []
 
   constructor() {
     // (Code ships with the same kind set per world: one material per kind keeps the shaders' seeds apart.)
@@ -176,27 +177,35 @@ export class Scatter {
     const base = clean(k.build())
     const n = k.grid * k.grid
     const cell = new Float32Array(n * 2)
-    for (let i = 0; i < n; i++) { cell[i * 2] = (i % k.grid) - k.grid / 2; cell[i * 2 + 1] = Math.floor(i / k.grid) - k.grid / 2 }
+    // Centre outward (by distance), so drawing the first N cells draws a disc: the speed LOD below
+    // shrinks a small prop's field by drawing fewer instances, not by hiding them in the shader.
+    const order = Array.from({ length: n }, (_, i) => [(i % k.grid) - k.grid / 2 + 0.5, Math.floor(i / k.grid) - k.grid / 2 + 0.5] as const).sort((p, q) => p[0] * p[0] + p[1] * p[1] - (q[0] * q[0] + q[1] * q[1]))
+    order.forEach(([x, z], i) => { cell[i * 2] = x - 0.5; cell[i * 2 + 1] = z - 0.5 })
     // One copy of the shape, drawn once per cell (instanced): the cell offset is a per-instance attribute.
     const g = new THREE.InstancedBufferGeometry()
     for (const name of ['position', 'normal', 'color']) g.setAttribute(name, base.attributes[name])
     g.setAttribute('aCell', new THREE.InstancedBufferAttribute(cell, 2))
     g.instanceCount = n
+    const R = (k.cell * k.grid) / 2
+    // Fine props (pebbles, chips, tufts, embers…): at speed their field shrinks to ~55% of its radius.
+    const radius = { value: R }
+    this.lods.push({ g, n, R, cell: k.cell, radius, fine: k.scale[1] < 2 && !k.near })
     const mat = k.glow
       ? new THREE.MeshBasicMaterial({ vertexColors: true })
       : new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.92, metalness: 0, flatShading: true, side: THREE.DoubleSide })
     if (!k.glow) patchStandard(mat as THREE.MeshStandardMaterial)
     const prev = mat.onBeforeCompile
-    const R = (k.cell * k.grid) / 2
     mat.onBeforeCompile = (s, r) => {
       prev.call(mat, s, r)
       s.uniforms.uScatCam = this.cam
+      s.uniforms.uScatR = radius
       s.uniforms.uScatOn = this.on
       Object.assign(s.uniforms, MOUND_U)
       const head = `${TERRAIN_GLSL}
 attribute vec2 aCell;
 uniform vec2 uScatCam;
 uniform float uScatOn;
+uniform float uScatR;
 float scHash(vec2 p) { p = fract(p * vec2(0.1031, 0.1030)); p += dot(p, p.yx + 33.33); return fract((p.x + p.y) * p.x); }
 vec3 scPos; float scS; float scA; float scT;`
       const place = `{
@@ -205,7 +214,7 @@ vec3 scPos; float scS; float scA; float scT;`
         float h1 = scHash(c + ${k.seed.toFixed(2)}), h2 = scHash(c * 1.7 + ${(k.seed + 5.1).toFixed(2)}), h3 = scHash(c * 0.73 + ${(k.seed + 9.7).toFixed(2)});
         vec2 xz = (c + vec2(h2, h3)) * ${k.cell.toFixed(1)};
         float d = length(xz - uScatCam);
-        float keep = step(h1, ${k.density.toFixed(3)}) * (1.0 - smoothstep(${(R * 0.72).toFixed(1)}, ${(R * 0.96).toFixed(1)}, d)) * uScatOn;
+        float keep = step(h1, ${k.density.toFixed(3)}) * (1.0 - smoothstep(uScatR * 0.72, uScatR * 0.96, d)) * uScatOn;
         ${k.where === 'river' ? 'keep *= smoothstep(0.25, 0.45, riverAt(xz));' : BIOME === 'ice' ? '' : 'keep *= 1.0 - smoothstep(0.08, 0.2, riverAt(xz));'} // (POLAR SHELF's rivers are frozen: props sit on them, or whole stretches were bare)
         scS = mix(${k.scale[0].toFixed(2)}, ${k.scale[1].toFixed(2)}, fract(h1 * 13.7)) * keep;
         scA = h2 * 6.2832;
@@ -250,8 +259,15 @@ vec3 scPos; float scS; float scA; float scT;`
   }
 
   /** Follow the camera; hidden in space and when the world fades out. */
-  update(cam: THREE.Vector3, visible: boolean): void {
+  update(cam: THREE.Vector3, visible: boolean, mach = 0): void {
     this.cam.value.set(cam.x, cam.z)
+    const f = 1 - 0.45 * THREE.MathUtils.smoothstep(mach, 1.5, 6.5)
+    for (const l of this.lods) {
+      const r = l.fine ? l.R * f : l.R
+      l.radius.value = r
+      // (Cells whose centres lie within r, plus a ring for the cell offset: π(r/cell + 1.5)².)
+      l.g.instanceCount = Math.min(l.n, Math.ceil(Math.PI * (r / l.cell + 1.5) ** 2))
+    }
     this.on.value = visible ? 1 : 0
     this.group.visible = visible
   }
