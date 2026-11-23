@@ -3,6 +3,7 @@
 import '@fontsource/chakra-petch/400.css'
 import '@fontsource/chakra-petch/700.css'
 import * as THREE from 'three'
+import { DETAIL_U } from './shaders'
 import { FullScreenQuad } from 'three/addons/postprocessing/Pass.js'
 import { CFG, MACH, REBASE } from './config'
 import { World } from './world'
@@ -2851,6 +2852,7 @@ function frame(now: number): void {
     dynScale += (want - dynScale) * Math.min(1, realDt * 2.5)
     post.setScale(dynScale)
   }
+  DETAIL_U.uDetail.value = mode === 'title' ? 1 : 1 - THREE.MathUtils.smoothstep(player.mach, 1.5, 5)
   P.uSharpen.value = settings.sharp + Math.min(0.6, (1 - renderScale * dynScale) * 0.9)
   // (VERDANT a stop under: its pale grass and bright sky washed out, the craft lost in the bloom.)
   P.uExposure.value = CFG.post.exposure * (BIOME === 'forest' ? 0.85 : 1)

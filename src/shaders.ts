@@ -53,6 +53,8 @@ export const TEX = {
 }
 
 export interface PatchOpts {
+  /** Close-up surface detail (DETAIL_*): world shapes and scatter props only — never the ships. */
+  detail?: boolean
   /** Red-rock strata coloured by world height (mesas). */
   strata?: boolean
   /** Glacial ice (FROSTLINE's glaciers, seracs and spikes): blue, layered, snow-capped, lit from within. */
@@ -73,7 +75,55 @@ export interface PatchOpts {
  * Our fog on a three material (the sky-matched, direction-coloured haze), plus optional strata.
  * The material's own fog stays off.
  */
+/**
+ * Close-up detail on every patched surface (rocks, ice, basalt, groves, trackside shapes, scatter
+ * props): a world-space triplanar noise as albedo grain and a bump on the lighting normal. Full within
+ * ~60 m, gone by ~260 m — and gone at speed (uDetail: 1 at rest, 0 by Mach 5): close and slow, the
+ * shapes have a surface; flat out they are the plain faceted forms.
+ */
+export const DETAIL_U = { uDetail: { value: 1 } }
+const DETAIL_FN = /* glsl */ `
+uniform float uDetail;
+float dnH(vec2 p) { vec3 p3 = fract(vec3(p.xyx) * 0.1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
+float dnN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f); return mix(mix(dnH(i), dnH(i + vec2(1.0, 0.0)), f.x), mix(dnH(i + vec2(0.0, 1.0)), dnH(i + 1.0), f.x), f.y); }
+float dnTri(vec3 p, vec3 w, float k) { return dnN(p.zy * k) * w.x + dnN(p.xz * k) * w.y + dnN(p.xy * k) * w.z; }`
+const DETAIL_APPLY = /* glsl */ `
+{
+  float dDist = length(vFogW - cameraPosition);
+  float dAmt = uDetail * (1.0 - smoothstep(60.0, 260.0, dDist));
+  if (dAmt > 0.01) {
+    vec3 w = abs(vWN); w /= (w.x + w.y + w.z + 1e-4);
+    // Two octaves (grain ~1 m and ~0.25 m) plus a coarse blotch: stone, bark, crust — the colour
+    // the shape already has, given a surface.
+    float h = dnTri(vFogW, w, 0.9) * 0.55 + dnTri(vFogW, w, 3.7) * 0.3 + dnTri(vFogW, w, 0.17) * 0.15;
+    diffuseColor.rgb *= mix(1.0, 0.74 + 0.5 * h, dAmt);
+    vec3 sp = -vViewPosition, dX = dFdx(sp), dY = dFdy(sp);
+    vec2 dH = vec2(dFdx(h), dFdy(h)) * 1.4 * dAmt;
+    vec3 sX = cross(dY, normal), sY = cross(normal, dX);
+    float det = dot(dX, sX) * faceDirection;
+    normal = normalize(abs(det) * normal - sign(det) * (dH.x * sX + dH.y * sY));
+  }
+}`
+
+/** Adds DETAIL_* to a material that patchStandard has already patched (needs vFogW/vWN). */
+function withDetail(mat: THREE.MeshStandardMaterial): void {
+  const base = mat.onBeforeCompile
+  mat.onBeforeCompile = (s, r) => {
+    base.call(mat, s, r)
+    s.uniforms.uDetail = DETAIL_U.uDetail
+    s.fragmentShader = s.fragmentShader
+      .replace('void main() {', `${DETAIL_FN}\nvoid main() {`)
+      .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>\n${DETAIL_APPLY}`)
+  }
+  const key = mat.customProgramCacheKey.bind(mat)
+  mat.customProgramCacheKey = () => key() + '|det'
+}
+
 export function patchStandard(mat: THREE.MeshStandardMaterial, opts: PatchOpts = {}): void {
+  patchStandardBase(mat, opts)
+  if (opts.detail) withDetail(mat)
+}
+function patchStandardBase(mat: THREE.MeshStandardMaterial, opts: PatchOpts = {}): void {
   mat.fog = false
   // (three caches programs by onBeforeCompile's source text, the same for every patch: key it.)
   mat.customProgramCacheKey = () => `patched-${opts.shadow ? 'sh-' : ''}${opts.strata ? 'strata' : opts.lava ? 'lava' : opts.forest ? 'forest' : opts.ice ? (opts.spike ? 'spike' : 'ice') : 'plain'}`

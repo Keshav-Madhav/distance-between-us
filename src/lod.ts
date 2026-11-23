@@ -23,14 +23,14 @@ const TAU = 0.25
 /** Projected size (rad) above which the full shape is drawn: a 40 m object to ~3 km at rest. */
 export const LOD_THRESHOLD = 0.0135
 export interface LodView { cx: number; cz: number; vx: number; vz: number }
-/** 0 → twin only, 1 → full only; in between both, dithered (a crossfade band, no pop). */
+/** The score over the threshold: < 0.8 twin, 0.8-1.25 twin/full crossfade, full, and from 3.2 to
+ *  4.8 full/close-up crossfade, above it the close-up form (refined). */
 export function lodFade(dx: number, dz: number, reach: number, v: LodView): number {
   const d = Math.max(1, Math.hypot(dx, dz) - reach * 0.5)
   const w = Math.abs(v.vx * dz - v.vz * dx) / (d * d)
-  const score = reach / d / (1 + w * TAU)
-  const a = score / LOD_THRESHOLD
-  return a >= 1.25 ? 1 : a <= 0.8 ? 0 : (a - 0.8) / 0.45
+  return reach / d / (1 + w * TAU) / LOD_THRESHOLD
 }
+const band = (a: number, lo: number, hi: number) => (a >= hi ? 1 : a <= lo ? 0 : (a - lo) / (hi - lo))
 
 /**
  * Per-instance dither between the two shapes: attribute `aKeep` — 1 or 0 drawn whole; in (0,1) the full
@@ -59,6 +59,55 @@ export function view(g: THREE.BufferGeometry): THREE.BufferGeometry {
   v.setIndex(g.index)
   v.boundingSphere = g.boundingSphere
   return v
+}
+
+/**
+ * The close-up form: every triangle split in four (all attributes interpolated) and the surface pushed
+ * by a 3D value noise of position — lumps, chips and knots the base shape is too coarse to carry. The
+ * push depends only on position, so the midpoint two faces share moves the same way: no cracks.
+ */
+function noise3(x: number, y: number, z: number): number {
+  const h = (i: number, j: number, k: number) => { const v = Math.sin(i * 127.1 + j * 311.7 + k * 74.7) * 43758.5453; return v - Math.floor(v) }
+  const xi = Math.floor(x), yi = Math.floor(y), zi = Math.floor(z), xf = x - xi, yf = y - yi, zf = z - zi
+  const u = xf * xf * (3 - 2 * xf), v = yf * yf * (3 - 2 * yf), w = zf * zf * (3 - 2 * zf)
+  const l = (a: number, b: number, t: number) => a + (b - a) * t
+  return l(l(l(h(xi, yi, zi), h(xi + 1, yi, zi), u), l(h(xi, yi + 1, zi), h(xi + 1, yi + 1, zi), u), v),
+    l(l(h(xi, yi, zi + 1), h(xi + 1, yi, zi + 1), u), l(h(xi, yi + 1, zi + 1), h(xi + 1, yi + 1, zi + 1), u), v), w)
+}
+export function refined(g: THREE.BufferGeometry): THREE.BufferGeometry {
+  let src = g.index ? g.toNonIndexed() : g
+  const names = Object.keys(src.attributes).filter((k) => k !== 'normal' && k !== 'aKeep')
+  // One split (two for light shapes): 4x or 16x the triangles, only ever drawn close and slow.
+  const passes = src.attributes.position.count / 3 < 1500 ? 2 : 1
+  for (let pass = 0; pass < passes; pass++) {
+    const n = src.attributes.position.count, out = new THREE.BufferGeometry()
+    for (const k of names) {
+      const a = src.attributes[k] as THREE.BufferAttribute, sz = a.itemSize, A = a.array as ArrayLike<number>
+      const o = new Float32Array(n * 4 * sz)
+      let w = 0
+      const put = (i: number, j: number) => { for (let c = 0; c < sz; c++) o[w++] = (A[i * sz + c] + A[j * sz + c]) / 2 }
+      for (let t = 0; t < n; t += 3) {
+        const [p, q, r] = [t, t + 1, t + 2]
+        // corners and midpoints: (p, pq, rp) (pq, q, qr) (rp, qr, r) (pq, qr, rp)
+        put(p, p); put(p, q); put(r, p)
+        put(p, q); put(q, q); put(q, r)
+        put(r, p); put(q, r); put(r, r)
+        put(p, q); put(q, r); put(r, p)
+      }
+      out.setAttribute(k, new THREE.BufferAttribute(o, sz))
+    }
+    src = out
+  }
+  src.computeBoundingSphere()
+  const R = src.boundingSphere!.radius || 1, amp = R * 0.035, k = 7 / R
+  const P = src.attributes.position as THREE.BufferAttribute
+  for (let i = 0; i < P.count; i++) {
+    const x = P.getX(i), y = P.getY(i), z = P.getZ(i)
+    P.setXYZ(i, x + (noise3(x * k, y * k, z * k) - 0.5) * amp, y + (noise3(x * k + 17, y * k, z * k) - 0.5) * amp * 0.6, z + (noise3(x * k, y * k + 31, z * k) - 0.5) * amp)
+  }
+  src.computeVertexNormals()
+  src.computeBoundingSphere()
+  return src
 }
 
 const cache = new Map<THREE.BufferGeometry, Promise<THREE.BufferGeometry>>()
@@ -101,10 +150,13 @@ export class LodPair {
   readonly node = new THREE.Group()
   readonly hi: THREE.InstancedMesh
   readonly lo: THREE.InstancedMesh
+  readonly up: THREE.InstancedMesh
   private readonly keepHi: THREE.InstancedBufferAttribute
   private readonly keepLo: THREE.InstancedBufferAttribute
+  private readonly keepUp: THREE.InstancedBufferAttribute
   private kh = 0
   private kl = 0
+  private ku = 0
   constructor(geo: THREE.BufferGeometry, mat: THREE.Material, capacity: number) {
     const n = Math.max(1, capacity)
     const make = (g: THREE.BufferGeometry, keep: THREE.InstancedBufferAttribute) => {
@@ -118,7 +170,11 @@ export class LodPair {
     }
     this.keepHi = new THREE.InstancedBufferAttribute(new Float32Array(n), 1).setUsage(THREE.DynamicDrawUsage)
     this.keepLo = new THREE.InstancedBufferAttribute(new Float32Array(n), 1).setUsage(THREE.DynamicDrawUsage)
+    this.keepUp = new THREE.InstancedBufferAttribute(new Float32Array(n), 1).setUsage(THREE.DynamicDrawUsage)
     this.hi = make(view(geo), this.keepHi)
+    // The close-up form, built off the boot path (until then it draws the full shape).
+    this.up = make(view(geo), this.keepUp)
+    setTimeout(() => { const r = refined(geo); r.setAttribute('aKeep', this.keepUp); this.up.geometry = r }, 1500 + Math.random() * 3000)
     // (Until the twin is ready the far ones draw the full shape: same look, just not cheaper yet.)
     this.lo = make(view(geo), this.keepLo)
     void simplified(geo).then((g) => {
@@ -127,9 +183,22 @@ export class LodPair {
       this.lo.geometry = v
     })
   }
-  begin(): void { this.kh = 0; this.kl = 0 }
-  /** `m`: 16 floats (column-major) at `o`; `fade` from lodFade. */
-  put(m: ArrayLike<number>, o: number, fade: number): void {
+  begin(): void { this.kh = 0; this.kl = 0; this.ku = 0 }
+  /** `m`: 16 floats (column-major) at `o`; `a`: the score from lodFade. */
+  put(m: ArrayLike<number>, o: number, a: number): void {
+    const up = band(a, 3.2, 4.8)
+    if (up > 0) {
+      const c = this.up.instanceMatrix.array as Float32Array
+      for (let i = 0; i < 16; i++) c[this.ku * 16 + i] = m[o + i]
+      ;(this.keepUp.array as Float32Array)[this.ku++] = up
+      if (up >= 1) return
+      // Mid-band: the full shape draws the complement.
+      const b = this.hi.instanceMatrix.array as Float32Array
+      for (let i = 0; i < 16; i++) b[this.kh * 16 + i] = m[o + i]
+      ;(this.keepHi.array as Float32Array)[this.kh++] = -up
+      return
+    }
+    const fade = band(a, 0.8, 1.25)
     if (fade > 0) {
       const a = this.hi.instanceMatrix.array as Float32Array
       for (let i = 0; i < 16; i++) a[this.kh * 16 + i] = m[o + i]
@@ -142,7 +211,7 @@ export class LodPair {
     }
   }
   end(): void {
-    for (const [m, k, keep] of [[this.hi, this.kh, this.keepHi], [this.lo, this.kl, this.keepLo]] as const) {
+    for (const [m, k, keep] of [[this.hi, this.kh, this.keepHi], [this.lo, this.kl, this.keepLo], [this.up, this.ku, this.keepUp]] as const) {
       m.count = k
       m.instanceMatrix.clearUpdateRanges(); m.instanceMatrix.addUpdateRange(0, k * 16); m.instanceMatrix.needsUpdate = true
       keep.clearUpdateRanges(); keep.addUpdateRange(0, k); keep.needsUpdate = true

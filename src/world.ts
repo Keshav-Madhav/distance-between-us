@@ -1251,12 +1251,12 @@ export class World {
 
     const mesaMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.92, metalness: 0, flatShading: true })
     const ICE = BIOME === 'ice', LAVA = BIOME === 'lava', FOREST = BIOME === 'forest' || BIOME === 'jungle', JUNGLE = BIOME === 'jungle'
-    if (ICE) { mesaMat.roughness = 0.3; patchStandard(mesaMat, { ice: true, shadow: true }) }
-    else if (LAVA) { mesaMat.roughness = 0.85; patchStandard(mesaMat, { lava: true, shadow: true }) }
-    else if (FOREST) { mesaMat.roughness = 0.8; mesaMat.flatShading = true; patchStandard(mesaMat, { forest: true, aur: AUR_T, shadow: true }) }
-    else patchStandard(mesaMat, { strata: true, shadow: true })
+    if (ICE) { mesaMat.roughness = 0.3; patchStandard(mesaMat, { ice: true, shadow: true, detail: true }) }
+    else if (LAVA) { mesaMat.roughness = 0.85; patchStandard(mesaMat, { lava: true, shadow: true, detail: true }) }
+    else if (FOREST) { mesaMat.roughness = 0.8; mesaMat.flatShading = true; patchStandard(mesaMat, { forest: true, aur: AUR_T, shadow: true, detail: true }) }
+    else patchStandard(mesaMat, { strata: true, shadow: true, detail: true })
     const spikeMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.18, metalness: 0, flatShading: true })
-    patchStandard(spikeMat, { ice: true, spike: true, aur: AUR_T, shadow: true })
+    patchStandard(spikeMat, { ice: true, spike: true, aur: AUR_T, shadow: true, detail: true })
     this.spikeMat = spikeMat
     patchLodDither(mesaMat); patchLodDither(spikeMat)
     const r = rng(1234)
@@ -1364,7 +1364,7 @@ export class World {
     const bg = bGeo.toNonIndexed()
     bg.computeVertexNormals()
     const bMat = new THREE.MeshStandardMaterial({ color: 0x8a3a1c, roughness: 0.95, flatShading: true })
-    patchStandard(bMat, { strata: true, shadow: true })
+    patchStandard(bMat, { strata: true, shadow: true, detail: true })
     patchLodDither(bMat)
     const bw = new Wrapped(bg, bMat, 6000, 2400, 0.12, () => 0.92, false, keepOff, 3000)
     let bt = 0
@@ -1391,8 +1391,9 @@ export class World {
         ws.push(new Wrapped(geo, ICE && kind === 'spire' ? spikeMat : mesaMat, TILE, far * 0.7, 0.06, prof, false, clutterOff, far, clutterHeight))
       }
       const GREEN = FOREST
-      // (~25 items a km², the density the course's own near field has.)
-      const N = JUNGLE || BIOME === 'forest' ? 900 : 700
+      // (~8 items a km²: at ~25 a km² the solid things you can hit were everywhere — the player: "too
+      // much, keep more than before but way less". The fly-through scatter carries the fullness.)
+      const N = JUNGLE || BIOME === 'forest' ? 290 : 230
       for (let c = 0; c < N; c++) {
         const cx = r() * TILE, cz = r() * TILE
         const zr = r()

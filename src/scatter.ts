@@ -8,6 +8,7 @@
 // and it is one draw call per kind. Props grow in at the edge of the grid (no popping) and stay out of
 // rivers and lava.
 import * as THREE from 'three'
+import { refined } from './lod'
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
 import { patchStandard } from './shaders'
 import { BIOME, MOUND_U, TERRAIN_GLSL } from './terrain'
@@ -207,11 +208,17 @@ const nearOf = (k: Kind): number => k.near ?? (k.name === 'flag' ? 20 : k.scale[
  *  field — the scrub whipping past at 10-40 m is what sells the speed.) */
 const BIGNEAR = (k: Kind): boolean => k.scale[1] >= 4 || k.name === 'flag'
 
+/** Solid props drawn refined close up (thin ones — blades, fronds, twigs — gain nothing from it). */
+const SOLID = new Set(['pebble', 'rock', 'bush', 'shrub', 'mound', 'drift', 'heap', 'clod', 'pillar', 'ash', 'giantbush', 'snowman', 'chip'])
+const NEAR_MAX = 70
+
 export class Scatter {
   readonly group = new THREE.Group()
   private readonly cam = { value: new THREE.Vector2() }
   private readonly on = { value: 1 }
   private readonly view = { value: new THREE.Vector3(0, 0, -2) }
+  private readonly nearR = { value: 0 }
+  private readonly nears: { g: THREE.InstancedBufferGeometry; m: number }[] = []
   private readonly lods: { g: THREE.InstancedBufferGeometry; n: number; R: number; cell: number; radius: { value: number }; centre: { value: THREE.Vector2 }; fine: boolean }[] = []
 
   /** The course's wear map (R: where races actually run): big props stay off it. */
@@ -221,11 +228,15 @@ export class Scatter {
   constructor(track: { tTrack: { value: THREE.Texture | null }; uTrackBox: { value: THREE.Vector4 }; uTrackOn: { value: number } }) {
     this.track = track
     // (Code ships with the same kind set per world: one material per kind keeps the shaders' seeds apart.)
-    for (const k of KINDS[BIOME] ?? []) this.group.add(this.mesh(k))
+    for (const k of KINDS[BIOME] ?? []) {
+      this.group.add(this.mesh(k))
+      // Solid props near you, at rest: the refined form (src/lod.ts) — the first cells of the disc.
+      if (SOLID.has(k.name) && !k.glow) this.group.add(this.mesh(k, true))
+    }
   }
 
-  private mesh(k: Kind): THREE.Mesh {
-    const base = clean(k.build())
+  private mesh(k: Kind, near = false): THREE.Mesh {
+    const base = near ? refined(clean(k.build())) : clean(k.build())
     const n = k.grid * k.grid
     const cell = new Float32Array(n * 2)
     // Centre outward (by distance), so drawing the first N cells draws a disc: the speed LOD below
@@ -237,14 +248,15 @@ export class Scatter {
     for (const name of ['position', 'normal', 'color']) g.setAttribute(name, base.attributes[name])
     g.setAttribute('aCell', new THREE.InstancedBufferAttribute(cell, 2))
     g.instanceCount = n
+    if (near) this.nears.push({ g, m: Math.min(n, Math.ceil(Math.PI * (NEAR_MAX / k.cell + 1.5) ** 2)) })
     const R = (k.cell * k.grid) / 2
     // Fine props (pebbles, chips, tufts, embers…): at speed their field shrinks to ~55% of its radius.
     const radius = { value: R }, centre = { value: new THREE.Vector2() }
-    this.lods.push({ g, n, R, cell: k.cell, radius, centre, fine: k.scale[1] < 2 && !k.near })
+    if (!near) this.lods.push({ g, n, R, cell: k.cell, radius, centre, fine: k.scale[1] < 2 && !k.near })
     const mat = k.glow
       ? new THREE.MeshBasicMaterial({ vertexColors: true })
       : new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.92, metalness: 0, flatShading: true, side: THREE.DoubleSide })
-    if (!k.glow) patchStandard(mat as THREE.MeshStandardMaterial)
+    if (!k.glow) patchStandard(mat as THREE.MeshStandardMaterial, { detail: true })
     const prev = mat.onBeforeCompile
     mat.onBeforeCompile = (s, r) => {
       prev.call(mat, s, r)
@@ -252,6 +264,7 @@ export class Scatter {
       s.uniforms.uScatR = radius
       s.uniforms.uScatC = centre
       s.uniforms.uScatView = this.view
+      s.uniforms.uNearR = this.nearR
       s.uniforms.tTrack = this.track.tTrack; s.uniforms.uTrackBox = this.track.uTrackBox; s.uniforms.uTrackOn = this.track.uTrackOn; s.uniforms.uNearAdd = this.nearAdd
       s.uniforms.uScatOn = this.on
       Object.assign(s.uniforms, MOUND_U)
@@ -262,6 +275,7 @@ uniform float uScatOn;
 uniform float uScatR;
 uniform vec2 uScatC;
 uniform vec3 uScatView;
+uniform float uNearR;
 uniform sampler2D tTrack;
 uniform vec4 uTrackBox;
 uniform float uTrackOn;
@@ -282,6 +296,7 @@ vec3 scPos; float scS; float scA; float scT;`
         float edge = smoothstep(0.02, 0.15, wear.r) * (1.0 - smoothstep(0.25, 0.6, wear.r));
         float dens = min(0.95, ${k.density.toFixed(3)} * (1.0 + 2.0 * edge));`}
         float keep = step(h1, dens) * (1.0 - smoothstep(uScatR * 0.72, uScatR * 0.96, d)) * uScatOn;
+        ${near ? 'keep *= 1.0 - step(uNearR, d); // (the refined near ring)' : SOLID.has(k.name) ? 'keep *= step(uNearR, d); // (the near ring is drawn refined)' : ''}
         ${k.where === 'river' || k.debris ? '' : 'keep *= 1.0 - smoothstep(0.25, 0.6, wear.r);'}
         ${k.far ? 'keep *= 1.0 - smoothstep(0.05, 0.4, wear.b); // (tall ones only outside the corridor: far, sparse)' : ''}
         // View cull (see update): the instance's angular half-width widens the cone a little.
@@ -325,7 +340,7 @@ vec3 scPos; float scS; float scA; float scT;`
         s.fragmentShader = s.fragmentShader.replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>\ntotalEmissiveRadiance += diffuseColor.rgb * ${lift.toFixed(2)};`)
       }
     }
-    mat.customProgramCacheKey = () => `scatter-${BIOME}-${k.name}`
+    mat.customProgramCacheKey = () => `scatter-${BIOME}-${k.name}${near ? '-near' : ''}`
     const m = new THREE.Mesh(g, mat)
     m.frustumCulled = false
     m.renderOrder = 0
@@ -341,6 +356,10 @@ vec3 scPos; float scS; float scA; float scT;`
   update(cam: THREE.Vector3, visible: boolean, mach = 0, fx = 0, fz = 0, cosHalf = -2): void {
     this.view.value.set(fx, fz, cosHalf)
     this.nearAdd.value = Math.max(0, mach - 1.5) * 4
+    // The refined ring: ~70 m at rest, gone by Mach 5 (with the surface detail).
+    const nr = NEAR_MAX * (1 - THREE.MathUtils.smoothstep(mach, 1.5, 5))
+    this.nearR.value = nr > 4 ? nr : 0
+    for (const n of this.nears) n.g.instanceCount = this.nearR.value > 0 ? n.m : 0
     this.cam.value.set(cam.x, cam.z)
     const f = 1 - 0.45 * THREE.MathUtils.smoothstep(mach, 1.5, 6.5)
     for (const l of this.lods) {
