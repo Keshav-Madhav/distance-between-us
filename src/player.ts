@@ -694,6 +694,8 @@ export class Player {
    *  a head-on one stops you hard); turn the nose part-way along the wall. */
   /** Tools: no rock collisions (handling tests on open ground). */
   noCollide = false
+  /** IMPOSSIBLE rivals: a hard hit glances off instead of wrecking. */
+  unwreckable = false
   /** The surface the hover rides (FREE ROAM swaps in World.surfaceAt: up the landforms). */
   ground: (x: number, z: number) => number = groundH
   /** FREE ROAM: a drop steeper than this is a cliff edge — off it you fly, not slide down the face. */
@@ -745,7 +747,7 @@ export class Player {
       const sev = -vn / 600
       // Hard into rock: not a deflection — a wreck.
       // (Only a real hit: more than 300 m/s into the rock. A shallow one at Mach 5 scrapes.)
-      if (o.big && sev > 0.5 && this.ghost <= 0) {
+      if (o.big && sev > 0.5 && this.ghost <= 0 && !this.unwreckable) {
         this.scrapeAt.set(o.x + nx * o.cr, this.pos.y - 0.5, o.z + nz * o.cr)
         this.startCrash(sev, nx, nz)
         return
@@ -756,12 +758,14 @@ export class Player {
       dh = Math.atan2(Math.sin(dh), Math.cos(dh))
       this.heading += dh * (o.big ? 0.65 : 0.3)
       this.updateAxes()
-      this.setHorizontal(nvx, nvz)
+      // IMPOSSIBLE rivals slide along the rock at full speed (only its direction changes).
+      if (this.unwreckable) { const sp0 = Math.hypot(this.vel.x, this.vel.z), k = sp0 / Math.max(1, Math.hypot(nvx, nvz)); this.setHorizontal(nvx * k, nvz * k) }
+      else this.setHorizontal(nvx, nvz)
       this.yawRate *= 0.3
       this.scrape = Math.min(1, this.scrape + 0.5 + sev)
       this.scrapeAt.set(o.x + nx * o.cr, this.pos.y - 0.5, o.z + nz * o.cr)
       if (sev > 0.02 || !o.big) this.onCrash?.(sev, o.big, this.scrapeAt.x, this.scrapeAt.y, this.scrapeAt.z, nx, nz)
-      if (o.big) this.hull -= Math.min(45, sev * 40)
+      if (this.unwreckable) { /* no damage */ } else if (o.big) this.hull -= Math.min(45, sev * 40)
       else this.hull -= 2 + sev * 10
       this.sinceHurt = 0
     }
@@ -799,5 +803,5 @@ export function bump(a: Player, b: Player, onHit: (a: Player, b: Player, severit
   a.sinceHurt = b.sinceHurt = 0
   onHit(a, b, sev, (a.pos.x + b.pos.x) / 2, (a.pos.y + b.pos.y) / 2, (a.pos.z + b.pos.z) / 2)
   // A real T-bone at a closing speed of 700 m/s+: both go down.
-  if (sev > 1.75) { a.startCrash(sev * 0.5, -_n.x, -_n.z); b.startCrash(sev * 0.5, _n.x, _n.z) }
+  if (sev > 1.75) { if (!a.unwreckable) a.startCrash(sev * 0.5, -_n.x, -_n.z); if (!b.unwreckable) b.startCrash(sev * 0.5, _n.x, _n.z) }
 }

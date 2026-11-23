@@ -474,6 +474,8 @@ export class Race {
     // The course's AI level (1 = par; see CourseDef.aiLevel): how hard they corner, how readily they
     // light the burner, how strong their engines are. Never a speed cap — they race your physics.
     const L = (c.def.aiLevel ?? 1) + this.aiBoost
+    // IMPOSSIBLE: never wreck (hits glance off), and racer-to-racer knocks never wreck them either.
+    p.unwreckable = this.aiBoost >= 4
     const gripSafe = kap > H.gripQ ? (H.gripK / (kap - H.gripQ)) * (0.84 + r.skill * 0.08 + (L - 1) * 0.3) / MACH : 99
     const safe = Math.max((H.yawHigh * 1000) / Math.max(bend, 1e-3) / MACH, gripSafe)
     // Rubber band toward the player (mild): ahead → a lower ceiling, behind → a higher one.
@@ -505,7 +507,8 @@ export class Race {
     // here — speed × curvature — with a margin set by the level. (A flat 'bend < 0.06/km' kept them off it
     // 64-91% of the time: on a straight-ish course at Mach 6 while you burned to 9.)
     const burnTurn = (p.burning ? p.turnMax * 10 : p.turnMax) * 0.1
-    ctl.burner = ctl.boost && p.speed * kap < burnTurn * (0.45 + 0.4 * L) && Math.abs(err) < 0.12 && Math.abs(lane - myLat) < 25 && clearAhead && p.mach > 3.5
+    // (IMPOSSIBLE: spires glance off at full speed — nothing ahead holds them back.)
+    ctl.burner = ctl.boost && p.speed * kap < burnTurn * (0.45 + 0.4 * L) && Math.abs(err) < 0.12 && (p.unwreckable || (Math.abs(lane - myLat) < 25 && clearAhead)) && p.mach > 3.5
     ctl.brake = p.mach > safe * 1.08
     // Drag race: they race their own race, flat out — the same physics as you, a skill spread of a few
     // per cent in the burner's soft limit, and the slipstream. Nobody waits for you: drop to Mach 4 and
@@ -525,7 +528,7 @@ export class Race {
     // craft across too slowly at Mach 6 — the field ran into the spires it was aiming round).
     if (aimI >= 0 && Math.abs(lane - myLat) > 15) ctl.strafe = THREE.MathUtils.clamp((lane - myLat) / 40, -1, 1)
     // A long way to go across for the gap: lift, as you would (no burner past 40 m off it, no throttle past 80).
-    if (aimI >= 0 && Math.abs(lane - myLat) > 40 && !c.def.drag) { ctl.burner = false; if (Math.abs(lane - myLat) > 80) ctl.boost = false }
+    if (aimI >= 0 && Math.abs(lane - myLat) > 40 && !c.def.drag && !p.unwreckable) { ctl.burner = false; if (Math.abs(lane - myLat) > 80) ctl.boost = false }
     // Drag race: dodge on the side thrusters (the burner locks the stick, not the thrusters) — a
     // racer closing in your lane ahead, or one right beside you.
     if (c.def.drag && this.state === 'racing' && this.clock > 8) {
