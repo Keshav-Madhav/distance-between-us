@@ -2325,6 +2325,8 @@ try {
 
 // ───────────────────────── loop ─────────────────────────
 let acc = 0
+/** The real time (ms) the last sim step stood for (see the step loop). */
+let simReal = 0
 let last = performance.now()
 let time = 0
 let frames = 0, fpsT = 0, fps = 0, lastMs = 16
@@ -2844,11 +2846,19 @@ function frame(now: number): void {
   const dt = realDt * timeScale
   time += dt
 
-  input.read(realDt, now / 1000)
   {
     acc += dt
     let steps = 0
-    while (acc >= STEP && steps < 6) { simStep(); acc -= STEP; steps++ }
+    // Each step's own moment in real time: the queued keys up to it apply, steering eases by one step —
+    // so a press lands on the same step whatever the frame rate (deterministic runs).
+    if (simReal < now - 250 || simReal > now) simReal = now - acc * 1000 / Math.max(timeScale, 1e-3)
+    while (acc >= STEP && steps < 6) {
+      simReal += (STEP * 1000) / Math.max(timeScale, 1e-3)
+      input.advance(Math.min(simReal, now))
+      input.read(STEP, simReal / 1000)
+      simStep(); acc -= STEP; steps++
+    }
+    if (steps === 0) { input.advance(now); input.read(0, now / 1000) }
     if (steps >= 6) acc = 0
   }
   const alpha = acc / STEP

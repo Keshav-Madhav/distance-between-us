@@ -5,6 +5,21 @@ const THREE_clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b,
 
 export class Input {
   readonly down = new Set<string>()
+  private readonly queue: [number, string, boolean][] = []
+  /** Keys that went down within the current sim step (dodge taps), from the queue. */
+  private readonly stepPressed = new Set<string>()
+  /** Apply every queued key event up to real time tMs (performance.now() clock). */
+  advance(tMs: number): void {
+    this.stepPressed.clear()
+    let k = 0
+    while (k < this.queue.length && this.queue[k][0] <= tMs) {
+      const [, code, dn] = this.queue[k++]
+      if (dn) { this.down.add(code); this.stepPressed.add(code) } else this.down.delete(code)
+    }
+    if (k) this.queue.splice(0, k)
+  }
+  /** Everything queued, now (menus, pauses: no sim steps to carry it). */
+  flush(): void { this.advance(Infinity) }
   /** Keys held over a world handover (the new instance never saw them pressed). */
   hold(codes: string[]): void { for (const c of codes) this.down.add(c) }
   private readonly pressed = new Set<string>()
@@ -24,14 +39,16 @@ export class Input {
     // (A menu button clicked to start kept the focus, and a browser clicks a focused button when Space is
     //  RELEASED: letting go of Space restarted the run at the spawn — "the reset", in HUNT and FREE ROAM.)
     const owned = (e: KeyboardEvent) => ['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code) || (e.code === 'Enter' && document.body.classList.contains('playing') && !document.querySelector('#pause:not(.hide), #over:not(.hide)'))
+    // Keys are queued with their timestamps and applied at the first sim step that reaches them (advance):
+    // the same press at the same race time lands on the same step at any frame rate — runs reproduce.
     addEventListener('keydown', (e) => {
       if (owned(e)) e.preventDefault()
       if (e.repeat) return
-      this.down.add(e.code)
+      this.queue.push([e.timeStamp, e.code, true])
       this.pressed.add(e.code)
     })
-    addEventListener('keyup', (e) => { if (owned(e)) e.preventDefault(); this.down.delete(e.code) })
-    addEventListener('blur', () => this.down.clear())
+    addEventListener('keyup', (e) => { if (owned(e)) e.preventDefault(); this.queue.push([e.timeStamp, e.code, false]) })
+    addEventListener('blur', () => { this.queue.length = 0; this.down.clear() })
     addEventListener('mousedown', (e) => { if (e.button === 0) this.down.add('Mouse0'); if (e.button === 2) this.down.add('Mouse2') })
     addEventListener('mouseup', (e) => { if (e.button === 0) this.down.delete('Mouse0'); if (e.button === 2) this.down.delete('Mouse2') })
     addEventListener('contextmenu', (e) => { if ((e.target as HTMLElement)?.id === 'game' || document.body.classList.contains('flying')) e.preventDefault() })
@@ -54,7 +71,7 @@ export class Input {
     let dodgeL = false
     let dodgeR = false
     for (const [code, dir] of [['KeyQ', -1], ['KeyE', 1]] as const) {
-      if (this.pressed.has(code)) {
+      if (this.stepPressed.has(code)) {
         if (now - (this.lastTap[code] ?? -9) < 0.28) { if (dir < 0) dodgeL = true; else dodgeR = true }
         this.lastTap[code] = now
       }

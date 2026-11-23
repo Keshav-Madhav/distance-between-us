@@ -11,6 +11,7 @@
 //   landing  — the ground effect catches it: the hit is absorbed (suspension squash, dust, a thump)
 //              and costs a little speed; only a truly brutal landing hurts.
 import * as THREE from 'three'
+import { rand } from './rng'
 import { CFG, MACH } from './config'
 import { BIOME, groundH } from './terrain'
 
@@ -101,8 +102,9 @@ export class Player {
   drift = 0
   drifting = false
   /** Wind clock and phase (each craft its own), and the wake it is in (0 … 1, set by the race). */
-  private windT = 0
-  private readonly windPh = Math.random() * 100
+  windT = 0
+  /** Each craft's wind phase (seeded per race: see Race.reset). */
+  windPh = rand() * 100
   wake = 0
   /** The turn rate full lock asks for right now (rad/s): the grip limit at this speed (see step). */
   turnMax = 1
@@ -540,7 +542,7 @@ export class Player {
     this.drift = 0
     // Whirl the way it was already going: fast, decaying — about one and a quarter turns.
     const dir = Math.abs(this.yawRate) > 0.2 ? Math.sign(this.yawRate) : this.slip > 0 ? -1 : 1
-    this.yawRate = dir * (7.5 + Math.random() * 2)
+    this.yawRate = dir * (7.5 + rand() * 2)
     if (flip) {
       this.tumble = 1
       this.tumbleDir = this.slip > 0 ? 1 : -1
@@ -610,12 +612,12 @@ export class Player {
     let cx = tx * 0.6 + (vx / sp) * sp * 0.22 - Math.min(vn, 0) * 0.25 * nx + nx * 35
     let cz = tz * 0.6 + (vz / sp) * sp * 0.22 - Math.min(vn, 0) * 0.25 * nz + nz * 35
     // Head-on, the tangential part is ~0: glance it off to one side instead of straight back.
-    if (Math.hypot(tx, tz) < sp * 0.3) { const sd = Math.random() < 0.5 ? 1 : -1; cx += -nz * sd * sp * 0.25; cz += nx * sd * sp * 0.25 }
+    if (Math.hypot(tx, tz) < sp * 0.3) { const sd = rand() < 0.5 ? 1 : -1; cx += -nz * sd * sp * 0.25; cz += nx * sd * sp * 0.25 }
     const ch = Math.hypot(cx, cz)
     if (ch > 650) { cx *= 650 / ch; cz *= 650 / ch }
     this.crashVel.set(cx, 8 + Math.min(20, sev * 7), cz)
     const k = Math.min(1.6, 0.5 + sev)
-    const r = () => (Math.random() < 0.5 ? -1 : 1) * (0.6 + Math.random() * 0.6)
+    const r = () => (rand() < 0.5 ? -1 : 1) * (0.6 + rand() * 0.6)
     this.crashW.set(r() * 9 * k, r() * 5 * k, r() * 13 * k)
     this.crashRot.set(0, 0, 0)
     this.crashing = true
@@ -645,8 +647,8 @@ export class Player {
         const impact = -cv.y
         cv.y = impact * 0.34
         // Each bounce kicks the tumble about.
-        this.crashW.x += (Math.random() - 0.5) * impact * 0.12
-        this.crashW.z += (Math.random() - 0.5) * impact * 0.16
+        this.crashW.x += (rand() - 0.5) * impact * 0.12
+        this.crashW.z += (rand() - 0.5) * impact * 0.16
         this.onBounce?.(impact)
       } else { cv.y = Math.max(cv.y, 0); this.crashGround = true }
     }

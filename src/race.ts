@@ -5,6 +5,7 @@
 // own lane, ease off before sharp bends, swing out to pass, and are rubber-banded mildly toward the
 // player so the race stays a race. They drive the same Player physics: the same jumps, pads, walls.
 import * as THREE from 'three'
+import { rand, seedRng } from './rng'
 import { CFG, MACH } from './config'
 import { Course } from './course'
 import { bump, Player, type Controls } from './player'
@@ -120,6 +121,9 @@ export class Race {
   /** Line up on the grid behind the start gate. */
   reset(): void {
     const c = this.course
+    // The race's randomness from the course (a run is reproducible: see src/rng.ts).
+    seedRng(c.def.seed * 7919 + 17)
+    this.racers.forEach((r, i) => { r.p.windPh = (i * 37.1) % 100; r.p.windT = 0 })
     const start = c.cps[0]
     const heading = Math.atan2(start.tx, start.tz)
     // The player starts mid-pack (6th of 10); the rivals fill the other slots. Twenty: four abreast.
@@ -333,7 +337,7 @@ export class Race {
     const [tx, tz] = c.tangent(i)
     const hull = r.p.hull
     // A lane clear of every spire in the next 2 km (so a respawn never lands you straight back on one).
-    let lat = r.ai ? (Math.random() - 0.5) * 120 : 0
+    let lat = r.ai ? (rand() - 0.5) * 120 : 0
     for (let tries = 0; tries < 12; tries++) {
       const hit = c.rocks.some((rk) => rk.i >= i && rk.i < i + 50 && Math.abs(rk.lat - lat) < rk.r * 1.8 + 40)
       if (!hit) break
@@ -350,7 +354,7 @@ export class Race {
   respawn(r: Racer): void {
     const c = this.course.cps[Math.max(0, Math.min(this.K - 1, r.next - 1))]
     const heading = Math.atan2(c.tx, c.tz)
-    const off = r.ai ? (Math.random() - 0.5) * 80 : 0
+    const off = r.ai ? (rand() - 0.5) * 80 : 0
     r.p.reset(c.x + c.tx * 40 + c.tz * off, c.z + c.tz * 40 - c.tx * off, heading, 1.4)
     // (From the gate's own index: a global search put a lap-two respawn back on lap one.)
     r.idx = this.course.nearest(r.p.pos.x, r.p.pos.z, c.i)
