@@ -6,7 +6,7 @@ import * as THREE from 'three'
 import type { ModelArrays } from './shipbuild'
 
 /** Which models are Blender-built, and their files (served from public/). */
-export const GLB_MODELS: Record<number, string> = { 0: 'ships/vanguard.glb', 1: 'ships/bulwark.glb', 3: 'ships/arrow.glb', 4: 'ships/brute.glb', 5: 'ships/needle.glb' }
+export const GLB_MODELS: Record<number, string> = { 0: 'ships/vanguard.glb', 1: 'ships/bulwark.glb', 2: 'ships/lance.glb', 3: 'ships/arrow.glb', 4: 'ships/brute.glb', 5: 'ships/needle.glb' }
 
 interface GltfNode { mesh?: number; name?: string; children?: number[]; translation?: number[]; rotation?: number[]; scale?: number[]; matrix?: number[] }
 interface Gltf {
