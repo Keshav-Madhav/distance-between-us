@@ -1427,9 +1427,10 @@ function warn(big: string, small: string): void {
   warnT = 2
 }
 function showCount(t: string): void { countEl.textContent = t; countT = 1 }
-function pop(text: string): void {
+function pop(text: string, cls = ''): void {
   const d = document.createElement('div')
   d.textContent = text
+  if (cls) d.className = cls
   $('#pops').prepend(d)
   setTimeout(() => d.remove(), 1700)
 }
@@ -3009,13 +3010,15 @@ function updateHud(dt: number, slow: boolean): void {
     if (slow) {
       $('#r-pos').innerHTML = `${me.place}<small>/${race.racers.length}</small>`
       // An overtake is an event: P3 → P2 pops (held a moment, so a jostle doesn't spam it), the box flashes.
-      // (Only once the new place has held 0.6 s: side by side with a rival, P2/P3 swapped every few
+      // (Only once the new place has held 0.9 s: side by side with a rival, P2/P3 swapped every few
       // frames and the label never left the screen.)
       if (race.countdown > 0) { lastPlace = 0; posHold = 0 }
       else if (lastPlace === 0) lastPlace = me.place
       else if (me.finished || me.place === lastPlace) posHold = 0
-      else if ((posHold += 0.1) >= 0.6) {
-        pop(`P${lastPlace} → P${me.place}`); if (me.place < lastPlace) sound.chime(1, false)
+      else if ((posHold += 0.1) >= 0.9) {
+        // (One at a time: the last one goes, or P8 → P7 and P7 → P8 stacked as half-faded ghosts.)
+        document.querySelectorAll('#pops .posmsg').forEach((e) => e.remove())
+        pop(`P${lastPlace} → P${me.place}`, 'posmsg'); if (me.place < lastPlace) sound.chime(1, false)
         const box = $('#r-pos').parentElement!
         box.classList.remove('gain', 'lose'); void box.offsetWidth; box.classList.add(me.place < lastPlace ? 'gain' : 'lose')
         lastPlace = me.place; posHold = 0

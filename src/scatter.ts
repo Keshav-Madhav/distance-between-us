@@ -97,6 +97,8 @@ const ember = (): Build => () => col(new THREE.DodecahedronGeometry(1, 0).scale(
 const tumbleweed = (): Build => () => {
   const gs: THREE.BufferGeometry[] = []
   for (let i = 0; i < 9; i++) gs.push(col(new THREE.TorusGeometry(0.55, 0.03, 3, 8).rotateX(i * 1.1).rotateY(i * 2.0).translate(0, 0.6, 0), [0.6, 0.5, 0.32], 0.3))
+  // A dense tangled core (it read as a see-through wire cage): a faceted ball just inside the rings.
+  gs.push(col(new THREE.IcosahedronGeometry(0.42, 0).translate(0, 0.6, 0), [0.5, 0.41, 0.26], 0.35))
   return merge(gs)
 }
 const charred = (): Build => () => {
