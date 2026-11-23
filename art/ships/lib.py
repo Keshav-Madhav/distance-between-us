@@ -256,3 +256,34 @@ def tri_report(top=14):
             me = ob.evaluated_get(dg).to_mesh(); me.calc_loop_triangles()
             k = ob.name.split('.')[0]; agg[k] = agg.get(k, 0) + len(me.loop_triangles); ob.evaluated_get(dg).to_mesh_clear()
     for k, v in sorted(agg.items(), key=lambda x: -x[1])[:top]: print('TRI', k, v)
+
+def _mono_cubic(xs, ys):
+    """Fritsch–Carlson monotone cubic through (xs, ys); returns f(x)."""
+    n = len(xs); d = [(ys[i + 1] - ys[i]) / (xs[i + 1] - xs[i]) for i in range(n - 1)]
+    m = [d[0]] + [0.0 if d[i - 1] * d[i] <= 0 else (d[i - 1] + d[i]) / 2 for i in range(1, n - 1)] + [d[-1]]
+    for i in range(n - 1):
+        if d[i] == 0: m[i] = m[i + 1] = 0; continue
+        a, b = m[i] / d[i], m[i + 1] / d[i]; h = a * a + b * b
+        if h > 9: t = 3 / math.sqrt(h); m[i] = t * a * d[i]; m[i + 1] = t * b * d[i]
+    def f(x):
+        i = 0
+        while i < n - 2 and x > xs[i + 1]: i += 1
+        h = xs[i + 1] - xs[i]; u = (x - xs[i]) / h
+        h00, h10, h01, h11 = 2*u**3 - 3*u**2 + 1, u**3 - 2*u**2 + u, -2*u**3 + 3*u**2, u**3 - u**2
+        return h00 * ys[i] + h10 * h * m[i] + h01 * ys[i + 1] + h11 * h * m[i + 1]
+    return f
+
+def smooth_loft(name, rings, around=48, steps=60, material=None, cap0=False, cap1=True, angle=50):
+    """A loft through superellipse sections (z, cx, cy, rx, ryt, ryb, n) with every parameter on a
+    smooth monotone cubic along z, sampled densely — exact shape, no subdivision shrink."""
+    rs = sorted(rings, key=lambda r: r[0])
+    zs = [r[0] for r in rs]
+    fs = [_mono_cubic(zs, [r[k] for r in rs]) for k in range(1, 7)]
+    z0, z1 = zs[0], zs[-1]
+    dense = []
+    for i in range(steps + 1):
+        u = i / steps; z = z0 + (z1 - z0) * (0.5 - 0.5 * math.cos(math.pi * u))
+        dense.append((z, *[f(z) for f in fs]))
+    dense.reverse()   # front to back, like ring_loft
+    ob = ring_loft(name, dense, around=around, cap0=cap0, cap1=cap1, material=material)
+    return smooth(ob, angle)
