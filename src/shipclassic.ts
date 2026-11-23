@@ -5,7 +5,7 @@ import * as THREE from 'three'
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js'
 import { mergeVertices, toCreasedNormals } from 'three/addons/utils/BufferGeometryUtils.js'
 import type { Parts, ShipSpec } from './shipdesign'
-import { mirrorX, nacelle } from './shipgeo'
+import { loft, mirrorX, nacelle, X, Y, Z, type Key } from './shipgeo'
 
 const NOZZLE_Z = -4.3
 const NOZZLES: [number, number][] = [[-1.08, 0.36], [0, 0.6], [1.08, 0.36]]
@@ -60,27 +60,26 @@ function slab(shape: THREE.Shape, depth: number, bevel: number, segs = 4): THREE
   return toCreasedNormals(mergeVertices(g), Math.PI / 5)
 }
 
-/** A swept, tapered fin: root (length rl) flat on local y = 0 from z = 0 back, tip (length tl) at
- *  height h, swept back by sw; thickness t; bevelled. Built in the y/z plane, thickness along x. */
-function fin(rl: number, tl: number, h: number, sw: number, t: number): THREE.BufferGeometry {
-  const sh = new THREE.Shape()
-  sh.moveTo(0, 0); sh.lineTo(rl, 0); sh.lineTo(sw + tl, h); sh.lineTo(sw, h); sh.closePath()
-  const g = new THREE.ExtrudeGeometry(sh, { depth: t, bevelEnabled: true, bevelThickness: t * 0.3, bevelSize: Math.min(0.05, t * 0.4), bevelSegments: 3 })
-  g.translate(0, 0, -t / 2)
-  g.rotateY(Math.PI / 2) // shape x → −z (back), depth → x
-  g.deleteAttribute('uv')
-  return g
+const KK = (s: number, c: [number, number, number], a: number, h: number): Key => ({ s, c, a, t: h, b: h, n: 2 })
+/** One more key past the tip: shorter and much thinner — a rounded end, not a sawn-off plank. */
+function tipRound(k0: Key, k1: Key, d: number): Key {
+  const f = d
+  return { s: k1.s + (k1.s - k0.s) * f, c: [k1.c[0] + (k1.c[0] - k0.c[0]) * f, k1.c[1] + (k1.c[1] - k0.c[1]) * f, k1.c[2] + (k1.c[2] - k0.c[2]) * f], a: k1.a * 0.72, t: k1.t * 0.3, b: k1.b * 0.3, n: 2 }
 }
 
-/** A flat swept surface (canard, winglet): span s outward along +x, root chord rc, tip chord tc, swept. */
+/** A swept, tapered fin: root (length rl) flat on local y = 0 from z = 0 back, tip (length tl) at
+ *  height h, swept back by sw; thickness t. An airfoil loft (round leading edge, sharp trailing edge,
+ *  a rounded tip) — the extruded slab had hard edges all round. Thickness along x. */
+function fin(rl: number, tl: number, h: number, sw: number, t: number): THREE.BufferGeometry {
+  const k0 = KK(0, [0, -0.04, -rl / 2], rl / 2, t / 2), k1 = KK(1, [0, h, -sw - tl / 2], tl / 2, t * 0.38)
+  return loft([k0, k1, tipRound(k0, k1, 0.05)], { A: Z, B: X, rings: 24, around: 40, foil: true, capStart: true, capEnd: true })
+}
+
+/** A flat swept surface (canard, winglet): span s outward along +x, root chord rc, tip chord tc, swept;
+ *  an airfoil loft like the fins. */
 function blade(s: number, rc: number, tc: number, sw: number, t: number): THREE.BufferGeometry {
-  const sh = new THREE.Shape()
-  sh.moveTo(0, 0); sh.lineTo(s, -sw); sh.lineTo(s, -sw - tc); sh.lineTo(0, -rc); sh.closePath()
-  const g = new THREE.ExtrudeGeometry(sh, { depth: t, bevelEnabled: true, bevelThickness: t * 0.3, bevelSize: Math.min(0.04, t * 0.4), bevelSegments: 2 })
-  g.translate(0, 0, -t / 2)
-  g.rotateX(Math.PI / 2) // shape y → z (the chord runs back, toward −z); depth → −y
-  g.deleteAttribute('uv')
-  return g
+  const k0 = KK(0, [0, 0, -rc / 2], rc / 2, t / 2), k1 = KK(s, [s, 0, -sw - tc / 2], tc / 2, t * 0.38)
+  return loft([k0, k1, tipRound(k0, k1, 0.06)], { A: Z, B: Y, rings: 20, around: 40, foil: true, capStart: true, capEnd: true })
 }
 
 export function buildClassic(variant: number, hi: boolean): { parts: Parts; spec: ShipSpec } {
@@ -204,6 +203,12 @@ export function buildClassic(variant: number, hi: boolean): { parts: Parts; spec
       L.add('paint', new THREE.BoxGeometry(0.14, 1.45, 1.4), 0, 1.7, -1.6)
       L.add('metal', new THREE.ConeGeometry(0.11, 2.2, 6).rotateX(-Math.PI / 2), 0, 0.3, 6.3)
     }
+  }
+  if (hi) {
+    // Navigation lights at the wingtips (red to port, green to starboard).
+    const B = new B0(parts)
+    B.add('navG', new THREE.SphereGeometry(0.07, 16, 12), wingtip[0], wingtip[1] + 0.12, wingtip[2] + 0.5)
+    B.add('navR', new THREE.SphereGeometry(0.07, 16, 12), -wingtip[0], wingtip[1] + 0.12, wingtip[2] + 0.5)
   }
   const spec: ShipSpec = {
     nozzles: NOZZLES,

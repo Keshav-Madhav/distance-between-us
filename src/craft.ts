@@ -222,6 +222,9 @@ export class Craft {
     mats.glow = this.glow
     mats.hot = new THREE.MeshBasicMaterial({ color: new THREE.Color(1.5, 0.42, 0.1) })
     mats.neon = new THREE.MeshBasicMaterial({ color: new THREE.Color(paint.trim).multiplyScalar(2.4) })
+    // Navigation lights: red to port (left, −x), green to starboard.
+    mats.navR = new THREE.MeshBasicMaterial({ color: new THREE.Color(3.2, 0.25, 0.2) })
+    mats.navG = new THREE.MeshBasicMaterial({ color: new THREE.Color(0.2, 3.0, 0.6) })
 
     this.mats = mats
     this.numMat = new THREE.MeshBasicMaterial({ map: numberTexture(paint.number, '#' + new THREE.Color(paint.trim).getHexString()), transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2 })

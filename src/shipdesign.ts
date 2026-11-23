@@ -23,6 +23,17 @@ const K = (s: number, c: [number, number, number], a: number, t: number, b: numb
 
 const PI = Math.PI
 
+/** A rounded tip: one more key just past the last, shorter and much thinner (a flat cut read as a
+ *  sawn-off plank end). */
+function roundTip(keys: Key[], d = 0.08): Key[] {
+  const a = keys[keys.length - 2], b = keys[keys.length - 1]
+  const ds = b.s - a.s || 1
+  const k = (d * (Math.abs(ds) || 1)) / Math.abs(ds)
+  const dir = [(b.c[0] - a.c[0]) / ds, (b.c[1] - a.c[1]) / ds, (b.c[2] - a.c[2]) / ds]
+  const s2 = b.s + ds * k
+  return [...keys, { s: s2, c: [b.c[0] + dir[0] * ds * k, b.c[1] + dir[1] * ds * k, b.c[2] + dir[2] * ds * k], a: b.a * 0.72, t: b.t * 0.3, b: b.b * 0.3, n: b.n }]
+}
+
 export function buildShip(variant: number, hi: boolean): { parts: Parts; spec: ShipSpec } {
   const parts: Parts = new Map()
   const put = (key: string, g: THREE.BufferGeometry, mirror = false) => {
@@ -31,8 +42,29 @@ export function buildShip(variant: number, hi: boolean): { parts: Parts; spec: S
     if (mirror) parts.get(key)!.push(mirrorX(g))
   }
   // (Hi detail: dense surfaces — every loft ~2× the rings and points it had.)
-  const R = hi ? 2 : 0.35
+  // (×3 since 2026-11-23: smoother curves, no facets on the pods and spine close up.)
+  const R = hi ? 3 : 0.35
   const ring = (n: number) => Math.max(4, Math.round(n * R))
+
+  /** A racing stripe: a band on a loft's skin whose centre angle sweeps from thA (at s0) to thB (at s1),
+   *  width w (radians), tapering to points at both ends, a hair proud of the paint. */
+  const swoosh = (keys: Key[], key: string, s0: number, s1: number, thA: number, thB: number, w: number, mirror: boolean) => {
+    const N = ring(30), M = 4
+    const pos: number[] = [], idx: number[] = []
+    for (let r = 0; r <= N; r++) {
+      const u = r / N, k = sample(keys, s0 + (s1 - s0) * u)
+      const e = 2 / k.n, thc = thA + (thB - thA) * (u * u * (3 - 2 * u)), ww = w * Math.pow(Math.sin(PI * u), 0.5)
+      for (let j = 0; j <= M; j++) {
+        const th = thc - ww / 2 + (ww * j) / M, ca = Math.cos(th), sa = Math.sin(th)
+        const x = k.a * 1.012 * Math.sign(ca) * Math.pow(Math.abs(ca), e), y = (sa >= 0 ? k.t : k.b) * 1.012 * Math.sign(sa) * Math.pow(Math.abs(sa), e)
+        pos.push(k.c[0] + x, k.c[1] + y, k.c[2])
+      }
+    }
+    for (let r = 0; r < N; r++) for (let j = 0; j < M; j++) { const a = r * (M + 1) + j, b = a + 1, c = a + M + 1, d = c + 1; idx.push(a, c, b, b, c, d) }
+    const g = new THREE.BufferGeometry()
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setIndex(idx); g.computeVertexNormals()
+    put(key, g, mirror)
+  }
 
   const v = variant
   const brute = v === 1, needle = v === 2
@@ -106,20 +138,26 @@ export function buildShip(variant: number, hi: boolean): { parts: Parts; spec: S
     K(0.5, [0.5, 0.36, -1.0], 2.0, 0.11, 0.07, 2),
     K(podX - 0.2, [podX - 0.2, NY, -1.5], 1.55, 0.09, 0.06, 2),
   ]
-  put('paint', loft(inner, { A: Z, B: Y, rings: ring(6), around: ring(16), th0: -2.3, th1: 2.3 }), true)
-  put('trim', loft(inner, { A: Z, B: Y, rings: ring(6), around: ring(6), th0: 2.3, th1: 2 * PI - 2.3 }), true)
+  // Airfoil sections (round leading edge, sharp trailing edge); a team-colour band along the leading edge.
+  const W = { A: Z, B: Y, rings: ring(6), foil: true }
+  put('trim', loft(inner, { ...W, around: ring(6), th0: -0.42, th1: 0.42 }), true)
+  put('paint', loft(inner, { ...W, around: ring(14), th0: 0.42, th1: 2.3 }), true)
+  put('paint', loft(inner, { ...W, around: ring(14), th0: -2.3, th1: -0.42 }), true)
+  put('carbon', loft(inner, { ...W, around: ring(6), th0: 2.3, th1: 2 * PI - 2.3 }), true)
   const tipX = podX + (brute ? 1.45 : needle ? 1.3 : 1.7)
   const outer: Key[] = [
     K(podX + 0.3, [podX + 0.3, NY - 0.04, -2.3], 1.15, 0.08, 0.05, 2),
     K(tipX, [tipX, NY - 0.22, -3.5], 0.6, 0.05, 0.04, 2),
   ]
-  put('paint', loft(outer, { A: Z, B: Y, rings: ring(6), around: ring(14), capEnd: true }), true)
+  const outerR = roundTip(outer, 0.05)
+  put('trim', loft(outerR, { ...W, around: ring(6), th0: -0.42, th1: 0.42 }), true)
+  put('paint', loft(outerR, { ...W, around: ring(16), th0: 0.42, th1: 2 * PI - 0.42, capEnd: true }), true)
   // Wingtip fins: canted outward, swept.
   const tipFin: Key[] = [
     K(0, [tipX - 0.05, NY - 0.22, -3.5], 0.48, 0.045, 0.045, 2),
     K(1, [tipX + 0.2, NY + 0.6, -3.95], 0.26, 0.03, 0.03, 2),
   ]
-  put('trim', loft(tipFin, { A: Z, B: X, rings: ring(5), around: ring(12), capStart: true, capEnd: true }), true)
+  put('trim', loft(roundTip(tipFin, 0.1), { A: Z, B: X, rings: ring(5), around: ring(14), foil: true, capStart: true, capEnd: true }), true)
 
   // ── tail fins ──
   const finH = brute ? 1.7 : 1.35
@@ -129,10 +167,10 @@ export function buildShip(variant: number, hi: boolean): { parts: Parts; spec: S
       K(0, [0, 1.0, -2.6], 1.15, 0.06, 0.06, 2),
       K(1, [0, 1.0 + finH + 0.4, -3.9], 0.5, 0.04, 0.04, 2),
     ]
-    put('paint', loft(dorsal, { A: Z, B: X, rings: ring(8), around: ring(14) }))
-    { const k0 = sample(dorsal, 0.9), k1 = sample(dorsal, 1); for (const k of [k0, k1]) { k.a *= 1.03; k.t *= 1.15; k.b *= 1.15 } put('neon', loft([k0, k1], { A: Z, B: X, rings: 2, around: ring(12), capEnd: true })) }
+    put('paint', loft(dorsal, { A: Z, B: X, rings: ring(8), around: ring(16), foil: true }))
+    { const k0 = sample(dorsal, 0.9), k1 = sample(dorsal, 1); for (const k of [k0, k1]) { k.a *= 1.03; k.t *= 1.15; k.b *= 1.15 } put('neon', loft(roundTip([k0, k1], 0.6), { A: Z, B: X, rings: 4, around: ring(16), foil: true, capEnd: true })) }
     // Canards by the nose.
-    put('trim', loft([K(0.25, [0.25, 0.22, nose - 2.4], 0.45, 0.05, 0.03, 2), K(1.25, [1.25, 0.32, nose - 2.8], 0.22, 0.03, 0.02, 2)], { A: Z, B: Y, rings: 8, around: ring(12), capEnd: true }), true)
+    put('trim', loft(roundTip([K(0.25, [0.25, 0.22, nose - 2.4], 0.45, 0.05, 0.03, 2), K(1.25, [1.25, 0.32, nose - 2.8], 0.22, 0.03, 0.02, 2)]), { A: Z, B: Y, rings: 8, around: ring(14), foil: true, capEnd: true }), true)
     number = { pos: [0.09, 1.75, -3.15], rotY: PI / 2, tilt: 0, size: 0.8 }
   } else {
     const fx = podX - 0.05
@@ -140,14 +178,22 @@ export function buildShip(variant: number, hi: boolean): { parts: Parts; spec: S
       K(0, [fx, NY + podH * 0.8, -3.0], 0.95, 0.06, 0.06, 2),
       K(1, [fx + 0.45, NY + podH * 0.8 + finH, -3.95], 0.42, 0.04, 0.04, 2),
     ]
-    put('paint', loft(fin, { A: Z, B: X, rings: ring(8), around: ring(14) }), true)
-    // A team-colour cap on each fin tip: the fin's own last tenth, a hair proud.
-    { const k0 = sample(fin, 0.9), k1 = sample(fin, 1); for (const k of [k0, k1]) { k.a *= 1.03; k.t *= 1.2; k.b *= 1.2 } put('trim', loft([k0, k1], { A: Z, B: X, rings: 2, around: ring(12), capEnd: true }), true) }
+    put('paint', loft(fin, { A: Z, B: X, rings: ring(8), around: ring(16), foil: true }), true)
+    // A team-colour cap on each fin tip: the fin's own last tenth, a hair proud, its end rounded.
+    { const k0 = sample(fin, 0.9), k1 = sample(fin, 1); for (const k of [k0, k1]) { k.a *= 1.03; k.t *= 1.2; k.b *= 1.2 } put('trim', loft(roundTip([k0, k1], 0.6), { A: Z, B: X, rings: 4, around: ring(16), foil: true, capEnd: true }), true) }
     const t = Math.atan2(0.45, finH)
     number = { pos: [fx + 0.22 + 0.075, NY + podH * 0.8 + finH * 0.48, -3.45], rotY: PI / 2, tilt: t, size: 0.62 }
   }
 
   if (hi) {
+    // Racing stripes: one sweeping down the fuselage's flank from behind the canopy to the tail, one
+    // along each pod from its intake to the nozzle (the livery's line, not a straight band).
+    swoosh(fus, 'trim', 1.6, -3.9, 0.55, -0.15, 0.22, true)
+    swoosh(fus, 'neon', 1.4, -3.6, 0.32, -0.38, 0.035, true)
+    swoosh(pod, 'trim', pz0 - 0.4, -3.9, 1.15, 0.35, 0.26, true)
+    // Navigation lights on the wingtips (red to port, green to starboard), and a white strobe on the tail.
+    put('navG', new THREE.SphereGeometry(0.06, 16, 12).translate(tipX + 0.05, NY - 0.2, -3.25))
+    put('navR', new THREE.SphereGeometry(0.06, 16, 12).translate(-tipX - 0.05, NY - 0.2, -3.25))
     // Nozzles: a metal lip ring, a dark inner liner, a hot core — centre and both pods.
     // Nozzles: closed engine shapes (lip, inner wall, throat) with the hot core filling the throat.
     const noz: [number, number, number][] = [[0, CY, CR], [podX, NY, PR], [-podX, NY, PR]]

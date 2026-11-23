@@ -50,6 +50,16 @@ export interface LoftOpts {
   /** Close each end with a cap (a fan to the centre). */
   capStart?: boolean
   capEnd?: boolean
+  /** An airfoil section instead of a superellipse: "a" is the half chord (leading edge at θ = 0, along
+   *  +A), "t/b" the half thickness; a NACA 00xx thickness — round nose, sharp trailing edge. The
+   *  section angle spaces the points by cosine, so they bunch at both edges where the curve is. */
+  foil?: boolean
+}
+
+/** NACA 00xx half-thickness at chord fraction u (0 leading edge … 1 trailing edge), normalised to 1. */
+function naca(u: number): number {
+  const v = Math.max(0, Math.min(1, u))
+  return (0.2969 * Math.sqrt(v) - 0.126 * v - 0.3516 * v * v + 0.2843 * v ** 3 - 0.1036 * v ** 4) / 0.1
 }
 
 export function loft(keys: Key[], o: LoftOpts): THREE.BufferGeometry {
@@ -71,8 +81,9 @@ export function loft(keys: Key[], o: LoftOpts): THREE.BufferGeometry {
     for (let j = 0; j < nA; j++) {
       const th = th0 + ((th1 - th0) * j) / (full ? o.around : o.around)
       const ca = Math.cos(th), sa = Math.sin(th)
-      const x = k.a * sgnPow(ca, e)
-      const y = (sa >= 0 ? k.t : k.b) * sgnPow(sa, e)
+      let x: number, y: number
+      if (o.foil) { x = k.a * ca; y = (sa >= 0 ? k.t : k.b) * naca((1 - ca) / 2) * Math.sign(sa) }
+      else { x = k.a * sgnPow(ca, e); y = (sa >= 0 ? k.t : k.b) * sgnPow(sa, e) }
       pos.push(k.c[0] + o.A.x * x + o.B.x * y, k.c[1] + o.A.y * x + o.B.y * y, k.c[2] + o.A.z * x + o.B.z * y)
     }
   }
