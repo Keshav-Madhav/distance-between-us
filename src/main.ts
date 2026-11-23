@@ -55,6 +55,10 @@ const breathe = () => (EMBED ? new Promise<void>((r) => setTimeout(r, 0)) : Prom
 // this one keeps flying, menu up — and when it is ready it fades in and the old one retires (its
 // loop stops, its music fades, its GPU memory freed). The top window hosts every later swap.
 let retired = false
+/** Pre-booted behind the menu (a world you hovered): ready but dormant — no frames, no sound — until the
+ *  host wakes it (dbu-wake), so picking it is a cross-fade, not a load. */
+const WARM = new URLSearchParams(location.search).has('warm')
+let dormant = false
 /** Freeze the view (next frame is copied to #freeze, then rendering stops): see the #freeze CSS. */
 let freezeWanted = false, frozen = false
 let swapPending: string | null = null
@@ -71,19 +75,49 @@ function swapTo(id: string, go: boolean | string): void {
   else hostSwap(id, go)
 }
 let hosting: { frame: HTMLIFrameElement | null; busy: boolean } = { frame: null, busy: false }
-function hostSwap(id: string, go: boolean | string): void {
-  if (hosting.busy) return
-  hosting.busy = true
+/** The course the visible instance is running (the top page's own at first). */
+let hostCourse = new URLSearchParams(location.search).get('course') ?? ''
+function makeFrame(id: string, go: boolean | string, warm: boolean): HTMLIFrameElement {
   const u = new URL(location.href)
   u.searchParams.set('course', id); u.searchParams.set('embed', '1')
   if (go) u.searchParams.set('go', go === true ? '1' : go); else u.searchParams.delete('go')
+  if (warm) u.searchParams.set('warm', '1'); else u.searchParams.delete('warm')
   const f = document.createElement('iframe')
   f.src = u.toString()
   f.allow = 'autoplay; fullscreen; gamepad'
   f.style.cssText = 'position:fixed;inset:0;width:100%;height:100%;border:0;opacity:0;transition:opacity 0.7s ease;z-index:1000;pointer-events:none;background:#0b0605'
   document.body.appendChild(f)
-  const prev = hosting.frame
+  return f
+}
+/** One world booted ahead (the one you are pointing at on the menu), dormant until picked. */
+let warmSlot: { id: string; f: HTMLIFrameElement; ready: boolean; onReady?: () => void } | null = null
+/** A pointer resting ~250 ms on a world or course pre-boots it (sweeping across the tiles boots nothing). */
+let warmT = 0
+function prewarmSoon(id: string): void { clearTimeout(warmT); warmT = window.setTimeout(() => prewarm(id), 250) }
+function prewarm(id: string): void {
+  if (window.parent !== window) { window.parent.postMessage({ type: 'dbu-prewarm', id }, location.origin); return }
+  if (hosting.busy || warmSlot?.id === id || id === (hostCourse || course.def.id)) return
+  warmSlot?.f.remove()
+  const slot: NonNullable<typeof warmSlot> = { id, f: makeFrame(id, false, true), ready: false }
+  warmSlot = slot
+  const onMsg = (e: MessageEvent) => {
+    if (e.origin !== location.origin || e.source !== slot.f.contentWindow || e.data?.type !== 'dbu-ready') return
+    removeEventListener('message', onMsg)
+    slot.ready = true
+    slot.onReady?.()
+  }
+  addEventListener('message', onMsg)
+}
+function hostSwap(id: string, go: boolean | string): void {
+  if (hosting.busy) return
+  hosting.busy = true
   const live = typeof go === 'string' && go.startsWith('live')
+  const warm = !live && warmSlot?.id === id ? warmSlot : null
+  if (!warm && warmSlot) { warmSlot.f.remove(); warmSlot = null }
+  warmSlot = null
+  const f = warm ? warm.f : makeFrame(id, go, false)
+  hostCourse = id
+  const prev = hosting.frame
   // (A flying handover morphs slower: the two pictures of the planet blend rather than cut.)
   const fadeMs = live ? 1400 : 700
   const fadeIn = () => {
@@ -101,6 +135,12 @@ function hostSwap(id: string, go: boolean | string): void {
       void go
       history.replaceState(null, '', top.toString())
     }, fadeMs + 50)
+  }
+  // Pre-booted: wake it (its music, the race if asked) and cross-fade — no load.
+  if (warm) {
+    const wake = () => { f.contentWindow?.postMessage({ type: 'dbu-wake', go }, location.origin); setTimeout(fadeIn, 60) }
+    if (warm.ready) wake(); else warm.onReady = wake
+    return
   }
   const onMsg = (e: MessageEvent) => {
     if (e.origin !== location.origin) return
@@ -135,6 +175,8 @@ addEventListener('message', (e) => {
   if (e.data?.type === 'dbu-retire') retire()
   if (e.data?.type === 'dbu-state?') window.parent.postMessage({ type: 'dbu-state', state: getHandoff() }, location.origin)
   if (e.data?.type === 'dbu-arrive') applyHandoff(e.data.state)
+  if (e.data?.type === 'dbu-wake' && dormant) { dormant = false; sound.start(); if (e.data.go === true || e.data.go === '1') startRace() }
+  if (e.data?.type === 'dbu-prewarm' && window.parent === window) prewarm(e.data.id)
 })
 const $ = <T extends HTMLElement = HTMLElement>(s: string) => document.querySelector(s) as T
 const loadBar = $('#loading .b i')
@@ -1079,6 +1121,15 @@ function showCourse(): void {
     const el = document.createElement('div')
     el.className = 'w'
     el.dataset.w = w.id
+    // (Pointing at a world boots it behind the menu: clicking it is then a cross-fade, not a load.)
+    el.onpointerenter = () => {
+      if (w.id === pickedWorld || w.id === 'space') return
+      let last: string | null = null
+      try { last = localStorage.getItem('dbu-course-' + w.id) } catch { /* blocked */ }
+      const c = COURSES.find((x) => x.id === last && biomeOf(x.id) === w.id) ?? COURSES.find((x) => biomeOf(x.id) === w.id)
+      if (c) prewarmSoon(c.id)
+    }
+    el.onpointerleave = () => clearTimeout(warmT)
     el.onclick = () => {
       // ORBIT is somewhere to fly, not to race: picking it switches to FREE ROAM.
       if (w.id === 'space' && menuMode !== 'free') { menuMode = 'free'; showCourse() }
@@ -1112,7 +1163,10 @@ function showCourse(): void {
     el.className = 'c'
     el.tabIndex = 0
     el.onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); el.click() } }
-    el.onclick = () => { pickedCourse = i; showCourse() }
+    el.onclick = () => { pickedCourse = i; showCourse(); if (COURSES[i] !== course.def) prewarm(COURSES[i].id) }
+    // (Pointing at another course boots it behind the menu: START is then a cross-fade, not a load.)
+    el.onpointerenter = () => { if (COURSES[i] !== course.def) prewarmSoon(COURSES[i].id) }
+    el.onpointerleave = () => clearTimeout(warmT)
     cards.append(el)
   })
   COURSES.forEach((d, i) => {
@@ -2655,6 +2709,7 @@ function paceAuto(delta: number, now: number): void {
 function frame(now: number): void {
   if (retired || frozen) return
   requestAnimationFrame(frame)
+  if (dormant) { last = now; return }
   rafGaps[rafHead] = now - lastRaf; lastRaf = now
   rafHead = (rafHead + 1) % 30; if (rafN < 30) rafN++
   if ((rafHead & 7) === 0) { const v = rafSorted.subarray(0, rafN); v.set(rafGaps.subarray(0, rafN)); v.sort(); refreshMs = v[rafN >> 1] }
@@ -3602,6 +3657,7 @@ try { if (sessionStorage.getItem('dbu-go')) { sessionStorage.removeItem('dbu-go'
 if (window.parent !== window) {
   requestAnimationFrame(() => requestAnimationFrame(() => {
     const go = params.get('go')
+    if (WARM) { dormant = true; window.parent.postMessage({ type: 'dbu-ready' }, location.origin); return }
     if (go === '1') startRace()
     // A live handover: already flying (shaders warm) at a stand-in state; the real one arrives with the
     // cross-fade (dbu-arrive).
