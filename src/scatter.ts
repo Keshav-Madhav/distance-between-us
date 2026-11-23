@@ -73,7 +73,14 @@ const dryBush = (): Build => () => {
   gs.push(col(new THREE.IcosahedronGeometry(0.3, 0).scale(1, 0.55, 1).translate(0, 0.2, 0), [0.58, 0.52, 0.34], 0.2))
   return merge(gs)
 }
-const mound = (c: [number, number, number], r: number, h: number): Build => () => col(new THREE.SphereGeometry(1, 10, 5, 0, Math.PI * 2, 0, Math.PI / 2).scale(r, h, r * 0.75), c, 0.06)
+// (A dome with a soft lumpy top and some height: at h 0.56 of r the drifts read as flat paper plates.)
+const mound = (c: [number, number, number], r: number, h: number): Build => () => {
+  const g = new THREE.SphereGeometry(1, 12, 6, 0, Math.PI * 2, 0, Math.PI / 2)
+  const p = g.attributes.position
+  for (let i = 0; i < p.count; i++) { const x = p.getX(i), y = p.getY(i), z = p.getZ(i); const k = 1 + 0.12 * Math.sin(x * 4.1 + z * 2.7); p.setXYZ(i, x * r * k, y * h * 1.5 * k, z * r * 0.75 * k) }
+  g.computeVertexNormals()
+  return col(g, c, 0.08)
+}
 const iceChip = (): Build => () => col(new THREE.OctahedronGeometry(1, 0).scale(0.3, 0.24, 0.26).translate(0, 0.1, 0), [0.5, 0.68, 0.86], 0.4)
 const snowman = (): Build => () => merge([
   col(new THREE.SphereGeometry(0.55, 10, 7).translate(0, 0.45, 0), [0.95, 0.96, 1.0]),
@@ -137,21 +144,27 @@ const clod = (c: [number, number, number], top: [number, number, number]): Build
 }
 // CINDER's verge: yellow sulphur crust, glowing cracks, glossy black glass.
 const sulphur = (): Build => () => {
-  const g = new THREE.CircleGeometry(0.9, 7).rotateX(-Math.PI / 2)
+  // A low lumpy crust, ochre (a flat lime disc read as paper on the ground).
+  const g = new THREE.SphereGeometry(1, 10, 4, 0, Math.PI * 2, 0, Math.PI / 2)
   const p = g.attributes.position
-  for (let i = 0; i < p.count; i++) { const a = Math.atan2(p.getZ(i), p.getX(i)); const k = 0.7 + 0.35 * Math.sin(a * 3 + 1) ; p.setXYZ(i, p.getX(i) * k, 0.04 + 0.05 * (1 - Math.hypot(p.getX(i), p.getZ(i))), p.getZ(i) * k * 0.7) }
-  return col(g, [0.86, 0.74, 0.22], 0.3)
+  for (let i = 0; i < p.count; i++) { const x = p.getX(i), y = p.getY(i), z = p.getZ(i); const k = 0.75 + 0.3 * Math.sin(Math.atan2(z, x) * 3 + 1); p.setXYZ(i, x * 0.9 * k, y * 0.14, z * 0.65 * k) }
+  g.computeVertexNormals()
+  return col(g, [0.74, 0.6, 0.2], 0.35)
 }
 const crack = (): Build => () => {
   // A jagged glowing seam lying on the ground (three thin bent segments).
+  // (Irregular bends and a fork: three even zig-zag segments read as a letter Z close up.)
   const gs: THREE.BufferGeometry[] = []
-  let x = -1.2, z = 0
-  for (let i = 0; i < 3; i++) {
-    const nx = x + 0.8, nz = z + (i % 2 ? 0.3 : -0.25)
+  let x = -1.3, z = 0
+  const bends = [0.12, -0.31, 0.05, 0.22, -0.08]
+  for (let i = 0; i < 5; i++) {
+    const nx = x + 0.45 + 0.2 * ((i * 7) % 3) / 2, nz = z + bends[i]
     const len = Math.hypot(nx - x, nz - z), ang = Math.atan2(nz - z, nx - x)
     gs.push(col(new THREE.PlaneGeometry(len, 0.07).rotateX(-Math.PI / 2).rotateY(-ang).translate((x + nx) / 2, 0.03, (z + nz) / 2), [3.0, 0.9, 0.18]))
     x = nx; z = nz
   }
+  // A short branch off the middle.
+  gs.push(col(new THREE.PlaneGeometry(0.55, 0.05).rotateX(-Math.PI / 2).rotateY(-0.9).translate(-0.1, 0.03, 0.22), [2.6, 0.75, 0.15]))
   return merge(gs)
 }
 const shard = (c: [number, number, number]): Build => () => col(new THREE.ConeGeometry(0.22, 0.9, 4).translate(0, 0.4, 0), c, 0.2)
