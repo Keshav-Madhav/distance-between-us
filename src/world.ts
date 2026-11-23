@@ -1069,6 +1069,9 @@ interface Placed {
   sink?: number
   bx?: number
   bz?: number
+  /** Unscaled height and radius (heightK scales these per wrapped copy). */
+  h0?: number
+  r0?: number
 }
 
 const TMP_DIR = new THREE.Vector3()
@@ -1124,6 +1127,8 @@ class Wrapped {
     readonly veto: ((x: number, z: number, r: number) => boolean) | null = null,
     /** Fully sunk (and not drawn) past this distance. */
     public sinkTo = tile / 2,
+    /** × height (radius × its root) for a copy at (x, z): set once per wrap with the veto. */
+    readonly heightK: ((x: number, z: number) => number) | null = null,
   ) {}
   /** After the items are dealt: the full shape and its simplified twin (src/lod.ts), both in `node`. */
   finish(): void {
@@ -1142,7 +1147,12 @@ class Wrapped {
       it.z = z
       const cheb = Math.max(Math.abs(x - cx), Math.abs(z - cz))
       const grow = 1 - smooth(this.sinkFrom, this.sinkTo, cheb)
-      if (this.veto && (it.vx !== x || it.vz !== z)) { it.vx = x; it.vz = z; it.vetoed = this.veto(x, z, it.r) }
+      if (this.veto && (it.vx !== x || it.vz !== z)) {
+        it.vx = x; it.vz = z
+        // Height by distance from the course (this copy's place): short near the track, full far out.
+        if (this.heightK) { it.h0 ??= it.h; it.r0 ??= it.r; const k = this.heightK(x, z); it.h = it.h0 * k; it.r = it.r0 * Math.sqrt(k) }
+        it.vetoed = this.veto(x, z, it.r)
+      }
       it.grow = it.vetoed ? 0 : grow
       if (it.grow < 0.03) continue
       // (Cached until it wraps: thousands of clutter items, one terrain lookup each per frame, added up.)
@@ -1213,7 +1223,7 @@ export class World {
    * clear(x, z, r): false where a mesa of radius r must not stand (the race course corridor).
    * keepOff(x, z, r): true where a boulder must not be (the racing line itself).
    */
-  constructor(clear: (x: number, z: number, r: number) => boolean = () => true, keepOff: ((x: number, z: number, r: number) => boolean) | null = null, clutterOff: ((x: number, z: number, r: number) => boolean) | null = null) {
+  constructor(clear: (x: number, z: number, r: number) => boolean = () => true, keepOff: ((x: number, z: number, r: number) => boolean) | null = null, clutterOff: ((x: number, z: number, r: number) => boolean) | null = null, clutterHeight: ((x: number, z: number) => number) | null = null) {
     this.sky = new THREE.Mesh(new THREE.SphereGeometry(1000, 48, 24), skyMaterial(false))
     this.sky.renderOrder = -10
     this.sky.frustumCulled = false
@@ -1378,7 +1388,7 @@ export class World {
         const { geo, prof } = landGeometry(kind, kind.length * 31 + 7 + v * 101, v)
         // (MONSOON's mist hides it past ~3 km; elsewhere it rises from the haze by 4.5 km.)
         const far = JUNGLE ? 3200 : 4600
-        ws.push(new Wrapped(geo, ICE && kind === 'spire' ? spikeMat : mesaMat, TILE, far * 0.7, 0.06, prof, false, clutterOff, far))
+        ws.push(new Wrapped(geo, ICE && kind === 'spire' ? spikeMat : mesaMat, TILE, far * 0.7, 0.06, prof, false, clutterOff, far, clutterHeight))
       }
       const GREEN = FOREST
       // (~25 items a km², the density the course's own near field has.)

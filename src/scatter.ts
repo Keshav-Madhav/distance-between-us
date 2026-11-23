@@ -13,7 +13,7 @@ import { patchStandard } from './shaders'
 import { BIOME, MOUND_U, TERRAIN_GLSL } from './terrain'
 
 type Build = () => THREE.BufferGeometry
-interface Kind { name: string; build: Build; cell: number; grid: number; density: number; scale: [number, number]; glow?: boolean; tilt?: number; seed: number; where?: 'land' | 'river'; near?: number }
+interface Kind { name: string; build: Build; cell: number; grid: number; density: number; scale: [number, number]; glow?: boolean; tilt?: number; seed: number; where?: 'land' | 'river'; near?: number; far?: boolean; debris?: boolean }
 
 const col = (g: THREE.BufferGeometry, c: [number, number, number], vary = 0): THREE.BufferGeometry => {
   const n = g.attributes.position.count, a = new Float32Array(n * 3)
@@ -108,8 +108,10 @@ const charred = (): Build => () => {
 }
 const tallGrass = (c: [number, number, number]): Build => tuft(c, 1.6, 9, 0.09)
 const reeds = (c: [number, number, number]): Build => tuft(c, 3.2, 11, 0.06)
-const spike = (): Build => () => col(new THREE.ConeGeometry(0.9, 6, 5).translate(0, 3, 0), [0.62, 0.82, 1.0], 0.3)
-const pillar = (c: [number, number, number]): Build => () => col(new THREE.CylinderGeometry(0.9, 1.4, 7, 6).translate(0, 3.5, 0), c, 0.3)
+// (Shorter than they were — 6 m spikes and 7 m pillars beside the track looked dangerous and walled off
+// the view; the tall ones are their own far-only kinds.)
+const spike = (): Build => () => col(new THREE.ConeGeometry(0.75, 3.5, 5).translate(0, 1.75, 0), [0.62, 0.82, 1.0], 0.3)
+const pillar = (c: [number, number, number]): Build => () => col(new THREE.CylinderGeometry(0.8, 1.2, 4, 6).translate(0, 2, 0), c, 0.3)
 // A cinder heap: a lumpy, slumped mound of clinker (a plain cone read as an untextured pyramid).
 const cinderHeap = (): Build => () => {
   const g = new THREE.IcosahedronGeometry(1, 1)
@@ -122,6 +124,15 @@ const cinderHeap = (): Build => () => {
   // (Dark warm clinker: flat grey stood out of CINDER's palette.)
   return col(g.translate(0, -0.02, 0), [0.2, 0.14, 0.12], 0.45)
 }
+// Clods: turf and soil torn up by the racing (what lies on a worn floor: debris, not growth).
+const clod = (c: [number, number, number], top: [number, number, number]): Build => () => {
+  const g = new THREE.DodecahedronGeometry(1, 0).scale(0.5, 0.26, 0.42).translate(0, 0.08, 0)
+  const n = g.attributes.position.count, a = new Float32Array(n * 3)
+  // (The upturned grass side: the top faces green, the rest soil.)
+  for (let i = 0; i < n; i++) { const t = g.attributes.position.getY(i) > 0.16 ? top : c, k = 1 - 0.3 * ((i * 7919) % 13) / 13; a[i * 3] = t[0] * k; a[i * 3 + 1] = t[1] * k; a[i * 3 + 2] = t[2] * k }
+  g.setAttribute('color', new THREE.BufferAttribute(a, 3))
+  return g
+}
 const lilies = (): Build => () => col(new THREE.CircleGeometry(0.7, 7).rotateX(-Math.PI / 2).translate(0, 0.05, 0), [0.25, 0.5, 0.2], 0.3)
 
 // ── per world (cell metres, grid cells across, chance a cell holds one, scale range) ──
@@ -131,7 +142,7 @@ const FLAG_COL: Record<string, [number, number, number]> = { desert: [1.0, 0.42,
 const FLAGS: Omit<Kind, 'seed'> = { name: 'flag', build: flag(FLAG_COL[BIOME] ?? [1, 0.4, 0.1]), cell: 60, grid: 24, density: 0.35, scale: [0.9, 1.2] }
 const KINDS: Record<string, Kind[]> = {
   desert: SEEDED([
-    { name: 'pebble', build: pebble([0.66, 0.36, 0.2]), cell: 4, grid: 66, density: 0.55, scale: [0.5, 1.6] },
+    { name: 'pebble', build: pebble([0.66, 0.36, 0.2]), cell: 4, grid: 66, density: 0.55, scale: [0.5, 1.6], debris: true },
     { name: 'rock', build: lowRock([0.6, 0.34, 0.2]), cell: 11, grid: 64, density: 0.3, scale: [0.4, 0.9] },
     { name: 'scrub', build: dryBush(), cell: 14, grid: 56, density: 0.5, scale: [0.6, 1.0], tilt: 0.1 },
     { name: 'bigscrub', build: dryBush(), cell: 11, grid: 64, density: 0.55, scale: [1.8, 3.2], tilt: 0.12 },
@@ -140,27 +151,30 @@ const KINDS: Record<string, Kind[]> = {
     FLAGS,
     // Big fly-through scrub in the 30-300 m band (what fills the frame at speed is what passes there).
     { name: 'giantscrub', build: dryBush(), cell: 26, grid: 26, density: 0.45, scale: [4.0, 6.5], tilt: 0.12, near: 18 },
+    { name: 'tallpillar', build: pillar([0.62, 0.34, 0.2]), cell: 70, grid: 16, density: 0.3, scale: [1.6, 2.8], far: true },
   ]),
   ice: SEEDED([
-    { name: 'chip', build: iceChip(), cell: 3.5, grid: 76, density: 0.7, scale: [0.6, 1.6] },
+    { name: 'chip', build: iceChip(), cell: 3.5, grid: 76, density: 0.7, scale: [0.6, 1.6], debris: true },
     { name: 'mound', build: mound([0.78, 0.86, 1.0], 1.6, 0.56), cell: 14, grid: 56, density: 0.6, scale: [0.6, 1.6] },
     { name: 'spike', build: spike(), cell: 30, grid: 24, density: 0.4, scale: [0.5, 1.3], near: 30, tilt: 0.25 },
     { name: 'shrub', build: bush([0.86, 0.92, 1.0], 1.0, 1.6), cell: 13, grid: 44, density: 0.5, scale: [1.0, 2.2] },
     { name: 'snowman', build: snowman(), cell: 110, grid: 14, density: 0.4, scale: [0.9, 1.15] },
     FLAGS,
     { name: 'drift', build: mound([0.84, 0.9, 1.0], 1.6, 0.56), cell: 24, grid: 28, density: 0.42, scale: [2.4, 4.4], near: 18 },
+    { name: 'tallspike', build: spike(), cell: 60, grid: 18, density: 0.35, scale: [1.6, 2.8], tilt: 0.2, far: true },
   ]),
   lava: SEEDED([
-    { name: 'pebble', build: pebble([0.26, 0.19, 0.16]), cell: 4, grid: 66, density: 0.5, scale: [0.5, 1.4] },
+    { name: 'pebble', build: pebble([0.26, 0.19, 0.16]), cell: 4, grid: 66, density: 0.5, scale: [0.5, 1.4], debris: true },
     { name: 'ash', build: () => col(new THREE.ConeGeometry(0.9, 0.36, 9, 1, true).translate(0, 0.16, 0), [0.5, 0.45, 0.42], 0.25), cell: 13, grid: 56, density: 0.4, scale: [0.6, 1.3] },
-    { name: 'ember', build: ember(), cell: 7, grid: 60, density: 0.35, scale: [0.35, 0.9], glow: true },
+    { name: 'ember', build: ember(), cell: 7, grid: 60, density: 0.35, scale: [0.35, 0.9], glow: true, debris: true },
     { name: 'pillar', build: pillar([0.14, 0.11, 0.1]), cell: 32, grid: 24, density: 0.4, scale: [0.6, 1.4], near: 30 },
-    { name: 'spatter', build: ember(), cell: 6, grid: 90, density: 0.45, scale: [0.6, 1.6], glow: true, where: 'river' },
+    { name: 'spatter', build: ember(), cell: 6, grid: 90, density: 0.45, scale: [0.6, 1.6], glow: true, where: 'river', debris: true },
     { name: 'charred', build: charred(), cell: 12, grid: 60, density: 0.5, scale: [1.0, 2.0], tilt: 0.15 },
     { name: 'vent', build: vent(), cell: 20, grid: 36, density: 0.4, scale: [0.8, 1.6], near: 14 },
     { name: 'ventglow', build: ventGlow(), cell: 20, grid: 36, density: 0.4, scale: [0.8, 1.6], glow: true, near: 14 },
     FLAGS,
     { name: 'heap', build: cinderHeap(), cell: 24, grid: 28, density: 0.5, scale: [3.0, 6.0], near: 18 },
+    { name: 'tallpillar', build: pillar([0.14, 0.11, 0.1]), cell: 70, grid: 16, density: 0.3, scale: [1.6, 2.6], far: true },
   ]),
   forest: SEEDED([
     { name: 'tuft', build: tuft([0.28, 0.46, 0.12], 0.7), cell: 5, grid: 60, density: 0.6, scale: [0.7, 1.6], tilt: 0.15 },
@@ -171,6 +185,7 @@ const KINDS: Record<string, Kind[]> = {
     { name: 'tallgrass', build: tallGrass([0.36, 0.56, 0.16]), cell: 8, grid: 80, density: 0.5, scale: [0.9, 1.8], tilt: 0.15 },
     FLAGS,
     { name: 'giantbush', build: bush([0.36, 0.62, 0.22], 0.9, 1.1), cell: 24, grid: 28, density: 0.45, scale: [3.2, 5.5], near: 18 },
+    { name: 'clod', build: clod([0.34, 0.23, 0.13], [0.3, 0.5, 0.16]), cell: 5, grid: 64, density: 0.5, scale: [0.6, 1.6], debris: true },
   ]),
   jungle: SEEDED([
     { name: 'fern', build: fern([0.2, 0.32, 0.14]), cell: 6, grid: 90, density: 0.55, scale: [0.7, 1.6], tilt: 0.1 },
@@ -180,6 +195,7 @@ const KINDS: Record<string, Kind[]> = {
     { name: 'bigfern', build: fern([0.18, 0.3, 0.12]), cell: 10, grid: 64, density: 0.5, scale: [2.0, 3.5], tilt: 0.1 },
     FLAGS,
     { name: 'hugefern', build: fern([0.16, 0.28, 0.11]), cell: 22, grid: 30, density: 0.5, scale: [4.5, 7.0], tilt: 0.1, near: 18 },
+    { name: 'clod', build: clod([0.18, 0.12, 0.07], [0.12, 0.24, 0.08]), cell: 5, grid: 64, density: 0.5, scale: [0.6, 1.6], debris: true },
   ]),
 }
 
@@ -258,17 +274,22 @@ vec3 scPos; float scS; float scA; float scT;`
         float h1 = scHash(c + ${k.seed.toFixed(2)}), h2 = scHash(c * 1.7 + ${(k.seed + 5.1).toFixed(2)}), h3 = scHash(c * 0.73 + ${(k.seed + 9.7).toFixed(2)});
         vec2 xz = (c + vec2(h2, h3)) * ${k.cell.toFixed(1)};
         float d = length(xz - uScatC);
-        float keep = step(h1, ${k.density.toFixed(3)}) * (1.0 - smoothstep(uScatR * 0.72, uScatR * 0.96, d)) * uScatOn;
+        // The course's wear (R: the floor races have worn, B: the corridor between the gates).
+        vec2 wuv = (xz - uTrackBox.xy) / uTrackBox.zw;
+        vec3 wear = (uTrackOn > 0.01 && wuv.x > 0.0 && wuv.y > 0.0 && wuv.x < 1.0 && wuv.y < 1.0) ? texture2D(tTrack, wuv).rgb : vec3(0.0);
+        ${k.where === 'river' || k.debris ? 'float dens = ' + k.density.toFixed(3) + ';' : `// Nothing grows on the worn floor; the growth gathers along its shoulder instead (a raced-over
+        // track with a thick verge, not bushes in the middle of the line).
+        float edge = smoothstep(0.02, 0.15, wear.r) * (1.0 - smoothstep(0.25, 0.6, wear.r));
+        float dens = min(0.95, ${k.density.toFixed(3)} * (1.0 + 1.3 * edge));`}
+        float keep = step(h1, dens) * (1.0 - smoothstep(uScatR * 0.72, uScatR * 0.96, d)) * uScatOn;
+        ${k.where === 'river' || k.debris ? '' : 'keep *= 1.0 - smoothstep(0.25, 0.6, wear.r);'}
+        ${k.far ? 'keep *= 1.0 - smoothstep(0.05, 0.4, wear.b); // (tall ones only outside the corridor: far, sparse)' : ''}
         // View cull (see update): the instance's angular half-width widens the cone a little.
         { vec2 dv = xz - uScatC; float dl = length(dv);
           if (dl > 40.0 && dot(dv, uScatView.xy) < (uScatView.z - ${(k.scale[1] * 3).toFixed(1)} / dl) * dl) keep = 0.0; }
-        ${k.scale[1] >= 4 && !k.near || k.near === 18 ? `// (Giants only: the camera rides the racing line, so clearing it of 2.5 m props halved the
-        // near field that sells the speed — measured 4.1% → 1.8% of the screen.) Giants off the racing line (the wear map's packing, where the simulated races ran): a bush
-        // in the exhaust or a drift dome dead ahead read as an obstacle you were about to hit.
-        { vec2 tuv = (xz - uTrackBox.xy) / uTrackBox.zw;
-          if (uTrackOn > 0.01 && keep > 0.0 && tuv.x > 0.0 && tuv.y > 0.0 && tuv.x < 1.0 && tuv.y < 1.0) keep *= 1.0 - smoothstep(0.35, 0.55, texture2D(tTrack, tuv).r); }` : ''}
         ${k.where === 'river' ? 'keep *= smoothstep(0.25, 0.45, riverAt(xz));' : BIOME === 'ice' ? '' : 'keep *= 1.0 - smoothstep(0.08, 0.2, riverAt(xz));'} // (POLAR SHELF's rivers are frozen: props sit on them, or whole stretches were bare)
         scS = mix(${k.scale[0].toFixed(2)}, ${k.scale[1].toFixed(2)}, fract(h1 * 13.7)) * keep;
+        ${k.where === 'river' || k.debris || k.far ? '' : '// The verge grows taller than the open ground.\n        scS *= 1.0 + 0.7 * edge;'}
         scA = h2 * 6.2832;
         scT = (h3 - 0.5) * ${(k.tilt ?? 0).toFixed(2)};
         // (An empty cell skips the terrain lookup: most cells are empty, and groundH is the costly part.)

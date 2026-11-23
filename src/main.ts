@@ -216,7 +216,10 @@ const clearAt = (x: number, z: number, r: number) => {
   return true
 }
 // (Clutter starts just past the gates: 90 m past them it covered ~1% of the screen, all at the horizon.)
-const world = new World(clearAt, (x, z, r) => course.distance(x, z) < 460 + r, (x, z, r) => course.distance(x, z) < course.gateHalf + 30 + r * 1.3)
+/** How tall something may stand at (x, z), × its full height: near the track ~30% (tall spires there
+ *  looked dangerous and walled off the view of the course), full from ~1.4 km past the gates. */
+const heightNearTrack = (x: number, z: number) => Math.min(1, 0.28 + Math.max(0, course.distance(x, z) - course.gateHalf) / 1400)
+const world = new World(clearAt, (x, z, r) => course.distance(x, z) < 460 + r, (x, z, r) => course.distance(x, z) < course.gateHalf + 30 + r * 1.3, heightNearTrack)
 bootMark('world')
 await breathe()
 world.addFixed(course.rocks)
@@ -307,12 +310,16 @@ if (BIOME !== 'desert') {
       if (course.distance(x, z) < 350 + W) continue
       const roll = rnd()
       const pSpike = zone === 'forest' ? 0.75 : zone === 'glacier' ? 0.35 : 0.3
-      const spike = roll < pSpike, sentinel = zone === 'forest' && roll > 0.94
+      // (Tall ones stand far out: a 120 m sentinel 400 m off the line read as a wall.)
+      const sentinel = zone === 'forest' && roll > 0.94 && course.distance(x, z) > course.gateHalf + 900
+      const spike = roll < pSpike || (zone === 'forest' && roll > 0.94 && !sentinel)
       const sc = 0.4 + 1.6 * rnd()
       const r = sentinel ? 30 + rnd() * 15 : spike ? 6 + rnd() * 8 : (12 + rnd() * 12) * sc
       const h = sentinel ? 120 + rnd() * 80 : spike ? (BIOME === 'jungle' ? 110 + rnd() * 80 : zone === 'forest' ? 45 + rnd() * 95 : 20 + rnd() * 40) * (q === 0 ? 1 : 0.55 + rnd() * 0.45) : GREEN ? r * (1.3 + rnd() * 0.8) : (10 + rnd() * 16) * sc
+      // Spires shorter the nearer the track (blocks keep their size: they are low).
+      const hk = spike && !sentinel ? heightNearTrack(x, z) : 1
       heroes.push({
-        x, z, r, h, kind: spike || sentinel ? 'spire' : 'butte', v: Math.floor(rnd() * 2.999), yaw: rnd() * 6.28,
+        x, z, r: r * Math.sqrt(hk), h: h * hk, kind: spike || sentinel ? 'spire' : 'butte', v: Math.floor(rnd() * 2.999), yaw: rnd() * 6.28,
         tilt: GREEN ? 0 : spike || sentinel ? (rnd() - 0.5) * 0.24 : BIOME === 'lava' ? 0 : (rnd() - 0.5) * 0.7, sink: spike || sentinel ? 0 : rnd() * 0.35,
       })
     }
