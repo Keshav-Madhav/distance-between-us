@@ -215,8 +215,8 @@ const clearAt = (x: number, z: number, r: number) => {
       if (course.distance(x + ix * REBASE, z + iz * REBASE) < (course.def.clearance ?? 850) + r) return false
   return true
 }
-// (Clutter keeps the same berth from the line as the course's own near field: 350 m past the gates.)
-const world = new World(clearAt, (x, z, r) => course.distance(x, z) < 460 + r, (x, z, r) => course.distance(x, z) < 350 + Math.max(0, course.gateHalf - 260) + r * 1.6)
+// (Clutter starts just past the gates: 90 m past them it covered ~1% of the screen, all at the horizon.)
+const world = new World(clearAt, (x, z, r) => course.distance(x, z) < 460 + r, (x, z, r) => course.distance(x, z) < course.gateHalf + 30 + r * 1.3)
 bootMark('world')
 await breathe()
 world.addFixed(course.rocks)
@@ -529,9 +529,10 @@ for (const [i, r] of race.racers.entries()) {
   for (let k = 0; k < nT; k++) {
     // (Rivals' a touch longer and brighter: clearly told apart at a glance, not a laser show.)
     // (Rivals' short: kilometre-long coloured ribbons on the ground read as painted lanes.)
-    const t = new Trail(r.ai ? 28 : 56, r.ai ? new THREE.Color(r.color).multiplyScalar(1.9) : new THREE.Color(1.6, 0.5, 0.12), true, r.ai ? 0.7 : 0.9)
+    // (A touch more of both — "a little more prominent, just slight": ~20% longer, wider and brighter.)
+    const t = new Trail(r.ai ? 34 : 64, r.ai ? new THREE.Color(r.color).multiplyScalar(2.2) : new THREE.Color(1.85, 0.58, 0.14), true, r.ai ? 0.85 : 1.0)
     // (Rivals' thinner: on the dark worlds their wide ribbons lay on the ground like painted lanes.)
-    t.width = r.ai ? 0.45 : 0.42
+    t.width = r.ai ? 0.53 : 0.48
     trail.push(t)
     scene.add(t.mesh)
   }
@@ -1439,6 +1440,21 @@ const fmtTime = (t: number) => `${Math.floor(t / 60)}:${String(Math.floor(t % 60
 const fmtLap = (t: number) => `${Math.floor(t / 60)}:${(t % 60).toFixed(3).padStart(6, '0')}`
 const ord = (n: number) => `${n}${n === 1 ? 'ST' : n === 2 ? 'ND' : n === 3 ? 'RD' : 'TH'}`
 
+/** The finish table. Redrawn every HUD tick while it shows: the rest of the field is still racing
+ *  (it was a snapshot — "12.4 KM TO GO" stayed frozen, and their finish times never appeared). */
+let resultsOpen = false, resHtml = ''
+function renderResults(): void {
+  const rows = [...race.racers].sort((a, b) => a.place - b.place)
+  // (A big field: the podium, then you and your neighbours — twenty rows ran off the screen.)
+  const myIdx = rows.findIndex((r) => !r.ai)
+  const keep = rows.map((_, i) => i < 3 || Math.abs(i - myIdx) <= 2 || rows.length <= 10)
+  let html = ''
+  rows.forEach((r, i) => {
+    if (!keep[i]) { if (keep[i - 1]) html += '<tr class="gap"><td></td><td>···</td><td></td></tr>'; return }
+    html += `<tr class="${r.ai ? '' : 'me'}${r.finished ? '' : ' racing'}"><td>${r.place}</td><td>${r.name}</td><td>${r.finished ? fmtLap(r.finishTime) : (race.toGo(r) / 1000).toFixed(1) + ' KM TO GO'}</td></tr>`
+  })
+  if (html !== resHtml) { resHtml = html; $('#res').innerHTML = html }
+}
 function showResults(): void {
   if (mode !== 'race') return
   overlay = true
@@ -1449,20 +1465,12 @@ function showResults(): void {
     const b = bestOf(course.def.id)
     if (b === null || me0.finishTime < b) { newBest = true; try { localStorage.setItem(bestKey(course.def.id), String(me0.finishTime)) } catch { /* blocked */ } }
   }
-  const rows = [...race.racers].sort((a, b) => a.place - b.place)
   $('#over-h').textContent = `${ord(race.racers[0].place)} PLACE`
   const md = me0.finished ? medalOf(course.def, me0.finishTime) : 0, [mg, ms, mb] = medals(course.def)
   const next = md === 3 ? '' : ` · NEXT: ${['BRONZE', 'SILVER', 'GOLD'][md]} ${fmtLap([mb, ms, mg][md])}`
   $('#over-stats').innerHTML = `${course.def.name} · ${course.def.km} KM IN ${fmtLap(race.racers[0].finishTime)}${newBest ? ' · <b style="color:#ffb070">NEW BEST</b>' : ''} · TOP SPEED MACH ${Math.max(runTop, player.topMach).toFixed(2)}<br/>${md ? `<span class="medalbig">${medalSvg(md, 44)}<b>${['', 'BRONZE', 'SILVER', 'GOLD'][md]} TIME</b><small style="opacity:.7;margin-left:10px;letter-spacing:.12em">UNDER ${fmtLap([0, mb, ms, mg][md])}</small></span>` : 'NO MEDAL TIME'}${next}`
-  // (A big field: the podium, then you and your neighbours — twenty rows ran off the screen.)
-  const myIdx = rows.findIndex((r) => !r.ai)
-  const keep = rows.map((_, i) => i < 3 || Math.abs(i - myIdx) <= 2 || rows.length <= 10)
-  let html = ''
-  rows.forEach((r, i) => {
-    if (!keep[i]) { if (keep[i - 1]) html += '<tr class="gap"><td></td><td>···</td><td></td></tr>'; return }
-    html += `<tr class="${r.ai ? '' : 'me'}"><td>${r.place}</td><td>${r.name}</td><td>${r.finished ? fmtLap(r.finishTime) : (race.toGo(r) / 1000).toFixed(1) + ' KM TO GO'}</td></tr>`
-  })
-  $('#res').innerHTML = html
+  resultsOpen = true
+  renderResults()
   $('#over .go').textContent = 'R TO RACE AGAIN · H FOR HUNT · ESC TO KEEP FLYING'
   $('#over').classList.remove('hide')
 }
@@ -1475,7 +1483,7 @@ function showHuntOver(won = false): void {
   if (newBest) try { localStorage.setItem('dbu-hunt-best', String(score)) } catch { /* blocked */ }
   $('#over-h').textContent = won ? 'HUNT COMPLETE' : 'SIGNAL LOST'
   $('#over-stats').innerHTML = `SCORE ${score}${newBest ? ' · <b style="color:#ffb070">NEW BEST</b>' : ` · BEST ${Math.max(best, score)}`}<br/>WAVE ${Math.min(huntWave, HUNT_WAVES.length)} / ${HUNT_WAVES.length} · ${kills} DOWN<br/>TOP SPEED MACH ${Math.max(runTop, flight.topMach).toFixed(2)} · TIME ${fmtTime(runTime)}`
-  $('#res').innerHTML = ''
+  $('#res').innerHTML = ''; resHtml = ''; resultsOpen = false
   $('#over .go').textContent = 'R TO RUN IT AGAIN · ENTER FOR A RACE'
   $('#over').classList.remove('hide')
 }
@@ -3007,6 +3015,7 @@ function updateHud(dt: number, slow: boolean): void {
 
   if (mode === 'race') {
     const me = race.racers[0]
+    if (slow && resultsOpen && !overEl.classList.contains('hide')) renderResults()
     if (slow) {
       $('#r-pos').innerHTML = `${me.place}<small>/${race.racers.length}</small>`
       // An overtake is an event: P3 → P2 pops (held a moment, so a jostle doesn't spam it), the box flashes.
@@ -3593,6 +3602,9 @@ const g = {
   director: (on: boolean) => { directorOn = on },
   setMach: (m: number) => { player.speed = m * MACH },
   skipCountdown: () => { race.countdown = 0.01 },
+  /** Tests: stop the simulation (no pause UI) and draw single frames on demand, for exact A/B diffs. */
+  hold: (v: boolean) => { paused = v },
+  draw: () => { post.render(0) },
   scatterVis: (v: boolean) => { scatter.group.visible = v; scatterForceOff = !v },
   force: (c: import('./player').Controls | null) => { forced = c },
   sound,
