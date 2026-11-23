@@ -71,7 +71,7 @@
   #lock .t { position: absolute; top: 64px; left: 50%; transform: translateX(-50%); font-size: 11px; letter-spacing: 0.3em; color: var(--red); white-space: nowrap; font-weight: 700; }
   #arrow { position: absolute; width: 0; height: 0; border-left: 14px solid transparent; border-right: 14px solid transparent; border-bottom: 26px solid var(--red); display: none; filter: drop-shadow(0 0 8px var(--red)); }
   #arrow .t { position: absolute; top: 30px; left: 50%; transform: translateX(-50%); color: var(--red); font-size: 11px; letter-spacing: 0.3em; font-weight: 700; white-space: nowrap; }
-  #flash { position: absolute; left: 50%; top: 30%; transform: translate(-50%, -50%); font-size: 34px; font-weight: 700; letter-spacing: 0.3em; opacity: 0; text-shadow: 0 0 30px rgba(255,150,60,0.9); white-space: nowrap; }
+  #flash { position: absolute; left: 50%; top: 34%; transform: translate(-50%, -50%); font-size: 34px; font-weight: 700; letter-spacing: 0.3em; opacity: 0; text-shadow: 0 0 30px rgba(255,150,60,0.9); white-space: nowrap; }
   /* (Warnings sit high, the WRECKED / MACH callout lower: they shared one strip and overprinted.) */
   #warn { position: absolute; left: 0; right: 0; top: 11vh; text-align: center; color: var(--red); font-weight: 700; opacity: 0; }
   #warn .big { font-size: 40px; letter-spacing: 0.35em; }
@@ -372,8 +372,9 @@
   #pipper::after { content: ''; position: absolute; left: 8px; top: 8px; width: 2px; height: 2px; background: #ffd23a; }
   #paintbox { position: absolute; left: 0; top: 0; width: 28vh; height: 28vh; margin: -14vh 0 0 -14vh; border: 1.5px dashed rgba(255,110,60,0.8); display: none; pointer-events: none; }
   /* Tips: one quiet line low on the left, fading in and out. */
-  #tip { position: absolute; left: 50%; bottom: calc(3.5vh + 150px); width: max-content; max-width: min(520px, 46vw); margin-left: 0; translate: -50% 0; padding: 8px 12px; font-size: 13px; letter-spacing: 0.03em; line-height: 1.45; color: #fff4ea; background: rgba(8,10,14,0.72); border-left: 2px solid var(--hot); opacity: 0; transform: translateY(6px); transition: opacity 0.4s, transform 0.4s; pointer-events: none; text-shadow: 0 1px 6px rgba(0,0,0,0.6); }
+  #tip { position: absolute; left: 50%; top: calc(15vh + 28px); width: max-content; max-width: min(520px, 46vw); margin-left: 0; translate: -50% 0; padding: 8px 12px; font-size: 13px; letter-spacing: 0.03em; line-height: 1.45; color: #fff4ea; background: rgba(8,10,14,0.72); border-left: 2px solid var(--hot); opacity: 0; transform: translateY(6px); transition: opacity 0.4s, transform 0.4s; pointer-events: none; text-shadow: 0 1px 6px rgba(0,0,0,0.6); }
   #tip.on { opacity: 1; transform: none; }
+  body.warning #tip.on { opacity: 0; } /* (a warning or callout owns the top while it shows) */
   #tip .kc, #pause .kc { display: inline-block; padding: 0 5px; margin: 0 1px; border: 1px solid rgba(255,255,255,0.4); border-radius: 3px; font-size: 11px; line-height: 1.45; }
   /* HUNT feedback: a hit marker on the nose (white on a hit, gold on a kill); a red arc toward fire. */
   #hitmark { position: absolute; left: 50%; top: 50%; width: 30px; height: 30px; margin: -15px 0 0 -15px; opacity: 0; pointer-events: none; transition: opacity 0.18s; }

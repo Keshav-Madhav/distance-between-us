@@ -978,47 +978,80 @@ export class Course {
       const laps = def.laps ?? 1
       const i0 = def.loop ? Math.max(0, startI - 40) : 0
       const i1 = def.loop ? Math.min(n - 1, startI + Math.round((finishI - startI) / laps) + 40) : n - 1
-      const pos: number[] = [], uv: number[] = [], col: number[] = [], idx: number[] = []
-      const strip = (lat: number, w: number, c: [number, number, number], dash: boolean) => {
-        const base = pos.length / 3
-        let along = 0
-        for (let i = i0; i <= i1; i++) {
-          const [tx, tz] = this.tangent(i)
-          for (const e of [-1, 1]) {
-            const l = lat + e * w / 2
-            const x = this.px[i] + tz * l, z = this.pz[i] - tx * l
-            pos.push(x, groundH(x, z) + 0.35, z)
-            uv.push(e * 0.5 + 0.5, dash ? along / 80 : -1)
-            col.push(...c)
-          }
-          if (i > i0) { const a = base + (i - i0 - 1) * 2; idx.push(a, a + 2, a + 1, a + 1, a + 2, a + 3) }
-          along += STEP
+      // THE ROAD: a racing surface laid on the ground the whole width between the gates — its own
+      // material per world, lane lines running with you (lengthwise lines don't strobe at Mach 6),
+      // glowing edges, chevrons pointing on every 300 m. (Before, the course was the same sand as
+      // everything round it, a thin line at each edge: it never read as a road.)
+      const COLS = 26, half = this.gateHalf - 6
+      const pos: number[] = [], uv: number[] = [], idx: number[] = []
+      let along = 0
+      for (let i = i0; i <= i1; i++) {
+        const [tx, tz] = this.tangent(i)
+        for (let c = 0; c <= COLS; c++) {
+          const u = c / COLS, l = (u * 2 - 1) * half
+          const x = this.px[i] + tz * l, z = this.pz[i] - tx * l
+          pos.push(x, groundH(x, z) + 0.3, z)
+          uv.push(u, along)
         }
+        if (i > i0) {
+          const r0 = (i - i0 - 1) * (COLS + 1), r1 = (i - i0) * (COLS + 1)
+          for (let c = 0; c < COLS; c++) idx.push(r0 + c, r1 + c, r0 + c + 1, r0 + c + 1, r1 + c, r1 + c + 1)
+        }
+        along += STEP
       }
-      // (Wider and brighter: at Mach 6 the 7 m lines were too thin to steer by.)
-      strip(-this.gateHalf + 12, 12, [2.8, 0.95, 0.25], false)
-      strip(this.gateHalf - 12, 12, [2.0, 2.2, 2.6], false)
-      strip(0, 2.2, [0.9, 1.1, 1.4], true)
       const g = new THREE.BufferGeometry()
       g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3))
       g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2))
-      g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3))
       g.setIndex(idx)
+      // Per world: surface colour, its alpha over the ground, edge glow, lane-line colour.
+      const RS: Record<string, [string, string, string, string]> = {
+        desert: ['vec3(0.24, 0.13, 0.09)', '0.78', 'vec3(3.0, 1.1, 0.3)', 'vec3(0.95, 0.85, 0.7)'],
+        ice: ['vec3(0.42, 0.56, 0.78)', '0.5', 'vec3(0.6, 1.9, 3.0)', 'vec3(0.85, 0.95, 1.0)'],
+        lava: ['vec3(0.07, 0.06, 0.06)', '0.8', 'vec3(3.2, 0.9, 0.2)', 'vec3(1.0, 0.6, 0.25)'],
+        forest: ['vec3(0.26, 0.24, 0.2)', '0.7', 'vec3(1.2, 2.4, 1.0)', 'vec3(0.95, 0.95, 0.88)'],
+        jungle: ['vec3(0.12, 0.1, 0.07)', '0.72', 'vec3(1.0, 2.2, 1.3)', 'vec3(0.8, 0.9, 0.7)'],
+      }
+      const [rc, ra, eg, lc] = RS[BIOME] ?? RS.desert
       const mat = new THREE.ShaderMaterial({
-        transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
-        vertexShader: 'attribute vec3 color; varying vec2 vUv; varying vec3 vC; varying vec3 vW; void main(){ vUv = uv; vC = color; vW = position; gl_Position = projectionMatrix * viewMatrix * vec4(position,1.0); }',
+        transparent: true, depthWrite: false,
+        vertexShader: 'varying vec2 vUv; varying vec3 vW; void main(){ vUv = uv; vW = position; gl_Position = projectionMatrix * viewMatrix * vec4(position,1.0); }',
         fragmentShader: /* glsl */ `
-          varying vec2 vUv; varying vec3 vC; varying vec3 vW;
+          varying vec2 vUv; varying vec3 vW;
           ${SKY_FOG_ONLY}
+          float rh(vec2 p) { p = fract(p * vec2(0.1031, 0.103)); p += dot(p, p.yx + 33.3); return fract((p.x + p.y) * p.x); }
           void main() {
-            float x = abs(vUv.x - 0.5) * 2.0;
-            float a = 1.0 - smoothstep(0.35, 1.0, x);
-            // The middle line: 30 m dashes every 80 m.
-            if (vUv.y >= 0.0) a *= step(fract(vUv.y), 0.375);
-            // (Thin lines far off alias into flicker: they fade out with distance as well as the fog.)
             float d = length(vW - cameraPosition);
-            a *= (1.0 - fogAmount(vW)) * (1.0 - smoothstep(2500.0, 6000.0, d));
-            gl_FragColor = vec4(vC * a * 0.32, 1.0); // (softer: at 0.55 they read as debug lines)
+            float aaW = clamp(d * 0.0016, 0.0, 1.0);           // lines widen with distance (no shimmer)
+            float lat = (vUv.x * 2.0 - 1.0) * ${half.toFixed(1)}; // metres from the centre line
+            float ax = abs(lat);
+            // Surface: worn darker down the lanes, lighter between, a slow mottle so it isn't flat.
+            vec3 c = ${rc};
+            float n = rh(floor(vW.xz / 9.0)) * 0.5 + rh(floor(vW.xz / 37.0)) * 0.5;
+            c *= 0.86 + 0.22 * n;
+            c *= 1.0 - 0.18 * (1.0 - smoothstep(10.0, 40.0, abs(mod(lat + 30.0, 60.0) - 30.0)));
+            float a = ${ra} * smoothstep(${half.toFixed(1)}, ${(half - 14).toFixed(1)}, ax);
+            // Lane lines every 60 m (lengthwise), a double line at the centre.
+            float lw = 0.35 + aaW * 2.5;
+            float lane = 1.0 - smoothstep(lw, lw + 0.6, abs(mod(lat + 30.0, 60.0) - 30.0));
+            lane *= step(14.0, ax);
+            float ctr = 1.0 - smoothstep(lw, lw + 0.6, abs(ax - 1.6));
+            // Dashes on the lane lines (long, 24 m in 40): rush past without strobing.
+            lane *= step(fract(vUv.y / 40.0), 0.6);
+            vec3 L = ${lc};
+            c = mix(c, L, max(lane * 0.75, ctr * 0.9));
+            a = max(a, max(lane, ctr) * 0.85 * step(ax, ${(half - 8).toFixed(1)}));
+            // Chevrons every 300 m, pointing on.
+            float cy = mod(vUv.y, 300.0);
+            float chev = abs(cy - 10.0 - ax * 0.22) < 3.5 + aaW * 4.0 && ax < 110.0 ? 1.0 : 0.0;
+            c = mix(c, L, chev * 0.55);
+            a = max(a, chev * 0.6);
+            // Glowing edges.
+            float edge = 1.0 - smoothstep(0.0, 3.0 + aaW * 6.0, abs(ax - ${(half - 10).toFixed(1)}));
+            vec3 col = c + ${eg} * edge * 0.55;
+            a = max(a, edge * 0.9);
+            float f = fogAmount(vW);
+            a *= (1.0 - f) * (1.0 - smoothstep(4000.0, 9000.0, d));
+            gl_FragColor = vec4(col, a);
           }`,
       })
       const mesh = new THREE.Mesh(g, mat)

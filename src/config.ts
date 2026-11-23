@@ -74,15 +74,16 @@ export const CFG = {
     fovBase: 68,
     /** Settings slider. */
     fovMax: 98,
-    distBase: 10.5,
+    // (Lower and closer: from 4.3 m up the ground's rush was faint; at 3.2 it streams past.)
+    distBase: 9.4,
     distBoost: 2.5,
-    height: 4.3,
+    height: 3.2,
     /** Heading lag (1/s): the whip on turns. */
     yawFollow: 6.5,
     rollFollow: 0.22,
     shakeMax: 0.055,
     /** Constant rumble trauma at Mach 6. */
-    speedTrauma: 0.2,
+    speedTrauma: 0.3,
     reduceShake: false,
   },
   post: {
