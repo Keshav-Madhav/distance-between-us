@@ -526,8 +526,10 @@ race.racers.forEach((r, i) => {
     sparks(x, y, z, v, Math.round(40 + sev * 60), 1.4)
     wreckage.burst(r.p.pos.x, r.p.pos.y, r.p.pos.z, v.x, v.y, v.z, Math.round(10 + sev * 10), 60 + sev * 50, paint.body, paint.trim)
     fx.dust(x, y - 2, z, nx * 50 + v.x * 0.3, nz * 50 + v.z * 0.3, Math.round(18 + sev * 20), 14 + sev * 10, 40)
-    fx.explosion(x, y, z, v.x * 0.3, 10, v.z * 0.3, destroyed ? 2.4 : 1 + sev * 0.5)
-    fx.explosion(x + nx * 6, y + 4, z + nz * 6, v.x * 0.5, 20, v.z * 0.5, 0.8)
+    // (Your own: smaller — right in front of the chase camera it whited the whole screen out.)
+    const ek = mine ? 0.5 : 1
+    fx.explosion(x, y, z, v.x * 0.3, 10, v.z * 0.3, (destroyed ? 2.4 : 1 + sev * 0.5) * ek)
+    fx.explosion(x + nx * 6, y + 4, z + nz * 6, v.x * 0.5, 20, v.z * 0.5, 0.8 * ek)
     shock.ground(x, z, 0.7 + sev * 0.3, 1.2, true)
     shock.air(r.p.pos, r.p.fwd, r.p.vel, 0.8 + sev * 0.2, 1)
     sound.wreck(Math.min(1.5, sev), mine ? 0 : dist)

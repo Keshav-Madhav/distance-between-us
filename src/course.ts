@@ -919,14 +919,16 @@ export class Course {
       side: THREE.DoubleSide,
       blending: THREE.AdditiveBlending,
       uniforms: { uTime: { value: 0 }, uColor: { value: new THREE.Color(0.2, 1.4, 2.0) } },
-      vertexShader: 'varying vec2 vUv; varying vec3 vN; varying vec3 vV; void main(){ vUv = uv; vec4 mv = modelViewMatrix * vec4(position,1.0); vN = normalize(normalMatrix * normal); vV = normalize(-mv.xyz); gl_Position = projectionMatrix * mv; }',
+      vertexShader: 'varying vec2 vUv; varying vec3 vN; varying vec3 vV; varying vec3 vWp; void main(){ vUv = uv; vWp = (modelMatrix * vec4(position,1.0)).xyz; vec4 mv = modelViewMatrix * vec4(position,1.0); vN = normalize(normalMatrix * normal); vV = normalize(-mv.xyz); gl_Position = projectionMatrix * mv; }',
       fragmentShader: /* glsl */ `
-        uniform float uTime; uniform vec3 uColor; varying vec2 vUv; varying vec3 vN; varying vec3 vV;
+        uniform float uTime; uniform vec3 uColor; varying vec2 vUv; varying vec3 vN; varying vec3 vV; varying vec3 vWp;
         void main() {
           float core = pow(abs(dot(vN, vV)), 2.0);
           float up = pow(clamp(1.0 - vUv.y, 0.0, 1.0), 1.4);
           float pulse = 0.8 + 0.2 * sin(uTime * 5.0 - vUv.y * 30.0);
-          gl_FragColor = vec4(uColor * core * up * pulse * 1.3, 1.0);
+          // (Gone as you close in: at a few hundred metres the 2.4 km pillars slashed across the screen.)
+          float nearP = smoothstep(140.0, 520.0, length(vWp.xz - cameraPosition.xz));
+          gl_FragColor = vec4(uColor * core * up * pulse * 1.3 * nearP, 1.0);
         }`,
     })
     const pillarGeo = new THREE.CylinderGeometry(7, 7, 2400, 16, 1, true)
