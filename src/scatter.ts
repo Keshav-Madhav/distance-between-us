@@ -135,6 +135,26 @@ const clod = (c: [number, number, number], top: [number, number, number]): Build
   g.setAttribute('color', new THREE.BufferAttribute(a, 3))
   return g
 }
+// CINDER's verge: yellow sulphur crust, glowing cracks, glossy black glass.
+const sulphur = (): Build => () => {
+  const g = new THREE.CircleGeometry(0.9, 7).rotateX(-Math.PI / 2)
+  const p = g.attributes.position
+  for (let i = 0; i < p.count; i++) { const a = Math.atan2(p.getZ(i), p.getX(i)); const k = 0.7 + 0.35 * Math.sin(a * 3 + 1) ; p.setXYZ(i, p.getX(i) * k, 0.04 + 0.05 * (1 - Math.hypot(p.getX(i), p.getZ(i))), p.getZ(i) * k * 0.7) }
+  return col(g, [0.86, 0.74, 0.22], 0.3)
+}
+const crack = (): Build => () => {
+  // A jagged glowing seam lying on the ground (three thin bent segments).
+  const gs: THREE.BufferGeometry[] = []
+  let x = -1.2, z = 0
+  for (let i = 0; i < 3; i++) {
+    const nx = x + 0.8, nz = z + (i % 2 ? 0.3 : -0.25)
+    const len = Math.hypot(nx - x, nz - z), ang = Math.atan2(nz - z, nx - x)
+    gs.push(col(new THREE.PlaneGeometry(len, 0.07).rotateX(-Math.PI / 2).rotateY(-ang).translate((x + nx) / 2, 0.03, (z + nz) / 2), [3.0, 0.9, 0.18]))
+    x = nx; z = nz
+  }
+  return merge(gs)
+}
+const shard = (c: [number, number, number]): Build => () => col(new THREE.ConeGeometry(0.22, 0.9, 4).translate(0, 0.4, 0), c, 0.2)
 const lilies = (): Build => () => col(new THREE.CircleGeometry(0.7, 7).rotateX(-Math.PI / 2).translate(0, 0.05, 0), [0.25, 0.5, 0.2], 0.3)
 
 // ── per world (cell metres, grid cells across, chance a cell holds one, scale range) ──
@@ -177,6 +197,12 @@ const KINDS: Record<string, Kind[]> = {
     FLAGS,
     { name: 'heap', build: cinderHeap(), cell: 24, grid: 28, density: 0.5, scale: [3.0, 6.0], near: 18 },
     { name: 'tallpillar', build: pillar([0.14, 0.11, 0.1]), cell: 70, grid: 16, density: 0.3, scale: [1.6, 2.6], far: true },
+    // Contrast for a dark world (its props were black on black: 0.7-1.4% of the screen at speed):
+    { name: 'sulphur', build: sulphur(), cell: 9, grid: 56, density: 0.4, scale: [0.8, 2.4] },
+    // (Pumice and heat cracks are debris: they belong on a raced lava floor — CINDER's worn floor fills the view.)
+    { name: 'pumice', build: lowRock([0.56, 0.52, 0.48]), cell: 8, grid: 60, density: 0.35, scale: [0.4, 1.2], debris: true },
+    { name: 'crack', build: crack(), cell: 9, grid: 60, density: 0.5, scale: [1.2, 3.0], glow: true, debris: true },
+    { name: 'obsidian', build: shard([0.05, 0.05, 0.08]), cell: 8, grid: 60, density: 0.35, scale: [0.5, 1.4], tilt: 0.3 },
   ]),
   forest: SEEDED([
     { name: 'tuft', build: tuft([0.28, 0.46, 0.12], 0.7), cell: 5, grid: 60, density: 0.6, scale: [0.7, 1.6], tilt: 0.15 },
