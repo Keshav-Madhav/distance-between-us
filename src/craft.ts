@@ -15,6 +15,9 @@ import { GLB_MODELS, loadShipGlb } from './glbship'
 export const MODELS = ['VANGUARD', 'BULWARK', 'LANCE', 'ARROW', 'BRUTE', 'NEEDLE'] as const
 
 const LOD_DIST = 260
+/** Past this the whole ship is two draws (lit, glowing), its colours baked in: ~9 px tall here. */
+const FAR_DIST = 600
+const GLOW_KEYS = new Set(['glow', 'hot', 'neon'])
 const NOZZLE_Z = -4.45
 
 export interface Paint {
@@ -235,6 +238,8 @@ export class Craft {
     mats.neon = new THREE.MeshBasicMaterial({ color: new THREE.Color(paint.trim).multiplyScalar(2.4) })
 
     this.mats = mats
+    this.farLit.envMap = env
+    patchStandard(this.farLit)
     this.numMat = new THREE.MeshBasicMaterial({ map: numberTexture(paint.number, '#' + new THREE.Color(paint.trim).getHexString()), transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2 })
     this.flameMat = flameMaterial(new THREE.Color(2.2, 1.5, 0.8), new THREE.Color(2.0, 0.5, 0.1))
     this.innerMat = flameMaterial(new THREE.Color(2.6, 2.3, 2.0), new THREE.Color(1.3, 1.1, 1.6))
@@ -304,6 +309,7 @@ export class Craft {
     this.numMat.map?.dispose()
     this.numMat.map = numberTexture(p.number, '#' + new THREE.Color(p.trim).getHexString())
     this.numMat.needsUpdate = true
+    this.farColours()
   }
 
   /** Build (or rebuild, swapping ship live) the shape: hull, numbers, low detail, flames. */
@@ -315,6 +321,7 @@ export class Craft {
       for (const c of [...grp.children]) { grp.remove(c); if ((c as THREE.Mesh).geometry instanceof THREE.PlaneGeometry) (c as THREE.Mesh).geometry.dispose() }
     }
     for (const f of this.flames) { this.body.remove(f); f.geometry.dispose() }
+    this.numbers = []
     this.flames = []
     const G = modelGeo(model)
     const spec = G.spec
@@ -332,8 +339,9 @@ export class Craft {
       // (tilt = the fin's outward lean; the same sign both sides — sgn·tilt sank the right one into its fin.)
       plane.rotateX(N.tilt)
       this.hi.add(plane)
+      this.numbers.push(plane)
     }
-    for (const [key, g] of G.lo) this.lo.add(new THREE.Mesh(g, this.mats[key]))
+    this.buildFar(G.hi)
     // Flames: two draws for all three nozzles.
     for (const [r, m] of [[0.48, this.flameMat], [0.26, this.innerMat]] as const) {
       const f = new THREE.Mesh(flameGeometry(r, spec.nozzles, spec.nozzleZ, spec.nozzleR), m)
@@ -345,6 +353,49 @@ export class Craft {
     }
   }
 
+  private numbers: THREE.Mesh[] = []
+  private farLit = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.3, metalness: 0.5, envMapIntensity: 1.3 })
+  private farGlow = new THREE.MeshBasicMaterial({ vertexColors: true })
+  private farParts: { geo: THREE.BufferGeometry; spans: [string, number, number][] }[] = []
+  /** The far ship: every part merged into one lit and one glowing mesh, each part's colour per vertex. */
+  private buildFar(parts: [string, THREE.BufferGeometry][]): void {
+    for (const f of this.farParts) f.geo.dispose()
+    this.farParts = []
+    for (const glowing of [false, true]) {
+      const list: THREE.BufferGeometry[] = [], spans: [string, number, number][] = []
+      let at = 0
+      for (const [key, g] of parts) {
+        if (GLOW_KEYS.has(key) !== glowing) continue
+        const c = new THREE.BufferGeometry()
+        c.setAttribute('position', g.attributes.position)
+        if (g.attributes.normal) c.setAttribute('normal', g.attributes.normal)
+        else c.computeVertexNormals()
+        const n = g.attributes.position.count
+        c.setIndex(g.index ?? Array.from({ length: n }, (_, i) => i))
+        list.push(c); spans.push([key, at, n]); at += n
+      }
+      if (!list.length) continue
+      const geo = mergeGeometries(list)
+      geo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(at * 3), 3))
+      const mesh = new THREE.Mesh(geo, glowing ? this.farGlow : this.farLit)
+      this.lo.add(mesh)
+      this.farParts.push({ geo, spans })
+    }
+    this.farColours()
+  }
+  private farColours(): void {
+    const glass = new THREE.Color(0x2a3b4c)
+    for (const { geo, spans } of this.farParts) {
+      const col = geo.attributes.color as THREE.BufferAttribute
+      for (const [key, at, n] of spans) {
+        const m = this.mats[key] as THREE.MeshStandardMaterial | undefined
+        const c = key === 'glass' ? glass : m?.color ?? glass
+        for (let i = at; i < at + n; i++) col.setXYZ(i, c.r, c.g, c.b)
+      }
+      col.needsUpdate = true
+    }
+  }
+
   private readonly charMats: { m: THREE.MeshStandardMaterial; base: THREE.Color }[] = []
   private char = 0
   /** Scorch the paint toward soot (0 clean … 1 burnt). */
@@ -352,12 +403,16 @@ export class Craft {
     if (Math.abs(a - this.char) < 0.01) return
     this.char = a
     for (const { m, base } of this.charMats) m.color.copy(base).lerp(_soot, a * 0.85)
+    this.farLit.color.setScalar(1 - a * 0.8)
   }
 
   /** Detail by distance from the camera. */
   lod(cam: THREE.Vector3): void {
-    const far = this.root.position.distanceToSquared(cam) > LOD_DIST * LOD_DIST
+    const d2 = this.root.position.distanceToSquared(cam)
+    const far = d2 > FAR_DIST * FAR_DIST
+    // (Each part its own draw — ~12 a ship, 120 of a frame's ~230 — even kilometres out, a pixel tall.)
     this.hi.visible = !far
+    for (const n of this.numbers) n.visible = d2 < LOD_DIST * LOD_DIST
     this.lo.visible = far
   }
 

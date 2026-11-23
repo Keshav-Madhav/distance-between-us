@@ -100,7 +100,9 @@ const FINAL = {
       vec2 ca = d * uAberr * r * 2.0;
       vec3 c;
       if (amt < 0.0012) {
-        c = vec3(texture2D(tDiffuse, uv + ca).r, texture2D(tDiffuse, uv).g, texture2D(tDiffuse, uv - ca).b);
+        // (No fringe to speak of — under a quarter texel, the middle of the frame at rest: one read.)
+        if (dot(ca, ca) < dot(uTexel, uTexel) * 0.03) c = texture2D(tDiffuse, uv).rgb;
+        else c = vec3(texture2D(tDiffuse, uv + ca).r, texture2D(tDiffuse, uv).g, texture2D(tDiffuse, uv - ca).b);
       } else {
         c = vec3(0.0);
         float wsum = 0.0;
@@ -120,7 +122,9 @@ const FINAL = {
       }
       // Sharpen (contrast-adaptive, in a reversible tone curve so HDR highlights don't ring), weakest
       // where the motion blur is working — the centre stays crisp, the edges stay smooth.
-      if (uSharpen > 0.001) {
+      // (Its weight is zero where the motion blur works: the four reads skipped there, not just multiplied out.)
+      float shW = uSharpen * (1.0 - smoothstep(0.0, 0.03, amt));
+      if (shW > 0.001) {
         vec3 e = c / (1.0 + c);
         vec3 nb = texture2D(tDiffuse, uv + vec2(0.0, -uTexel.y)).rgb; nb /= 1.0 + nb;
         vec3 nd = texture2D(tDiffuse, uv + vec2(-uTexel.x, 0.0)).rgb; nd /= 1.0 + nd;
@@ -128,7 +132,7 @@ const FINAL = {
         vec3 nh = texture2D(tDiffuse, uv + vec2(0.0, uTexel.y)).rgb; nh /= 1.0 + nh;
         vec3 mn = min(min(nb, nd), min(nf, nh)), mx = max(max(nb, nd), max(nf, nh));
         vec3 amp = clamp(min(mn, 1.0 - mx) / max(mx, 1e-4), 0.0, 1.0);
-        float w = -0.2 * uSharpen * (1.0 - smoothstep(0.0, 0.03, amt)) * dot(sqrt(amp), vec3(0.333));
+        float w = -0.2 * shW * dot(sqrt(amp), vec3(0.333));
         vec3 sh = clamp((e + (nb + nd + nf + nh) * w) / (1.0 + 4.0 * w), 0.0, 0.999);
         c = sh / (1.0 - sh);
       }
