@@ -1872,6 +1872,7 @@ function drawSysMarks(): void {
 post.attachSpace(space.scene, camera)
 /** Climbing: the sky dome thins, the flat world dissolves into the planet, the haze thins. */
 let spaceOff = false
+let spaceMusic = false
 /** Tests: hold a speed (m/s; 0 = off). */
 let testSpeed = 0
 function updateSpace(): void {
@@ -2812,6 +2813,9 @@ function frame(now: number): void {
     if (player.crashing) crashBreak = 2
   } else if (mode === 'hunt' || mode === 'free') sound.setSection(player.crashing ? 'break' : 'drop')
   else sound.setSection('title')
+  // The score: the space one above the air (with a little hysteresis) and in ORBIT.
+  if (mode === 'free') sound.setSpace(IN_SYSTEM || (space.vac > 0.85 ? true : space.vac < 0.6 ? false : spaceMusic)); else sound.setSpace(false)
+  spaceMusic = mode === 'free' && (IN_SYSTEM || space.vac > 0.7)
   sound.update(realDt, engineMach, player.boost, player.brake, mode === 'hunt' ? combat.lockProgress : 0, mode === 'hunt' && combat.locked, play && !player.dead && !player.crashing, heat, player.burning, rivalVoices, mode === 'free' ? space.vac : 0)
 
   sunShadow.enabled = tier !== 'low' && settings.shadows
@@ -3350,7 +3354,9 @@ addEventListener('keydown', (e) => {
     }
   }
 })
-addEventListener('mousedown', () => sound.start())
+// The first input of any kind starts the sound (browsers allow audio only after one): a key counts
+// too — the menu stayed silent for anyone who never clicked.
+for (const ev of ['pointerdown', 'keydown', 'touchstart'] as const) addEventListener(ev, () => sound.start(), { passive: true })
 document.addEventListener('visibilitychange', () => { sound.suspend(document.hidden); last = performance.now() })
 canvas.addEventListener('webglcontextlost', (e) => { e.preventDefault(); paused = true })
 canvas.addEventListener('webglcontextrestored', () => { paused = false; last = performance.now() })
@@ -3438,6 +3444,9 @@ if (window.parent !== window) {
     // cross-fade (dbu-arrive).
     else if (go === 'live-arrive' || go === 'live-sys') { menuMode = 'free'; showCourse(); applyHandoff({ alt: 1500000, speed: 2e5, pitch: -0.3, sx: 1, sy: 0.3, sz: 0, biome: 'desert', keys: [] }) }
     window.parent.postMessage({ type: 'dbu-ready' }, location.origin)
+    // A world loaded behind the one you were in: its music starts now (the frame may play — the page
+    // was already interacted with — but nothing here had been touched yet, so the menu was silent).
+    sound.start()
   }))
 }
 

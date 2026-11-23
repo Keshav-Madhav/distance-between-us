@@ -32,9 +32,18 @@ export const TRACKS: Record<string, { name: string; file: string; climax?: strin
   'cool-highway': { name: 'COOL HIGHWAY', file: 'cool-highway', climax: 'cool-highway-climax' },
   drive: { name: 'DRIVE', file: 'drive' },
   hyperflight: { name: 'HYPERFLIGHT', file: 'hyperflight' },
+  'sky-blue-street': { name: 'SKY BLUE STREET', file: 'sky-blue-street', climax: 'sky-blue-street-climax' },
+  'fever-stadium': { name: 'FEVER STADIUM', file: 'fever-stadium', climax: 'fever-stadium-climax' },
+  'darkness-road': { name: 'DARKNESS ROAD', file: 'darkness-road', climax: 'darkness-road-climax' },
+  'cool-city': { name: 'COOL CITY', file: 'cool-city' },
+  'sky-trance': { name: 'SKY TRANCE', file: 'sky-trance' },
+  'space-adventure': { name: 'SPACE ADVENTURE', file: 'space-adventure' },
+  'space-battle': { name: 'SPACE BATTLE', file: 'space-battle' },
 }
+/** Above the air (FREE ROAM) and in ORBIT the score becomes this. */
+const SPACE_TRACK = 'space-adventure'
 /** Each course's own track (AUTO). */
-export const COURSE_TRACK: Record<string, string> = { sprint: 'neon-circuit', 'dry-river': 'hot-roadway', drag: 'cool-highway', circuit: 'drive', oval: 'cool-highway', canyon: 'hyperflight', frostline: 'drive', icefall: 'hyperflight', caldera: 'hot-roadway', faultline: 'neon-circuit', greenway: 'drive', riverrun: 'cool-highway', timberline: 'hyperflight', obsidian: 'neon-circuit', whiteout: 'hot-roadway' }
+export const COURSE_TRACK: Record<string, string> = { sprint: 'neon-circuit', 'dry-river': 'hot-roadway', drag: 'cool-highway', circuit: 'drive', oval: 'fever-stadium', canyon: 'hyperflight', frostline: 'drive', icefall: 'sky-blue-street', caldera: 'hot-roadway', faultline: 'darkness-road', greenway: 'cool-city', riverrun: 'sky-blue-street', timberline: 'hyperflight', obsidian: 'fever-stadium', whiteout: 'cool-highway', mistriver: 'darkness-road', understory: 'sky-trance', orbit: 'space-adventure' }
 const MENU_TRACK = 'empty-stretch'
 
 export interface RivalVoice { dist: number; closing: number; pan: number; mach: number }
@@ -111,6 +120,9 @@ export class Sound {
   /** 'auto' (the course's track), 'synth' (the old generated score), or a TRACKS id. */
   musicChoice = 'auto'
   private courseTrack = 'neon-circuit'
+  private inSpace = false
+  /** Out of the air (FREE ROAM, ORBIT): the space score; back down, the world's own. */
+  setSpace(on: boolean): void { if (on === this.inSpace) return; this.inSpace = on; this.refreshMusic() }
 
   start(): void {
     if (this.ctx) { void this.ctx.resume(); return }
@@ -500,7 +512,7 @@ export class Sound {
     const id = this.musicChoice === 'auto' ? this.courseTrack : this.musicChoice
     const tr = TRACKS[id] ?? TRACKS['neon-circuit']
     const sec = this.section
-    const want = sec === 'title' || sec === 'outro' ? MENU_TRACK : sec === 'build' ? null : sec === 'final' && tr.climax ? tr.climax : tr.file
+    const want = this.inSpace && sec !== 'title' && sec !== 'outro' ? SPACE_TRACK : sec === 'title' || sec === 'outro' ? MENU_TRACK : sec === 'build' ? null : sec === 'final' && tr.climax ? tr.climax : tr.file
     void this.playFile(want)
   }
 

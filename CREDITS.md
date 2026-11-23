@@ -7,7 +7,7 @@
 
 ## Music (CC0 — public domain, from OpenGameArt.org)
 
-- "Neon Sign Circuit", "Hot Roadway", "Cool Highway" (each with its climax version) — MintoDog
+- "Neon Sign Circuit", "Hot Roadway", "Cool Highway", "Sky Blue Street", "Fever Stadium", "Darkness Road" (each with its climax version), "Cool City", "Sky Trance", "Space Adventure", "Space Battle" — MintoDog
 - "Drive", "Empty Stretch" (the menu) — Zane Little Music
 - "Hyperflight Racing" — cynicmusic
 
