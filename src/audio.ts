@@ -43,7 +43,7 @@ export const TRACKS: Record<string, { name: string; file: string; climax?: strin
 /** Above the air (FREE ROAM) and in ORBIT the score becomes this. */
 const SPACE_TRACK = 'space-adventure'
 /** Each course's own track (AUTO). */
-export const COURSE_TRACK: Record<string, string> = { sprint: 'neon-circuit', 'dry-river': 'hot-roadway', drag: 'cool-highway', circuit: 'drive', oval: 'fever-stadium', canyon: 'hyperflight', frostline: 'drive', icefall: 'sky-blue-street', caldera: 'hot-roadway', faultline: 'darkness-road', greenway: 'cool-city', riverrun: 'sky-blue-street', timberline: 'hyperflight', obsidian: 'fever-stadium', whiteout: 'cool-highway', mistriver: 'darkness-road', understory: 'sky-trance', orbit: 'space-adventure' }
+export const COURSE_TRACK: Record<string, string> = { sprint: 'neon-circuit', 'dry-river': 'hot-roadway', drag: 'cool-highway', circuit: 'drive', oval: 'fever-stadium', canyon: 'hyperflight', frostline: 'drive', icefall: 'sky-blue-street', caldera: 'hot-roadway', faultline: 'darkness-road', greenway: 'cool-city', riverrun: 'sky-blue-street', timberline: 'hyperflight', obsidian: 'fever-stadium', whiteout: 'cool-highway', mistriver: 'darkness-road', understory: 'sky-trance', icecave: 'sky-trance', magma: 'darkness-road', whitewater: 'sky-blue-street', orbit: 'space-adventure' }
 const MENU_TRACK = 'empty-stretch'
 /** Each world's race playlist: a race starts on its course's track and moves through these by thirds. */
 const WORLD_LIST: Record<string, string[]> = {

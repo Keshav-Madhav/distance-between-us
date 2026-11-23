@@ -72,8 +72,8 @@ export interface CourseDef {
   aiLevel?: number
   /** How far mesas keep from the line (m, default 850): small → a canyon. */
   clearance?: number
-  /** A canyon round the loop (src/canyon.ts): continuous walls either side of a wide floor. */
-  canyon?: boolean
+  /** A gorge round the loop (src/canyon.ts): continuous walls either side of a wide floor, in this style. */
+  gorge?: 'desert' | 'ice' | 'lava' | 'forest'
   /** Gate width (half, m) and tower height × (default 260, 1). */
   gateHalf?: number
   gateTall?: number
@@ -278,7 +278,84 @@ export const CANYON: CourseDef = {
   // (A canyon now, 2026-11-24: the player asked for a very wide one with proper, unbroken walls. The
   // world's mesas stay out beyond the rim.)
   clearance: 4900,
-  canyon: true,
+  gorge: 'desert',
+}
+
+/** BLUE HOLLOW — POLAR SHELF's gorge: a glacier cave, roofed the whole way round, lamplit (src/canyon.ts). */
+const icecavePath = (u: number): [number, number] => {
+  const a = 2 * Math.PI * u
+  const r = 10200 + 1900 * Math.cos(2 * a + 0.8) + 800 * Math.sin(3 * a + 0.2) + 260 * Math.sin(7 * a + 1.0)
+  return [Math.sin(a) * r, -Math.cos(a) * r + 10200]
+}
+export const ICECAVE: CourseDef = {
+  id: 'icecave',
+  gateHalf: 340,
+  name: 'BLUE HOLLOW',
+  blurb: 'INSIDE A GLACIER · ROOFED · LAMPLIT',
+  km: Math.round(loopLength(icecavePath) / 100) / 10,
+  loop: icecavePath,
+  gateEvery: 5000,
+  jumps: [],
+  whoops: [],
+  padEvery: 8000,
+  spireGap: () => null,
+  rockGateP: 0,
+  seed: 83,
+  sections: [],
+  clearance: 2800,
+  gorge: 'ice',
+}
+
+/** MAGMA GORGE — CINDER's gorge: sheer basalt, lava along both walls' feet and in seams up them. */
+const magmaPath = (u: number): [number, number] => {
+  const a = 2 * Math.PI * u
+  const r = 10800 + 2100 * Math.sin(2 * a + 2.1) + 700 * Math.sin(3 * a + 0.6) + 240 * Math.sin(6 * a + 1.9)
+  return [Math.sin(a) * r, -Math.cos(a) * r + 10800]
+}
+export const MAGMA: CourseDef = {
+  id: 'magma',
+  gateHalf: 340,
+  ribbons: true,
+  name: 'MAGMA GORGE',
+  blurb: 'A BASALT CANYON · LAVA AT ITS FEET',
+  km: Math.round(loopLength(magmaPath) / 100) / 10,
+  loop: magmaPath,
+  gateEvery: 5000,
+  jumps: [0.4, 0.43],
+  rampH: 0.8,
+  whoops: [],
+  padEvery: 8000,
+  spireGap: () => null,
+  rockGateP: 0,
+  seed: 91,
+  sections: [],
+  clearance: 3800,
+  gorge: 'lava',
+}
+
+/** WHITEWATER — VERDANT's gorge: a river between granite banks under forest; the race is on the water. */
+const whitewaterPath = (u: number): [number, number] => {
+  const a = 2 * Math.PI * u
+  const r = 10500 + 1600 * Math.sin(2 * a + 0.3) + 900 * Math.sin(3 * a + 2.6) + 250 * Math.sin(6 * a + 1.2)
+  return [Math.sin(a) * r, -Math.cos(a) * r + 10500]
+}
+export const WHITEWATER: CourseDef = {
+  id: 'whitewater',
+  gateHalf: 340,
+  name: 'WHITEWATER',
+  blurb: 'DOWN A RIVER GORGE · ON THE WATER',
+  km: Math.round(loopLength(whitewaterPath) / 100) / 10,
+  loop: whitewaterPath,
+  gateEvery: 5000,
+  jumps: [],
+  whoops: [],
+  padEvery: 8000,
+  spireGap: () => null,
+  rockGateP: 0,
+  seed: 97,
+  sections: [],
+  clearance: 3200,
+  gorge: 'forest',
 }
 
 /**
@@ -646,7 +723,7 @@ export function medals(d: CourseDef): [number, number, number] {
  * THE OVAL and CANYON RUN are at the top of the range and still ~7% / 3% short of their target.
  */
 export const AI_LEVEL: Record<string, number> = {'sprint': 2.02, 'dry-river': 1.25, 'drag': 0.51, 'circuit': 0.72, 'oval': 2.2, 'canyon': 2.2, 'frostline': 0.43, 'icefall': -0.06, 'whiteout': 0.56, 'caldera': 0.27, 'faultline': -0.34, 'obsidian': 0.76, 'greenway': -0.18, 'riverrun': 0.23, 'timberline': 0.23, 'mistriver': 0.31, 'understory': 0.76}
-export const COURSES: CourseDef[] = [SPRINT, DRY_RIVER, DRAG, CIRCUIT, OVAL, CANYON, FROSTLINE, ICEFALL, WHITEOUT, CALDERA, FAULTLINE, OBSIDIAN, GREENWAY, RIVERRUN, TIMBERLINE, MISTRIVER, UNDERSTORY, ORBIT]
+export const COURSES: CourseDef[] = [SPRINT, DRY_RIVER, DRAG, CIRCUIT, OVAL, CANYON, FROSTLINE, ICEFALL, WHITEOUT, ICECAVE, CALDERA, FAULTLINE, OBSIDIAN, MAGMA, GREENWAY, RIVERRUN, TIMBERLINE, WHITEWATER, MISTRIVER, UNDERSTORY, ORBIT]
 for (const d of COURSES) d.aiLevel ??= AI_LEVEL[d.id]
 
 

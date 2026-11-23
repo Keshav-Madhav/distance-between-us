@@ -1233,7 +1233,7 @@ export class World {
   private readonly wrapped: Wrapped[] = []
   /** Fixed rocks (the course's spires): not wrapped, always there. */
   private readonly fixed: { x: number; z: number; r: number; h: number; yaw: number; by: number; prof: Profile; big?: boolean }[] = []
-  private spikeMat: THREE.MeshStandardMaterial | null = null
+  spikeMat: THREE.MeshStandardMaterial | null = null
   private fixedProf: Profile = () => 1
   private spireGeo: THREE.BufferGeometry | null = null
   mesaMat: THREE.Material | null = null

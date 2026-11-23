@@ -4,7 +4,7 @@ import '@fontsource/chakra-petch/400.css'
 import '@fontsource/chakra-petch/700.css'
 import * as THREE from 'three'
 import { DETAIL_U } from './shaders'
-import { Canyon } from './canyon'
+import { Canyon, WATER_T } from './canyon'
 import { FullScreenQuad } from 'three/addons/postprocessing/Pass.js'
 import { CFG, MACH, REBASE } from './config'
 import { World } from './world'
@@ -30,7 +30,7 @@ import { PLANETS, StarSystem, STAR_R } from './system'
 /** Shadows are cast along the sun, but never stretched past a ~17° sun (a sun on the horizon threw them 100 m off). */
 const SHADOW_Y = Math.max(SUN_DIR[1], 0.3)
 import { loadTextures } from './textures'
-import { CANYON, centerline, Course, COURSES, LAPS, medals } from './course'
+import { centerline, Course, COURSES, LAPS, medals } from './course'
 import { Race, type Racer } from './race'
 import { ChaseCam } from './camera'
 import { Debris } from './debris'
@@ -302,9 +302,11 @@ const MEDAL_HTML = ['', medalSvg(1), medalSvg(2), medalSvg(3)]
 const bestOf = (id: string): number | null => { try { const v = localStorage.getItem(bestKey(id)); return v ? +v : null } catch { return null } }
 // Mesas clear of the course corridor — tested at every wrapped copy of each one that falls along the
 // 140 km line (the world repeats every 72 km).
-const canyon = BIOME === 'desert' ? new Canyon(CANYON.loop!) : null
+// Each world's gorge course (CANYON RUN, BLUE HOLLOW, MAGMA GORGE, WHITEWATER): its walls stand in the world.
+const GORGE = COURSES.find((c) => c.gorge && c.loop && biomeOf(c.id) === BIOME)
+const canyon = GORGE ? new Canyon(GORGE.loop!, GORGE.gorge) : null
 const clearAt = (x: number, z: number, r: number) => {
-  // (Nothing stands in the canyon or on its rim, on any RED MESA course: in the open world it is there.)
+  // (Nothing stands in the world's gorge or on its rim, on any of its courses: in the open world it is there.)
   if (canyon && canyon.covers(x, z, r)) return false
   const B = course.box, m = 3000
   for (let ix = Math.ceil((B.x0 - m - x) / REBASE); ix <= Math.floor((B.x1 + m - x) / REBASE); ix++)
@@ -316,13 +318,30 @@ const clearAt = (x: number, z: number, r: number) => {
 /** How tall something may stand at (x, z), × its full height: near the track ~30% (tall spires there
  *  looked dangerous and walled off the view of the course), full from ~1.4 km past the gates. */
 const heightNearTrack = (x: number, z: number) => Math.min(1, 0.28 + Math.max(0, course.distance(x, z) - course.gateHalf) / 1400)
-const world = new World(clearAt, (x, z, r) => course.distance(x, z) < 460 + r, (x, z, r) => course.distance(x, z) < (course.def.canyon ? 4900 : course.gateHalf + 30) + r * 1.3 || (!!canyon && canyon.covers(x, z, r)), heightNearTrack)
+const world = new World(clearAt, (x, z, r) => course.distance(x, z) < 460 + r, (x, z, r) => course.distance(x, z) < (course.def.gorge ? course.def.clearance! : course.gateHalf + 30) + r * 1.3 || (!!canyon && canyon.covers(x, z, r)), heightNearTrack)
 bootMark('world')
 await breathe()
 world.addFixed(course.rocks)
 // The great canyon: RED MESA's, in the world itself (CANYON RUN races down it; FREE ROAM and HUNT can fly
 // to it). Solid (World.near). Raced on another RED MESA course it is not there (THE SPRINT runs through it).
-const canyonMesh = canyon ? canyon.build(world.mesaMat!) : null
+// (The cave's roof: ice lit from within, a faint blue — the ice wall shader in the dark read as flat grey.)
+const caveRoof = new THREE.ShaderMaterial({
+  side: THREE.DoubleSide,
+  vertexShader: 'varying vec3 vW; void main() { vec4 w = modelMatrix * vec4(position, 1.0); vW = w.xyz; gl_Position = projectionMatrix * viewMatrix * w; }',
+  fragmentShader: `varying vec3 vW;
+    float h(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+    float n(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f); return mix(mix(h(i), h(i + vec2(1, 0)), f.x), mix(h(i + vec2(0, 1)), h(i + 1.0), f.x), f.y); }
+    void main() {
+      // Glacier ice overhead, lit from within: deep blue, paler veins and cracks, a few bright seams.
+      float a = n(vW.xz * 0.004) * 0.6 + n(vW.xz * 0.02) * 0.4;
+      // (Thin and broken: even loops of white read as a contour map.)
+      float vein = smoothstep(0.012, 0.0, abs(n(vW.xz * 0.006 + 3.0) - 0.5)) * smoothstep(0.35, 0.7, n(vW.xz * 0.013 + 9.0));
+      vec3 c = mix(vec3(0.05, 0.16, 0.34), vec3(0.18, 0.42, 0.72), a);
+      c += vec3(0.5, 0.8, 1.2) * vein * 0.6;
+      gl_FragColor = vec4(c * 2.2, 1.0);
+    }`,
+})
+const canyonMesh = canyon ? canyon.build(world.mesaMat!, canyon.style === 'ice' ? { roofMat: caveRoof } : {}) : null
 if (canyon && canyonMesh) { world.canyon = canyon; world.group.add(canyonMesh) }
 // The polar world's set pieces: glaciers, seracs and spike fields placed close beside the line
 // (150–400 m off its edge), so the race threads past the ice instead of seeing it on the horizon.
@@ -409,8 +428,8 @@ if (BIOME !== 'desert') {
       const a = rnd() * 6.28, d = Math.sqrt(rnd()) * spread
       const x = cx + Math.cos(a) * d, z = cz + Math.sin(a) * d
       if (course.distance(x, z) < 350 + W) continue
-      // (CANYON RUN: only on the canyon floor — out there is the wall and the rim.)
-      if (course.def.canyon && course.distance(x, z) > 1080) continue
+      // (A gorge course: only on its floor — out there is the wall and the rim.)
+      if (course.def.gorge && canyon && !canyon.inside(x, z)) continue
       const roll = rnd()
       const pSpike = zone === 'forest' ? 0.75 : zone === 'glacier' ? 0.35 : 0.3
       // (Tall ones stand far out: a 120 m sentinel 400 m off the line read as a wall.)
@@ -1860,6 +1879,7 @@ const TIERS: Record<Tier, { pr: number; samples: number; bloom: boolean; density
 let tierName = ((params.get('q') as Tier | null) ?? 'auto') as Tier | 'auto'
 let tier: Tier = tierName === 'auto' ? 'high' : tierName
 let renderScale = 1
+let caveK = 0
 /**
  * Speed LOD for the pixels: at a standstill and cruising, full resolution; flat out, the scene is drawn
  * at ~0.6 of it (the radial blur and streaks hide it, and the upscale is sharpened). A frame-time trim
@@ -2900,7 +2920,8 @@ function frame(now: number): void {
   const me = race.racers[0]
   course.update(mode === 'race' ? me.next : -1, time, false)
   course.group.visible = (mode === 'race' || mode === 'title') && !IN_SYSTEM
-  if (canyonMesh) { world.canyonOn = !!course.def.canyon || mode === 'free' || mode === 'hunt'; canyonMesh.visible = world.canyonOn }
+  if (canyonMesh) { world.canyonOn = !!course.def.gorge || mode === 'free' || mode === 'hunt'; canyonMesh.visible = world.canyonOn }
+  WATER_T.value = time
   world.ground.uTrackOn.value = mode === 'hunt' || mode === 'free' ? 0 : course.def.wear ?? 1
   if (mode === 'free') shards.draw(time)
 
@@ -2979,7 +3000,13 @@ function frame(now: number): void {
   DETAIL_U.uDetail.value = mode === 'title' ? 1 : 1 - THREE.MathUtils.smoothstep(player.mach, 1.5, 5)
   P.uSharpen.value = settings.sharp + Math.min(0.6, (1 - renderScale * dynScale) * 0.9)
   // (VERDANT a stop under: its pale grass and bright sky washed out, the craft lost in the bloom.)
-  P.uExposure.value = CFG.post.exposure * (BIOME === 'forest' ? 0.85 : 1)
+  // BLUE HOLLOW: under the roof the day outside is a glow at the cave mouths, not light on everything — the
+  // exposure eases down inside (the lamps, far brighter than the ice, carry the scene).
+  {
+    const inCave = canyon && canyon.style === 'ice' && world.canyonOn && canyon.inside(camera.position.x, camera.position.z) && camera.position.y < groundH(camera.position.x, camera.position.z) + 300 ? 1 : 0
+    caveK += (inCave - caveK) * Math.min(1, realDt * 2)
+  }
+  P.uExposure.value = CFG.post.exposure * (BIOME === 'forest' ? 0.85 : 1) * (1 - 0.62 * caveK)
   P.uVac.value = space.vac
   // (In vacuum the sun is a disc, not a halo; looking at it, less again — the grey veil.)
   post.bloom.strength = CFG.post.bloom * (1 - 0.45 * space.vac) * (1 - 0.35 * space.vac * SPACE_U.uSunView.value)

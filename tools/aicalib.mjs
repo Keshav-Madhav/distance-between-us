@@ -10,7 +10,7 @@ const URL = process.env.URL ?? 'http://localhost:5417/'
 // The player's best times (s), from their browser's storage on :5417 (2026-11-23). circuit and
 // frostline were set on older, shorter versions of those courses — treated as unknown.
 const BEST = { sprint: 84.07, 'dry-river': 44.25, drag: 49.87, oval: 32.93, canyon: 33.83, icefall: 64.95, faultline: 49.4, greenway: 70.78, timberline: 57.22, understory: 59.87 }
-const WORLDS = [['sprint', 'dry-river', 'drag', 'circuit', 'oval', 'canyon'], ['frostline', 'icefall', 'whiteout'], ['caldera', 'faultline', 'obsidian'], ['greenway', 'riverrun', 'timberline'], ['mistriver', 'understory']]
+const WORLDS = [['sprint', 'dry-river', 'drag', 'circuit', 'oval', 'canyon'], ['frostline', 'icefall', 'whiteout', 'icecave'], ['caldera', 'faultline', 'obsidian', 'magma'], ['greenway', 'riverrun', 'timberline', 'whitewater'], ['mistriver', 'understory']]
 const EASE = [1.05, 1.02] // first and second course of each world: the field's winner this much slower
 const HUMAN = 1.04 // a normal human: a little slower than the player's best
 const RUNS = 2
