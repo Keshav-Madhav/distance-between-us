@@ -41,7 +41,7 @@ right.append(box('tip_cap', (0.1, 0.22, 0.95), (3.13, BY + 0.0, -1.92), material
 for dz in (-0.3, -0.1, 0.1, 0.3):
     right.append(box('tip_slot', (0.03, 0.06, 0.12), (3.19, BY + 0.0, -1.92 + dz), material=M['carbon']))
 for (x, z) in [(1.9, 0.6), (2.4, -0.6)]:
-    right.append(box('wing_panel', (0.6, 0.02, 0.5), (x, BY + 0.28 - 0.06 * x, z), (0, -0.4, 0), M['gun'], bevel=0.01))
+    right.append(box('wing_panel', (0.6, 0.012, 0.5), (x, BY + 0.27 - 0.06 * x, z), (0, -0.4, 0), M['carbon'], bevel=0.004))
 right.append(box('nose_vent', (0.05, 0.06, 0.5), (0.86, BY - 0.02, 3.0), (0, -0.55, 0), M['carbon']))
 # Under-wing intakes: round ducts under the wing roots with fans.
 IX, IY, IZ = 0.95, BY - 0.36, 1.6
@@ -64,7 +64,6 @@ for (a, rr) in [(0.0, 0.09), (2.9, 0.08)]:
     right.append(box('strap', (0.1, rr + 0.12, 0.1), (EX + (0.46 + rr / 2) * math.cos(a), EY + (0.46 + rr / 2) * math.sin(a), (EZ0 + EZ1) / 2), (0, 0, a - math.pi / 2), M['gun']))
 right.append(smooth(lathe('can', [(EZ1, 0.5), (EZ1 - 0.05, 0.55), (-2.55, 0.56), (-2.8, 0.53)], EX, EY, 36, M['paint'], cap0=True), 35))
 right.append(smooth(lathe('can_band', [(EZ1 - 0.15, 0.555), (EZ1 - 0.35, 0.555)], EX, EY, 36, M['trim']), 35))
-right.append(box('can_window', (0.04, 0.16, 0.3), (EX + 0.555, EY + 0.12, -2.3), material=M['carbon']))
 right.append(smooth(lathe('nozzle', [(-2.8, 0.5), (-2.95, 0.52), (NZ + 0.05, 0.5), (NZ, 0.46)], EX, EY, 36, M['gun']), 30))
 for i in range(18):  # ribbed nozzle
     a = 2 * math.pi * i / 18
@@ -91,7 +90,7 @@ for sx in (-0.5, 0.5):
 # Game hooks.
 empty('nozzle_0', (-EX, EY, NZ)); empty('nozzle_1@0.45', (0, BY + 0.1, NZ)); empty('nozzle_2', (EX, EY, NZ))
 empty('wingtip', (3.18, BY, -1.9))
-empty('number@0.6', (EX + 0.62, BY + 0.28, -1.0))
+empty('number@0.55', (EX + 0.64, BY + 0.3, -1.1))
 
 out = os.environ.get('OUT', '/tmp')
 print('TRIANGLES', tri_count()); tri_report()
