@@ -90,15 +90,22 @@ function makeFrame(id: string, go: boolean | string, warm: boolean): HTMLIFrameE
   return f
 }
 /** One world booted ahead (the one you are pointing at on the menu), dormant until picked. */
-let warmSlot: { id: string; f: HTMLIFrameElement; ready: boolean; onReady?: () => void } | null = null
+let warmSlot: { id: string; go: false | string; f: HTMLIFrameElement; ready: boolean; onReady?: () => void } | null = null
 /** A pointer resting ~250 ms on a world or course pre-boots it (sweeping across the tiles boots nothing). */
 let warmT = 0
+let lastWarmAsk = ''
 function prewarmSoon(id: string): void { clearTimeout(warmT); warmT = window.setTimeout(() => prewarm(id), 250) }
-function prewarm(id: string): void {
-  if (window.parent !== window) { window.parent.postMessage({ type: 'dbu-prewarm', id }, location.origin); return }
-  if (hosting.busy || warmSlot?.id === id || id === (hostCourse || course.def.id)) return
+function prewarm(id: string, go: false | string = false): void {
+  if (window.parent !== window) {
+    // (Asked every frame while flying in: only a change goes to the host.)
+    const key = id + '|' + go
+    if (key !== lastWarmAsk) { lastWarmAsk = key; window.parent.postMessage({ type: 'dbu-prewarm', id, go }, location.origin) }
+    return
+  }
+  // (A live boot — flying in or out — is never pushed aside by a menu hover; and nothing re-boots per frame.)
+  if (hosting.busy || (warmSlot?.id === id && warmSlot.go === go) || (!go && warmSlot?.go) || (!go && id === (hostCourse || course.def.id))) return
   warmSlot?.f.remove()
-  const slot: NonNullable<typeof warmSlot> = { id, f: makeFrame(id, false, true), ready: false }
+  const slot: NonNullable<typeof warmSlot> = { id, go, f: makeFrame(id, false, true), ready: false }
   warmSlot = slot
   const onMsg = (e: MessageEvent) => {
     if (e.origin !== location.origin || e.source !== slot.f.contentWindow || e.data?.type !== 'dbu-ready') return
@@ -112,7 +119,7 @@ function hostSwap(id: string, go: boolean | string): void {
   if (hosting.busy) return
   hosting.busy = true
   const live = typeof go === 'string' && go.startsWith('live')
-  const warm = !live && warmSlot?.id === id ? warmSlot : null
+  const warm = warmSlot?.id === id && (!live || warmSlot.go === go) ? warmSlot : null
   if (!warm && warmSlot) { warmSlot.f.remove(); warmSlot = null }
   warmSlot = null
   const f = warm ? warm.f : makeFrame(id, go, false)
@@ -136,9 +143,23 @@ function hostSwap(id: string, go: boolean | string): void {
       history.replaceState(null, '', top.toString())
     }, fadeMs + 50)
   }
-  // Pre-booted: wake it (its music, the race if asked) and cross-fade — no load.
+  // Pre-booted: wake it (its music, the race if asked; flying: the state handed over) and cross-fade — no load.
   if (warm) {
-    const wake = () => { f.contentWindow?.postMessage({ type: 'dbu-wake', go }, location.origin); setTimeout(fadeIn, 60) }
+    const wake = () => {
+      f.contentWindow?.postMessage({ type: 'dbu-wake', go }, location.origin)
+      if (!live) { setTimeout(fadeIn, 60); return }
+      // Live: the state of the one flying now, into the woken one — then the cross-fade.
+      if (prev) {
+        const onState = (e: MessageEvent) => {
+          if (e.origin !== location.origin || e.source !== prev.contentWindow || e.data?.type !== 'dbu-state') return
+          removeEventListener('message', onState)
+          f.contentWindow?.postMessage({ type: 'dbu-arrive', state: e.data.state }, location.origin)
+          setTimeout(fadeIn, 50)
+        }
+        addEventListener('message', onState)
+        prev.contentWindow?.postMessage({ type: 'dbu-state?' }, location.origin)
+      } else { f.contentWindow?.postMessage({ type: 'dbu-arrive', state: getHandoff() }, location.origin); setTimeout(fadeIn, 50) }
+    }
     if (warm.ready) wake(); else warm.onReady = wake
     return
   }
@@ -175,8 +196,13 @@ addEventListener('message', (e) => {
   if (e.data?.type === 'dbu-retire') retire()
   if (e.data?.type === 'dbu-state?') window.parent.postMessage({ type: 'dbu-state', state: getHandoff() }, location.origin)
   if (e.data?.type === 'dbu-arrive') applyHandoff(e.data.state)
-  if (e.data?.type === 'dbu-wake' && dormant) { dormant = false; sound.start(); if (e.data.go === true || e.data.go === '1') startRace() }
-  if (e.data?.type === 'dbu-prewarm' && window.parent === window) prewarm(e.data.id)
+  if (e.data?.type === 'dbu-wake' && dormant) {
+    dormant = false; sound.start()
+    if (e.data.go === true || e.data.go === '1') startRace()
+    // Flying in or out: a stand-in state until the real one arrives (dbu-arrive) with the cross-fade.
+    else if (e.data.go === 'live-arrive' || e.data.go === 'live-sys') { menuMode = 'free'; showCourse(); applyHandoff({ alt: 1500000, speed: 2e5, pitch: -0.3, sx: 1, sy: 0.3, sz: 0, biome: 'desert', keys: [] }) }
+  }
+  if (e.data?.type === 'dbu-prewarm' && window.parent === window) prewarm(e.data.id, e.data.go ?? false)
 })
 const $ = <T extends HTMLElement = HTMLElement>(s: string) => document.querySelector(s) as T
 const loadBar = $('#loading .b i')
@@ -1979,6 +2005,9 @@ function systemStep(): void {
     const radial = flight.vel.dot(rn)
     if (n2.alt < 50000) sysPos.copy(pl.pos).addScaledVector(rn, PLANET_R + 50000)
     // (Started at 3,000 km: the world boots while you keep flying in, and takes over when ready.)
+    // (Booted ahead, dormant, from 20,000 km on the way in: at the handover it only wakes and cross-fades —
+    // booting at 3,000 km stalled the flight 0.6-1 s right at the moment of arrival.)
+    if (n2.alt < 2e7 && radial < 0) prewarm(COURSES.find((c) => biomeOf(c.id) === pl.biome)!.id, 'live-arrive')
     if (n2.alt < 3000000 && radial < 0) swapTo(COURSES.find((c) => biomeOf(c.id) === pl.biome)!.id, 'live-arrive')
   }
 }
@@ -2356,6 +2385,8 @@ function simStep(): void {
       // Down on the surface (coming down, not skimming up off it): grip takes over, you drive on.
       if (freeAirT > 0.8 && flight.agl < 5 && flight.vel.y <= 0) touchDown()
       // Out of the top of the air: back to ORBIT, by this planet — pick another from up there.
+      // (ORBIT booted ahead, dormant, from 300 km up on the way out.)
+      if (flight.agl > 300000 && flight.vel.y > 0 && runTime > 4 && !swapPending) prewarm('orbit', 'live-sys')
       if (flight.agl > 1500000 && flight.vel.y > 0 && runTime > 4 && !swapPending) swapTo('orbit', 'live-sys')
     } else {
       player.step(STEP, forced ?? input.c, world)

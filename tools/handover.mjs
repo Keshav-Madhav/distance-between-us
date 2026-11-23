@@ -5,7 +5,11 @@ const OUT = process.env.OUT
 const b = await chromium.launch({ channel: 'chrome', headless: true, args: ['--mute-audio', '--use-gl=angle'] })
 const p = await (await b.newContext({ viewport: { width: 960, height: 540 } })).newPage()
 const errs = []; p.on('pageerror', (e) => errs.push(e.message))
-await p.goto('http://localhost:5417/?course=orbit'); await p.waitForFunction('window.__g && window.__g.ready', null, { timeout: 120000 })
+// Frame gaps, logged in every document (the visible world may be the page or a frame): worst per second.
+await p.addInitScript(() => { let last = performance.now(); window.__gaps = []; const f = (t) => { window.__gaps.push([Math.round(t), Math.round(t - last)]); last = t; requestAnimationFrame(f) }; requestAnimationFrame(f) })
+// When a frame starts fading in (the switch moment), in the top page's clock.
+await p.addInitScript(() => { if (window.parent !== window) return; window.__fades = []; setInterval(() => { for (const f of document.querySelectorAll('iframe')) { const o = +getComputedStyle(f).opacity; if (o > 0.02 && !f.__seen) { f.__seen = true; window.__fades.push(Math.round(performance.now())) } } }, 16) })
+await p.goto((process.env.URL ?? 'http://localhost:5417/') + '?course=orbit'); await p.waitForFunction('window.__g && window.__g.ready', null, { timeout: 120000 })
 await p.click('#start'); await p.waitForTimeout(800)
 await p.evaluate(() => {
   const g = window.__g; g.flyForce(true); document.getElementById('hints').style.display = 'none'
@@ -38,4 +42,9 @@ while (Date.now() - t1 < 60000) {
   await p.waitForTimeout(120)
 }
 console.log('exit frames', m, 'errors', errs.slice(0, 3))
+// Hitches: frames over 50 ms in the top page across the whole run (it keeps drawing until a frame covers it).
+const gaps = await p.evaluate(() => window.__gaps.filter((g) => g[1] > 50))
+const near = await p.evaluate(() => { const out = []; for (const t of window.__fades) { const w = window.__gaps.filter((g) => g[1] > 50 && g[0] > t - 1500 && g[0] < t + 1500).map((g) => g[1]); out.push('switch@' + t + ': ' + (w.length ? w.join(' ') : 'none')) } return out.join(' | ') })
+console.log('hitches within ±1.5 s of each switch (>50 ms):', near)
+console.log('top-page hitches >50ms:', gaps.length, 'worst', Math.max(0, ...gaps.map((g) => g[1])), 'ms:', gaps.slice(0, 30).map((g) => g[1]).join(' '))
 await b.close()
