@@ -1534,14 +1534,16 @@ const ord = (n: number) => `${n}${n === 1 ? 'ST' : n === 2 ? 'ND' : n === 3 ? 'R
 let resultsOpen = false, resHtml = ''
 function renderResults(): void {
   const rows = [...race.racers].sort((a, b) => a.place - b.place)
-  // (A big field: the podium, then you and your neighbours — twenty rows ran off the screen.)
-  const myIdx = rows.findIndex((r) => !r.ai)
-  const keep = rows.map((_, i) => i < 3 || Math.abs(i - myIdx) <= 2 || rows.length <= 10)
+  // Everyone (the player asked why not). A big field goes in two columns side by side: 1-10 | 11-20.
+  const cells = (r: (typeof rows)[number] | undefined) => !r ? '<td></td><td></td><td></td>'
+    : `<td class="${r.ai ? '' : 'me'}">${r.place}</td><td class="${r.ai ? '' : 'me'}">${r.name}</td><td class="${r.ai ? '' : 'me'}">${r.finished ? fmtLap(r.finishTime) : (race.toGo(r) / 1000).toFixed(1) + ' KM TO GO'}</td>`
   let html = ''
-  rows.forEach((r, i) => {
-    if (!keep[i]) { if (keep[i - 1]) html += '<tr class="gap"><td></td><td>···</td><td></td></tr>'; return }
-    html += `<tr class="${r.ai ? '' : 'me'}${r.finished ? '' : ' racing'}"><td>${r.place}</td><td>${r.name}</td><td>${r.finished ? fmtLap(r.finishTime) : (race.toGo(r) / 1000).toFixed(1) + ' KM TO GO'}</td></tr>`
-  })
+  if (rows.length <= 10) rows.forEach((r) => { html += `<tr class="${r.ai ? '' : 'me'}">${cells(r)}</tr>` })
+  else {
+    const half = Math.ceil(rows.length / 2)
+    for (let i = 0; i < half; i++) html += `<tr>${cells(rows[i])}<td class="sep"></td>${cells(rows[i + half])}</tr>`
+  }
+  $('#res').classList.toggle('two', rows.length > 10)
   if (html !== resHtml) { resHtml = html; $('#res').innerHTML = html }
 }
 function showResults(): void {

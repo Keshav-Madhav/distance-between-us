@@ -8,7 +8,7 @@
 // and it is one draw call per kind. Props grow in at the edge of the grid (no popping) and stay out of
 // rivers and lava.
 import * as THREE from 'three'
-import { refined } from './lod'
+import { afterBoot, refined } from './lod'
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
 import { patchStandard } from './shaders'
 import { BIOME, MOUND_U, TERRAIN_GLSL } from './terrain'
@@ -278,7 +278,8 @@ export class Scatter {
   }
 
   private mesh(k: Kind, near = false): THREE.Mesh {
-    const base = near ? refined(clean(k.build())) : clean(k.build())
+    // (The near twin starts as the plain shape and is refined after boot: built here it added to every load.)
+    const base = clean(k.build())
     const n = k.grid * k.grid
     const cell = new Float32Array(n * 2)
     // Centre outward (by distance), so drawing the first N cells draws a disc: the speed LOD below
@@ -297,10 +298,24 @@ export class Scatter {
     // (The near twin follows the camera too: its centre was never set, so its ring was drawn round the
     // world's origin and the first 70 m beside you were empty.)
     else this.nears.push({ g, m: Math.min(n, Math.ceil(Math.PI * (NEAR_MAX / k.cell + 1.5) ** 2)), centre })
+    if (near) void afterBoot().then(() => { const r = refined(base); for (const name of ['position', 'normal', 'color']) g.setAttribute(name, r.attributes[name]) })
     const mat = k.glow
       ? new THREE.MeshBasicMaterial({ vertexColors: true })
       : new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.92, metalness: 0, flatShading: true, side: THREE.DoubleSide })
     if (!k.glow) patchStandard(mat as THREE.MeshStandardMaterial, { detail: true })
+    // Everything per kind is a uniform (the shader text is the same for every kind): one program for all
+    // the lit props and one for the glowing ones, not ~30 — each compiled at boot, a slow world switch.
+    const river = k.where === 'river'
+    const noEdge = river || !!k.debris
+    const wornClear = !(k.debris || (river && k.name !== 'reeds'))
+    const kU = {
+      uK1: { value: new THREE.Vector4(k.cell, k.seed, k.density, k.tilt ?? 0) },
+      uK2: { value: new THREE.Vector4(k.scale[0], k.scale[1], k.scale[1] * 3, nearOf(k)) },
+      // noEdge, wornClear, river mode (0 keep off rivers, 1 only on rivers, 2 anywhere — POLAR SHELF's are frozen), far-only
+      uK3: { value: new THREE.Vector4(noEdge ? 1 : 0, wornClear ? 1 : 0, river ? 1 : BIOME === 'ice' ? 2 : 0, k.far ? 1 : 0) },
+      // near part (0 none, 1 the refined near ring, 2 a solid kind's main field: skips that ring), bigger lens clearance at speed
+      uK4: { value: new THREE.Vector4(near ? 1 : SOLID.has(k.name) && !k.glow ? 2 : 0, BIGNEAR(k) ? 1 : 0, 0, 0) },
+    }
     const prev = mat.onBeforeCompile
     mat.onBeforeCompile = (s, r) => {
       prev.call(mat, s, r)
@@ -311,6 +326,7 @@ export class Scatter {
       s.uniforms.uNearR = this.nearR
       s.uniforms.tTrack = this.track.tTrack; s.uniforms.uTrackBox = this.track.uTrackBox; s.uniforms.uTrackOn = this.track.uTrackOn; s.uniforms.uNearAdd = this.nearAdd
       s.uniforms.uScatOn = this.on
+      Object.assign(s.uniforms, kU)
       Object.assign(s.uniforms, MOUND_U)
       const head = `${TERRAIN_GLSL}
 attribute vec2 aCell;
@@ -324,38 +340,39 @@ uniform sampler2D tTrack;
 uniform vec4 uTrackBox;
 uniform float uTrackOn;
 uniform float uNearAdd;
+uniform vec4 uK1, uK2, uK3, uK4;
 float scHash(vec2 p) { p = fract(p * vec2(0.1031, 0.1030)); p += dot(p, p.yx + 33.33); return fract((p.x + p.y) * p.x); }
 vec3 scPos; float scS; float scA; float scT;`
       const place = `{
-        vec2 c0 = floor(uScatC / ${k.cell.toFixed(1)});
+        float cellM = uK1.x, sd = uK1.y;
+        vec2 c0 = floor(uScatC / cellM);
         vec2 c = c0 + aCell;
-        float h1 = scHash(c + ${k.seed.toFixed(2)}), h2 = scHash(c * 1.7 + ${(k.seed + 5.1).toFixed(2)}), h3 = scHash(c * 0.73 + ${(k.seed + 9.7).toFixed(2)});
-        vec2 xz = (c + vec2(h2, h3)) * ${k.cell.toFixed(1)};
+        float h1 = scHash(c + sd), h2 = scHash(c * 1.7 + sd + 5.1), h3 = scHash(c * 0.73 + sd + 9.7);
+        vec2 xz = (c + vec2(h2, h3)) * cellM;
         float d = length(xz - uScatC);
         // The course's wear (R: the floor races have worn, B: the corridor between the gates).
         vec2 wuv = (xz - uTrackBox.xy) / uTrackBox.zw;
         vec3 wear = (uTrackOn > 0.01 && wuv.x > 0.0 && wuv.y > 0.0 && wuv.x < 1.0 && wuv.y < 1.0) ? texture2D(tTrack, wuv).rgb : vec3(0.0);
-        ${k.where === 'river' || k.debris ? 'float dens = ' + k.density.toFixed(3) + ';' : `// Nothing grows on the worn floor; the growth gathers along its shoulder instead (a raced-over
-        // track with a thick verge, not bushes in the middle of the line).
-        float edge = smoothstep(0.02, 0.15, wear.r) * (1.0 - smoothstep(0.25, 0.6, wear.r));
-        float dens = min(0.95, ${k.density.toFixed(3)} * (1.0 + 2.0 * edge));`}
+        // Nothing grows on the worn floor; the growth gathers along its shoulder (the verge) instead.
+        float edge = uK3.x > 0.5 ? 0.0 : smoothstep(0.02, 0.15, wear.r) * (1.0 - smoothstep(0.25, 0.6, wear.r));
+        float dens = uK3.x > 0.5 ? uK1.z : min(0.95, uK1.z * (1.0 + 2.0 * edge));
         float keep = step(h1, dens) * (1.0 - smoothstep(uScatR * 0.72, uScatR * 0.96, d)) * uScatOn;
-        ${near ? 'keep *= 1.0 - step(uNearR, d); // (the refined near ring)' : SOLID.has(k.name) ? 'keep *= step(uNearR, d); // (the near ring is drawn refined)' : ''}
-        ${k.debris || (k.where === 'river' && k.name !== 'reeds') ? '' : 'keep *= 1.0 - smoothstep(0.25, 0.6, wear.r);'} // (reeds too: where the course crosses water they stood on the racing line)
-        ${k.far ? 'keep *= 1.0 - smoothstep(0.05, 0.4, wear.b); // (tall ones only outside the corridor: far, sparse)' : ''}
+        if (uK4.x > 0.5) keep *= uK4.x < 1.5 ? 1.0 - step(uNearR, d) : step(uNearR, d);
+        if (uK3.y > 0.5) keep *= 1.0 - smoothstep(0.25, 0.6, wear.r);
+        if (uK3.w > 0.5) keep *= 1.0 - smoothstep(0.05, 0.4, wear.b); // (tall ones only outside the corridor)
         // View cull (see update): the instance's angular half-width widens the cone a little.
         { vec2 dv = xz - uScatC; float dl = length(dv);
-          if (dl > 40.0 && dot(dv, uScatView.xy) < (uScatView.z - ${(k.scale[1] * 3).toFixed(1)} / dl) * dl) keep = 0.0; }
-        ${k.where === 'river' ? 'keep *= smoothstep(0.25, 0.45, riverAt(xz));' : BIOME === 'ice' ? '' : 'keep *= 1.0 - smoothstep(0.08, 0.2, riverAt(xz));'} // (POLAR SHELF's rivers are frozen: props sit on them, or whole stretches were bare)
-        scS = mix(${k.scale[0].toFixed(2)}, ${k.scale[1].toFixed(2)}, fract(h1 * 13.7)) * keep;
-        ${k.where === 'river' || k.debris || k.far ? '' : '// The verge grows taller than the open ground.\n        scS *= 1.0 + 0.7 * edge;'}
+          if (dl > 40.0 && dot(dv, uScatView.xy) < (uScatView.z - uK2.z / dl) * dl) keep = 0.0; }
+        if (uK3.z < 0.5) keep *= 1.0 - smoothstep(0.08, 0.2, riverAt(xz));
+        else if (uK3.z < 1.5) keep *= smoothstep(0.25, 0.45, riverAt(xz));
+        scS = mix(uK2.x, uK2.y, fract(h1 * 13.7)) * keep;
+        scS *= 1.0 + 0.7 * edge * (1.0 - uK3.w); // (the verge grows taller than the open ground)
         scA = h2 * 6.2832;
-        scT = (h3 - 0.5) * ${(k.tilt ?? 0).toFixed(2)};
+        scT = (h3 - 0.5) * uK1.w;
         // (An empty cell skips the terrain lookup: most cells are empty, and groundH is the costly part.)
         scPos = vec3(xz.x, keep > 0.0 ? groundH(xz) - 0.04 : -1e4, xz.y);
-        // (Not right at the lens: up close a fern or a twig filled the screen.)
-        // (A clear pocket round you and your craft, ~10 m ahead: foliage covered it.)
-        ${BIGNEAR(k) ? `float nearD = ${nearOf(k).toFixed(1)} + uNearAdd;` : `float nearD = ${nearOf(k).toFixed(1)};`}
+        // (Not right at the lens; giants and flags further off at speed.)
+        float nearD = uK2.w + uK4.y * uNearAdd;
         scS *= smoothstep(nearD, nearD + 16.0, distance(scPos, cameraPosition));
       }`
       s.vertexShader = s.vertexShader
@@ -384,7 +401,7 @@ vec3 scPos; float scS; float scA; float scT;`
         s.fragmentShader = s.fragmentShader.replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>\ntotalEmissiveRadiance += diffuseColor.rgb * ${lift.toFixed(2)};`)
       }
     }
-    mat.customProgramCacheKey = () => `scatter-${BIOME}-${k.name}${near ? '-near' : ''}`
+    mat.customProgramCacheKey = () => `scatter-${BIOME}${k.glow ? '-glow' : ''}`
     const m = new THREE.Mesh(g, mat)
     m.frustumCulled = false
     m.renderOrder = 0

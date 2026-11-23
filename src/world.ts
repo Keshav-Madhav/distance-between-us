@@ -11,7 +11,16 @@ import { JUNGLE_VARIANTS, jungleGeometry } from './jungle'
 import { cloudGlsl, LOOK, PLANET_R, SPACE_FN, SPACE_U } from './space'
 
 /** The world's own landform shapes (ice or basalt) — the desert's mesas come from mesaGeometry. */
-const landGeometry = (kind: 'mesa' | 'butte' | 'spire', seed: number, v: number) => BIOME === 'lava' ? lavaGeometry(kind, seed, v) : BIOME === 'forest' ? forestGeometry(kind, seed, v) : BIOME === 'jungle' ? jungleGeometry(kind, seed, v) : iceGeometry(kind, seed, v)
+const landGeometryRaw = (kind: 'mesa' | 'butte' | 'spire', seed: number, v: number) => BIOME === 'lava' ? lavaGeometry(kind, seed, v) : BIOME === 'forest' ? forestGeometry(kind, seed, v) : BIOME === 'jungle' ? jungleGeometry(kind, seed, v) : iceGeometry(kind, seed, v)
+/** Built once per shape (the world, its clutter and the course's trackside all ask for the same ones:
+ *  each was generated again — boot went from ~1 s to ~2.5 s with the clutter field). */
+const LAND_CACHE = new Map<string, ReturnType<typeof landGeometryRaw>>()
+const landGeometry = (kind: 'mesa' | 'butte' | 'spire', seed: number, v: number) => {
+  const k = kind + seed + ':' + v
+  let g = LAND_CACHE.get(k)
+  if (!g) LAND_CACHE.set(k, (g = landGeometryRaw(kind, seed, v)))
+  return g
+}
 import { FBMT_GLSL, NOISE_TEX, patchStandard, WORLD_GLSL } from './shaders'
 import { SHADOW_GLSL, SHADOW_U } from './shadow'
 import { LodPair, lodFade, patchLodDither, type LodView } from './lod'

@@ -233,6 +233,8 @@ const ovalPath = (() => {
 export const OVAL: CourseDef = {
   id: 'oval',
   medalPace: 0.9,
+  // (Two laps, 2026-11-24: one lap was over in half a minute.)
+  laps: 2,
   name: 'THE OVAL',
   blurb: 'TWO STRAIGHTS · TWO TIGHT ENDS · DRAFT AND BRAKE',
   km: Math.round(loopLength(ovalPath) / 100) / 10,
@@ -622,7 +624,7 @@ export const ORBIT: CourseDef = {
  * Medals hang off it: gold about the player's best, silver a solid race, bronze a finish. (They were a
  * fixed average Mach per course, blind to how hard the course is: a bronze 11 s ahead of the field.)
  */
-export const MEDAL_H: Record<string, number> = {'sprint': 87.43, 'dry-river': 46.02, 'drag': 51.86, 'circuit': 79.1, 'oval': 34.25, 'canyon': 35.18, 'frostline': 80.75, 'icefall': 67.55, 'whiteout': 39.17, 'caldera': 72.41, 'faultline': 51.37, 'obsidian': 63.58, 'greenway': 73.61, 'riverrun': 44.39, 'timberline': 59.51, 'mistriver': 40.94, 'understory': 62.26}
+export const MEDAL_H: Record<string, number> = {'sprint': 87.43, 'dry-river': 46.02, 'drag': 51.86, 'circuit': 79.1, 'oval': 68.5, 'canyon': 35.18, 'frostline': 80.75, 'icefall': 67.55, 'whiteout': 39.17, 'caldera': 72.41, 'faultline': 51.37, 'obsidian': 63.58, 'greenway': 73.61, 'riverrun': 44.39, 'timberline': 59.51, 'mistriver': 40.94, 'understory': 62.26}
 export function medals(d: CourseDef): [number, number, number] {
   const h = MEDAL_H[d.id]
   if (h) return [0.97, 1.03, 1.1].map((k) => Math.round(h * k * 10) / 10) as [number, number, number]

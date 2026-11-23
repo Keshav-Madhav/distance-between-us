@@ -74,7 +74,13 @@ function noise3(x: number, y: number, z: number): number {
   return l(l(l(h(xi, yi, zi), h(xi + 1, yi, zi), u), l(h(xi, yi + 1, zi), h(xi + 1, yi + 1, zi), u), v),
     l(l(h(xi, yi, zi + 1), h(xi + 1, yi, zi + 1), u), l(h(xi, yi + 1, zi + 1), h(xi + 1, yi + 1, zi + 1), u), v), w)
 }
+const refinedCache = new Map<THREE.BufferGeometry, THREE.BufferGeometry>()
 export function refined(g: THREE.BufferGeometry): THREE.BufferGeometry {
+  let r = refinedCache.get(g)
+  if (!r) refinedCache.set(g, (r = refinedRaw(g)))
+  return r
+}
+function refinedRaw(g: THREE.BufferGeometry): THREE.BufferGeometry {
   let src = g.index ? g.toNonIndexed() : g
   const names = Object.keys(src.attributes).filter((k) => k !== 'normal' && k !== 'aKeep')
   // One split (two for light shapes): 4x or 16x the triangles, only ever drawn close and slow.
@@ -110,6 +116,13 @@ export function refined(g: THREE.BufferGeometry): THREE.BufferGeometry {
   return src
 }
 
+/** Resolves a moment after boot, one caller at a time (heavy geometry work spread over idle frames). */
+let bootQueue: Promise<void> = new Promise((r) => setTimeout(r, 2500))
+export function afterBoot(): Promise<void> {
+  const p = bootQueue.then(() => new Promise<void>((r) => (window.requestIdleCallback ? window.requestIdleCallback(() => r(), { timeout: 400 }) : setTimeout(r, 30))))
+  bootQueue = p
+  return p
+}
 const cache = new Map<THREE.BufferGeometry, Promise<THREE.BufferGeometry>>()
 
 /**
@@ -174,10 +187,12 @@ export class LodPair {
     this.hi = make(view(geo), this.keepHi)
     // The close-up form, built off the boot path (until then it draws the full shape).
     this.up = make(view(geo), this.keepUp)
-    setTimeout(() => { const r = refined(geo); r.setAttribute('aKeep', this.keepUp); this.up.geometry = r }, 1500 + Math.random() * 3000)
+    void afterBoot().then(() => { const r = view(refined(geo)); r.setAttribute('aKeep', this.keepUp); this.up.geometry = r })
     // (Until the twin is ready the far ones draw the full shape: same look, just not cheaper yet.)
     this.lo = make(view(geo), this.keepLo)
-    void simplified(geo).then((g) => {
+    // (After the world is up: simplifying every shape during boot doubled its 'world' step; until then the
+    // far ones simply draw the full shape.)
+    void afterBoot().then(() => simplified(geo)).then((g) => {
       const v = view(g)
       v.setAttribute('aKeep', this.keepLo)
       this.lo.geometry = v
