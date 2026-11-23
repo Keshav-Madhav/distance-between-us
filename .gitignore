@@ -6,3 +6,4 @@ shots
 .DS_Store
 assets/raw/*.jpg
 assets/check
+dist-playtest
