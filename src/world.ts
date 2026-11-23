@@ -24,6 +24,7 @@ const landGeometry = (kind: 'mesa' | 'butte' | 'spire', seed: number, v: number)
 import { FBMT_GLSL, NOISE_TEX, patchStandard, WORLD_GLSL } from './shaders'
 import { SHADOW_GLSL, SHADOW_U } from './shadow'
 import { LodPair, lodFade, patchLodDither, type LodView } from './lod'
+import type { Canyon } from './canyon'
 
 export function rng(seed: number): () => number {
   let a = seed >>> 0
@@ -1235,7 +1236,7 @@ export class World {
   private spikeMat: THREE.MeshStandardMaterial | null = null
   private fixedProf: Profile = () => 1
   private spireGeo: THREE.BufferGeometry | null = null
-  private mesaMat: THREE.Material | null = null
+  mesaMat: THREE.Material | null = null
   readonly sunLight: THREE.DirectionalLight
   envTexture: THREE.Texture | null = null
 
@@ -1463,6 +1464,10 @@ export class World {
    *  open world — from the air they were rows along a course you are not on, and they did not wrap
    *  with the world (a jump every 72 km that looked like a reset). */
   readonly courseRocks = new THREE.Group()
+  /** CANYON RUN's walls, when the course has them (main.ts sets it). */
+  canyon: Canyon | null = null
+  /** Whether it stands now (CANYON RUN's race, or the open world; not other RED MESA races). */
+  canyonOn = false
   private readonly statics: StaticSet[] = []
   get courseOn(): boolean { return this.courseRocks.visible }
   set courseOn(v: boolean) { this.courseRocks.visible = v }
@@ -1642,6 +1647,8 @@ export class World {
         n++
       }
     }
+    // CANYON RUN's walls (src/canyon.ts): solid the whole way round.
+    if (this.canyon && this.canyonOn) n = this.canyon.wallsNear(x, z, y, out, n)
     if (this.courseRocks.visible) for (const it of this.fixed) {
       const dx = x - it.x, dz = z - it.z
       const reach = range + it.r * 2.3

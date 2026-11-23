@@ -4,6 +4,7 @@ import '@fontsource/chakra-petch/400.css'
 import '@fontsource/chakra-petch/700.css'
 import * as THREE from 'three'
 import { DETAIL_U } from './shaders'
+import { Canyon } from './canyon'
 import { FullScreenQuad } from 'three/addons/postprocessing/Pass.js'
 import { CFG, MACH, REBASE } from './config'
 import { World } from './world'
@@ -29,7 +30,7 @@ import { PLANETS, StarSystem, STAR_R } from './system'
 /** Shadows are cast along the sun, but never stretched past a ~17° sun (a sun on the horizon threw them 100 m off). */
 const SHADOW_Y = Math.max(SUN_DIR[1], 0.3)
 import { loadTextures } from './textures'
-import { centerline, Course, COURSES, LAPS, medals } from './course'
+import { CANYON, centerline, Course, COURSES, LAPS, medals } from './course'
 import { Race, type Racer } from './race'
 import { ChaseCam } from './camera'
 import { Debris } from './debris'
@@ -277,7 +278,10 @@ const MEDAL_HTML = ['', medalSvg(1), medalSvg(2), medalSvg(3)]
 const bestOf = (id: string): number | null => { try { const v = localStorage.getItem(bestKey(id)); return v ? +v : null } catch { return null } }
 // Mesas clear of the course corridor — tested at every wrapped copy of each one that falls along the
 // 140 km line (the world repeats every 72 km).
+const canyon = BIOME === 'desert' ? new Canyon(CANYON.loop!) : null
 const clearAt = (x: number, z: number, r: number) => {
+  // (Nothing stands in the canyon or on its rim, on any RED MESA course: in the open world it is there.)
+  if (canyon && canyon.covers(x, z, r)) return false
   const B = course.box, m = 3000
   for (let ix = Math.ceil((B.x0 - m - x) / REBASE); ix <= Math.floor((B.x1 + m - x) / REBASE); ix++)
     for (let iz = Math.ceil((B.z0 - m - z) / REBASE); iz <= Math.floor((B.z1 + m - z) / REBASE); iz++)
@@ -288,10 +292,14 @@ const clearAt = (x: number, z: number, r: number) => {
 /** How tall something may stand at (x, z), × its full height: near the track ~30% (tall spires there
  *  looked dangerous and walled off the view of the course), full from ~1.4 km past the gates. */
 const heightNearTrack = (x: number, z: number) => Math.min(1, 0.28 + Math.max(0, course.distance(x, z) - course.gateHalf) / 1400)
-const world = new World(clearAt, (x, z, r) => course.distance(x, z) < 460 + r, (x, z, r) => course.distance(x, z) < course.gateHalf + 30 + r * 1.3, heightNearTrack)
+const world = new World(clearAt, (x, z, r) => course.distance(x, z) < 460 + r, (x, z, r) => course.distance(x, z) < (course.def.canyon ? 4900 : course.gateHalf + 30) + r * 1.3 || (!!canyon && canyon.covers(x, z, r)), heightNearTrack)
 bootMark('world')
 await breathe()
 world.addFixed(course.rocks)
+// The great canyon: RED MESA's, in the world itself (CANYON RUN races down it; FREE ROAM and HUNT can fly
+// to it). Solid (World.near). Raced on another RED MESA course it is not there (THE SPRINT runs through it).
+const canyonMesh = canyon ? canyon.build(world.mesaMat!) : null
+if (canyon && canyonMesh) { world.canyon = canyon; world.group.add(canyonMesh) }
 // The polar world's set pieces: glaciers, seracs and spike fields placed close beside the line
 // (150–400 m off its edge), so the race threads past the ice instead of seeing it on the horizon.
 if (BIOME !== 'desert') {
@@ -377,6 +385,8 @@ if (BIOME !== 'desert') {
       const a = rnd() * 6.28, d = Math.sqrt(rnd()) * spread
       const x = cx + Math.cos(a) * d, z = cz + Math.sin(a) * d
       if (course.distance(x, z) < 350 + W) continue
+      // (CANYON RUN: only on the canyon floor — out there is the wall and the rim.)
+      if (course.def.canyon && course.distance(x, z) > 1080) continue
       const roll = rnd()
       const pSpike = zone === 'forest' ? 0.75 : zone === 'glacier' ? 0.35 : 0.3
       // (Tall ones stand far out: a 120 m sentinel 400 m off the line read as a wall.)
@@ -2866,6 +2876,7 @@ function frame(now: number): void {
   const me = race.racers[0]
   course.update(mode === 'race' ? me.next : -1, time, false)
   course.group.visible = (mode === 'race' || mode === 'title') && !IN_SYSTEM
+  if (canyonMesh) { world.canyonOn = !!course.def.canyon || mode === 'free' || mode === 'hunt'; canyonMesh.visible = world.canyonOn }
   world.ground.uTrackOn.value = mode === 'hunt' || mode === 'free' ? 0 : course.def.wear ?? 1
   if (mode === 'free') shards.draw(time)
 

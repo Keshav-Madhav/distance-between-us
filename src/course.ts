@@ -72,6 +72,8 @@ export interface CourseDef {
   aiLevel?: number
   /** How far mesas keep from the line (m, default 850): small → a canyon. */
   clearance?: number
+  /** A canyon round the loop (src/canyon.ts): continuous walls either side of a wide floor. */
+  canyon?: boolean
   /** Gate width (half, m) and tower height × (default 260, 1). */
   gateHalf?: number
   gateTall?: number
@@ -262,7 +264,7 @@ export const CANYON: CourseDef = {
   id: 'canyon',
   medalPace: 0.93,
   name: 'CANYON RUN',
-  blurb: 'A KIDNEY LOOP · ROCK WALLS CLOSE · DAWN',
+  blurb: 'A KIDNEY LOOP · DOWN A GREAT CANYON · DAWN',
   km: Math.round(loopLength(canyonPath) / 100) / 10,
   loop: canyonPath,
   gateEvery: 5000,
@@ -273,7 +275,10 @@ export const CANYON: CourseDef = {
   rockGateP: 0,
   seed: 31,
   sections: [],
-  clearance: 380,
+  // (A canyon now, 2026-11-24: the player asked for a very wide one with proper, unbroken walls. The
+  // world's mesas stay out beyond the rim.)
+  clearance: 4900,
+  canyon: true,
 }
 
 /**
