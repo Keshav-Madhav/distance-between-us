@@ -32,7 +32,8 @@ SPINE = [(5.0, 0, BY, 0.1, 0.05, 0.05, 2.0), (4.0, 0, BY + 0.04, 0.42, 0.3, 0.12
 smooth_loft('spine', SPINE, 32, 50, M['paint'], cap1=True)
 _zs = sorted(r[0] for r in SPINE); _top = _mono_cubic(_zs, [next(r[2] + r[4] for r in SPINE if r[0] == z) for z in _zs])
 # Canopy forward on the spine, smoked, with a gunmetal frame.
-smooth_loft('canopy', [(3.5, 0, _top(3.3) - 0.07, 0.05, 0.03, 0.02, 2.0), (3.1, 0, _top(3.0) - 0.07, 0.3, 0.14, 0.02, 2.2), (2.2, 0, _top(2.2) - 0.07, 0.4, 0.22, 0.02, 2.2), (1.35, 0, _top(1.4) - 0.07, 0.34, 0.14, 0.02, 2.2), (1.0, 0, _top(1.1) - 0.07, 0.05, 0.03, 0.02, 2.0)], 28, 20, M['glass'])
+smooth_loft('canopy', [(3.5, 0, _top(3.3) - 0.07, 0.05, 0.03, 0.02, 2.0), (3.1, 0, _top(3.0) - 0.07, 0.3, 0.2, 0.02, 2.2), (2.2, 0, _top(2.2) - 0.07, 0.4, 0.34, 0.02, 2.2), (1.35, 0, _top(1.4) - 0.07, 0.34, 0.22, 0.02, 2.2), (1.0, 0, _top(1.1) - 0.07, 0.05, 0.03, 0.02, 2.0)], 28, 20, M['glass'])
+pilot(M, 0, _top(2.0) + 0.1, 1.95, 0.13)
 # A dark spine strip behind the canopy.
 poly_loft('spine_strip', [(z, 0, _top(z) + 0.003, 0.12, 0.012, 0.012) for z in (0.7, -0.4, -1.5, -2.4)], [(1, 0), (0.9, 1), (-0.9, 1), (-1, 0), (-0.9, -1), (0.9, -1)], 24, M['gun'], cap1=True, angle=80)
 

@@ -158,7 +158,9 @@ def egg(scale_w, scale_h, base, z_pad=0.0, n=14):
 smooth_loft('canopy_skirt', [(z, 0, 1.26, a * 1.08, TOP - 1.26 + 0.02, 0.05, 2.6) for (z, cx, cy, a, t, b, n) in egg(1.0, 1.0, TOP, 0.25)], 24, 22, M['paint'])
 frame = smooth_loft('canopy_frame', [(z, 0, TOP - 0.03, a * 1.05, 0.06, 0.03, 2.4) for (z, cx, cy, a, t, b, n) in egg(1.0, 1.0, TOP, 0.0)], 24, 22, M['trim'])
 can = smooth_loft('canopy', egg(1.0, 1.0, TOP), 28, 22, M['glass'], angle=80)
-smooth_loft('canopy_tub', egg(0.95, 0.94, TOP - 0.01), 16, 14, M['carbon'])
+smooth_loft('canopy_tub', egg(0.95, 0.12, TOP - 0.01), 16, 14, M['carbon'])
+pilot(M, 0, TOP + 0.2, CZ - 0.45, 0.16)
+box('seat', (0.42, 0.06, 0.6), (0, TOP + 0.02, CZ - 0.3), material=M['gun'])
 for f in (-0.35, 0.35):
     z = CZ + f * CL; k = math.sqrt(max(0.0, 1 - f * f)) ** 0.8
     pts = [(CW * k * 1.01 * math.cos(t), TOP + CH * k * 1.01 * math.sin(t), z) for t in [i * math.pi / 12 for i in range(13)]]

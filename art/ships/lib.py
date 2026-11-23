@@ -328,3 +328,21 @@ def poly_loft(name, stations, profile, steps=48, material=None, cap1=True, angle
     if cap1: bm.faces.new(list(reversed(loops[-1])))
     bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
     return smooth(obj_from_bm(name, bm, material), angle)
+
+def pilot(M, x, y, z, r=0.13, helmet='trim'):
+    """A seated pilot visible through the canopy: a helmet (team colour) with a dark visor band facing
+    forward, a headrest behind, shoulders below. (x, y, z) is the helmet centre, game frame."""
+    bpy.ops.mesh.primitive_uv_sphere_add(segments=20, ring_count=12, radius=r)
+    h = bpy.context.active_object; h.name = 'helmet'; h.scale = (0.95, 1.0, 1.08); h.location = G(x, y, z)
+    bpy.ops.object.transform_apply(location=True, scale=True); h.data.materials.append(M[helmet]); smooth(h, 80)
+    bpy.ops.mesh.primitive_uv_sphere_add(segments=20, ring_count=10, radius=r * 1.04)
+    v = bpy.context.active_object; v.name = 'visor'
+    bm = bmesh.new(); bm.from_mesh(v.data)
+    bmesh.ops.delete(bm, geom=[f for f in bm.faces if not (f.calc_center_median().y < -r * 0.25 and abs(f.calc_center_median().z) < r * 0.45)], context='FACES')
+    bm.to_mesh(v.data); bm.free()
+    v.scale = (0.95, 1.0, 1.08); v.location = G(x, y, z)
+    bpy.ops.object.transform_apply(location=True, scale=True); v.data.materials.append(M['carbon']); smooth(v, 80)
+    box('headrest', (r * 2.0, r * 1.9, r * 0.5), (x, y - r * 0.35, z - r * 1.35), material=M['gun'], bevel=r * 0.15)
+    bpy.ops.mesh.primitive_uv_sphere_add(segments=16, ring_count=8, radius=1)
+    s = bpy.context.active_object; s.name = 'shoulders'; s.scale = (r * 2.3, r * 1.3, r * 1.1); s.location = G(x, y - r * 1.55, z - r * 0.4)
+    bpy.ops.object.transform_apply(location=True, scale=True); s.data.materials.append(M['gun']); smooth(s, 80)
