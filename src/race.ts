@@ -82,6 +82,21 @@ export interface RaceEvents {
 
 export class Race {
   readonly racers: Racer[] = []
+  /** Every racer built (racers is the ones in this race — see setMode). */
+  readonly all: Racer[] = []
+  /** RACE the whole field; TIME TRIAL alone (a ghost of your best — main.ts); DUEL one formidable rival. */
+  sub: 'race' | 'trial' | 'duel' = 'race'
+  setMode(sub: 'race' | 'trial' | 'duel'): void {
+    if (!this.all.length) this.all.push(...this.racers)
+    this.sub = sub
+    // DUEL's rival: the field's best.
+    const best = this.all.filter((r) => r.ai).sort((a, b) => b.skill - a.skill)[0]
+    const keep = sub === 'race' ? this.all : sub === 'duel' ? [this.all[0], best] : [this.all[0]]
+    this.racers.length = 0
+    this.racers.push(...keep)
+    // The others out of the world (not simulated, not drawn — far away).
+    for (const r of this.all) if (!keep.includes(r)) { r.p.reset(1e7 + r.skill * 1e4, 1e7, 0, 0); r.finished = false }
+  }
   state: RaceState = 'grid'
   /** Tests: the field's natural pace, with no pull toward the player (tools/aitune.mjs). */
   noBand = false
@@ -477,7 +492,8 @@ export class Race {
     const H = CFG.handling, kap = bend / 1000
     // The course's AI level (1 = par; see CourseDef.aiLevel): how hard they corner, how readily they
     // light the burner, how strong their engines are. Never a speed cap — they race your physics.
-    const L = (c.def.aiLevel ?? 1) + this.aiBoost
+    // (DUEL: the one rival a clear step up — formidable, still fair: it can wreck.)
+    const L = (c.def.aiLevel ?? 1) + this.aiBoost + (this.sub === 'duel' ? 1.2 : 0)
     // IMPOSSIBLE: never wreck (hits glance off), and racer-to-racer knocks never wreck them either.
     p.unwreckable = this.aiBoost >= 4
     const gripSafe = kap > H.gripQ ? (H.gripK / (kap - H.gripQ)) * (0.84 + r.skill * 0.08 + (L - 1) * 0.3) / MACH : 99

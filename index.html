@@ -242,6 +242,10 @@
   #title .topbar { position: absolute; left: 32px; right: 32px; top: 24px; display: flex; align-items: center; gap: 32px; }
   #title .topbar h1 { margin: 0; font-size: 18px; letter-spacing: 0.24em; line-height: 1; white-space: nowrap; text-align: left; }
   #title .tabs { display: flex; gap: 2px; padding: 3px; border: 1px solid rgba(255,255,255,0.14); background: rgba(0,0,0,0.35); }
+  #submodes { display: flex; gap: 2px; padding: 3px; margin-bottom: 14px; border: 1px solid rgba(255,255,255,0.14); background: rgba(0,0,0,0.35); }
+  #submodes button { flex: 1; padding: 8px 6px; border: 0; background: transparent; color: #f2e6dc; font: inherit; font-size: 12px; letter-spacing: 0.2em; cursor: pointer; }
+  #submodes button.on { background: var(--hot); color: #1b0f08; font-weight: 700; }
+  #submodes button:hover:not(.on) { background: rgba(255,255,255,0.08); }
   #title .tabs button { flex: 0 0 auto; padding: 7px 20px; border: none; background: none; font-size: 12px; letter-spacing: 0.26em; opacity: 0.65; margin: 0; }
   #title .tabs button:hover { opacity: 1; background: rgba(255,255,255,0.08); }
   #title .tabs button.on { background: var(--hot); color: #1a0d06; font-weight: 700; opacity: 1; }
@@ -505,6 +509,8 @@
   <div class="menu">
     <div class="sec">World</div>
     <div id="worlds"></div>
+    <div class="sec race-only course-only">Mode</div>
+    <div id="submodes" class="race-only course-only" role="tablist"><button data-sub="race" class="on">RACE</button><button data-sub="trial">TIME TRIAL</button><button data-sub="duel">DUEL</button></div>
     <div class="sec race-only course-only">Course</div>
     <div id="courses" class="race-only course-only"></div>
     <div class="free-only huntinfo"><b>HOW IT PLAYS</b><p>The whole world and nothing to win. Leave the ground — off a jump, a cliff, a rock's top, or Space at speed — and you fly; touch down anywhere and drive on. Same keys on the ground and in the air. Nothing hurts.</p><p class="soon">Beams mark trails of five crystals: on the ground, on the summits, up in the sky.</p><p>Keep climbing and you leave the air: point the nose up and hold Shift. Climb out past 1,500 km (Shift cruises up there) and you are back among the worlds.</p></div>

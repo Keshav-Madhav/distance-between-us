@@ -1623,6 +1623,8 @@ function showResults(): void {
   if (me0.finished) {
     const b = bestOf(course.def.id)
     if (b === null || me0.finishTime < b) { newBest = true; try { localStorage.setItem(bestKey(course.def.id), String(me0.finishTime)) } catch { /* blocked */ } }
+    // TIME TRIAL: your best run is the ghost next time (a ghost from a field race would race alone too).
+    if (race.sub === 'trial' && (newBest || !loadGhost())) saveGhost()
   }
   $('#over-h').textContent = `${ord(race.racers[0].place)} PLACE`
   const md = me0.finished ? medalOf(course.def, me0.finishTime) : 0, [mg, ms, mb] = medals(course.def)
@@ -1656,6 +1658,54 @@ function resetVisuals(): void {
 let runTop = 0
 let driftLvl = 0
 let secK = 0, pinUntil = 0
+// ── race sub-modes: RACE (the field), TIME TRIAL (alone, against a ghost of your best), DUEL ──
+let subMode: 'race' | 'trial' | 'duel' = (() => { try { const m = localStorage.getItem('dbu-sub'); return m === 'trial' || m === 'duel' ? m : 'race' } catch { return 'race' } })()
+for (const b of $('#title').querySelectorAll<HTMLButtonElement>('#submodes button')) {
+  b.classList.toggle('on', b.dataset.sub === subMode)
+  b.onclick = () => {
+    subMode = b.dataset.sub as typeof subMode
+    try { localStorage.setItem('dbu-sub', subMode) } catch { /* blocked */ }
+    for (const x of $('#title').querySelectorAll<HTMLButtonElement>('#submodes button')) x.classList.toggle('on', x === b)
+  }
+}
+/** TIME TRIAL's ghost: your best run on this course, every other sim step (x, y, z, heading, bank, pitch). */
+const GHOST_N = 6
+let ghostRec: number[] = []
+let ghostPlay: Float32Array | null = null
+let ghostStep = 0
+const ghostKey = () => 'dbu-ghost-' + course.def.id
+function loadGhost(): Float32Array | null {
+  try {
+    const s = localStorage.getItem(ghostKey())
+    if (!s) return null
+    const bin = atob(s), u8 = new Uint8Array(bin.length)
+    for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i)
+    return new Float32Array(u8.buffer)
+  } catch { return null }
+}
+function saveGhost(): void {
+  try {
+    const u8 = new Uint8Array(new Float32Array(ghostRec).buffer)
+    let bin = ''
+    for (let i = 0; i < u8.length; i += 0x8000) bin += String.fromCharCode(...u8.subarray(i, i + 0x8000))
+    localStorage.setItem(ghostKey(), btoa(bin))
+  } catch { /* storage full or blocked */ }
+}
+/** The ghost's craft: a spare racer's, see-through. */
+const ghostRacer = () => race.all[1]
+function setGhostLook(on: boolean): void {
+  const r = ghostRacer()
+  if (!r) return
+  visuals.get(r.p)!.craft.root.traverse((o) => {
+    const m = (o as THREE.Mesh).material as THREE.Material | undefined
+    if (!m || Array.isArray(m)) return
+    const u = m.userData as { ghost?: [boolean, number, boolean] }
+    if (on) { if (!u.ghost) u.ghost = [m.transparent, m.opacity, m.depthWrite]; m.transparent = true; m.opacity = 0.32; m.depthWrite = false }
+    else if (u.ghost) { [m.transparent, m.opacity, m.depthWrite] = u.ghost; delete u.ghost }
+    m.needsUpdate = true
+  })
+}
+
 function startRace(): void {
   ;(document.activeElement as HTMLElement | null)?.blur?.() // (see Input: a focused START restarted the run on Space)
   freeOff()
@@ -1677,8 +1727,14 @@ function startRace(): void {
   overlay = false
   combat.enabled = false
   combat.reset()
+  race.setMode(subMode)
+  // The racers left out of this race: their crafts hidden (nothing draws them any more).
+  for (const r of race.all) if (!race.racers.includes(r)) { const v = visuals.get(r.p)!; v.craft.root.visible = false; for (const t of v.trail) t.reset() }
   race.reset()
   resetVisuals()
+  ghostRec = []; ghostStep = 0
+  ghostPlay = subMode === 'trial' ? loadGhost() : null
+  setGhostLook(subMode === 'trial')
   for (const r of race.racers) visuals.get(r.p)!.lastDust.copy(r.p.pos)
   cam.snap(player.heading)
   runTime = 0
@@ -2414,6 +2470,10 @@ function simStep(): void {
     const auto = autopilot || (spectate && me.finished)
     if (auto) race.drive(me, STEP)
     race.step(STEP, forced ?? (auto ? me.controls : input.c), world)
+    if (race.sub === 'trial' && race.state === 'racing' && !me.finished) {
+      if ((ghostStep & 1) === 0) ghostRec.push(player.pos.x, player.pos.y, player.pos.z, player.heading, player.bank, player.pitch)
+      ghostStep++
+    }
     if (race.state !== 'grid') runTime += STEP
   } else if (mode === 'hunt') {
     // Flight: the controls (keys, stick), the craft, mirrored into the Player.
@@ -2863,6 +2923,24 @@ function frame(now: number): void {
   }
   const alpha = acc / STEP
 
+  // TIME TRIAL's ghost: placed from the recording at this step (between two samples), drawn like a racer.
+  {
+    const gr = ghostRacer()
+    const on = mode === 'race' && race.sub === 'trial' && !!ghostPlay && race.state !== 'grid' && !!gr
+    if (gr) {
+      const v = visuals.get(gr.p)!
+      if (on) {
+        const n = ghostPlay!.length / GHOST_N, f = Math.min(n - 1, ghostStep / 2), i0 = Math.floor(f), i1 = Math.min(n - 1, i0 + 1)
+        const G = ghostPlay!, a = i0 * GHOST_N, b2 = i1 * GHOST_N, t = f - i0
+        const L = (k: number) => G[a + k] + (G[b2 + k] - G[a + k]) * t
+        gr.p.prev.copy(gr.p.pos); gr.p.pos.set(L(0), L(1), L(2))
+        gr.p.prevHeading = gr.p.heading; gr.p.heading = L(3); gr.p.prevBank = gr.p.bank; gr.p.bank = L(4); gr.p.prevPitch = gr.p.pitch; gr.p.pitch = L(5)
+        gr.p.crashing = false; gr.p.spin = 0; gr.p.tumble = 0
+        v.craft.root.visible = true
+        drawRacer(gr.p, 1, dt, false)
+      } else if (!race.racers.includes(gr)) v.craft.root.visible = false
+    }
+  }
   for (const r of race.racers) {
     const v = visuals.get(r.p)!
     if (r.ai && mode !== 'race') { v.craft.root.visible = false; continue }
@@ -3280,6 +3358,12 @@ function updateHud(dt: number, slow: boolean): void {
     // Rival tags.
     tagPlaced.length = 0
     for (const { r, d } of tagEls) {
+      // (Racers out of this race show no tag; TIME TRIAL's ghost is labelled as itself.)
+      const isGhost = race.sub === 'trial' && r === ghostRacer() && !!ghostPlay
+      if (!race.racers.includes(r) && !isGhost) { d.style.display = 'none'; continue }
+      const span = d.querySelector('span')!
+      const want = isGhost ? 'GHOST · BEST' : r.name
+      if (span.textContent !== want) span.textContent = want
       const dist = r.p.pos.distanceTo(camera.position)
       proj.set(r.p.pos.x, r.p.pos.y + 4, r.p.pos.z).project(camera)
       const on = !r.p.dead && proj.z < 1 && Math.abs(proj.x) < 1 && Math.abs(proj.y) < 1 && dist > 25 && dist < 4000
