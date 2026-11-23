@@ -227,7 +227,9 @@ export class Race {
         r.p.step(dt, r.controls, world, true)
         continue
       }
-      r.p.step(dt, r.ai ? r.controls : playerControls, world)
+      // IMPOSSIBLE rivals live 30% faster than you: the same driving, a faster clock — no line you can fly
+      // keeps up with that.
+      r.p.step(r.ai && r.p.unwreckable ? dt * 1.3 : dt, r.ai ? r.controls : playerControls, world)
       if (r.p.hull <= 0 && !r.p.dead && !r.p.crashing) { r.p.dead = true; r.respawnT = 1.6 }
       // A wreck that has come to rest: destroyed → the respawn timer; otherwise straight back on the line.
       if (r.p.recovered) {
@@ -510,8 +512,11 @@ export class Race {
     r.band = band
     // Throttle commitment by level (and more when behind you): how close to full cruise they hold. The
     // burner on top has no ceiling — a bold or trailing rival goes past any speed you reach.
-    p.maxMach = CFG.speed.boostMach * Math.min(1, 0.8 + 0.2 * L + Math.max(0, band) * 0.15)
-    p.burnMul = (1 + (L - 1) * 0.35) * (1 + (r.skill - 0.95) * 0.05) * (1 + band * 0.12)
+    // (Only a rival's engine: the autopilot flying you must not change your craft — a replay of its inputs
+    // then flew a different ship.)
+    if (r.ai) p.maxMach = CFG.speed.boostMach * Math.min(1, 0.8 + 0.2 * L + Math.max(0, band) * 0.15)
+    if (r.ai) p.burnMul = (1 + (L - 1) * 0.35) * (1 + (r.skill - 0.95) * 0.05) * (1 + band * 0.12)
+
     const corner = p.mach > safe * 0.92
     ctl.boost = !corner && Math.abs(err) < 0.5
     // The afterburner on the long straights only (it locks the steering), and only when the line
@@ -564,8 +569,9 @@ export class Race {
       ctl.strafe = THREE.MathUtils.clamp(push, -1, 1)
     }
     ctl.dodgeL = ctl.dodgeR = false
-    // Stuck on something: back on the line.
-    if (this.state === 'racing' && !r.finished) {
+    // Stuck on something: back on the line. (Rivals only: flying you, the autopilot must not move your craft
+    // by anything but its inputs — a replay could not reproduce the teleport.)
+    if (r.ai && this.state === 'racing' && !r.finished) {
       r.stuck = p.speed < 120 ? r.stuck + dt : 0
       if (r.stuck > 2.5) this.respawn(r)
     }

@@ -170,6 +170,10 @@ export class Player {
     this.crashRot.set(0, 0, 0)
     this.recovered = false
     this.throttle = 0
+    // (Everything that carries state between steps, back to a fresh craft: a restarted race must run exactly
+    // as the first one did — a replay of its inputs in the same page drifted on boost/steer smoothing.)
+    this.agl = 0; this.boost = 0; this.brake = 0; this.accel = 0; this.sinceHurt = 10; this.steerIn = 0
+    this.gripLoad = 0; this.wake = 0; this.turnMax = 1; this.steerWant = 0; this.dodgeCool = 0
     this.drift = 0
     this.bankV = this.pitchV = 0
     this.bank = this.pitch = this.prevBank = this.prevPitch = 0

@@ -543,7 +543,7 @@ let spectate = false
 /** Graphics settings (the Esc panel). */
 // (Declared up here: restoring saved settings at boot runs their handlers before the HUNT code below.)
 let invertPitch = false
-const settings = { shadows: !params.has('noshadow'), fps: 'auto' as 'auto' | '60' | '120' | 'max', map: true, scale: 1, dist: 20, part: 1, bloom: true, blur: 1, sharp: 0.4, grain: true, cloud: true }
+const settings = { ghost: true, shadows: !params.has('noshadow'), fps: 'auto' as 'auto' | '60' | '120' | 'max', map: true, scale: 1, dist: 20, part: 1, bloom: true, blur: 1, sharp: 0.4, grain: true, cloud: true }
 let crashBreak = 0
 const rivalVoices: import('./audio').RivalVoice[] = []
 const camRight = new THREE.Vector3()
@@ -695,6 +695,29 @@ for (const [i, r] of race.racers.entries()) {
   }
 }
 const myCraft = visuals.get(player)!.craft
+// Your best run's ghost (every race mode): its own craft in your ship, see-through, never simulated.
+const ghostP = new Player()
+{
+  const craft = new Craft(env, { ...PAINTS[0] }, shipPick)
+  craft.root.visible = false
+  scene.add(craft.root)
+  const t = new Trail(40, new THREE.Color(0.5, 0.85, 1.3), true, 0.8)
+  t.width = 0.4
+  scene.add(t.mesh)
+  visuals.set(ghostP, { craft, trail: [t], vapour: [], lastDust: new THREE.Vector3(), heading: 0, wasDead: false, wasHidden: false })
+  craft.root.traverse((o) => {
+    const m = (o as THREE.Mesh).material as THREE.Material | undefined
+    if (!m || Array.isArray(m)) return
+    // (Its own materials: the ship's are shared with your craft.)
+    const c = m.clone(); c.transparent = true; c.opacity = 0.3; c.depthWrite = false
+    ;(o as THREE.Mesh).material = c
+  })
+}
+const ghostTag = document.createElement('div')
+ghostTag.className = 'tag'
+ghostTag.style.setProperty('--c', '#8fd8ff')
+ghostTag.innerHTML = '<span>GHOST · BEST</span><i></i>'
+$('#tags').appendChild(ghostTag)
 
 // ── wrecks: every racer's crash and every bounce of it ──
 race.racers.forEach((r, i) => {
@@ -1623,8 +1646,8 @@ function showResults(): void {
   if (me0.finished) {
     const b = bestOf(course.def.id)
     if (b === null || me0.finishTime < b) { newBest = true; try { localStorage.setItem(bestKey(course.def.id), String(me0.finishTime)) } catch { /* blocked */ } }
-    // TIME TRIAL: your best run is the ghost next time (a ghost from a field race would race alone too).
-    if (race.sub === 'trial' && (newBest || !loadGhost())) saveGhost()
+    // Your best run is the ghost from the next race on (any mode).
+    if (newBest || !loadGhost()) { saveGhost(); saveInputs() }
   }
   $('#over-h').textContent = `${ord(race.racers[0].place)} PLACE`
   const md = me0.finished ? medalOf(course.def, me0.finishTime) : 0, [mg, ms, mb] = medals(course.def)
@@ -1668,9 +1691,18 @@ for (const b of $('#title').querySelectorAll<HTMLButtonElement>('#submodes butto
     for (const x of $('#title').querySelectorAll<HTMLButtonElement>('#submodes button')) x.classList.toggle('on', x === b)
   }
 }
-/** TIME TRIAL's ghost: your best run on this course, every other sim step (x, y, z, heading, bank, pitch). */
+/** Your best run's ghost on this course (every race mode): every other sim step (x, y, z, heading, bank, pitch). */
 const GHOST_N = 6
 let ghostRec: number[] = []
+/** The run's inputs (3 floats a step, from the grid) — saved with your best; a replay feeds them back. */
+let inputRec: number[] = []
+let replayIn: Float32Array | null = null
+const stepCtl: import('./player').Controls = { steer: 0, strafe: 0, boost: false, burner: false, brake: false, dodgeL: false, dodgeR: false }
+let replayAt = 0
+const b64 = (u8: Uint8Array) => { let bin = ''; for (let i = 0; i < u8.length; i += 0x8000) bin += String.fromCharCode(...u8.subarray(i, i + 0x8000)); return btoa(bin) }
+const unb64 = (s: string) => { const bin = atob(s), u8 = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i); return u8 }
+function saveInputs(): void { try { localStorage.setItem('dbu-inputs-' + course.def.id, b64(new Uint8Array(new Float32Array(inputRec).buffer))) } catch { /* full */ } }
+function loadInputs(): Float32Array | null { try { const s = localStorage.getItem('dbu-inputs-' + course.def.id); return s ? new Float32Array(unb64(s).buffer) : null } catch { return null } }
 let ghostPlay: Float32Array | null = null
 let ghostStep = 0
 const ghostKey = () => 'dbu-ghost-' + course.def.id
@@ -1690,20 +1722,6 @@ function saveGhost(): void {
     for (let i = 0; i < u8.length; i += 0x8000) bin += String.fromCharCode(...u8.subarray(i, i + 0x8000))
     localStorage.setItem(ghostKey(), btoa(bin))
   } catch { /* storage full or blocked */ }
-}
-/** The ghost's craft: a spare racer's, see-through. */
-const ghostRacer = () => race.all[1]
-function setGhostLook(on: boolean): void {
-  const r = ghostRacer()
-  if (!r) return
-  visuals.get(r.p)!.craft.root.traverse((o) => {
-    const m = (o as THREE.Mesh).material as THREE.Material | undefined
-    if (!m || Array.isArray(m)) return
-    const u = m.userData as { ghost?: [boolean, number, boolean] }
-    if (on) { if (!u.ghost) u.ghost = [m.transparent, m.opacity, m.depthWrite]; m.transparent = true; m.opacity = 0.32; m.depthWrite = false }
-    else if (u.ghost) { [m.transparent, m.opacity, m.depthWrite] = u.ghost; delete u.ghost }
-    m.needsUpdate = true
-  })
 }
 
 function startRace(): void {
@@ -1732,9 +1750,9 @@ function startRace(): void {
   for (const r of race.all) if (!race.racers.includes(r)) { const v = visuals.get(r.p)!; v.craft.root.visible = false; for (const t of v.trail) t.reset() }
   race.reset()
   resetVisuals()
-  ghostRec = []; ghostStep = 0
-  ghostPlay = subMode === 'trial' ? loadGhost() : null
-  setGhostLook(subMode === 'trial')
+  ghostRec = []; ghostStep = 0; inputRec = []; replayAt = 0
+  ghostPlay = settings.ghost ? loadGhost() : null
+  { const v = visuals.get(ghostP)!; v.craft.root.visible = false; for (const t of v.trail) t.reset() }
   for (const r of race.racers) visuals.get(r.p)!.lastDust.copy(r.p.pos)
   cam.snap(player.heading)
   runTime = 0
@@ -2351,6 +2369,7 @@ for (const id of ['#g-fps', '#g-scale', '#g-dist', '#g-part', '#g-bloom', '#g-bl
 applyGraphics()
 $<HTMLSelectElement>('#as').onchange = (e) => { player.assist = +(e.target as HTMLSelectElement).value }
 $<HTMLSelectElement>('#rivals').onchange = (e) => { race.aiBoost = +(e.target as HTMLSelectElement).value }
+$<HTMLInputElement>('#ghoston').onchange = (e) => { settings.ghost = (e.target as HTMLInputElement).checked }
 $<HTMLInputElement>('#fov').oninput = (e) => { fovMax = +(e.target as HTMLInputElement).value }
 try {
   const saved = localStorage.getItem('dbu-fov')
@@ -2469,8 +2488,21 @@ function simStep(): void {
     const me = race.racers[0]
     const auto = autopilot || (spectate && me.finished)
     if (auto) race.drive(me, STEP)
-    race.step(STEP, forced ?? (auto ? me.controls : input.c), world)
-    if (race.sub === 'trial' && race.state === 'racing' && !me.finished) {
+    // Replaying a recorded run: its inputs, step by step (see recordInputs).
+    if (replayIn && replayAt < replayIn.length / 3) {
+      const o = replayAt++ * 3, f = replayIn[o + 2]
+      forced = { steer: replayIn[o], strafe: replayIn[o + 1], boost: !!(f & 1), burner: !!(f & 2), brake: !!(f & 4), dodgeL: !!(f & 8), dodgeR: !!(f & 16) }
+    } else if (replayIn) { replayIn = null; forced = null }
+    // The controls this step, as the physics gets them: steer and strafe at float32 precision — exactly
+    // what the recording stores, so a replay feeds the physics the very same numbers (a float64 steer
+    // stored as float32 differed by 1e-8 and the run split after 9 s).
+    const c0 = forced ?? (auto ? me.controls : input.c)
+    stepCtl.steer = Math.fround(c0.steer); stepCtl.strafe = Math.fround(c0.strafe)
+    stepCtl.boost = c0.boost; stepCtl.burner = c0.burner; stepCtl.brake = c0.brake; stepCtl.dodgeL = c0.dodgeL; stepCtl.dodgeR = c0.dodgeR
+    // Every input of the run, every step from the grid on: steer, strafe, buttons.
+    if (race.state !== 'done' && !me.finished) inputRec.push(stepCtl.steer, stepCtl.strafe, (stepCtl.boost ? 1 : 0) | (stepCtl.burner ? 2 : 0) | (stepCtl.brake ? 4 : 0) | (stepCtl.dodgeL ? 8 : 0) | (stepCtl.dodgeR ? 16 : 0))
+    race.step(STEP, stepCtl, world)
+    if (race.state === 'racing' && !me.finished) {
       if ((ghostStep & 1) === 0) ghostRec.push(player.pos.x, player.pos.y, player.pos.z, player.heading, player.bank, player.pitch)
       ghostStep++
     }
@@ -2923,24 +2955,21 @@ function frame(now: number): void {
   }
   const alpha = acc / STEP
 
-  // TIME TRIAL's ghost: placed from the recording at this step (between two samples), drawn like a racer.
+  // Your best run's ghost: placed from the recording at this step (between two samples), drawn like a racer.
   {
-    const gr = ghostRacer()
-    const on = mode === 'race' && race.sub === 'trial' && !!ghostPlay && race.state !== 'grid' && !!gr
-    if (gr) {
-      const v = visuals.get(gr.p)!
-      if (on) {
-        const n = ghostPlay!.length / GHOST_N, f = Math.min(n - 1, ghostStep / 2), i0 = Math.floor(f), i1 = Math.min(n - 1, i0 + 1)
-        const G = ghostPlay!, a = i0 * GHOST_N, b2 = i1 * GHOST_N, t = f - i0
-        const L = (k: number) => G[a + k] + (G[b2 + k] - G[a + k]) * t
-        gr.p.prev.copy(gr.p.pos); gr.p.pos.set(L(0), L(1), L(2))
-        gr.p.prevHeading = gr.p.heading; gr.p.heading = L(3); gr.p.prevBank = gr.p.bank; gr.p.bank = L(4); gr.p.prevPitch = gr.p.pitch; gr.p.pitch = L(5)
-        gr.p.crashing = false; gr.p.spin = 0; gr.p.tumble = 0
-        v.craft.root.visible = true
-        drawRacer(gr.p, 1, dt, false)
-      } else if (!race.racers.includes(gr)) v.craft.root.visible = false
-    }
+    const v = visuals.get(ghostP)!, gp = ghostP
+    const on = mode === 'race' && !!ghostPlay && race.state !== 'grid'
+    if (on) {
+      const n = ghostPlay!.length / GHOST_N, f = Math.min(n - 1, ghostStep / 2), i0 = Math.floor(f), i1 = Math.min(n - 1, i0 + 1)
+      const G = ghostPlay!, a = i0 * GHOST_N, b2 = i1 * GHOST_N, t = f - i0
+      const L = (k: number) => G[a + k] + (G[b2 + k] - G[a + k]) * t
+      gp.prev.copy(gp.pos); gp.pos.set(L(0), L(1), L(2))
+      gp.prevHeading = gp.heading; gp.heading = L(3); gp.prevBank = gp.bank; gp.bank = L(4); gp.prevPitch = gp.pitch; gp.pitch = L(5)
+      v.craft.root.visible = f < n - 1
+      if (v.craft.root.visible) drawRacer(gp, 1, dt, false)
+    } else v.craft.root.visible = false
   }
+
   for (const r of race.racers) {
     const v = visuals.get(r.p)!
     if (r.ai && mode !== 'race') { v.craft.root.visible = false; continue }
@@ -3357,13 +3386,17 @@ function updateHud(dt: number, slow: boolean): void {
     for (const el of enemyEls) el.style.display = 'none'
     // Rival tags.
     tagPlaced.length = 0
+    {
+      const v = visuals.get(ghostP)!
+      proj.set(ghostP.pos.x, ghostP.pos.y + 4, ghostP.pos.z).project(camera)
+      const dist = ghostP.pos.distanceTo(camera.position)
+      const on = v.craft.root.visible && proj.z < 1 && Math.abs(proj.x) < 1 && Math.abs(proj.y) < 1 && dist > 25 && dist < 4000
+      ghostTag.style.display = on ? 'block' : 'none'
+      if (on) { ghostTag.style.left = `${(proj.x * 0.5 + 0.5) * innerWidth}px`; ghostTag.style.top = `${(-proj.y * 0.5 + 0.5) * innerHeight}px` }
+    }
     for (const { r, d } of tagEls) {
-      // (Racers out of this race show no tag; TIME TRIAL's ghost is labelled as itself.)
-      const isGhost = race.sub === 'trial' && r === ghostRacer() && !!ghostPlay
-      if (!race.racers.includes(r) && !isGhost) { d.style.display = 'none'; continue }
-      const span = d.querySelector('span')!
-      const want = isGhost ? 'GHOST · BEST' : r.name
-      if (span.textContent !== want) span.textContent = want
+      // (Racers out of this race show no tag.)
+      if (!race.racers.includes(r)) { d.style.display = 'none'; continue }
       const dist = r.p.pos.distanceTo(camera.position)
       proj.set(r.p.pos.x, r.p.pos.y + 4, r.p.pos.z).project(camera)
       const on = !r.p.dead && proj.z < 1 && Math.abs(proj.x) < 1 && Math.abs(proj.y) < 1 && dist > 25 && dist < 4000
@@ -3927,6 +3960,9 @@ const g = {
   },
   scatterVis: (v: boolean) => { scatter.group.visible = v; scatterForceOff = !v },
   force: (c: import('./player').Controls | null) => { forced = c },
+  /** Replay your saved best run's inputs from the grid (a fresh race in the current mode). */
+  replayBest: () => { const r = loadInputs(); if (!r) return false; startRace(); replayIn = r; replayAt = 0; return true },
+  inputCount: () => inputRec.length / 3,
   sound,
   renderer,
   /** Put the player just before jump k, at Mach m. */
