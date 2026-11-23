@@ -616,7 +616,16 @@ export const ORBIT: CourseDef = {
 
 /** Medal times (s) for a course: its whole race distance at average speeds of Mach 6.6 / 5.9 / 5.2
  *  (gold, silver, bronze); the drag at 9.6 / 8.6 / 7.6. */
+/**
+ * A normal human's time per course (s): the player's best × 1.04, estimated from their pace elsewhere where
+ * they had no valid best — the same calibration the AI is tuned to (tools/aicalib.json, 2026-11-23).
+ * Medals hang off it: gold about the player's best, silver a solid race, bronze a finish. (They were a
+ * fixed average Mach per course, blind to how hard the course is: a bronze 11 s ahead of the field.)
+ */
+export const MEDAL_H: Record<string, number> = {'sprint': 87.43, 'dry-river': 46.02, 'drag': 51.86, 'circuit': 79.1, 'oval': 34.25, 'canyon': 35.18, 'frostline': 80.75, 'icefall': 67.55, 'whiteout': 39.17, 'caldera': 72.41, 'faultline': 51.37, 'obsidian': 63.58, 'greenway': 73.61, 'riverrun': 44.39, 'timberline': 59.51, 'mistriver': 40.94, 'understory': 62.26}
 export function medals(d: CourseDef): [number, number, number] {
+  const h = MEDAL_H[d.id]
+  if (h) return [0.97, 1.03, 1.1].map((k) => Math.round(h * k * 10) / 10) as [number, number, number]
   const dist = d.km * 1000 * (d.laps ?? 1)
   // (Twisty courses have slower medals: their hairpins and stadium ends cost speed.)
   const pace = d.medalPace ?? 1
