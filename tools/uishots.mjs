@@ -1,0 +1,25 @@
+// UI states for critique: menu, paint drawer, settings, countdown, HUD, pause, the drag race finish, ORBIT.
+//   OUT=dir node tools/uishots.mjs
+import { chromium } from 'playwright-core'
+const OUT = process.env.OUT
+const b = await chromium.launch({ channel: 'chrome', headless: true, args: ['--mute-audio', '--use-gl=angle'] })
+const p = await (await b.newContext({ viewport: { width: 1280, height: 720 } })).newPage()
+const errs = []; p.on('pageerror', (e) => errs.push(e.message))
+const shot = (n) => p.screenshot({ path: `${OUT}/ui-${n}.png` })
+await p.goto('http://localhost:5417/?course=drag'); await p.waitForFunction('window.__g && window.__g.ready', null, { timeout: 120000 })
+await p.waitForTimeout(2000); await shot('1-menu')
+await p.click('#paint-btn').catch(() => {}); await p.waitForTimeout(500); await shot('2-paint'); await p.click('#paint-btn').catch(() => {})
+await p.click('#open-settings').catch(() => {}); await p.waitForTimeout(500); await shot('3-settings')
+await p.keyboard.press('Escape'); await p.click('#p-close').catch(() => {}); await p.waitForTimeout(400)
+await p.click('#start'); await p.waitForTimeout(1200); await shot('4-countdown')
+await p.waitForTimeout(3500); await p.keyboard.down('KeyW'); await p.waitForTimeout(3000); await shot('5-hud')
+await p.keyboard.up('KeyW'); await p.keyboard.press('Escape'); await p.waitForTimeout(500); await shot('6-pause')
+await p.keyboard.press('Escape'); await p.waitForTimeout(300)
+await p.evaluate(() => window.__g.autopilot(true))
+await p.waitForFunction(() => !document.getElementById('over').classList.contains('hide'), null, { timeout: 150000 }).catch(() => {})
+await p.waitForTimeout(1500); await shot('7-finish')
+await p.goto('http://localhost:5417/?course=orbit'); await p.waitForFunction('window.__g && window.__g.ready', null, { timeout: 120000 })
+await p.waitForTimeout(2000); await shot('8-orbit-menu')
+await p.click('#start'); await p.waitForTimeout(3000); await shot('9-orbit')
+console.log('errors', errs.slice(0, 5))
+await b.close()

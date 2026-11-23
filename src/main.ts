@@ -395,7 +395,7 @@ const race = new Race(course, player, {
     if (r.p !== player) return
     if (missed) { /* the speed cut and its effects: missedGate() */ }
     sound.gate(lapDone || r.passed === race.K - 1)
-    if (r.passed > 1) pop(`GATE ${r.passed - 1}/${race.K - 2}  ·  P${r.place}  ·  ${fmtLap(race.clock + r.penalty)}`)
+    if (r.passed > 1) pop(`GATE ${r.passed - 1}/${race.K - 2}  ·  ${fmtLap(race.clock + r.penalty)}`)
     if (r.passed === race.K - 1) flash('FINAL GATE')
   },
   finish(r) {
@@ -1409,8 +1409,16 @@ function showResults(): void {
   $('#over-h').textContent = `${ord(race.racers[0].place)} PLACE`
   const md = me0.finished ? medalOf(course.def, me0.finishTime) : 0, [mg, ms, mb] = medals(course.def)
   const next = md === 3 ? '' : ` · NEXT: ${['BRONZE', 'SILVER', 'GOLD'][md]} ${fmtLap([mb, ms, mg][md])}`
-  $('#over-stats').innerHTML = `${course.def.name} · ${course.def.km} KM IN ${fmtLap(race.racers[0].finishTime)}${newBest ? ' · <b style="color:#ffb070">NEW BEST</b>' : ''} · TOP SPEED MACH ${Math.max(runTop, player.topMach).toFixed(2)}<br/>${md ? `<span class="medalbig">${medalSvg(md, 44)}<b>${['', 'BRONZE', 'SILVER', 'GOLD'][md]}</b></span>` : 'NO MEDAL'}${next}`
-  $('#res').innerHTML = rows.map((r) => `<tr class="${r.ai ? '' : 'me'}"><td>${r.place}</td><td>${r.name}</td><td>${r.finished ? fmtLap(r.finishTime) : (race.toGo(r) / 1000).toFixed(1) + ' KM TO GO'}</td></tr>`).join('')
+  $('#over-stats').innerHTML = `${course.def.name} · ${course.def.km} KM IN ${fmtLap(race.racers[0].finishTime)}${newBest ? ' · <b style="color:#ffb070">NEW BEST</b>' : ''} · TOP SPEED MACH ${Math.max(runTop, player.topMach).toFixed(2)}<br/>${md ? `<span class="medalbig">${medalSvg(md, 44)}<b>${['', 'BRONZE', 'SILVER', 'GOLD'][md]} TIME</b></span>` : 'NO MEDAL TIME'}${next}`
+  // (A big field: the podium, then you and your neighbours — twenty rows ran off the screen.)
+  const myIdx = rows.findIndex((r) => !r.ai)
+  const keep = rows.map((_, i) => i < 3 || Math.abs(i - myIdx) <= 2 || rows.length <= 10)
+  let html = ''
+  rows.forEach((r, i) => {
+    if (!keep[i]) { if (keep[i - 1]) html += '<tr class="gap"><td></td><td>···</td><td></td></tr>'; return }
+    html += `<tr class="${r.ai ? '' : 'me'}"><td>${r.place}</td><td>${r.name}</td><td>${r.finished ? fmtLap(r.finishTime) : (race.toGo(r) / 1000).toFixed(1) + ' KM TO GO'}</td></tr>`
+  })
+  $('#res').innerHTML = html
   $('#over .go').textContent = 'R TO RACE AGAIN · H FOR HUNT · ESC TO KEEP FLYING'
   $('#over').classList.remove('hide')
 }
@@ -2896,6 +2904,8 @@ function updateHud(dt: number, slow: boolean): void {
   warnT = Math.max(0, warnT - dt)
   warnEl.style.opacity = warnT > 0 ? String((Math.sin(warnT * 14) > -0.3 ? 1 : 0.2) * Math.min(1, warnT)) : '0'
   countT = Math.max(0, countT - dt)
+  // (Standings and gaps wait for the green light: before it they listed 0.00 gaps in grid order.)
+  document.body.classList.toggle('counting', mode === 'race' && race.countdown > 0)
   countEl.style.opacity = String(Math.min(1, countT * 2.5))
   countEl.style.transform = `translate(-50%, -50%) scale(${1 + (1 - countT) * 0.35})`
 

@@ -78,8 +78,10 @@
   #pops { position: absolute; left: 2vw; top: calc(3vh + 386px); text-align: left; }
   #pops div { font-size: 16px; font-weight: 700; letter-spacing: 0.15em; color: #ffd08a; animation: pop 1.6s forwards; }
   @keyframes pop { 0% { opacity: 0; transform: translateX(30px); } 12% { opacity: 1; transform: none; } 75% { opacity: 1; } 100% { opacity: 0; transform: translateY(-12px); } }
-  #hints { position: absolute; left: 2vw; top: calc(3vh + 370px); font-size: 11px; letter-spacing: 0.16em; line-height: 1.8; opacity: 0; transition: opacity 1s; }
-  #hints b { display: inline-block; min-width: 168px; color: var(--hot); }
+  /* (A compact card in the corner under the map: the old list sat over the craft.) */
+  #hints { position: absolute; left: 2vw; bottom: 22vh; width: 430px; padding: 8px 12px; font-size: 10px; letter-spacing: 0.12em; line-height: 1.75; background: rgba(8,10,14,0.66); border-left: 2px solid var(--hot); border-radius: 3px; opacity: 0; transition: opacity 1s; pointer-events: none; }
+  #hints > div { display: grid; grid-template-columns: 112px 1fr; gap: 10px; }
+  #hints b { color: #ffc48e; }
   .screen { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; transition: opacity 0.7s; }
   .screen.hide, #pause.hide { opacity: 0; pointer-events: none; }
   #title { background: radial-gradient(ellipse at 50% 60%, rgba(0,0,0,0) 30%, rgba(10,4,2,0.55) 100%); justify-content: flex-start; padding-top: 9vh; }
@@ -166,18 +168,27 @@
   body.playing #pausebtn { display: block; }
   #gaps { position: absolute; right: 3vw; top: calc(4vh + 228px); font-size: 12px; letter-spacing: 0.16em; text-align: right; line-height: 1.7; text-shadow: 0 1px 8px rgba(0,0,0,0.6); display: none; }
   body.playing.racing #gaps { display: block; }
+  body.counting #gaps, body.counting #stand { visibility: hidden; }
   #gaps .up { color: #9fe8ff; } #gaps .dn { color: #ffb08a; }
-  #over { background: linear-gradient(180deg, rgba(8,3,2,0.2), rgba(8,3,2,0.55)); }
-  #over h2 { margin: 0; font-size: 54px; letter-spacing: 0.3em; }
-  #over .stats { margin-top: 24px; font-size: 18px; letter-spacing: 0.2em; line-height: 2; }
-  #over .go { margin-top: 30px; font-size: 14px; letter-spacing: 0.4em; animation: blink 1.4s infinite; }
+  #over { background: linear-gradient(180deg, rgba(8,3,2,0.25), rgba(8,3,2,0.6)); }
+  /* (One panel: the results floated on the sky, ran off the bottom of the screen and hid their buttons.) */
+  #over .card { display: flex; flex-direction: column; align-items: center; max-height: 92vh; padding: 26px 40px 22px; background: rgba(8,10,14,0.82); border: 1px solid rgba(255,255,255,0.14); border-radius: 8px; backdrop-filter: blur(6px); }
+  #over h2 { margin: 0; font-size: 44px; letter-spacing: 0.3em; }
+  #over .stats { margin-top: 16px; font-size: 15px; letter-spacing: 0.18em; line-height: 1.9; text-align: center; }
+  #over .go { margin-top: 18px; font-size: 12px; letter-spacing: 0.4em; opacity: 0.7; animation: blink 1.4s infinite; }
+  #res tr.gap td { padding: 0 16px; opacity: 0.4; line-height: 1; }
+  /* The race HUD steps aside behind the results and the pause screen. */
+  body:has(#over:not(.hide)) #hud, body:has(#over:not(.hide)) #gaps, body:has(#over:not(.hide)) #pausebtn { opacity: 0 !important; transition: opacity 0.4s; }
   #loading { background: #0b0605; z-index: 10; }
   #loading .t { font-size: 13px; letter-spacing: 0.6em; opacity: 0.7; }
   #loading .b { width: 240px; height: 2px; background: rgba(255,255,255,0.12); margin-top: 16px; }
   #loading .b i { display: block; height: 100%; width: 0; background: var(--hot); transition: width 0.2s; }
   #debug { position: fixed; left: 8px; bottom: 8px; font: 11px/1.4 ui-monospace, monospace; background: rgba(0,0,0,0.6); padding: 6px 8px; border-radius: 4px; display: none; white-space: pre; z-index: 20; }
   #pause { background: rgba(8,3,2,0.65); backdrop-filter: blur(4px); pointer-events: auto; }
-  #pause h2 { margin: 0 0 24px; letter-spacing: 0.4em; }
+  #pause h2 { margin: 0 0 24px; letter-spacing: 0.4em; font-size: 16px; opacity: 0.8; }
+  #pause h1.paused { margin: 0 0 18px; font-size: 46px; letter-spacing: 0.45em; }
+  #pause.from-title h1.paused { display: none; }
+  body:has(#pause:not(.hide)) #gaps, body:has(#pause:not(.hide)) #pausebtn { opacity: 0; }
   #pause .sub { width: 340px; font-size: 11px; letter-spacing: 0.4em; opacity: 0.6; margin: 18px 0 4px; border-top: 1px solid rgba(255,255,255,0.15); padding-top: 12px; }
   #pause { overflow-y: auto; }
   #pause label { display: flex; justify-content: space-between; gap: 24px; width: 340px; font-size: 13px; letter-spacing: 0.2em; margin: 7px 0; align-items: center; }
@@ -193,7 +204,7 @@
   #race .pen { font-size: 12px; color: #ffb15c; letter-spacing: 0.2em; min-height: 14px; }
   #stand { position: absolute; right: 3vw; top: 4vh; font-size: 13px; letter-spacing: 0.12em; display: none; min-width: 210px; }
   #stand.on { display: block; }
-  #stand div { display: flex; justify-content: space-between; gap: 14px; padding: 2px 8px; margin-bottom: 1px; font-size: 12px; background: rgba(10,6,4,0.28); border-left: 3px solid var(--c, #fff); transition: transform 0.25s; }
+  #stand div { display: flex; justify-content: space-between; gap: 14px; padding: 2px 8px; margin-bottom: 1px; font-size: 12px; background: rgba(8,10,14,0.62); border-left: 3px solid var(--c, #fff); transition: transform 0.25s; }
   #stand div.me { background: rgba(255,106,26,0.32); font-weight: 700; }
   #stand span.g { opacity: 0.7; font-variant-numeric: tabular-nums; }
   #count { position: absolute; left: 50%; top: 38%; transform: translate(-50%, -50%); font-size: 140px; font-weight: 700; opacity: 0; text-shadow: 0 0 40px rgba(255,120,40,0.8); }
@@ -350,7 +361,7 @@
   #pipper::after { content: ''; position: absolute; left: 8px; top: 8px; width: 2px; height: 2px; background: #ffd23a; }
   #paintbox { position: absolute; left: 0; top: 0; width: 28vh; height: 28vh; margin: -14vh 0 0 -14vh; border: 1.5px dashed rgba(255,110,60,0.8); display: none; pointer-events: none; }
   /* Tips: one quiet line low on the left, fading in and out. */
-  #tip { position: absolute; left: 2vw; bottom: 13vh; max-width: min(460px, 40vw); padding: 8px 12px; font-size: 13px; letter-spacing: 0.03em; line-height: 1.45; color: #fff4ea; background: rgba(8,5,4,0.5); border-left: 2px solid var(--hot); opacity: 0; transform: translateY(6px); transition: opacity 0.4s, transform 0.4s; pointer-events: none; text-shadow: 0 1px 6px rgba(0,0,0,0.6); }
+  #tip { position: absolute; left: 2vw; top: calc(3vh + 272px); max-width: min(420px, 34vw); padding: 8px 12px; font-size: 13px; letter-spacing: 0.03em; line-height: 1.45; color: #fff4ea; background: rgba(8,10,14,0.72); border-left: 2px solid var(--hot); opacity: 0; transform: translateY(6px); transition: opacity 0.4s, transform 0.4s; pointer-events: none; text-shadow: 0 1px 6px rgba(0,0,0,0.6); }
   #tip.on { opacity: 1; transform: none; }
   #tip .kc, #pause .kc { display: inline-block; padding: 0 5px; margin: 0 1px; border: 1px solid rgba(255,255,255,0.4); border-radius: 3px; font-size: 11px; line-height: 1.45; }
   /* HUNT feedback: a hit marker on the nose (white on a hit, gold on a kill); a red arc toward fire. */
@@ -419,7 +430,8 @@
   body.flying #score .sub { background: none; text-shadow: 0 1px 3px #000, 0 0 10px rgba(0,0,0,0.7); }
   body.flying #mach .num { font-size: 44px; }
   body.flying #tip { bottom: 22vh; }
-  #race > div { background: linear-gradient(180deg, rgba(0,0,0,0.32), rgba(0,0,0,0)); padding: 4px 10px; }
+  /* (Solid dark panels: the old fades washed out over bright skies and snow.) */
+  #race > div { background: rgba(8,10,14,0.62); border-top: 1px solid rgba(255,255,255,0.16); border-radius: 4px; padding: 4px 12px; }
   body.world-lava .etag, body.world-lava .etag i { color: #8ef0ff; border-top-color: #5fe6ff; filter: drop-shadow(0 0 4px #5fe6ff); }
   .etag { color: #fff; }
   #title .keys .kc { margin-left: 14px; }
@@ -493,13 +505,16 @@
   <div class="keys"><span class="kc">Enter</span> start <span class="kc">Esc</span> pause <span class="race-keys"><span class="kc">drag</span> look around <span class="kc">W</span> throttle <span class="kc">Shift</span> burner <span class="kc">A D</span> steer</span><span class="free-keys"><span class="kc">W</span> throttle <span class="kc">A D</span> steer <span class="kc">Space C</span> nose up · down</span><span class="hunt-keys"><span class="kc">W S</span> pitch <span class="kc">A D</span> turn <span class="kc">Shift</span> throttle <span class="kc">Space</span> cannon <span class="kc">F</span> missiles</span></div>
 </div>
 <div id="over" class="screen hide">
+  <div class="card">
   <h2 id="over-h">SIGNAL LOST</h2>
   <div class="stats" id="over-stats"></div>
   <table id="res"></table>
   <div class="btns"><button id="b-again" class="big">RACE AGAIN</button><button id="b-next">NEXT COURSE</button><button id="b-menu">MENU</button></div>
   <div class="go">R AGAIN · ESC KEEP FLYING</div>
+  </div>
 </div>
 <div id="pause" class="screen hide">
+  <h1 class="paused">PAUSED</h1>
   <div class="btns" id="pause-btns"><button id="p-resume" class="big">RESUME</button><button id="p-restart">RESTART</button><button id="p-menu">MENU</button></div>
   <button id="p-close" class="big">✕ CLOSE</button>
   <h2>SETTINGS</h2>

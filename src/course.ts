@@ -971,7 +971,8 @@ export class Course {
     // ── route ribbons ──
     // Two glowing lines on the ground at the edges (amber left, white right, like the pylon tips) and
     // dashes down the middle: where the course goes reads at a glance, and the dashes stream past.
-    if (def.ribbons) {
+    // (On by default: the desert courses had none, and their route showed only on the minimap.)
+    if (def.ribbons !== false) {
       const laps = def.laps ?? 1
       const i0 = def.loop ? Math.max(0, startI - 40) : 0
       const i1 = def.loop ? Math.min(n - 1, startI + Math.round((finishI - startI) / laps) + 40) : n - 1

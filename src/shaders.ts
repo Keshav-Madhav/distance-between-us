@@ -216,8 +216,10 @@ export function patchStandard(mat: THREE.MeshStandardMaterial, opts: PatchOpts =
           // Rust and sulphur streaks on some faces.
           c = mix(c, vec3(0.32, 0.14, 0.06), smoothstep(0.7, 0.9, vnoise(vec2((vFogW.x + vFogW.z) * 0.03, vFogW.y * 0.01))) * 0.5);
           // Ash settles on every top and ledge.
-          float ash = smoothstep(0.55, 0.8, vWN.y + 0.15 * vnoise(vFogW.xz * 0.04));
-          c = mix(c, vec3(0.5, 0.46, 0.44), ash * (1.0 - vCrev));
+          // (Only flat tops and ledges: on a cinder cone's gentle slope ash covered the whole cone, and
+          // under the orange sky the cones read pale pink, untextured.)
+          float ash = smoothstep(0.86, 0.97, vWN.y + 0.08 * vnoise(vFogW.xz * 0.04));
+          c = mix(c, vec3(0.3, 0.27, 0.26), ash * (1.0 - vCrev) * 0.8);
           c *= mix(0.65, 1.0, smoothstep(1.0, 20.0, hy));
           diffuseColor.rgb = c;
         }`)
