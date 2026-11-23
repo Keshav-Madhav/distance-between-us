@@ -828,15 +828,15 @@ export class Course {
         let nearMound = false
         for (let m = 0; m < mounds.length; m += 4) if (Math.hypot(mounds[m] - x, mounds[m + 1] - z) < mounds[m + 3] * 1.6 + 80) nearMound = true
         if (nearMound) continue
-        // (28-58 m: obstacles to thread, not towers — at 70-180 m beside the line they walled off the view
-        // of the course and looked like they would end the race.)
-        this.rocks.push({ x, z, r, h: 28 + rnd() * 30, i, lat })
+        // (Full height: these are the intentional obstacles — they are meant to look dangerous. Only the
+        // decorative spires and poles near the track are kept short.)
+        this.rocks.push({ x, z, r, h: 70 + rnd() * 110, i, lat })
         // Now and then a rock gate: a second spire across the line, leaving a slot to thread.
         if (rnd() < def.rockGateP && Math.abs(lat) < 120) {
           const gap = 120 + rnd() * 60
           const lat2 = lat + (lat > 0 ? -1 : 1) * (gap + r * 2)
           const r2 = 18 + rnd() * 16
-          this.rocks.push({ x: this.px[i] - tz * lat2, z: this.pz[i] + tx * lat2, r: r2, h: 30 + rnd() * 28, i, lat: lat2 })
+          this.rocks.push({ x: this.px[i] - tz * lat2, z: this.pz[i] + tx * lat2, r: r2, h: 80 + rnd() * 100, i, lat: lat2 })
         }
       }
     }
