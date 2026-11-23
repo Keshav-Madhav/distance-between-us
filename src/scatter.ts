@@ -73,7 +73,7 @@ const dryBush = (): Build => () => {
   return merge(gs)
 }
 const mound = (c: [number, number, number], r: number, h: number): Build => () => col(new THREE.SphereGeometry(1, 10, 5, 0, Math.PI * 2, 0, Math.PI / 2).scale(r, h, r * 0.75), c, 0.06)
-const iceChip = (): Build => () => col(new THREE.OctahedronGeometry(1, 0).scale(0.3, 0.24, 0.26).translate(0, 0.1, 0), [0.62, 0.82, 1.0], 0.4)
+const iceChip = (): Build => () => col(new THREE.OctahedronGeometry(1, 0).scale(0.3, 0.24, 0.26).translate(0, 0.1, 0), [0.5, 0.68, 0.86], 0.4)
 const snowman = (): Build => () => merge([
   col(new THREE.SphereGeometry(0.55, 10, 7).translate(0, 0.45, 0), [0.95, 0.96, 1.0]),
   col(new THREE.SphereGeometry(0.4, 10, 7).translate(0, 1.15, 0), [0.95, 0.96, 1.0]),
@@ -177,7 +177,7 @@ vec3 scPos; float scS; float scA; float scT;`
         vec2 xz = (c + vec2(h2, h3)) * ${k.cell.toFixed(1)};
         float d = length(xz - uScatCam);
         float keep = step(h1, ${k.density.toFixed(3)}) * (1.0 - smoothstep(${(R * 0.72).toFixed(1)}, ${(R * 0.96).toFixed(1)}, d)) * uScatOn;
-        keep *= 1.0 - smoothstep(0.08, 0.2, riverAt(xz));
+        ${BIOME === 'ice' ? '' : 'keep *= 1.0 - smoothstep(0.08, 0.2, riverAt(xz));'} // (POLAR SHELF's rivers are frozen: props sit on them, or whole stretches were bare)
         scS = mix(${k.scale[0].toFixed(2)}, ${k.scale[1].toFixed(2)}, fract(h1 * 13.7)) * keep;
         scA = h2 * 6.2832;
         scT = (h3 - 0.5) * ${(k.tilt ?? 0).toFixed(2)};
@@ -204,7 +204,7 @@ vec3 scPos; float scS; float scA; float scT;`
     if (!k.glow) {
       // A fill matched to each world's ground (which shades itself): in POLAR SHELF's dim twilight the
       // lit props came out charcoal against the bright snow, in MONSOON they vanished into the floor.
-      const lift = BIOME === 'ice' ? 0.75 : BIOME === 'jungle' ? 0.45 : BIOME === 'lava' ? 0.3 : 0.22
+      const lift = BIOME === 'ice' ? 0.5 : BIOME === 'jungle' ? 0.45 : BIOME === 'lava' ? 0.3 : 0.22
       const prev2 = mat.onBeforeCompile
       mat.onBeforeCompile = (s, r) => {
         prev2.call(mat, s, r)
