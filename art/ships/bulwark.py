@@ -53,9 +53,7 @@ for (z0, z1, r, m) in [(NB - 0.05, NB - 0.3, 0.6, 'brass'), (NB - 0.4, NB - 0.75
     right.append(smooth(lathe('stage', [(z0, r * 0.94), (z0 - 0.03, r), (z1 + 0.03, r), (z1, r * 0.94)], NX, NY, 26, M[m], cap0=True, cap1=True), 40))
     right.append(ring('flange', r + 0.01, 0.02, (NX, NY, z0 - 0.02), 20, M['metal'], minor=3))
 right.append(smooth(lathe('nozzle', [(NB - 1.0, 0.6), (NB - 1.1, 0.66), (NZ + 0.05, 0.64), (NZ, 0.6)], NX, NY, 40, M['gun']), 30))
-for i in range(16):
-    a = 2 * math.pi * i / 16
-    right.append(box('rib', (0.05, 0.05, 0.4), (NX + 0.66 * math.cos(a), NY + 0.66 * math.sin(a), (NB - 1.1 + NZ) / 2), (0, 0, a - math.pi / 2), M['metal']))
+right.extend(flared_lip('lip', NX, NY, NZ + 0.3, 0.6, 0.28, M))
 right.append(smooth(lathe('liner', [(NZ, 0.58), (NB - 1.2, 0.48), (NB - 1.1, 0.0)], NX, NY, 32, M['carbon']), 60))
 right.append(cyl('hot', 0.48, 0.02, (NX, NY, NB - 1.15), 'z', 32, M['hot']))
 # Ventral fin under each nacelle, with a hover-glow foot.

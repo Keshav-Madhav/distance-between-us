@@ -65,17 +65,9 @@ for (z0, z1, r, m) in [(EZ0 - 0.05, EZ0 - 0.45, 0.62, 'gun'), (EZ0 - 0.55, EZ0 -
     smooth(lathe('stage', [(z0, r * 0.94), (z0 - 0.03, r), (z1 + 0.03, r), (z1, r * 0.94)], 0, EY, 28, M[m], cap0=True, cap1=True), 40)
     for z in (z0 - 0.02, z1 + 0.02):
         ring('flange', r + 0.01, 0.022, (0, EY, z), 22, M['metal'], minor=4)
-for (a, z) in [(1.57, EZ0 - 0.65), (-1.2, EZ0 - 1.65), (3.6, EZ0 - 0.65)]:  # manifold blocks in the gaps
-    box('manifold', (0.3, 0.16, 0.34), (0.64 * math.cos(a), EY + 0.64 * math.sin(a), z), (0, 0, a - math.pi / 2), M['gun'], bevel=0.02)
 for i in range(16):  # radial ribs on the long stage
     a = 2 * math.pi * (i + 0.5) / 16
     box('rib', (0.04, 0.05, 0.5), (0.66 * math.cos(a), EY + 0.66 * math.sin(a), EZ0 - 1.15), (0, 0, a - math.pi / 2), M['metal'])
-for (a, rr) in [(0.2, 0.11), (2.95, 0.11), (4.0, 0.12), (5.4, 0.1)]:  # canisters strapped round the engine (sides and bottom)
-    x, y = (0.62 + rr) * math.cos(a), EY + (0.62 + rr) * math.sin(a)
-    cyl('canister', rr, 1.4, (x, y, EZ0 - 1.15), 'z', 12, M['metal'])
-    for z in (EZ0 - 0.5, EZ0 - 1.8):
-        cyl('canister_cap', rr * 1.1, 0.07, (x, y, z), 'z', 12, M['trim'])
-    box('strap', (0.14, rr + 0.14, 0.1), ((0.56 + rr / 2) * math.cos(a), EY + (0.56 + rr / 2) * math.sin(a), EZ0 - 1.15), (0, 0, a - math.pi / 2), M['gun'])
 smooth(lathe('nozzle', [(EZ1, 0.62), (EZ1 - 0.15, 0.68), (NZ + 0.15, 0.66), (NZ + 0.05, 0.6)], 0, EY, 40, M['metal']), 30)
 ring('nozzle_band', 0.69, 0.06, (0, EY, EZ1 - 0.25), 40, M['trim'])
 flared_lip('lip', 0, EY, NZ + 0.12, 0.58, 0.3, M)
@@ -90,7 +82,7 @@ right.append(fan_smooth('pod_fan', PX, PY, -0.9, 0.09, 0.19, 14, 0.75, 0.1, 3, M
 right.append(smooth(lathe('pod_spinner', [(-0.76, 0.006), (-0.8, 0.05), (-0.86, 0.085), (-0.95, 0.09)], PX, PY, 24, M['gun'], cap1=True), 85))
 right.append(smooth(lathe('pod_nozzle', [(NZ + 0.05, 0.27), (NZ, 0.25), (NZ + 0.15, 0.21)], PX, PY, 28, M['metal']), 40))
 right.append(cyl('pod_hot', 0.19, 0.02, (PX, PY, NZ + 0.14), 'z', 20, M['hot']))
-arm = smooth_loft('arm', [(-0.15, 0, 0, 0.95, 0.1, 0.1, 1.9), (0.5, 0, 0, 0.7, 0.06, 0.06, 1.9), (1.15, 0, 0, 0.75, 0.09, 0.09, 1.9)], 20, 12, M['paint'], cap0=True, cap1=True)
+arm = smooth_loft('arm', [(-0.15, 0, 0, 1.15, 0.16, 0.16, 1.9), (0.5, 0, 0, 0.7, 0.06, 0.06, 1.9), (1.15, 0, 0, 0.75, 0.09, 0.09, 1.9)], 20, 12, M['paint'], cap0=True, cap1=True)
 place(arm, (0, math.pi / 2, 0.4), (0.4, BY - 0.12, -1.7)); right.append(arm)
 wl = plate('winglet', [(0.0, 0.0), (0.0, 0.08), (-0.7, 0.1), (-0.95, 0.04), (-0.7, -0.02)], 0.05, M['paint'], 'y', 0.0, 0.015)
 right.append(plate('winglet', [(PX + 0.36, -1.8), (PX + 0.36, -2.7), (PX + 1.1, -3.05), (PX + 1.15, -2.75)], 0.05, M['paint'], 'y', PY, 0.015))

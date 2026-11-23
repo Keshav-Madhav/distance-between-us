@@ -54,8 +54,9 @@ EZ0, EZ1 = -0.1, -1.8     # machinery, then the can to NZ
 right.append(smooth(lathe('eng_core', [(EZ0 + 0.1, 0.36), (EZ0, 0.4), (EZ1, 0.4)], EX, EY, 28, M['gun']), 40))
 for (z0, z1, r, m) in [(EZ0 - 0.05, EZ0 - 0.4, 0.5, 'gun'), (EZ0 - 0.5, EZ0 - 0.7, 0.44, 'brass'), (EZ0 - 0.8, EZ0 - 1.4, 0.52, 'gun'), (EZ0 - 1.5, EZ1 + 0.05, 0.46, 'carbon')]:
     right.append(smooth(lathe('stage', [(z0, r * 0.94), (z0 - 0.03, r), (z1 + 0.03, r), (z1, r * 0.94)], EX, EY, 26, M[m], cap0=True, cap1=True), 40))
-    for z in (z0 - 0.02, z1 + 0.02):
-        right.append(ring('flange', r + 0.01, 0.02, (EX, EY, z), 20, M['metal'], minor=3))
+    if m == 'brass':
+        for z in (z0 - 0.02, z1 + 0.02):
+            right.append(ring('flange', r + 0.01, 0.02, (EX, EY, z), 20, M['metal'], minor=3))
 for (a, rr) in [(0.0, 0.09), (2.9, 0.08)]:
     x, y = EX + (0.52 + rr) * math.cos(a), EY + (0.52 + rr) * math.sin(a)
     right.append(cyl('canister', rr, 1.0, (x, y, (EZ0 + EZ1) / 2), 'z', 12, M['metal']))

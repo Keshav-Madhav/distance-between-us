@@ -92,9 +92,6 @@ for (z0, z1, r, m) in [(F1 - 0.1, F1 - 0.4, 0.74, 'brass'), (F1 - 0.55, F1 - 0.7
     for z in (z0 - 0.02, z1 + 0.02):
         right.append(ring('flange', r + 0.01, 0.025, (MX, MY, z), 22, M['metal'], minor=4))
 # Gearbox canisters standing on top (white, orange caps), a pump block on the outside, a manifold below.
-for (dx, dz, h) in [(-0.2, F1 - 0.35, 0.42), (0.25, F1 - 0.75, 0.34)]:
-    right.append(cyl('gearbox', 0.16, h, (MX + dx, MY + 0.66 + h / 2, dz), 'y', 18, M['paint']))
-    right.append(cyl('gearbox_cap', 0.17, 0.06, (MX + dx, MY + 0.66 + h, dz), 'y', 18, M['trim']))
 right.append(box('pump', (0.34, 0.5, 0.7), (MX + 0.72, MY + 0.05, (F1 + R0) / 2), material=M['gun'], bevel=0.04))
 right.append(cyl('pump_motor', 0.14, 0.5, (MX + 0.92, MY + 0.05, (F1 + R0) / 2), 'z', 14, M['metal']))
 for (dx, dy, r) in [(0.62, -0.4, 0.16), (-0.62, 0.3, 0.14), (0.55, 0.45, 0.12)]:  # tanks packed round the core
@@ -131,10 +128,10 @@ _zs = sorted(c[0] for c in CAB); _top = _mono_cubic(_zs, [next(c[2] + c[4] for c
 poly_loft('stripe', [(z, 0, _top(z) + 0.006, 0.22, 0.012, 0.012) for z in (-2.3, -1.6, -0.9, -0.2)], [(1, 0), (0.95, 1), (-0.95, 1), (-1, 0), (-0.95, -1), (0.95, -1)], 20, M['trim'], cap1=True, angle=80)
 # Canopy: a raised faceted glass house with a frame.
 TOP = _top(1.6)
-poly_loft('canopy', [(2.9, 0, TOP - 0.05, 0.08, 0.04, 0.02), (2.5, 0, TOP - 0.05, 0.42, 0.24, 0.02), (1.6, 0, TOP - 0.05, 0.54, 0.4, 0.02), (0.5, 0, TOP - 0.05, 0.5, 0.38, 0.02), (0.1, 0, TOP - 0.05, 0.08, 0.04, 0.02)],
+poly_loft('canopy', [(2.9, 0, TOP - 0.05, 0.08, 0.04, 0.02), (2.5, 0, TOP - 0.05, 0.48, 0.34, 0.02), (1.6, 0, TOP - 0.05, 0.6, 0.56, 0.02), (0.5, 0, TOP - 0.05, 0.56, 0.5, 0.02), (0.1, 0, TOP - 0.05, 0.08, 0.04, 0.02)],
           [(math.cos(t), math.sin(t) ** 0.8 if t <= math.pi else -0.3) for t in [i * math.pi / 14 for i in range(15)]] + [(0.0, -1.0)], 28, M['glass'], angle=70)
 smooth_loft('canopy_frame', [(3.0, 0, TOP - 0.06, 0.1, 0.12, 0.03, 2.4), (2.5, 0, TOP - 0.06, 0.46, 0.13, 0.03, 2.4), (1.6, 0, TOP - 0.06, 0.58, 0.14, 0.03, 2.4), (0.5, 0, TOP - 0.06, 0.54, 0.13, 0.03, 2.4), (0.0, 0, TOP - 0.06, 0.1, 0.12, 0.03, 2.4)], 24, 24, M['gun'])
-pilot(M, 0, TOP + 0.18, 1.3, 0.16)
+pilot(M, 0, TOP + 0.24, 1.3, 0.17)
 for side in (1, -1):
     for dz in (0.0, 0.18, 0.36):
         box('cab_vent', (0.05, 0.3, 0.09), (side * 1.13, 1.2, -0.5 - dz), (0.3, 0, 0), M['gun'])

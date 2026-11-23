@@ -72,7 +72,7 @@ for sx in (1, -1):
 
 # ── Tail fin: tall, raked, on the spine.
 for sx in (1, -1):
-    tf = plate('tail', [(0.0, 0.0), (-0.8, 1.05), (-1.25, 1.1), (-1.5, 0.0)], 0.1, M['paint'], 'x', 0.0, 0.035)
+    tf = plate('tail', [(0.3, 0.0), (-0.8, 1.05), (-1.35, 1.1), (-1.7, 0.0)], 0.14, M['paint'], 'x', 0.0, 0.035)
     place(tf, (0, 0, -0.38 * sx), (0.3 * sx, _top(-2.3) - 0.08, -1.9))
     tt = plate('tail_flash', [(-0.45, 0.6), (-0.78, 1.0), (-0.92, 1.0), (-0.6, 0.6)], 0.11, M['gun'], 'x', 0.0, 0.01)
     place(tt, (0, 0, -0.38 * sx), (0.3 * sx, _top(-2.3) - 0.08, -1.9))
@@ -97,8 +97,6 @@ right.append(smooth(lathe('espinner', [(-0.6, 0.006), (-0.63, 0.06), (-0.7, 0.11
 for (z0, z1, r, m) in [(-1.75, -2.1, 0.4, 'gun'), (-2.2, -2.4, 0.36, 'brass'), (-2.5, -3.1, 0.41, 'gun')]:
     right.append(smooth(lathe('estage', [(z0, r * 0.94), (z0 - 0.03, r), (z1 + 0.03, r), (z1, r * 0.94)], EX, EY, 24, M[m], cap0=True, cap1=True), 40))
     right.append(ring('eflange', r + 0.01, 0.018, (EX, EY, z0 - 0.02), 20, M['metal'], minor=3))
-for (z, r) in ((-1.9, 0.45), (-2.15, 0.43), (-2.45, 0.46), (-2.75, 0.44), (-3.0, 0.46)):  # flange lips on each step
-    right.append(ring('eflange2', r, 0.022, (EX, EY, z), 22, M['metal'], minor=3))
 right.append(smooth(lathe('enozzle', [(-3.1, 0.4), (-3.2, 0.42), (NZ + 0.05, 0.4), (NZ, 0.36)], EX, EY, 32, M['gun']), 30))
 right.append(smooth(lathe('eliner', [(NZ, 0.34), (-3.3, 0.28), (-3.2, 0.0)], EX, EY, 28, M['carbon']), 60))
 right.append(cyl('ehot', 0.28, 0.02, (EX, EY, -3.25), 'z', 24, M['hot']))

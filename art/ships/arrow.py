@@ -56,10 +56,10 @@ right.append(smooth(lathe('spinner', [(6.0, 0.006), (5.995, 0.03), (5.96, 0.07),
 
 # ── Exposed machinery behind the can: compressor stages of different diameters (grey housings and
 # dark gaps), canisters strapped along the core, two thick orange feed pipes clamped close to it.
-for k, (z0, z1, r, m) in enumerate([(MZ(0.7), MZ(0.45), 0.7, 'gun'), (MZ(0.45), MZ(0.05), 0.62, 'brass'), (MZ(0.05), MZ(-0.85), 0.72, 'gun'),
-                       (MZ(-0.85), MZ(-1.05), 0.56, 'carbon'), (MZ(-1.05), MZ(-1.7), 0.66, 'brass'), (MZ(-1.7), MZ(-2.6), 0.54, 'carbon')]):
+for k, (z0, z1, r, m) in enumerate([(MZ(0.7), MZ(0.45), 0.7, 'gun'), (MZ(0.45), MZ(0.05), 0.64, 'gun'), (MZ(0.05), MZ(-0.85), 0.72, 'gun'),
+                       (MZ(-0.85), MZ(-1.05), 0.64, 'brass'), (MZ(-1.05), MZ(-1.7), 0.68, 'gun'), (MZ(-1.7), MZ(-2.6), 0.62, 'gun')]):
     right.append(smooth(lathe('stage', [(z0, r * 0.94), (z0 - 0.03, r), (z1 + 0.03, r), (z1, r * 0.94)], EX, EY, 26, M[m], cap0=True, cap1=True), 40))
-    if m in ('gun', 'brass'):  # flange lips at both ends, and radial ribs on two stages
+    if m == 'brass':  # flange lips on the one brass band
         for z in (z0 - 0.02, z1 + 0.02):
             right.append(ring('flange', r + 0.01, 0.025, (EX, EY, z), 20, M['metal'], minor=3))
 # Auxiliary cylinders on the outboard side only, of different sizes.
@@ -77,16 +77,6 @@ def stage_r(z):
     for (z0, z1, r) in STAGES:
         if z1 <= z <= z0: return r
     return 0.6
-for a in (2.1,):
-    pts = []
-    for q in range(41):
-        z = MZ(0.68) + (MZ(-2.5) - MZ(0.68)) * q / 40
-        rr = stage_r(z) + 0.05
-        pts.append((EX + rr * math.cos(a), EY + rr * math.sin(a), z))
-    right.append(tube('feed_pipe', pts, 0.045, M['trim']))
-# Thin copper coils wrapped round the brass stage.
-right.append(tube('coil', [(EX + 0.66 * math.cos(t * 0.6), EY + 0.66 * math.sin(t * 0.6), MZ(0.4) - t * 0.012) for t in range(0, 60, 2)], 0.018, M['brass']))
-
 # ── Nozzle: a flared metal can with a crown of petals ending on the exit plane; the hot core inside.
 right.append(smooth(lathe('nozzle', [(-2.6, 0.5), (-2.9, 0.57), (-3.5, 0.55), (-3.75, 0.5)], EX, EY, 40, M['metal']), 30))
 right.append(ring('nozzle_band', 0.565, 0.03, (EX, EY, -3.1), 40, M['trim']))
