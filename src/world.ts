@@ -118,7 +118,8 @@ function skyMaterial(ground: boolean): THREE.ShaderMaterial {
         }
         // A bank of distant cloud along the horizon, above the mountains: tops lit on the sun's side,
         // dissolving into the haze — the farthest thing you see, and the sense of how far that is.
-        #ifndef BIOME_ICE
+        // (Not in the rains: over MONSOON's mist it drew a bright seam behind the hills.)
+        #if !defined(BIOME_ICE) && !defined(BIOME_JUNGLE)
         if (d.y > -0.005 && d.y < 0.09) {
           float az = atan(d.z, d.x);
           float top = 0.025 + 0.03 * fbmT(vec2(az * 3.2, 1.7) + uCloudOff * 0.00002) + 0.018 * fbmT(vec2(az * 11.0, 4.1));
@@ -271,6 +272,9 @@ function mountains(): THREE.Mesh {
         // most at its foot (valley haze). The sun's side glows.
         vec3 sky = skyColor(vec3(d.x, 0.02 + max(d.y, 0.0) * 0.4, d.z));
         float haze = mix(0.18, 0.6, far) + (1.0 - smoothstep(0.0, 0.45, v)) * mix(0.35, 0.25, far);
+        #ifdef BIOME_JUNGLE
+        haze = haze * 0.7 + 0.35 + (1.0 - smoothstep(0.0, 0.6, v)) * 0.3; // the range's foot lost in the mist
+        #endif
         c = mix(c, sky, clamp(haze, 0.0, 0.96));
         gl_FragColor = vec4(c, 1.0);
       }`,
@@ -407,7 +411,12 @@ function terrainMaterial(shared: GroundUniforms, snap: { value: THREE.Vector2 },
         }
         vec3 s2 = texture2D(tSand, rot * p / 170.0 + 0.37, bias * 0.5).rgb;
         // (The fine tiling fades out with distance: from the air it made a moire grid.)
-        vec3 sandT = mix(s1, s2, mix(0.45, 1.0, smoothstep(250.0, 1800.0, length(vW - cameraPosition))));
+        // A third, much larger rotated scale mixed in by noise, and slow light/dark drifts: from the air
+        // the 170 m tile still lined up into a diagonal grid to the horizon.
+        vec3 s3 = texture2D(tSand, vec2(p.y, -p.x) / 1130.0 + 0.71, bias * 0.3).rgb;
+        vec3 sFar = mix(s2, s3, smoothstep(0.32, 0.68, fbmT(p * 0.00045 + 1.7)));
+        sFar *= 0.86 + 0.28 * fbmT(p * 0.00062 + 8.3);
+        vec3 sandT = mix(s1, sFar, mix(0.4, 1.0, smoothstep(140.0, 800.0, length(vW - cameraPosition))));
         float gm = smoothstep(0.58, 0.72, fbmT(p * 0.0045 + 11.0) * 0.75 + fbmT(p * 0.03) * 0.32);
         vec3 grav = texture2D(tGravel, rot * p / 9.0, bias).rgb;
         vec3 clayT = texture2D(tClay, p / 13.0, bias).rgb;
@@ -466,6 +475,16 @@ function terrainMaterial(shared: GroundUniforms, snap: { value: THREE.Vector2 },
             float moss = 0.75 - 0.6 * smoothstep(0.5, 0.75, fbmT(p * 0.0016 + 7.0));
             vec3 litter = mix(vec3(0.075, 0.058, 0.03), vec3(0.03, 0.07, 0.022), moss) * (0.7 + 0.6 * lumS) * (0.8 + 0.4 * fbmT(p * 0.006 + 2.0));
             alb = mix(litter, vec3(0.12, 0.13, 0.1) * (0.8 + 0.4 * dot(grav, vec3(0.333))), gm * 0.4);
+          }
+          // Past the drawn trees the ground reads as canopy from above: lumpy dark crowns, lit tops, the
+          // rivers left open (it was a pale empty plain around one patch of forest).
+          {
+            float fdist = smoothstep(1400.0, 2600.0, length(vW - cameraPosition));
+            if (fdist > 0.0) {
+              float lump = fbmT(p * 0.012 + 3.3) * 0.6 + fbmT(p * 0.045 + 8.1) * 0.4;
+              vec3 crown = mix(vec3(0.035, 0.075, 0.03), vec3(0.11, 0.19, 0.07), smoothstep(0.3, 0.75, lump));
+              alb = mix(alb, crown, fdist * (1.0 - smoothstep(0.02, 0.2, river)));
+            }
           }
           #endif
           // Wind waves over the grass: soft bright bands drifting across.
