@@ -706,7 +706,7 @@ export const ORBIT: CourseDef = {
  * Medals hang off it: gold about the player's best, silver a solid race, bronze a finish. (They were a
  * fixed average Mach per course, blind to how hard the course is: a bronze 11 s ahead of the field.)
  */
-export const MEDAL_H: Record<string, number> = {'sprint': 87.43, 'dry-river': 46.02, 'drag': 51.86, 'circuit': 79.1, 'oval': 68.5, 'canyon': 35.18, 'frostline': 80.75, 'icefall': 67.55, 'whiteout': 39.17, 'caldera': 72.41, 'faultline': 51.37, 'obsidian': 63.58, 'greenway': 73.61, 'riverrun': 44.39, 'timberline': 59.51, 'mistriver': 40.94, 'understory': 62.26}
+export const MEDAL_H: Record<string, number> = {'sprint': 87.43, 'dry-river': 46.02, 'drag': 51.86, 'circuit': 79.1, 'oval': 68.5, 'canyon': 35.18, 'frostline': 80.75, 'icefall': 67.55, 'whiteout': 39.17, 'caldera': 72.41, 'faultline': 51.37, 'obsidian': 63.58, 'greenway': 73.61, 'riverrun': 44.39, 'timberline': 59.51, 'mistriver': 40.94, 'understory': 62.26, 'icecave': 33.16, 'magma': 34.43, 'whitewater': 33.04}
 export function medals(d: CourseDef): [number, number, number] {
   const h = MEDAL_H[d.id]
   if (h) return [0.97, 1.03, 1.1].map((k) => Math.round(h * k * 10) / 10) as [number, number, number]
@@ -722,7 +722,7 @@ export function medals(d: CourseDef): [number, number, number] {
  * elsewhere where they had no valid best) — and the first two courses of each world 5% / 2% easier.
  * THE OVAL and CANYON RUN are at the top of the range and still ~7% / 3% short of their target.
  */
-export const AI_LEVEL: Record<string, number> = {'sprint': 2.02, 'dry-river': 1.25, 'drag': 0.51, 'circuit': 0.72, 'oval': 2.2, 'canyon': 2.2, 'frostline': 0.43, 'icefall': -0.06, 'whiteout': 0.56, 'caldera': 0.27, 'faultline': -0.34, 'obsidian': 0.76, 'greenway': -0.18, 'riverrun': 0.23, 'timberline': 0.23, 'mistriver': 0.31, 'understory': 0.76}
+export const AI_LEVEL: Record<string, number> = {'sprint': 2.02, 'dry-river': 1.25, 'drag': 0.51, 'circuit': 0.72, 'oval': 2.2, 'canyon': 2.2, 'frostline': 0.43, 'icefall': -0.06, 'whiteout': 0.56, 'caldera': 0.27, 'faultline': -0.34, 'obsidian': 0.76, 'greenway': -0.18, 'riverrun': 0.23, 'timberline': 0.23, 'mistriver': 0.31, 'understory': 0.76, 'icecave': 0.72, 'magma': 0.6, 'whitewater': 0.76}
 export const COURSES: CourseDef[] = [SPRINT, DRY_RIVER, DRAG, CIRCUIT, OVAL, CANYON, FROSTLINE, ICEFALL, WHITEOUT, ICECAVE, CALDERA, FAULTLINE, OBSIDIAN, MAGMA, GREENWAY, RIVERRUN, TIMBERLINE, WHITEWATER, MISTRIVER, UNDERSTORY, ORBIT]
 for (const d of COURSES) d.aiLevel ??= AI_LEVEL[d.id]
 

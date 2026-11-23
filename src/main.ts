@@ -327,21 +327,36 @@ world.addFixed(course.rocks)
 // (The cave's roof: ice lit from within, a faint blue — the ice wall shader in the dark read as flat grey.)
 const caveRoof = new THREE.ShaderMaterial({
   side: THREE.DoubleSide,
+  extensions: { derivatives: true } as never,
   vertexShader: 'varying vec3 vW; void main() { vec4 w = modelMatrix * vec4(position, 1.0); vW = w.xyz; gl_Position = projectionMatrix * viewMatrix * w; }',
   fragmentShader: `varying vec3 vW;
     float h(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
     float n(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f); return mix(mix(h(i), h(i + vec2(1, 0)), f.x), mix(h(i + vec2(0, 1)), h(i + 1.0), f.x), f.y); }
     void main() {
-      // Glacier ice overhead, lit from within: deep blue, paler veins and cracks, a few bright seams.
-      float a = n(vW.xz * 0.004) * 0.6 + n(vW.xz * 0.02) * 0.4;
-      // (Thin and broken: even loops of white read as a contour map.)
-      float vein = smoothstep(0.012, 0.0, abs(n(vW.xz * 0.006 + 3.0) - 0.5)) * smoothstep(0.35, 0.7, n(vW.xz * 0.013 + 9.0));
-      vec3 c = mix(vec3(0.05, 0.16, 0.34), vec3(0.18, 0.42, 0.72), a);
-      c += vec3(0.5, 0.8, 1.2) * vein * 0.6;
-      gl_FragColor = vec4(c * 2.2, 1.0);
+      // Glacier ice overhead: dark, faceted (flat-shaded facets from the screen-space normal), lit from
+      // within — deep blue, a few thin glowing seams. (A bright swirled roof read as a cloudy sky.)
+      vec3 nrm = normalize(cross(dFdx(vW), dFdy(vW)));
+      float facet = 0.55 + 0.45 * abs(dot(nrm, normalize(vec3(0.3, 0.8, 0.5))));
+      float cell = n(vW.xz / 140.0) * 0.7 + n(vW.xz / 37.0) * 0.3; // (smooth blotches: hashed square cells read as a checkerboard)
+      vec3 c = mix(vec3(0.02, 0.06, 0.14), vec3(0.06, 0.18, 0.34), cell) * facet;
+      float seam = smoothstep(0.008, 0.0, abs(n(vW.xz * 0.005 + 3.0) - 0.5)) * smoothstep(0.45, 0.75, n(vW.xz * 0.011 + 9.0));
+      c += vec3(0.35, 0.7, 1.2) * seam * 1.4;
+      gl_FragColor = vec4(c * 2.0, 1.0);
     }`,
 })
-const canyonMesh = canyon ? canyon.build(world.mesaMat!, canyon.style === 'ice' ? { roofMat: caveRoof } : {}) : null
+// Walls: the cave's in faceted blue ice, the lava gorge's in near-black basalt with molten seams (aCrev);
+// the others in their world's rock.
+function gorgeWall(base: number, glow: [number, number, number], emissive = 0x000000): THREE.Material {
+  const m = new THREE.MeshStandardMaterial({ color: base, emissive, roughness: 0.6, flatShading: true })
+  m.onBeforeCompile = (sh) => {
+    sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute float aCrev;\nvarying float vCrev;').replace('#include <begin_vertex>', '#include <begin_vertex>\nvCrev = aCrev;')
+    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying float vCrev;').replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>\ntotalEmissiveRadiance += vec3(${glow.join(', ')}) * vCrev;`)
+  }
+  m.customProgramCacheKey = () => 'gorge-wall-' + glow.join('-')
+  return m
+}
+const wallMat = !canyon ? null : canyon.style === 'ice' ? gorgeWall(0x5b86b8, [0.3, 0.7, 1.4], 0x0a1c33) : canyon.style === 'lava' ? gorgeWall(0x1d1816, [4.5, 1.4, 0.25]) : world.mesaMat!
+const canyonMesh = canyon ? canyon.build(wallMat!, canyon.style === 'ice' ? { roofMat: caveRoof } : {}) : null
 if (canyon && canyonMesh) { world.canyon = canyon; world.group.add(canyonMesh) }
 // The polar world's set pieces: glaciers, seracs and spike fields placed close beside the line
 // (150–400 m off its edge), so the race threads past the ice instead of seeing it on the horizon.
@@ -1880,6 +1895,9 @@ let tierName = ((params.get('q') as Tier | null) ?? 'auto') as Tier | 'auto'
 let tier: Tier = tierName === 'auto' ? 'high' : tierName
 let renderScale = 1
 let caveK = 0
+/** For the debug overlay (\` key): what this world's load cost and what the browser offers — the player's
+ *  browser (Firefox-based) is not the one the tools measure in. */
+let BROWSER_INFO = ''
 /**
  * Speed LOD for the pixels: at a standstill and cruising, full resolution; flat out, the scene is drawn
  * at ~0.6 of it (the radial blur and streaks hide it, and the upscale is sharpened). A frame-time trim
@@ -2601,6 +2619,8 @@ function drawRacer(p: Player, alpha: number, dt: number, isMe: boolean): void {
       e.vx = p.vel.x * 0.08 + p.right.x * (Math.random() - 0.5) * sp * 2; e.vy = 6 + Math.random() * sp; e.vz = p.vel.z * 0.08 + p.right.z * (Math.random() - 0.5) * sp * 2
       e.life = 0.9 + Math.random() * 1.1; e.size0 = 1.5; e.size1 = 9 + p.boost * 8
       e.r = DUST[0]; e.g = DUST[1]; e.b = DUST[2]; e.a = 0.3 * (1 - p.agl / 8); e.drag = 2.4; e.grav = 6
+      // WHITEWATER: over the river it is spray — white, thrown higher, falling faster (the rooster tail).
+      if (canyon && canyon.style === 'forest' && world.canyonOn && canyon.inside(x, z)) { e.r = 0.9; e.g = 0.95; e.b = 1.0; e.a *= 0.5; e.vy *= 1.4; e.grav = 26; e.size1 *= 0.45 }
       fx.smoke.emit(e)
     }
   }
@@ -3427,7 +3447,7 @@ function updateHud(dt: number, slow: boolean): void {
   }
   if (debugEl.style.display === 'block' && slow) {
     const i = renderer.info
-    debugEl.textContent = `${fps.toFixed(0)} fps  ${lastMs.toFixed(1)} ms\ncalls ${i.render.calls}  tris ${(i.render.triangles / 1000).toFixed(0)}k\ntier ${tier} (${tierName})  scale ${renderScale.toFixed(2)}  dyn ${dynScale.toFixed(2)}  pr ${pixelRatio().toFixed(2)}\ncap ${frameCap() ? '60' : 'max'}  mach ${m.toFixed(2)}  agl ${player.agl.toFixed(1)}  air ${player.airborne}\nslip ${(player.slip * 57.3).toFixed(0)}°  yaw ${player.yawRate.toFixed(2)}  drift ${player.drift.toFixed(2)}  spin ${player.spin.toFixed(1)}\nparticles ${fx.glow.count}+${fx.smoke.count}`
+    debugEl.textContent = `${fps.toFixed(0)} fps  ${lastMs.toFixed(1)} ms\n${BROWSER_INFO}\ncalls ${i.render.calls}  tris ${(i.render.triangles / 1000).toFixed(0)}k\ntier ${tier} (${tierName})  scale ${renderScale.toFixed(2)}  dyn ${dynScale.toFixed(2)}  pr ${pixelRatio().toFixed(2)}\ncap ${frameCap() ? '60' : 'max'}  mach ${m.toFixed(2)}  agl ${player.agl.toFixed(1)}  air ${player.airborne}\nslip ${(player.slip * 57.3).toFixed(0)}°  yaw ${player.yawRate.toFixed(2)}  drift ${player.drift.toFixed(2)}  spin ${player.spin.toFixed(1)}\nparticles ${fx.glow.count}+${fx.smoke.count}`
   }
 }
 
@@ -3708,6 +3728,15 @@ await renderer.compileAsync(scene, camera)
   rt.dispose()
 }
 bootMark('compile')
+{
+  const gl = renderer.getContext()
+  const ri = gl.getExtension('WEBGL_debug_renderer_info')
+  const gpu = ri ? String(gl.getParameter(ri.UNMASKED_RENDERER_WEBGL)).replace(/ANGLE \(|\)$/g, '').slice(0, 48) : '?'
+  setTimeout(() => {
+    const b = BOOT[BOOT.length - 1][1] - BOOT[0][1]
+    BROWSER_INFO = `load ${Math.round(b)} ms (from page start ${Math.round(BOOT[BOOT.length - 1][1])} ms) · ${gpu} · parallel shader compile ${gl.getExtension('KHR_parallel_shader_compile') ? 'yes' : 'NO'} · pr ${devicePixelRatio}`
+  }, 0)
+}
 // First draws upload every buffer and texture: in a swap, a slice of the scene at a time (one full
 // frame of uploads stalled the world on screen for ~300 ms).
 if (EMBED) {

@@ -43,15 +43,17 @@ const STYLES: Record<GorgeStyle, Style> = {
   },
   // Basalt, sheer: aCrev is the molten glow (1 at the foot — lava pooled along the walls).
   lava: {
-    profile: [[0, -6, 1], [10, 6, 1], [22, 30, 0.6], [40, 210, 0], [70, 230, 0], [110, 420, 0], [150, 440, 0], [190, 610, 0], [240, 630, 0], [2400, 650, 0], [2440, 620, 0], [2500, -6, 0]],
+    // (The glow only in the foot's own narrow faces: across a 200 m face it read as a band of yellow paint.)
+    profile: [[0, -6, 1], [6, 2, 1], [12, 8, 0], [40, 210, 0], [70, 230, 0], [110, 420, 0], [150, 440, 0], [190, 610, 0], [240, 630, 0], [2400, 650, 0], [2440, 620, 0], [2500, -6, 0]],
     half: (u) => { const a = u * Math.PI * 2; return 900 + 180 * Math.sin(a * 4 + 0.9) + 90 * Math.sin(a * 13 + 2.0) },
     rim: 700, outer: 2500, hk: 0.12, jit: 10,
   },
   // A river gorge: low granite banks (aCrev 0) under forest (1) on top.
   forest: {
-    profile: [[0, -4, 0], [20, 40, 0], [45, 70, 0], [70, 96, 0.2], [100, 112, 1], [600, 130, 1], [1600, 140, 1], [1700, -4, 1]],
+    // (Taller, steeper granite: low banks read as hills round a lake.)
+    profile: [[0, -4, 0], [14, 90, 0], [30, 110, 0], [50, 190, 0], [72, 205, 0.1], [96, 228, 1], [600, 240, 1], [1600, 250, 1], [1700, -4, 1]],
     half: (u) => { const a = u * Math.PI * 2; return 700 + 140 * Math.sin(a * 3 + 2.2) + 70 * Math.sin(a * 8 + 0.3) },
-    rim: 160, outer: 1700, hk: 0.18, jit: 8,
+    rim: 270, outer: 1700, hk: 0.15, jit: 8,
   },
 }
 
@@ -156,7 +158,7 @@ export class Canyon {
           pos[o + 1] = base + hgt * (hgt > 0 ? hk : 1)
           pos[o + 2] = this.rz[r] + sz * off
           // MAGMA GORGE: seams of lava up the walls here and there.
-          crev[r * P + k] = this.style === 'lava' && k > 1 && k < 9 && Math.sin(r * 0.71 + k * 2.3 + side) > 0.93 ? 0.8 : cv
+          crev[r * P + k] = cv
         }
       }
       const idx: number[] = []
@@ -175,13 +177,16 @@ export class Canyon {
       const top = st.profile[4], A = 9
       const pos = new Float32Array(rows * A * 3), crev = new Float32Array(rows * A)
       for (let r = 0; r < rows; r++) {
-        const W = this.half[r] + top[0], base = groundH(this.rx[r], this.rz[r])
+        // (Its edges on the walls' own tops — they wander in height — and a little into them: a gap let the
+        // aurora through along the seam.)
+        const W = this.half[r] + top[0] + 6, base = groundH(this.rx[r], this.rz[r])
         for (let k = 0; k < A; k++) {
           const t = k / (A - 1), across = (t * 2 - 1) * W
-          const lift = top[1] + Math.sin(t * Math.PI) * (st.roof - top[1])
+          const edge = top[1] * (H(r, -1) + (H(r, 1) - H(r, -1)) * t) - 4
+          const lift = edge + Math.sin(t * Math.PI) * (st.roof - top[1])
           const o = (r * A + k) * 3
           pos[o] = this.rx[r] + this.tz[r] * across
-          pos[o + 1] = base + lift + 6 * Math.sin(r * 0.8 + k * 2.1)
+          pos[o + 1] = base + lift + (k > 0 && k < A - 1 ? 6 * Math.sin(r * 0.8 + k * 2.1) : 0)
           pos[o + 2] = this.rz[r] - this.tx[r] * across
           crev[r * A + k] = 0.3
         }
@@ -198,7 +203,7 @@ export class Canyon {
       g.add(this.lamps())
       g.add(this.icicles())
     }
-    if (this.style === 'forest') g.add(this.water())
+    if (this.style === 'forest') { g.add(this.water()); g.add(this.treeLine()) }
     return g
   }
 
@@ -223,7 +228,7 @@ export class Canyon {
     // of light on the ice floor in front of it.
     const warm = new THREE.InstancedMesh(new THREE.BoxGeometry(5, 5, 12).translate(0, 18, 0), new THREE.MeshBasicMaterial({ color: new THREE.Color(14, 7.5, 3) }), rows * 2)
     const post = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.8, 1.2, 18, 5).translate(0, 9, 0), new THREE.MeshBasicMaterial({ color: 0x1a1d26 }), rows * 2)
-    const pool = new THREE.InstancedMesh(new THREE.CircleGeometry(1, 20).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: new THREE.Color(0.9, 0.55, 0.25), transparent: true, opacity: 0.55, blending: THREE.AdditiveBlending, depthWrite: false }), rows * 2)
+    const pool = new THREE.InstancedMesh(new THREE.CircleGeometry(1, 20).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: new THREE.Color(2.4, 1.4, 0.6), transparent: true, opacity: 0.7, blending: THREE.AdditiveBlending, depthWrite: false }), rows * 2)
     const cold = new THREE.InstancedMesh(new THREE.BoxGeometry(1.2, 1.2, 40), new THREE.MeshBasicMaterial({ color: new THREE.Color(1.6, 3.6, 7) }), rows)
     const m = new THREE.Matrix4(), q = new THREE.Quaternion(), s = new THREE.Vector3(1, 1, 1), v = new THREE.Vector3(), Y = new THREE.Vector3(0, 1, 0)
     let k = 0
@@ -250,20 +255,53 @@ export class Canyon {
 
   /** Icicles hanging from the roof (low-poly cones, a faint blue). */
   private icicles(): THREE.InstancedMesh {
-    const n = this.m * 6, roof = this.st.roof!, top = this.st.profile[4]
+    const n = this.m * 10, roof = this.st.roof!, top = this.st.profile[4]
     const ic = new THREE.InstancedMesh(new THREE.ConeGeometry(4, 1, 5).rotateX(Math.PI).translate(0, -0.5, 0), new THREE.MeshBasicMaterial({ color: new THREE.Color(0.35, 0.62, 0.95) }), n)
     const m = new THREE.Matrix4(), q = new THREE.Quaternion(), s = new THREE.Vector3(), v = new THREE.Vector3()
     for (let i = 0; i < n; i++) {
-      const r = Math.floor(i / 6), hh = Math.sin(i * 12.9898) * 43758.5453, f = hh - Math.floor(hh)
+      const r = Math.floor(i / 10), hh = Math.sin(i * 12.9898) * 43758.5453, f = hh - Math.floor(hh)
       const W = this.half[r] + top[0], across = (f * 2 - 1) * this.half[r] * 0.8, t = across / W * 0.5 + 0.5
-      const y = groundH(this.rx[r], this.rz[r]) + top[1] + Math.sin(t * Math.PI) * (roof - top[1]) - 6
+      // (Into the roof, so they hang from it: they floated just below before.)
+      const y = groundH(this.rx[r], this.rz[r]) + top[1] + Math.sin(t * Math.PI) * (roof - top[1]) + 8
       v.set(this.rx[r] + this.tz[r] * across, y, this.rz[r] - this.tx[r] * across)
-      const w = 1 + ((f * 3.1) % 1.5)
-      s.set(w, 18 + 50 * ((f * 7.3) % 1), w)
+      const w = 3 + 4 * ((f * 3.1) % 1)
+      s.set(w, 40 + 110 * ((f * 7.3) % 1) ** 2, w)
       ic.setMatrixAt(i, m.compose(v, q, s))
     }
     ic.frustumCulled = false
     return ic
+  }
+
+  /** The wall's height at a distance `d` out from its foot (the profile, interpolated, as build shapes it). */
+  surfaceY(r: number, side: number, d: number): number {
+    const st = this.st, P = st.profile
+    const hk = 1 - st.hk + st.hk * Math.sin(r * 0.09 * side + 1.3) + st.hk * 0.5 * Math.sin(r * 0.37 + side)
+    let h = P[P.length - 1][1]
+    for (let k = 0; k < P.length - 1; k++) if (d >= P[k][0] && d <= P[k + 1][0]) { const t = (d - P[k][0]) / (P[k + 1][0] - P[k][0]); h = P[k][1] + (P[k + 1][1] - P[k][1]) * t; break }
+    return groundH(this.rx[r], this.rz[r]) + h * (h > 0 ? hk : 1)
+  }
+
+  /** WHITEWATER: a dense line of pines along both rims (low-poly cones on trunks). */
+  private treeLine(): THREE.Group {
+    const g = new THREE.Group(), per = 14, n = this.m * per * 2
+    const crown = new THREE.InstancedMesh(new THREE.ConeGeometry(1, 1, 6).translate(0, 0.5, 0), new THREE.MeshStandardMaterial({ color: 0x24502a, roughness: 0.9, flatShading: true }), n)
+    const trunk = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.1, 0.14, 1, 5).translate(0, 0.5, 0), new THREE.MeshStandardMaterial({ color: 0x4a3524, roughness: 1 }), n)
+    const m = new THREE.Matrix4(), q = new THREE.Quaternion(), s = new THREE.Vector3(), v = new THREE.Vector3()
+    let k = 0
+    for (let r = 0; r < this.m; r++) for (const side of [1, -1]) for (let j = 0; j < per; j++) {
+      const hh = Math.sin((r * 31 + j * 7 + side * 3) * 12.9898) * 43758.5453, f = hh - Math.floor(hh)
+      const off = this.half[r] + 110 + f * 520, a = j / per
+      const cx = this.rx[r] + this.tx[r] * a * 200, cz = this.rz[r] + this.tz[r] * a * 200
+      const x = cx + this.tz[r] * side * off, z = cz - this.tx[r] * side * off
+      const top = this.surfaceY(r, side, off - this.half[r])
+      const H = 26 + 34 * ((f * 7.7) % 1)
+      v.set(x, top + H * 0.3, z); s.set(H * 0.32, H, H * 0.32)
+      crown.setMatrixAt(k, m.compose(v, q, s))
+      v.set(x, top, z); s.set(H * 0.3, H * 0.35, H * 0.3)
+      trunk.setMatrixAt(k++, m.compose(v, q, s))
+    }
+    for (const x of [crown, trunk]) { x.count = k; x.frustumCulled = false; g.add(x) }
+    return g
   }
 
   /** WHITEWATER: the river on the gorge floor — dark water, the sky in it, streaks running downstream. */
@@ -300,8 +338,6 @@ export class Canyon {
     geo.setIndex(idx)
     const mat = new THREE.ShaderMaterial({
       uniforms: { uTime: WATER_T },
-      transparent: true,
-      depthWrite: false,
       side: THREE.DoubleSide,
       vertexShader: `varying vec2 vUv; varying vec3 vW;
         void main() { vUv = uv; vec4 w = modelMatrix * vec4(position, 1.0); vW = w.xyz; gl_Position = projectionMatrix * viewMatrix * w; }`,
@@ -312,16 +348,21 @@ export class Canyon {
           vec3 V = normalize(cameraPosition - vW);
           float fr = pow(1.0 - max(V.y, 0.0), 3.0);
           // Streaks running downstream, broken by a slower swell; their density makes rapids.
-          float s = n(vec2(vUv.x * 70.0, vUv.y * 0.035 - uTime * 3.0)) * n(vec2(vUv.x * 12.0, vUv.y * 0.008 - uTime * 0.9));
-          float rap = smoothstep(0.55, 0.9, n(vec2(vUv.y * 0.0012, 3.0)));
+          // Flow: streaks running downstream, quick; standing waves where the river runs fast (rapids, every
+          // few km) — bands of white across it, scrolling.
+          float s = n(vec2(vUv.x * 70.0, vUv.y * 0.035 - uTime * 6.0)) * n(vec2(vUv.x * 12.0, vUv.y * 0.008 - uTime * 2.0));
+          float rap = smoothstep(0.5, 0.8, n(vec2(vUv.y * 0.0012, 3.0)));
+          // (Broken crests, not solid bands across the whole river.)
+          float wave = smoothstep(0.85, 1.0, sin(vUv.y * 0.09 - uTime * 4.0 + n(vec2(vUv.x * 6.0, vUv.y * 0.01)) * 3.0)) * rap * smoothstep(0.4, 0.8, n(vec2(vUv.x * 18.0, vUv.y * 0.05)));
           vec3 c = mix(vec3(0.012, 0.05, 0.06), vec3(0.36, 0.52, 0.64), 0.04 + 0.3 * fr);
           c += vec3(0.85, 0.95, 1.0) * smoothstep(0.5 - 0.2 * rap, 0.8 - 0.2 * rap, s) * (0.55 + 0.4 * rap);
           // The sun in it: a broken glint.
           vec3 R = reflect(-V, vec3(0.0, 1.0, 0.0));
           c += vec3(1.0, 0.9, 0.7) * pow(max(dot(R, normalize(vec3(-0.62, 0.36, 0.68))), 0.0), 60.0) * (0.2 + s) * 0.6;
-          float bank = smoothstep(0.06, 0.0, vUv.x) + smoothstep(0.94, 1.0, vUv.x);
+          c = mix(c, vec3(0.92, 0.97, 1.0), wave * 0.6);
+          float bank = smoothstep(0.08, 0.0, vUv.x) + smoothstep(0.92, 1.0, vUv.x);
           c = mix(c, vec3(0.9, 0.95, 0.95), bank * (0.5 + 0.5 * n(vec2(vUv.y * 0.05 - uTime, vUv.x * 30.0))));
-          gl_FragColor = vec4(c, 0.94);
+          gl_FragColor = vec4(c, 1.0); // (opaque: the worn track's orange smear showed through)
         }`,
     })
     const w = new THREE.Mesh(geo, mat)
