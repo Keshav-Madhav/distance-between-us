@@ -45,6 +45,14 @@ const SPACE_TRACK = 'space-adventure'
 /** Each course's own track (AUTO). */
 export const COURSE_TRACK: Record<string, string> = { sprint: 'neon-circuit', 'dry-river': 'hot-roadway', drag: 'cool-highway', circuit: 'drive', oval: 'fever-stadium', canyon: 'hyperflight', frostline: 'drive', icefall: 'sky-blue-street', caldera: 'hot-roadway', faultline: 'darkness-road', greenway: 'cool-city', riverrun: 'sky-blue-street', timberline: 'hyperflight', obsidian: 'fever-stadium', whiteout: 'cool-highway', mistriver: 'darkness-road', understory: 'sky-trance', orbit: 'space-adventure' }
 const MENU_TRACK = 'empty-stretch'
+/** Each world's race playlist: a race starts on its course's track and moves through these by thirds. */
+const WORLD_LIST: Record<string, string[]> = {
+  desert: ['neon-circuit', 'hot-roadway', 'fever-stadium', 'hyperflight', 'cool-highway', 'drive'],
+  ice: ['drive', 'sky-blue-street', 'cool-highway', 'sky-trance', 'hyperflight'],
+  lava: ['hot-roadway', 'darkness-road', 'fever-stadium', 'hyperflight', 'neon-circuit'],
+  forest: ['cool-city', 'sky-blue-street', 'hyperflight', 'drive', 'cool-highway'],
+  jungle: ['darkness-road', 'sky-trance', 'cool-city', 'hyperflight', 'neon-circuit'],
+}
 
 export interface RivalVoice { dist: number; closing: number; pan: number; mach: number }
 
@@ -503,13 +511,34 @@ export class Sound {
   }
 
   /** Which course is loaded (its AUTO track). */
-  setCourse(id: string): void { this.courseTrack = COURSE_TRACK[id] ?? 'neon-circuit'; this.refreshMusic() }
+  setCourse(id: string, world = 'desert'): void {
+    this.courseTrack = COURSE_TRACK[id] ?? 'neon-circuit'
+    // The course's own track first, then the world's others (more music per race: it changes by thirds).
+    const list = WORLD_LIST[world] ?? WORLD_LIST.desert
+    this.playlist = [this.courseTrack, ...list.filter((t) => t !== this.courseTrack)]
+    this.plIdx = 0
+    this.refreshMusic()
+  }
+  private playlist: string[] = ['neon-circuit']
+  private plIdx = 0
+  /** How far through the race (0 … 1): the score moves to the next track at each third. */
+  setRaceProgress(f: number): void {
+    const i = Math.max(0, Math.min(2, Math.floor(f * 3)))
+    if (i === this.plIdx || this.section !== 'drop') return
+    this.plIdx = i
+    if (this.ctx && this.musicChoice === 'auto') {
+      // A riser into the change, so it lands as a moment, not a cut.
+      const t = this.ctx.currentTime
+      this.burst(t, 1.6, 'highpass', 300, 7000, 0.1, 0.7, this.music, 1.4)
+    }
+    this.refreshMusic()
+  }
 
   /** The track the current section wants, faded in (1.6 s crossfade from whatever was playing). */
   refreshMusic(): void {
     if (!this.ctx || !this.trackBus) return
     if (this.musicChoice === 'synth') { this.fadeTrack(null); return }
-    const id = this.musicChoice === 'auto' ? this.courseTrack : this.musicChoice
+    const id = this.musicChoice === 'auto' ? (this.playlist[this.plIdx % this.playlist.length] ?? this.courseTrack) : this.musicChoice
     const tr = TRACKS[id] ?? TRACKS['neon-circuit']
     const sec = this.section
     const want = this.inSpace && sec !== 'title' && sec !== 'outro' ? SPACE_TRACK : sec === 'title' || sec === 'outro' ? MENU_TRACK : sec === 'build' ? null : sec === 'final' && tr.climax ? tr.climax : tr.file
@@ -546,7 +575,7 @@ export class Sound {
     this.volume = { master, music, sfx }
     if (!this.ctx) return
     this.master.gain.value = master
-    this.music.gain.value = music * 0.5
+    this.music.gain.value = music * 0.5 * (this.section === 'drop' || this.section === 'final' || this.section === 'break' ? 1.6 : 1)
     this.sfx.gain.value = sfx
   }
 
@@ -565,9 +594,12 @@ export class Sound {
   /** The music's section (see the header). */
   setSection(s: Section): void {
     if (s === this.section) return
+    if (s === 'build') this.plIdx = 0
     this.section = s
     this.sectionT = 0
     if (!this.ctx) return
+    // Racing, the score sits forward (it was under the engine and wind at Mach 6: "music while racing").
+    this.music.gain.setTargetAtTime(this.volume.music * 0.5 * (s === 'drop' || s === 'final' || s === 'break' ? 1.6 : 1), this.ctx.currentTime, 0.4)
     this.refreshMusic()
     const t = this.ctx.currentTime
     if (s === 'drop') {

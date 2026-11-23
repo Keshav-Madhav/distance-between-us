@@ -2090,7 +2090,7 @@ qSel.onchange = () => { tierName = qSel.value as Tier | 'auto'; tier = tierName 
 const vols = () => sound.setVolumes(+$<HTMLInputElement>('#vm').value, +$<HTMLInputElement>('#vmu').value, +$<HTMLInputElement>('#vs').value)
 for (const id of ['#vm', '#vmu', '#vs']) $(id).oninput = vols
 // The soundtrack: AUTO plays each course's own track (and its climax take on the final stretch).
-sound.setCourse(course.def.id)
+sound.setCourse(course.def.id, BIOME)
 $<HTMLSelectElement>('#mus').onchange = (e) => { sound.musicChoice = (e.target as HTMLSelectElement).value; sound.refreshMusic() }
 $<HTMLInputElement>('#rs').onchange = (e) => { CFG.camera.reduceShake = (e.target as HTMLInputElement).checked }
 $<HTMLInputElement>('#shadows').onchange = (e) => { settings.shadows = (e.target as HTMLInputElement).checked }
@@ -2930,6 +2930,8 @@ function frame(now: number): void {
     else if (me.finished) sound.setSection('outro')
     else if (player.crashing || (crashBreak > 0 && (crashBreak -= realDt) > 0)) sound.setSection('break')
     else sound.setSection(race.toGo(me) < 25000 ? 'final' : 'drop')
+    // (The score moves on by thirds of the race.)
+    if (race.state === 'racing' && !me.finished) sound.setRaceProgress(1 - race.toGo(me) / Math.max(1, (course.finishI - course.startI) * 40))
     if (player.crashing) crashBreak = 2
   } else if (mode === 'hunt' || mode === 'free') sound.setSection(player.crashing ? 'break' : 'drop')
   else sound.setSection('title')
