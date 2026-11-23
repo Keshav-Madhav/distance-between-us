@@ -3297,7 +3297,8 @@ function arrowTo(p: THREE.Vector3, label: string): void {
   arrowLbl.style.display = 'block'
   const lw = arrowLbl.offsetWidth || 120, lh = 14
   const px = (ex * 0.5 + 0.5) * innerWidth, py = (-ey * 0.5 + 0.5) * innerHeight
-  let lx = px - Math.cos(a) * 46 - lw / 2, ly = py + Math.sin(a) * 40 - lh / 2
+  // (Stepped in by half its own width: at the right edge it sat under its own arrow.)
+  let lx = px - Math.cos(a) * (lw / 2 + 34) - lw / 2, ly = py + Math.sin(a) * 36 - lh / 2
   lx = Math.min(innerWidth - lw - 16, Math.max(16, lx)); ly = Math.min(innerHeight - lh - 16, Math.max(16, ly))
   for (const el of [mini, $('#stand')]) {
     const r = el.getBoundingClientRect()

@@ -125,7 +125,8 @@ const cinderHeap = (): Build => () => {
   // (Dark warm clinker: flat grey stood out of CINDER's palette.)
   return col(g.translate(0, -0.02, 0), [0.2, 0.14, 0.12], 0.45)
 }
-// Clods: turf and soil torn up by the racing (what lies on a worn floor: debris, not growth).
+// Clods: soil torn up by the racing (what lies on a worn floor: debris, not growth). Mostly soil-coloured:
+// bright green tops read as plants on the floor.
 const clod = (c: [number, number, number], top: [number, number, number]): Build => () => {
   const g = new THREE.DodecahedronGeometry(1, 0).scale(0.5, 0.26, 0.42).translate(0, 0.08, 0)
   const n = g.attributes.position.count, a = new Float32Array(n * 3)
@@ -186,7 +187,7 @@ const KINDS: Record<string, Kind[]> = {
     { name: 'tallgrass', build: tallGrass([0.36, 0.56, 0.16]), cell: 8, grid: 80, density: 0.5, scale: [0.9, 1.8], tilt: 0.15 },
     FLAGS,
     { name: 'giantbush', build: bush([0.36, 0.62, 0.22], 0.9, 1.1), cell: 24, grid: 28, density: 0.45, scale: [3.2, 5.5], near: 18 },
-    { name: 'clod', build: clod([0.34, 0.23, 0.13], [0.3, 0.5, 0.16]), cell: 5, grid: 64, density: 0.5, scale: [0.6, 1.6], debris: true },
+    { name: 'clod', build: clod([0.32, 0.22, 0.13], [0.28, 0.3, 0.14]), cell: 5, grid: 64, density: 0.45, scale: [0.4, 1.0], debris: true },
   ]),
   jungle: SEEDED([
     { name: 'fern', build: fern([0.2, 0.32, 0.14]), cell: 6, grid: 90, density: 0.55, scale: [0.7, 1.6], tilt: 0.1 },
@@ -196,7 +197,7 @@ const KINDS: Record<string, Kind[]> = {
     { name: 'bigfern', build: fern([0.18, 0.3, 0.12]), cell: 10, grid: 64, density: 0.5, scale: [2.0, 3.5], tilt: 0.1 },
     FLAGS,
     { name: 'hugefern', build: fern([0.16, 0.28, 0.11]), cell: 22, grid: 30, density: 0.5, scale: [4.5, 7.0], tilt: 0.1, near: 18 },
-    { name: 'clod', build: clod([0.18, 0.12, 0.07], [0.12, 0.24, 0.08]), cell: 5, grid: 64, density: 0.5, scale: [0.6, 1.6], debris: true },
+    { name: 'clod', build: clod([0.17, 0.12, 0.07], [0.14, 0.16, 0.08]), cell: 5, grid: 64, density: 0.45, scale: [0.4, 1.0], debris: true },
   ]),
 }
 
@@ -218,7 +219,7 @@ export class Scatter {
   private readonly on = { value: 1 }
   private readonly view = { value: new THREE.Vector3(0, 0, -2) }
   private readonly nearR = { value: 0 }
-  private readonly nears: { g: THREE.InstancedBufferGeometry; m: number }[] = []
+  private readonly nears: { g: THREE.InstancedBufferGeometry; m: number; centre: { value: THREE.Vector2 } }[] = []
   private readonly lods: { g: THREE.InstancedBufferGeometry; n: number; R: number; cell: number; radius: { value: number }; centre: { value: THREE.Vector2 }; fine: boolean }[] = []
 
   /** The course's wear map (R: where races actually run): big props stay off it. */
@@ -248,11 +249,13 @@ export class Scatter {
     for (const name of ['position', 'normal', 'color']) g.setAttribute(name, base.attributes[name])
     g.setAttribute('aCell', new THREE.InstancedBufferAttribute(cell, 2))
     g.instanceCount = n
-    if (near) this.nears.push({ g, m: Math.min(n, Math.ceil(Math.PI * (NEAR_MAX / k.cell + 1.5) ** 2)) })
     const R = (k.cell * k.grid) / 2
     // Fine props (pebbles, chips, tufts, embers…): at speed their field shrinks to ~55% of its radius.
     const radius = { value: R }, centre = { value: new THREE.Vector2() }
     if (!near) this.lods.push({ g, n, R, cell: k.cell, radius, centre, fine: k.scale[1] < 2 && !k.near })
+    // (The near twin follows the camera too: its centre was never set, so its ring was drawn round the
+    // world's origin and the first 70 m beside you were empty.)
+    else this.nears.push({ g, m: Math.min(n, Math.ceil(Math.PI * (NEAR_MAX / k.cell + 1.5) ** 2)), centre })
     const mat = k.glow
       ? new THREE.MeshBasicMaterial({ vertexColors: true })
       : new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.92, metalness: 0, flatShading: true, side: THREE.DoubleSide })
@@ -359,7 +362,7 @@ vec3 scPos; float scS; float scA; float scT;`
     // The refined ring: ~70 m at rest, gone by Mach 5 (with the surface detail).
     const nr = NEAR_MAX * (1 - THREE.MathUtils.smoothstep(mach, 1.5, 5))
     this.nearR.value = nr > 4 ? nr : 0
-    for (const n of this.nears) n.g.instanceCount = this.nearR.value > 0 ? n.m : 0
+    for (const n of this.nears) { n.g.instanceCount = this.nearR.value > 0 ? n.m : 0; n.centre.value.set(cam.x, cam.z) }
     this.cam.value.set(cam.x, cam.z)
     const f = 1 - 0.45 * THREE.MathUtils.smoothstep(mach, 1.5, 6.5)
     for (const l of this.lods) {
