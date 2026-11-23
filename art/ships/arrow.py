@@ -1,8 +1,8 @@
 # ARROW — from concept art/ships/concepts/arrow-0.png. Twin white engine cans with fan intakes and an
 # orange band; behind each can the turbine machinery is exposed (rings, ribs, pipes, actuators) down
 # to a spiked nozzle. A narrow nose body runs between the intakes back to a pod with a long dark
-# canopy on a wide flat spine; X-braced struts tie it to the engines; swept fins at the back; a
-# glowing binder spans the intakes; hover skids underneath. Game frame: x right, y up, z forward.
+# canopy on a wide flat spine; tapered pylons tie it to the engines; swept fins at the back;
+# hover glow underneath. Game frame: x right, y up, z forward.
 import sys, os, math
 sys.path.insert(0, os.path.dirname(__file__))
 from lib import *
@@ -52,7 +52,7 @@ right.append(ring('fan_shroud', 0.575, 0.03, (EX, EY, 5.5), 40, M['carbon']))
 for i in range(12):  # stator vanes behind the fan
     a = 2 * math.pi * i / 12
     right.append(box('stator', (0.38, 0.02, 0.06), (EX + 0.37 * math.cos(a), EY + 0.37 * math.sin(a), 5.3), (0, 0, a), M['gun']))
-right.append(smooth(lathe('spinner', [(6.0, 0.006), (5.995, 0.03), (5.96, 0.07), (5.91, 0.11), (5.84, 0.155), (5.76, 0.19), (5.67, 0.22), (5.6, 0.25), (5.56, 0.27), (5.25, 0.27), (5.2, 0.25)], EX, EY, 48, M['metal'], cap1=True), 89))
+right.append(smooth(lathe('spinner', [(6.0, 0.006), (5.995, 0.03), (5.96, 0.07), (5.91, 0.11), (5.84, 0.155), (5.76, 0.19), (5.67, 0.22), (5.6, 0.25), (5.56, 0.27), (5.25, 0.27), (5.2, 0.25)], EX, EY, 48, M['gun'], cap1=True), 89))
 
 # ── Exposed machinery behind the can: compressor stages of different diameters (grey housings and
 # dark gaps), canisters strapped along the core, two thick orange feed pipes clamped close to it.
@@ -86,7 +86,7 @@ for j, a in enumerate((1.7, 4.1)):
         if (k + j) % 3 == 2: continue
         pts = []
         for q in range(9):
-            u = q / 8; rr = 0.74 + 0.16 * math.sin(math.pi * u)
+            u = q / 8; rr = 0.76 + 0.05 * math.sin(math.pi * u)
             pts.append((EX + rr * math.cos(a), EY + rr * math.sin(a), za + (zb - za) * u))
         right.append(tube('feed_pipe', pts, 0.05, M['trim']))
         for z in (za, zb):
@@ -104,23 +104,21 @@ c = bpy.data.objects.get('liner')
 right.append(cyl('hot_core', 0.4, 0.02, (EX, EY, -3.72), 'z', 32, M['hot']))
 
 # ── Side vane (outboard of each engine) sweeping out into a fin at the back.
-fin = plate('fin', [(0.0, 0.6), (0.0, 1.0), (-1.95, 1.32), (-2.4, 1.0), (-1.95, 0.64)], 0.22, M['paint'], 'x', 0.0, 0.07)
-place(fin, (0, -0.4, 0), (EX + 0.86, 0.0, CR - 0.55)); right.append(fin)
-right.append(poly_loft('talon_pylon', [(CR + 0.9, EX + 0.66, EY, 0.03, 0.05, 0.05), (CR + 0.2, EX + 0.76, EY + 0.03, 0.16, 0.24, 0.2), (CR - 0.6, EX + 0.8, EY + 0.03, 0.15, 0.22, 0.18), (CR - 1.0, EX + 0.78, EY + 0.03, 0.08, 0.14, 0.12)], [(1, 0), (0.3, 1), (-1, 0.7), (-1, -0.7), (0.3, -1)], 30, M['paint'], angle=60))
-ft = plate('fin_tip', [(-1.85, 1.3), (-1.97, 1.33), (-2.42, 1.0), (-2.25, 0.98)], 0.24, M['trim'], 'x', 0.0, 0.05)
-place(ft, (0, -0.4, 0), (EX + 0.86, 0.0, CR - 0.55)); right.append(ft)
+fin = plate('fin', [(0.0, 0.62), (0.0, 1.0), (-1.2, 1.26), (-1.5, 1.0), (-1.2, 0.66)], 0.2, M['paint'], 'x', 0.0, 0.06)
+place(fin, (0, -0.3, 0), (EX + 0.84, 0.0, CR + 1.35)); right.append(fin)
+right.append(poly_loft('talon_pylon', [(CR + 2.2, EX + 0.62, EY, 0.03, 0.05, 0.05), (CR + 1.5, EX + 0.74, EY + 0.03, 0.15, 0.24, 0.2), (CR + 0.7, EX + 0.78, EY + 0.03, 0.14, 0.22, 0.18), (CR + 0.15, EX + 0.7, EY + 0.03, 0.04, 0.08, 0.06)], [(1, 0), (0.3, 1), (-1, 0.7), (-1, -0.7), (0.3, -1)], 30, M['paint'], angle=60))
+ft = plate('fin_tip', [(-1.12, 1.24), (-1.22, 1.27), (-1.52, 1.0), (-1.38, 0.98)], 0.22, M['trim'], 'x', 0.0, 0.05)
+place(ft, (0, -0.3, 0), (EX + 0.84, 0.0, CR + 1.35)); right.append(ft)
 # ── Skid rail along each can's lower outer side, faired into it; the hover glow under it.
-right.append(poly_loft('strake', [(5.1, EX + 0.6, EY - 0.46, 0.02, 0.02, 0.02), (4.6, EX + 0.6, EY - 0.47, 0.16, 0.1, 0.1), (CR + 0.9, EX + 0.6, EY - 0.47, 0.16, 0.1, 0.1), (CR + 0.4, EX + 0.58, EY - 0.46, 0.02, 0.02, 0.02)], [(1, 0), (0.4, 1), (-1, 0.6), (-1, -0.6), (0.4, -1)], 32, M['paint']))
 right.append(box('skid_glow', (0.06, 0.01, 2.6), (EX + 0.64, EY - 0.535, 3.25), material=M['glow']))
 # Rear fin root: a fairing and an actuator housing where the swept fin meets the engine.
 right.append(poly_loft('fin_root', [(CR + 0.85, EX + 0.62, EY + 0.02, 0.02, 0.04, 0.04), (CR + 0.4, EX + 0.72, EY + 0.02, 0.2, 0.26, 0.22), (CR - 0.6, EX + 0.76, EY + 0.02, 0.2, 0.24, 0.2), (CR - 1.4, EX + 0.62, EY + 0.02, 0.02, 0.04, 0.04)], [(1, 0), (0.2, 0.35), (-1, 1.0), (-1, -1.0), (0.2, -0.35)], 36, M['paint'], angle=60))
 right.append(cyl('fin_act', 0.05, 0.6, (EX + 0.78, EY + 0.28, CR - 0.3), 'z', 10, M['gun']))
 
-# ── Struts: a faired pylon at the intake end, an X brace behind.
-right.append(plate('pylon', [(4.9, -0.1), (4.5, 0.1), (3.3, 0.1), (3.6, -0.1)], 1.0, M['gun'], 'y', 0.0, 0.03) if False else box('pylon', (EX - 1.0, 0.14, 1.0), (0.55 + (EX - 1.0) / 2, EY - 0.05, 4.0), (0, 0.12, 0), M['gun'], bevel=0.04))
-# (old) a swept beam at the front, an X brace behind it.
-right.append(tube('brace', [(0.6, 0.9, 0.5), (EX - 0.66, EY + 0.1, -1.1)], 0.1, M['carbon']))
-right.append(tube('brace', [(0.6, 0.9, -1.2), (EX - 0.66, EY + 0.1, 0.4)], 0.1, M['carbon']))
+# ── Pylons: spine to can.
+for (zc, ch) in [(0.9, 1.1), (-1.7, 1.0)]:  # tapered pylons, spine to can, filleted both ends
+    pl = smooth_loft('pylon', [(-0.98, 0, EY + 0.06, ch * 0.62, 0.15, 0.15, 2.0), (-0.85, 0, EY + 0.06, ch * 0.5, 0.09, 0.09, 2.0), (-0.6, 0, EY + 0.06, ch * 0.46, 0.08, 0.08, 2.0), (-0.42, 0, EY + 0.06, ch * 0.62, 0.15, 0.15, 2.0)], 16, 10, M['gun'], cap0=True, cap1=True)
+    place(pl, (0, -math.pi / 2, 0), (0, 0, zc)); right.append(pl)
 
 join_mirror(right)
 
@@ -167,9 +165,10 @@ for f in (-0.6, -0.2, 0.2, 0.6):
     pts = [(CW * k * 1.01 * math.cos(t), TOP + CH * k * 1.01 * math.sin(t), z) for t in [i * math.pi / 12 for i in range(13)]]
     tube('canopy_bow', pts, 0.022, M['trim'])
 tube('canopy_spine', [(0, TOP + CH * 0.62, CZ + CL * 0.8), (0, TOP + CH * 1.01, CZ), (0, TOP + CH * 0.62, CZ - CL * 0.8)], 0.02, M['trim'])
-poly_loft('spine_strip', [(z, 0, _top(z) + 0.004, 0.16, 0.012, 0.012) for z in (-0.4, -1.4, -2.4, -3.2)], [(1, 0), (0.9, 1), (-0.9, 1), (-1, 0), (-0.9, -1), (0.9, -1)], 24, M['gun'], cap1=True, angle=80)
-for z0 in (-0.6, -1.3):
-    tube('top_chevron', [(-0.5, _top(z0 - 0.45) + 0.015, z0 - 0.45), (-0.2, _top(z0) + 0.02, z0), (0.2, _top(z0) + 0.02, z0), (0.5, _top(z0 - 0.45) + 0.015, z0 - 0.45)], 0.03, M['gun'])
+poly_loft('spine_strip', [(CZ - CL - 0.1, 0, _top(CZ - CL - 0.1) - 0.006, 0.1, 0.02, 0.02), (-1.6, 0, _top(-1.6) - 0.004, 0.3, 0.018, 0.018), (-2.6, 0, _top(-2.6) - 0.004, 0.36, 0.018, 0.018), (-3.4, 0, _top(-3.4) - 0.004, 0.22, 0.018, 0.018)], [(1, 0), (0.9, 1), (-0.9, 1), (-1, 0), (-0.9, -1), (0.9, -1)], 24, M['gun'], cap1=True, angle=80)
+for sx in (1, -1):  # belly vents on the spine's underside
+    for dz in (0.0, 0.3, 0.6):
+        box('belly_vent', (0.36, 0.03, 0.12), (sx * 0.42, 0.62, 2.6 - dz), material=M['gun'])
 # Twin raked dorsal fins at the spine's tail, with root fillets.
 for side in (1, -1):
     df = plate('dorsal', [(0.25, 0.0), (-0.5, 0.9), (-0.85, 0.92), (-1.0, 0.0)], 0.17, M['paint'], 'x', 0.0, 0.05)
@@ -182,16 +181,12 @@ smooth(lathe('pod_nozzle', [(-3.95, 0.24), (-4.12, 0.26), (-4.2, 0.24)], 0, 0.84
 cyl('pod_hot', 0.16, 0.02, (0, 0.84, -3.98), 'z', 20, M['hot'])
 smooth(lathe('pod_liner', [(-4.2, 0.23), (-4.08, 0.2), (-3.97, 0.17)], 0, 0.84, 24, M['carbon']), 50)
 # Binder: a glowing arc across the intakes.
-for sx in (1, -1):
-    cyl('emitter', 0.07, 0.16, (sx * (EX - 0.76), EY, 5.98), 'x', 14, M['gun'])
-    cyl('emitter_glow', 0.05, 0.03, (sx * (EX - 0.86), EY, 5.99), 'x', 14, M['glow'])
-tube('binder', [(-EX + 0.74, EY, 6.03), (-0.6, EY, 6.2), (0, EY, 6.26), (0.6, EY, 6.2), (EX - 0.74, EY, 6.03)], 0.07, M['glow'])
 
 # Game hooks: nozzle exits, wingtip light, number plate.
 for i, x in enumerate((-EX, 0.0, EX)):
     empty(f'nozzle_{i}' + ('' if x else '@0.45'), (x, EY if x else 0.84, NZ))
 empty('wingtip', (EX + 0.8 + 1.9 * math.sin(0.55), 1.0, -0.4 - 1.9 * math.cos(0.55)))
-empty('number', (EX + 0.77, EY + 0.05, 3.05))
+empty('number', (EX + 0.77, EY + 0.05, 4.35))
 
 out = os.environ.get('OUT', '/tmp')
 print('TRIANGLES', tri_count()); tri_report()
