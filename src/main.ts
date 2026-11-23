@@ -325,6 +325,7 @@ if (BIOME !== 'desert') {
 scene.add(world.group)
 // Near-field scatter: harmless ground clutter round the camera (pebbles, grass, scrub, mounds, vents, flags).
 const scatter = new Scatter()
+let scatterForceOff = false
 scene.add(scatter.group)
 scene.add(course.group)
 const env = world.makeEnv(renderer)
@@ -498,7 +499,8 @@ for (const [i, r] of race.racers.entries()) {
   const nT = r.ai ? 1 : 3
   for (let k = 0; k < nT; k++) {
     // (Rivals' a touch longer and brighter: clearly told apart at a glance, not a laser show.)
-    const t = new Trail(r.ai ? 40 : 56, r.ai ? new THREE.Color(r.color).multiplyScalar(1.9) : new THREE.Color(1.6, 0.5, 0.12), true, r.ai ? 1.8 : 0.9)
+    // (Rivals' short: kilometre-long coloured ribbons on the ground read as painted lanes.)
+    const t = new Trail(r.ai ? 28 : 56, r.ai ? new THREE.Color(r.color).multiplyScalar(1.9) : new THREE.Color(1.6, 0.5, 0.12), true, r.ai ? 0.7 : 0.9)
     // (Rivals' thinner: on the dark worlds their wide ribbons lay on the ground like painted lanes.)
     t.width = r.ai ? 0.45 : 0.42
     trail.push(t)
@@ -2730,8 +2732,8 @@ function frame(now: number): void {
   sound.scrape(mode === 'title' ? 0 : Math.max(player.scrape, player.drifting || player.spin > 0 ? 0.25 + Math.abs(player.slip) * 0.35 : 0))
   sound.slide(mode === 'title' || player.airborne ? 0 : player.drifting ? 0.4 + Math.min(0.6, Math.abs(player.slip)) : 0, player.drift / 2.6, player.spin > 0 ? player.yawRate : 0)
 
-  world.update(camera.position, time)
-  scatter.update(camera.position, BIOME !== 'space' && WORLD_FADE.uWorldFade.value.y < 0.5 && camera.position.y - groundH(camera.position.x, camera.position.z) < 2500)
+  world.update(camera.position, time, camera)
+  scatter.update(camera.position, !scatterForceOff && BIOME !== 'space' && WORLD_FADE.uWorldFade.value.y < 0.5 && camera.position.y - groundH(camera.position.x, camera.position.z) < 2500)
   updateTips(realDt)
   const G = world.ground
   G.uCraft.value.copy(renderPos)
@@ -3532,6 +3534,7 @@ const g = {
   director: (on: boolean) => { directorOn = on },
   setMach: (m: number) => { player.speed = m * MACH },
   skipCountdown: () => { race.countdown = 0.01 },
+  scatterVis: (v: boolean) => { scatter.group.visible = v; scatterForceOff = !v },
   force: (c: import('./player').Controls | null) => { forced = c },
   sound,
   renderer,

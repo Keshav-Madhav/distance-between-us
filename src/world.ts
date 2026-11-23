@@ -1066,6 +1066,8 @@ interface Placed {
   vetoed?: boolean
 }
 
+const TMP_DIR = new THREE.Vector3()
+
 class Wrapped {
   mesh: THREE.InstancedMesh
   readonly items: Placed[] = []
@@ -1090,7 +1092,7 @@ class Wrapped {
     this.mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage)
     this.mesh.count = this.items.length
   }
-  update(cx: number, cz: number): void {
+  update(cx: number, cz: number, fx = 0, fz = 0, cosHalf = -2): void {
     const a = this.mesh.instanceMatrix.array as Float32Array
     const T = this.tile
     // Only the ones near enough to see are written (compacted): the rest cost no vertex work at all.
@@ -1106,10 +1108,17 @@ class Wrapped {
       if (this.veto && (it.vx !== x || it.vz !== z)) { it.vx = x; it.vz = z; it.vetoed = this.veto(x, z, it.r) }
       it.grow = it.vetoed ? 0 : grow
       if (it.grow < 0.03) continue
+      it.by = groundH(x, z) - this.bury * it.h - 3
+      // Behind the view and past shadow reach (~1 km: a tall grove's shadow falls that far): not drawn.
+      // (MONSOON drew 6M triangles of forest, half of it behind the camera.)
+      if (cheb > 1000 + it.r) {
+        const dx = x - cx, dz = z - cz, d = Math.hypot(dx, dz)
+        // The item's angular half-width widens the cone so a grove at the edge is never clipped.
+        if ((dx * fx + dz * fz) / d < cosHalf - (it.r * 1.8 + it.h) / d) continue
+      }
       const sy = it.h * it.grow
       const c = Math.cos(it.yaw)
       const s = Math.sin(it.yaw)
-      it.by = groundH(x, z) - this.bury * it.h - 3
       const o = k * 16
       a[o] = c * it.r; a[o + 1] = 0; a[o + 2] = -s * it.r; a[o + 3] = 0
       a[o + 4] = 0; a[o + 5] = sy; a[o + 6] = 0; a[o + 7] = 0
@@ -1469,7 +1478,7 @@ export class World {
     return rt.texture
   }
 
-  update(cam: THREE.Vector3, time: number): void {
+  update(cam: THREE.Vector3, time: number, view?: THREE.PerspectiveCamera): void {
     this.sky.position.copy(cam)
     this.hills.position.set(cam.x, 0, cam.z)
     this.deck.position.set(cam.x, 2600, cam.z)
@@ -1477,7 +1486,18 @@ export class World {
     sm.uniforms.uTime.value = time
     sm.uniforms.uCloudOff.value.set(time * 14, time * 5)
     for (const r of this.rings) r.snap.value.set(Math.round(cam.x / r.step) * r.step, Math.round(cam.z / r.step) * r.step)
-    for (const w of this.wrapped) w.update(cam.x, cam.z)
+    let fx = 0, fz = 0, cosHalf = -2
+    if (view) {
+      // A horizontal cone round the look direction: half the horizontal FOV plus a margin (camera shake, banking).
+      view.getWorldDirection(TMP_DIR)
+      const h = Math.hypot(TMP_DIR.x, TMP_DIR.z)
+      if (h > 0.3) {
+        fx = TMP_DIR.x / h; fz = TMP_DIR.z / h
+        const half = Math.atan(Math.tan((view.fov * Math.PI) / 360) * view.aspect)
+        cosHalf = Math.cos(Math.min(Math.PI, half + 0.35))
+      }
+    }
+    for (const w of this.wrapped) w.update(cam.x, cam.z, fx, fz, cosHalf)
     this.ground.uTime.value = time
     AUR_T.value = time
   }
