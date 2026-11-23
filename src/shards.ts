@@ -77,6 +77,17 @@ export class Shards {
     }
   }
 
+  /** The nearest crystal still standing (for the HUD's pointer), or null. */
+  nearest(x: number, y: number, z: number, out: THREE.Vector3): THREE.Vector3 | null {
+    let best = Infinity
+    for (const t of this.trails) for (const sh of t.shards) {
+      if (!sh.alive) continue
+      const d = (sh.x - x) ** 2 + (sh.y - y) ** 2 + (sh.z - z) ** 2
+      if (d < best) { best = d; out.set(sh.x, sh.y, sh.z) }
+    }
+    return best < Infinity ? out : null
+  }
+
   /** Take any the craft passed through this step (prev → pos); re-lay trails left behind or emptied. */
   step(prev: THREE.Vector3, pos: THREE.Vector3, heading: number, ground: (x: number, z: number) => number, rock: (x: number, z: number) => number): void {
     const sx = pos.x - prev.x, sy = pos.y - prev.y, sz = pos.z - prev.z

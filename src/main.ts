@@ -810,7 +810,9 @@ shards.onTake = (x, y, z, n, done, kind) => {
     e.r = 6; e.g = 4.6; e.b = 1.6; e.a = 1; e.drag = 1.2; e.grav = 10; e.streak = 1
     fx.glow.emit(e)
   }
+  // (Every pickup says so: a tester collected four without noticing any.)
   if (done) { pop(`TRAIL OF FIVE · ${kind === 'sky' ? 'SKY' : kind === 'top' ? 'SUMMIT' : 'GROUND'}`); shards.saveTotal(); shake(0.15) }
+  else pop(`CRYSTAL ${n}/5`)
 }
 rings.onPass = (_r, i) => { sound.gate(i === 9); pop(`RING ${i + 1}/10`); score += Math.round(100 * Math.max(1, flight.mach)) }
 rings.onMiss = (_r, i) => { sound.missed(); pop(`MISSED RING ${i + 1}`) }
@@ -3054,6 +3056,14 @@ function updateHud(dt: number, slow: boolean): void {
     $('#gmark').style.display = 'none'
     $('#gmark2').style.display = 'none'
     lockEl.style.display = 'none'
+    // The nearest crystal: an arrow at the screen's edge when it is out of view (a tester crossed three
+    // worlds without finding one), gone in space and once you are close.
+    if (!system && space.vac < 0.5) {
+      const nc = shards.nearest(player.pos.x, player.pos.y, player.pos.z, tmp2)
+      const nd = nc ? nc.distanceTo(player.pos) : 0
+      if (nc && nd > 250) { proj.copy(nc).project(camera); arrowTo(proj, `CRYSTAL · ${nd < 1000 ? Math.round(nd) + ' M' : (nd / 1000).toFixed(1) + ' KM'}`) }
+      else arrowEl.style.display = 'none'
+    } else arrowEl.style.display = 'none'
     if (slow && system) {
       const nb = system.nearest(sysPos)
       const name = nb.i >= 0 ? PLANETS[nb.i].name : 'THE STAR'
