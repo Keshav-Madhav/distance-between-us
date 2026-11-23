@@ -46,7 +46,7 @@ right.append(smooth(lathe('can_rear', [(CR + 0.35, 0.735), (CR + 0.05, 0.73), (C
 right.append(ring('can_rim', 0.7, 0.03, (EX, EY, CR), 40, M['metal']))
 # Intake: a dark duct, a fan of blades, a spinner.
 right.append(smooth(lathe('duct', [(6.0, 0.6), (5.7, 0.59), (5.4, 0.58)], EX, EY, 32, M['carbon'], cap1=True), 60))
-right.append(fan_smooth('fan', EX, EY, 5.4, 0.285, 0.565, 14, 0.75, 0.34, 4, M['carbon']))
+right.append(fan_smooth('fan', EX, EY, 5.4, 0.285, 0.565, 18, 0.75, 0.3, 4, M['carbon']))
 right.append(cyl('hub', 0.18, 0.06, (EX, EY, 5.42), 'z', 24, M['carbon']))
 right.append(ring('fan_shroud', 0.575, 0.03, (EX, EY, 5.5), 40, M['carbon']))
 for i in range(12):  # stator vanes behind the fan
@@ -113,7 +113,6 @@ place(ft, (0, -0.3, 0), (EX + 0.84, 0.0, CR + 1.85)); right.append(ft)
 # ── Skid rail along each can's lower outer side, faired into it; the hover glow under it.
 # Rear fin root: a fairing and an actuator housing where the swept fin meets the engine.
 right.append(poly_loft('fin_root', [(CR + 0.85, EX + 0.62, EY + 0.02, 0.02, 0.04, 0.04), (CR + 0.4, EX + 0.72, EY + 0.02, 0.2, 0.26, 0.22), (CR - 0.6, EX + 0.76, EY + 0.02, 0.2, 0.24, 0.2), (CR - 1.4, EX + 0.62, EY + 0.02, 0.02, 0.04, 0.04)], [(1, 0), (0.2, 0.35), (-1, 1.0), (-1, -1.0), (0.2, -0.35)], 36, M['paint'], angle=60))
-right.append(cyl('fin_act', 0.05, 0.6, (EX + 0.78, EY + 0.28, CR - 0.3), 'z', 10, M['gun']))
 
 # ── Pylons: spine to can.
 for (zc, ch) in [(0.9, 1.1), (-1.7, 1.0)]:  # tapered pylons, spine to can, filleted both ends
@@ -171,10 +170,10 @@ for sx in (1, -1):  # belly vents on the spine's underside
         box('belly_vent', (0.36, 0.03, 0.12), (sx * 0.42, 0.62, 2.6 - dz), material=M['gun'])
 # Twin raked dorsal fins at the spine's tail, with root fillets.
 for side in (1, -1):
-    df = plate('dorsal', [(0.25, 0.0), (-0.5, 0.9), (-0.85, 0.92), (-1.0, 0.0)], 0.17, M['paint'], 'x', 0.0, 0.05)
-    place(df, (0, 0, -0.24 * side), (0.45 * side, 1.36, -3.0))
-    dt = plate('dorsal_tip', [(-0.42, 0.83), (-0.46, 0.92), (-0.79, 0.93), (-0.76, 0.84)], 0.13, M['trim'], 'x', 0.0, 0.03)
-    place(dt, (0, 0, -0.24 * side), (0.45 * side, 1.36, -3.0))
+    df = plate('dorsal', [(0.25, 0.0), (-0.5, 0.9), (-0.85, 0.92), (-1.0, 0.0)], 0.11, M['paint'], 'x', 0.0, 0.02)
+    place(df, (0, 0, -0.36 * side), (0.45 * side, 1.36, -3.0))
+    dt = plate('dorsal_tip', [(-0.42, 0.83), (-0.46, 0.92), (-0.79, 0.93), (-0.76, 0.84)], 0.12, M['trim'], 'x', 0.0, 0.015)
+    place(dt, (0, 0, -0.36 * side), (0.45 * side, 1.36, -3.0))
     subsurf(ring_loft('dorsal_root', [(-2.9, 0.45 * side, 1.4, 0.02, 0.02, 0.02, 2), (-3.1, 0.45 * side, 1.4, 0.13, 0.18, 0.04, 2.2), (-3.7, 0.45 * side, 1.4, 0.12, 0.16, 0.04, 2.2), (-4.0, 0.45 * side, 1.4, 0.02, 0.02, 0.02, 2)], around=12, material=M['paint']), 1)
 # Pod thruster.
 smooth(lathe('pod_nozzle', [(-3.95, 0.24), (-4.12, 0.26), (-4.2, 0.24)], 0, 0.84, 24, M['metal']), 40)

@@ -38,7 +38,7 @@ right = []
 right.append(poly_loft('front_house', [(F0, FX, FY, FH * 0.9, FH * 0.86, FH * 0.86), (F0 - 0.15, FX, FY, FH, FH * 0.95, FH * 0.93), (F1 + 0.4, FX, FY, FH, FH * 0.95, FH * 0.93), (F1, FX, FY, FH * 0.86, FH * 0.82, FH * 0.8)], SQ, 20, M['paint'], cap1=True, angle=50))
 right.append(poly_loft('front_rim', [(F0 + 0.03, FX, FY, FH * 0.91, FH * 0.87, FH * 0.87), (F0 - 0.1, FX, FY, FH * 1.012, FH * 0.962, FH * 0.942), (F0 - 0.35, FX, FY, FH * 1.012, FH * 0.962, FH * 0.942)], SQ, 6, M['trim'], cap1=False, angle=50))
 right.append(poly_loft('front_band', [(F1 + 0.75, FX, FY, FH * 1.008, FH * 0.958, FH * 0.938), (F1 + 0.5, FX, FY, FH * 1.008, FH * 0.958, FH * 0.938)], SQ, 3, M['trim'], cap1=False, angle=50))
-right.append(smooth(lathe('front_duct', [(F0, 0.69), (F0 - 0.3, 0.67), (F0 - 0.5, 0.66)], FX, FY, 40, M['carbon'], cap1=True), 60))
+right.append(smooth(lathe('front_duct', [(F0 + 0.02, 0.78), (F0 - 0.08, 0.7), (F0 - 0.3, 0.67), (F0 - 0.5, 0.66)], FX, FY, 40, M['carbon'], cap1=True), 60))
 right.append(fan_smooth('front_fan', FX, FY, F0 - 0.4, 0.27, 0.65, 16, 0.85, 0.34, 5, M['gun']))
 right.append(smooth(lathe('front_spinner', [(F0, 0.006), (F0 - 0.03, 0.07), (F0 - 0.1, 0.14), (F0 - 0.2, 0.21), (F0 - 0.28, 0.27), (F0 - 0.32, 0.3), (F0 - 0.6, 0.3), (F0 - 0.64, 0.28)], FX, FY, 48, M['gun'], cap1=True), 89))
 right.append(cyl('fan_back', 0.64, 0.02, (FX, FY, F0 - 0.62), 'z', 36, M['carbon']))
@@ -113,7 +113,7 @@ for (a, col) in [(2.3, 'trim'), (3.4, 'brass'), (4.6, 'trim')]:  # pipes tight t
         right.append(cyl('clamp', 0.08, 0.07, (MX + 0.66 * math.cos(a), MY + 0.66 * math.sin(a), z), 'z', 10, M['gun']))
 
 # ── Thick box beams from the cabin to the modules (at the front housing, the bay and the rear module).
-for (z, y, d) in [(F1 + 1.0, 0.95, 0.7), ((F1 + R0) / 2, 0.92, 0.5), (R1 + 1.2, 1.0, 0.9)]:
+for (z, y, d) in [((F1 + R0) / 2, 0.92, 0.5), (R1 + 1.2, 1.0, 0.9)]:
     right.append(box('beam', (1.0, 0.42, d), (1.35, y, z), material=M['gun'], bevel=0.05))
 
 # Shoulders: the hull's upper flank reaching out to the modules over the bay.
@@ -163,7 +163,8 @@ def catmull(ps, n=10):
     out.append(ps[-1]); return out
 tube('bumper', catmull([(FX - 0.5, 0.2, F0 + 0.2), (FX - 0.6, 0.18, F0 + 0.75), (1.0, 0.18, F0 + 0.95), (-1.0, 0.18, F0 + 0.95), (-FX + 0.6, 0.18, F0 + 0.75), (-FX + 0.5, 0.2, F0 + 0.2)]), 0.09, M['gun'], seg=12)
 for sx in (1, -1):
-    tube('bumper_post', [(sx * 0.6, 0.18, F0 + 0.95), (sx * 0.38, 0.6, 4.3)], 0.06, M['gun'])
+    tube('bumper_post', [(sx * 0.6, 0.18, F0 + 0.95), (sx * 0.38, 0.6, 4.3)], 0.08, M['gun'])
+    box('post_mount', (0.2, 0.08, 0.2), (sx * 0.38, 0.62, 4.3), material=M['gun'])
 box('bumper_glow', (1.8, 0.012, 0.06), (0, 0.1, F0 + 0.95), material=M['glow'])
 for sx in (1, -1):  # hover glow: slim strips under each module
     for dx in (-0.4, 0.4):
