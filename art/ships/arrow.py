@@ -79,18 +79,19 @@ for (a, z0, z1, rr) in []:
     for z in (z0 - 0.3, z1 + 0.3):  # saddle brackets into the drum
         right.append(box('saddle', (0.16, rr + 0.2, 0.16), (EX + (0.7 + rr / 2) * math.cos(a), EY + (0.7 + rr / 2) * math.sin(a), z), (0, 0, a - math.pi / 2), M['gun']))
 # Two thick orange feed pipes flush on the drum, clamps staggered.
-# Feed lines: arcs from a brass fitting on one stage to a fitting on the next (not a noodle).
-for j, a in enumerate((1.7, 2.55)):
-    stations = [MZ(0.6), MZ(-0.4), MZ(-1.35), MZ(-2.2)]
-    for k, (za, zb) in enumerate(zip(stations, stations[1:])):
-        if (k + j) % 3 == 2: continue
-        pts = []
-        for q in range(9):
-            u = q / 8; rr = 0.765
-            pts.append((EX + rr * math.cos(a), EY + rr * math.sin(a), za + (zb - za) * u))
-        right.append(tube('feed_pipe', pts, 0.05, M['trim']))
-        for z in (za, zb):
-            right.append(cyl('fitting', 0.07, 0.08, (EX + 0.75 * math.cos(a), EY + 0.75 * math.sin(a), z), 'z', 10, M['brass']))
+# Feed lines lying on the stages: the pipe follows each stage's radius (no stand-off, no knobs).
+STAGES = [(MZ(0.7), MZ(0.45), 0.7), (MZ(0.45), MZ(0.05), 0.62), (MZ(0.05), MZ(-0.85), 0.72), (MZ(-0.85), MZ(-1.05), 0.56), (MZ(-1.05), MZ(-1.7), 0.66), (MZ(-1.7), MZ(-2.6), 0.54)]
+def stage_r(z):
+    for (z0, z1, r) in STAGES:
+        if z1 <= z <= z0: return r
+    return 0.6
+for a in (1.7, 2.55):
+    pts = []
+    for q in range(41):
+        z = MZ(0.68) + (MZ(-2.5) - MZ(0.68)) * q / 40
+        rr = stage_r(z) + 0.05
+        pts.append((EX + rr * math.cos(a), EY + rr * math.sin(a), z))
+    right.append(tube('feed_pipe', pts, 0.045, M['trim']))
 # Thin copper coils wrapped round the brass stage.
 right.append(tube('coil', [(EX + 0.66 * math.cos(t * 0.6), EY + 0.66 * math.sin(t * 0.6), MZ(0.4) - t * 0.012) for t in range(0, 60, 2)], 0.018, M['brass']))
 
@@ -105,10 +106,10 @@ right.append(cyl('hot_core', 0.4, 0.02, (EX, EY, -3.72), 'z', 32, M['hot']))
 
 # ── Side vane (outboard of each engine) sweeping out into a fin at the back.
 fin = plate('fin', [(0.0, 0.62), (0.0, 1.0), (-1.2, 1.26), (-1.5, 1.0), (-1.2, 0.66)], 0.2, M['paint'], 'x', 0.0, 0.06)
-place(fin, (0, -0.3, 0), (EX + 0.84, 0.0, CR + 1.6)); right.append(fin)
-right.append(poly_loft('talon_pylon', [(CR + 2.45, EX + 0.62, EY, 0.03, 0.05, 0.05), (CR + 1.75, EX + 0.74, EY + 0.03, 0.15, 0.24, 0.2), (CR + 0.95, EX + 0.78, EY + 0.03, 0.14, 0.22, 0.18), (CR + 0.4, EX + 0.7, EY + 0.03, 0.04, 0.08, 0.06)], [(1, 0), (0.3, 1), (-1, 0.7), (-1, -0.7), (0.3, -1)], 30, M['paint'], angle=60))
+place(fin, (0, -0.3, 0), (EX + 0.84, 0.0, CR + 1.85)); right.append(fin)
+right.append(poly_loft('talon_pylon', [(CR + 2.7, EX + 0.62, EY, 0.03, 0.05, 0.05), (CR + 2.0, EX + 0.74, EY + 0.03, 0.15, 0.24, 0.2), (CR + 1.2, EX + 0.78, EY + 0.03, 0.14, 0.22, 0.18), (CR + 0.65, EX + 0.7, EY + 0.03, 0.04, 0.08, 0.06)], [(1, 0), (0.3, 1), (-1, 0.7), (-1, -0.7), (0.3, -1)], 30, M['paint'], angle=60))
 ft = plate('fin_tip', [(-1.12, 1.24), (-1.22, 1.27), (-1.52, 1.0), (-1.38, 0.98)], 0.22, M['trim'], 'x', 0.0, 0.05)
-place(ft, (0, -0.3, 0), (EX + 0.84, 0.0, CR + 1.6)); right.append(ft)
+place(ft, (0, -0.3, 0), (EX + 0.84, 0.0, CR + 1.85)); right.append(ft)
 # ── Skid rail along each can's lower outer side, faired into it; the hover glow under it.
 # Rear fin root: a fairing and an actuator housing where the swept fin meets the engine.
 right.append(poly_loft('fin_root', [(CR + 0.85, EX + 0.62, EY + 0.02, 0.02, 0.04, 0.04), (CR + 0.4, EX + 0.72, EY + 0.02, 0.2, 0.26, 0.22), (CR - 0.6, EX + 0.76, EY + 0.02, 0.2, 0.24, 0.2), (CR - 1.4, EX + 0.62, EY + 0.02, 0.02, 0.04, 0.04)], [(1, 0), (0.2, 0.35), (-1, 1.0), (-1, -1.0), (0.2, -0.35)], 36, M['paint'], angle=60))
@@ -146,8 +147,8 @@ for dz in (0.0, 0.55):
 poly_loft('keel', [(z, 0, cy - b - 0.01, a * 0.32, 0.03, 0.03) for (z, cx, cy, a, t, b) in SPINE[1:-1]], [(1, 0), (0.6, 1), (-0.6, 1), (-1, 0), (-0.6, -1), (0.6, -1)], 40, M['carbon'], cap1=True)
 # Canopy: a big smoked oval over the middle of the spine, orange frame lines across it.
 TOP = 1.46
-CZ, CL, CW, CH = 2.3, 2.2, 0.62, 0.5   # canopy centre, half length, half width, height (forward, raised)
-TOP = 1.5
+CZ, CL, CW, CH = 2.3, 2.2, 0.62, 0.46   # canopy centre, half length, half width, height (forward, raised)
+TOP = 1.34
 def egg(scale_w, scale_h, base, z_pad=0.0, n=14):
     st = []
     for i in range(n + 1):
