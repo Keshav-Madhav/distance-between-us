@@ -122,6 +122,8 @@
   #worlds .w[data-w=space] b { color: #bcd8ff; }
   #worlds .w[data-w=space] { background: radial-gradient(circle at 70% 28%, #fff6dc 0, #ffd58a 3%, rgba(255,190,110,0.35) 9%, transparent 22%), radial-gradient(circle at 30% 70%, #3b6fb0 0, #24456f 9%, #0a1428 10.5%, transparent 11%), radial-gradient(1px 1px at 20% 30%, #fff 50%, transparent), radial-gradient(1px 1px at 80% 75%, #cde 50%, transparent), radial-gradient(1px 1px at 55% 50%, #fff 50%, transparent), #03050b; }
   .sysmark { position: fixed; display: none; transform: translate(-50%, -150%); pointer-events: none; z-index: 5; font-size: 11px; letter-spacing: 0.25em; color: #cfe2ff; text-shadow: 0 1px 3px #000, 0 0 8px rgba(0,0,0,0.8); white-space: nowrap; }
+  .sysmark.edge { transform: translate(-50%, -50%); padding: 3px 8px; background: rgba(8,10,14,0.6); border-radius: 3px; color: #9fd2ff; }
+  .sysmark.edge::after { display: none; }
   .sysmark::after { content: ''; position: absolute; left: 50%; top: 150%; width: 9px; height: 9px; margin: -4px 0 0 -5px; border: 1px solid #9fd2ff; transform: rotate(45deg); }
   #worlds .w[data-w=jungle] { background: linear-gradient(180deg, #2a3430 0%, #56645c 46%, #7d8c82 54%, #22361f 56%, #0b150b 100%); }
   #worlds .w[data-w=jungle] .sun { width: 26px; height: 14px; left: 62%; top: 22%; border-radius: 50%; background: rgba(220,230,215,0.35); box-shadow: 0 0 22px 10px rgba(200,215,200,0.25); }

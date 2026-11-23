@@ -1024,7 +1024,8 @@ let countT = 0
 // ───────────────────────── the menu ─────────────────────────
 // Mouse first (keys too): RACE / HUNT tabs, a course card per course with the whole layout drawn
 // beside it, the ship picker (the ship on screen changes as you pick), START, SETTINGS.
-let menuMode: 'race' | 'hunt' | 'free' = 'race'
+// (Kept across a world switch — a page swap: picking a world used to drop you back to RACE.)
+let menuMode: 'race' | 'hunt' | 'free' = (() => { try { const m = sessionStorage.getItem('dbu-mode'); return m === 'hunt' || m === 'free' ? m : 'race' } catch { return 'race' } })()
 const SHIP_DESC = ['Classic hull, balanced lines', 'Classic hull, heavy, side pods', 'Classic hull, needle nose and canards', 'Lofted hull, twin-fin arrow', 'Lofted hull, wide and heavy', 'Lofted hull, long, one tall fin']
 function showCourse(): void {
   const title = $('#title')
@@ -1362,6 +1363,7 @@ function toTitle(): void {
 }
 for (const b of $('#title').querySelectorAll<HTMLButtonElement>('.tabs button')) b.onclick = () => {
   menuMode = b.dataset.mode as 'race' | 'hunt' | 'free'
+  try { sessionStorage.setItem('dbu-mode', menuMode) } catch { /* blocked */ }
   // RACE or HUNT from ORBIT: down to RED MESA (there is nothing to race out there).
   if (menuMode !== 'free' && pickedWorld === 'space') { pickedWorld = 'desert'; pickedCourse = 0; showCourse(); swapTo(COURSES[0].id, false); return }
   showCourse()
@@ -1558,7 +1560,7 @@ let freeAir = false, freeAirT = 0
 let camBlend = 0, landBlend = 0
 const camFromOff = new THREE.Vector3(), camFromQ = new THREE.Quaternion()
 const landQ = new THREE.Quaternion(), landTmpQ = new THREE.Quaternion()
-const FREE_HINTS = ['<b>W · SHIFT</b>THROTTLE · BURNER (GROUND AND AIR)', '<b>A D · S</b>STEER · BRAKE', '<b>SPACE · C</b>NOSE UP · NOSE DOWN (IT STAYS WHERE YOU POINT IT)', '<b>A D · Q E</b>TURN (BANKS ITSELF; A PURE YAW IN DEEP SPACE) · ROLL', '<b>TO SPACE</b>POINT THE NOSE UP, HOLD SHIFT · PAST 80 KM YOU ARE IN ORBIT', '<b>NO DAMAGE</b>DRIVE UP ANY ROCK, LAUNCH OFF THE TOP', '<b>BEAMS</b>CRYSTAL TRAILS · TAKE ALL FIVE'].map((h) => `<div>${h}</div>`).join('')
+const FREE_HINTS = ['<b>W · SHIFT</b>THROTTLE · BURNER (GROUND AND AIR)', '<b>A D · S</b>STEER · BRAKE', '<b>SPACE · C</b>NOSE UP · NOSE DOWN (IT STAYS WHERE YOU POINT IT)', '<b>A D · Q E</b>TURN (BANKS ITSELF; A PURE YAW IN DEEP SPACE) · ROLL', '<b>TO SPACE</b>NOSE UP, HOLD SHIFT · CLIMB OUT TO THE STAR SYSTEM', '<b>NO DAMAGE</b>DRIVE UP ANY ROCK, LAUNCH OFF THE TOP', '<b>BEAMS</b>CRYSTAL TRAILS · TAKE ALL FIVE'].map((h) => `<div>${h}</div>`).join('')
 function camBlendStart(): void { camFromOff.subVectors(camera.position, renderPos); camFromQ.copy(camera.quaternion); camBlend = 1 }
 function freeOff(): void {
   freeAir = false
@@ -1709,6 +1711,8 @@ const _sv = new THREE.Vector3(), _sn = new THREE.Vector3()
 /** Into ORBIT's flight from the menu: RED MESA's sunlit side, 60,000 km out, facing it. */
 function startSystem(): void {
   startFree()
+  // The system's own controls (the world's card talked about crystals and climbing to orbit).
+  hintsEl.innerHTML = ['<b>W · SHIFT</b>THROTTLE · CRUISE (FASTER THE HIGHER YOU ARE)', '<b>A D · Q E</b>TURN · ROLL', '<b>SPACE · C</b>NOSE UP · NOSE DOWN', '<b>MARKERS</b>EVERY WORLD · AT THE EDGE: TURN TOWARD THE ARROW', '<b>TO LAND</b>HEAD FOR A WORLD · BELOW 1,500 KM YOU ARE THERE'].map((h) => `<div>${h}</div>`).join('')
   // Out here the ship is lit by the star, not by a sky: its reflections of the world's sky turned it
   // flat white.
   for (const v of visuals.values()) v.craft.root.traverse((o) => { const m = (o as THREE.Mesh).material as THREE.MeshStandardMaterial | undefined; if (m && 'envMapIntensity' in m) m.envMapIntensity = Math.min(m.envMapIntensity, 0.22) })
@@ -1868,20 +1872,43 @@ function systemStep(): void {
 }
 // The planets' names over them, with the distance (ORBIT).
 const sysMarks = IN_SYSTEM ? PLANETS.map(() => { const el = document.createElement('div'); el.className = 'sysmark'; document.body.append(el); return el }) : []
+const _sm = new THREE.Vector3()
 function drawSysMarks(): void {
   const show = IN_SYSTEM && mode === 'free'
+  // Each world: on screen where it is, or (behind you or off to the side) pinned to the screen's edge
+  // with an arrow toward it — a world behind used to project dead ahead. Labels kept off the HUD and
+  // pushed apart when they would overlap.
+  const W = innerWidth, H = innerHeight, mx = 90, myTop = 120, myBot = 170
+  const placed: [number, number][] = []
   PLANETS.forEach((p, i) => {
     const el = sysMarks[i]
     if (!show) { el.style.display = 'none'; return }
     _sv.subVectors(p.pos, sysEye)
     const dist = _sv.length() - PLANET_R
-    _sv.normalize().multiplyScalar(1000).add(camera.position).project(camera)
-    if (_sv.z > 1 || Math.abs(_sv.x) > 1.05 || Math.abs(_sv.y) > 1.05) { el.style.display = 'none'; return }
+    _sm.copy(_sv).normalize().transformDirection(camera.matrixWorldInverse) // camera space: −z ahead
+    let x: number, y: number, edge = false
+    if (_sm.z < 0) {
+      _sv.normalize().multiplyScalar(1000).add(camera.position).project(camera)
+      x = (_sv.x * 0.5 + 0.5) * W; y = (-_sv.y * 0.5 + 0.5) * H
+      edge = x < mx || x > W - mx || y < myTop || y > H - myBot
+    } else { x = 0; y = 0; edge = true }
+    if (edge) {
+      // Toward the edge along the direction on screen (behind: the side it lies to).
+      let dx = _sm.x, dy = -_sm.y
+      if (Math.hypot(dx, dy) < 1e-4) dy = 1
+      const cx = W / 2, cy = H / 2, hx = W / 2 - mx, hy = (H - myTop - myBot) / 2
+      const k = Math.min(hx / Math.max(Math.abs(dx), 1e-6), hy / Math.max(Math.abs(dy), 1e-6))
+      x = cx + dx * k; y = cy + (myTop - myBot) / 2 + dy * k
+    }
+    for (let pass = 0; pass < 3; pass++) for (const [px, py] of placed) if (Math.abs(px - x) < 200 && Math.abs(py - y) < 24) y = py + (y >= py ? 26 : -26)
+    placed.push([x, y])
     el.style.display = 'block'
-    el.style.left = `${(_sv.x * 0.5 + 0.5) * innerWidth}px`
-    el.style.top = `${(-_sv.y * 0.5 + 0.5) * innerHeight}px`
+    el.style.left = `${x}px`
+    el.style.top = `${y}px`
+    el.classList.toggle('edge', edge)
     const km = dist / 1000
-    const txt = `${p.name} · ${km > 1e6 ? (km / 1e6).toFixed(1) + 'M KM' : km > 10000 ? Math.round(km / 1000) + 'K KM' : Math.round(km) + ' KM'}`
+    const arrow = edge ? (Math.abs(_sm.x) > Math.abs(_sm.y) ? (_sm.x > 0 ? '▶ ' : '◀ ') : (_sm.y > 0 ? '▲ ' : '▼ ')) : ''
+    const txt = `${arrow}${p.name} · ${km > 1e6 ? (km / 1e6).toFixed(1) + 'M KM' : km > 10000 ? Math.round(km / 1000) + 'K KM' : Math.round(km) + ' KM'}`
     if (el.textContent !== txt) el.textContent = txt
   })
 }
