@@ -13,6 +13,7 @@ const CURT = BIOME === 'ice' ? [1.3, 0.6, 0.15] : [0.2, 1.4, 2.0]
 import { patchStandard, SKY_FOG_ONLY } from './shaders'
 
 const STEP = 40
+const ROAD_SURFACE = false
 export const GATE_HALF = 260
 export const LAPS = 1
 
@@ -974,7 +975,8 @@ export class Course {
     // Two glowing lines on the ground at the edges (amber left, white right, like the pylon tips) and
     // dashes down the middle: where the course goes reads at a glance, and the dashes stream past.
     // (On by default: the desert courses had none, and their route showed only on the minimap.)
-    if (def.ribbons !== false) {
+    // (The painted road is off: the course is ground worn by racing — see wearTexture.)
+    if (ROAD_SURFACE && def.ribbons !== false) {
       const laps = def.laps ?? 1
       const i0 = def.loop ? Math.max(0, startI - 40) : 0
       const i1 = def.loop ? Math.min(n - 1, startI + Math.round((finishI - startI) / laps) + 40) : n - 1
@@ -1113,7 +1115,7 @@ export class Course {
         if (i === 0) g.moveTo((x - x0) * kx, (z - z0) * kz); else g.lineTo((x - x0) * kx, (z - z0) * kz)
       }
     }
-    for (const [w, a] of [[560, 0.12], [440, 0.14], [330, 0.16], [230, 0.18], [140, 0.2], [70, 0.16]] as const) {
+    for (const [w, a] of [[520, 0.05], [300, 0.05]] as const) {
       g.strokeStyle = `rgba(255,0,0,${a})`
       g.lineWidth = w * kx
       path(0)
@@ -1125,16 +1127,62 @@ export class Course {
     g.lineWidth = (this.gateHalf * 2 + 120) * kx
     path(0)
     g.stroke()
+    // ── The wear of thousands of races (the AI's lines, simulated) ──
+    // Each line: the racing line (out-in-out — it cuts the inside of every bend, by how tight the
+    // bend is) followed with that racer's own skill, a lateral bias and a slow wander. Stacked, the
+    // packed ground darkens where most lines run (red), and the freshest grooves (green) braid
+    // through it — worn by racing, not paved.
     let seed = 7
     const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647)
-    for (let l = 0; l < 46; l++) {
-      const off = (rnd() + rnd() + rnd() - 1.5) * 150
-      g.strokeStyle = `rgba(0,255,0,${0.12 + rnd() * 0.3})`
+    const n = this.n
+    // Curvature (signed) per point, smoothed: the racing line's offset toward the inside.
+    const curv = new Float32Array(n)
+    for (let i = 2; i < n - 2; i++) {
+      const [ax, az] = this.tangent(i - 2), [bx, bz] = this.tangent(i + 2)
+      curv[i] = (ax * bz - az * bx) / (4 * STEP)
+    }
+    const ideal = new Float32Array(n)
+    const R = 18 // smoothing half-window (points): the line anticipates the apex
+    for (let i = 0; i < n; i++) {
+      let s2 = 0, w2 = 0
+      for (let j = Math.max(0, i - R); j <= Math.min(n - 1, i + R); j++) { const w = 1 - Math.abs(j - i) / (R + 1); s2 += curv[j] * w; w2 += w }
+      const c = s2 / w2
+      ideal[i] = THREE.MathUtils.clamp(-Math.sign(c) * Math.min(1, Math.abs(c) * 900), -1, 1) * (this.gateHalf * 0.62)
+    }
+    const offs = new Float32Array(n)
+    const line = (skill: number, bias: number, wander: number, ph: number) => {
+      let w = 0, v = 0
+      for (let i = 0; i < n; i++) {
+        // A slow random wander (velocity-damped), so lines drift and cross rather than stay parallel.
+        v = v * 0.96 + (rnd() - 0.5) * wander; w = w * 0.985 + v
+        offs[i] = ideal[i] * skill + bias + w + Math.sin(i * 0.013 + ph) * 18
+      }
+    }
+    const pathO = () => {
+      g.beginPath()
+      for (let i = 0; i < n; i++) {
+        const [tx, tz] = this.tangent(i)
+        const x = this.px[i] - tz * offs[i], z = this.pz[i] + tx * offs[i]
+        if (i === 0) g.moveTo((x - x0) * kx, (z - z0) * kz); else g.lineTo((x - x0) * kx, (z - z0) * kz)
+      }
+    }
+    // Packing: many soft wide wakes.
+    const LINES = Math.round(THREE.MathUtils.clamp(140000 / n, 120, 900))
+    for (let l = 0; l < LINES; l++) {
+      const skill = 0.55 + rnd() * 0.5
+      line(skill, (rnd() + rnd() + rnd() - 1.5) * 90, 1.2 + rnd() * 2.5, rnd() * 6.28)
+      g.strokeStyle = `rgba(255,0,0,${(0.9 / Math.sqrt(LINES)) * (0.6 + rnd() * 0.6)})`
+      g.lineWidth = (26 + rnd() * 40) * kx
+      pathO(); g.stroke()
+    }
+    // Fresh grooves: thin, sharper, broken (lifted where a craft skipped a crest).
+    for (let l = 0; l < 150; l++) {
+      line(0.6 + rnd() * 0.45, (rnd() + rnd() - 1) * 80, 0.8 + rnd() * 2.0, rnd() * 6.28)
+      g.strokeStyle = `rgba(0,255,0,${0.08 + rnd() * 0.22})`
       g.lineWidth = Math.max(1, (2 + rnd() * 5) * kx)
-      g.setLineDash([(200 + rnd() * 1800) * kx, (100 + rnd() * 900) * kx])
+      g.setLineDash([(300 + rnd() * 2500) * kx, (60 + rnd() * 500) * kx])
       g.lineDashOffset = rnd() * 3000
-      path(off)
-      g.stroke()
+      pathO(); g.stroke()
     }
     g.setLineDash([])
     const tex = new THREE.CanvasTexture(cv)

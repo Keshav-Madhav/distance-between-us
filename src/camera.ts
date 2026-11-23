@@ -202,8 +202,7 @@ export class ChaseCam {
     _pos.z += this.kick[2].step(0, dt)
 
     // Look ahead along the motion, into the turn.
-    // (Aimed a little lower: from the lower camera the craft sat on the speed readout.)
-    const ly = this.lookY.step(-1.5 - air * 2.5 + (p.airborne ? p.vy * 0.03 : 0), dt)
+    const ly = this.lookY.step(0.4 - air * 2.5 + (p.airborne ? p.vy * 0.03 : 0), dt)
     const vx = hv > 30 ? p.vel.x / hv : Math.sin(heading)
     const vz = hv > 30 ? p.vel.z / hv : Math.cos(heading)
     _look.set(at.x + vx * 44 * (1 - spinA * 0.7), at.y + ly, at.z + vz * 44 * (1 - spinA * 0.7))

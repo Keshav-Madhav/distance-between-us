@@ -94,6 +94,18 @@ const vent = (): Build => () => merge([
 const ventGlow = (): Build => () => col(new THREE.CircleGeometry(0.7, 12).rotateX(-Math.PI / 2).translate(0, 0.12, 0), [3.2, 1.1, 0.25])
 const ember = (): Build => () => col(new THREE.DodecahedronGeometry(1, 0).scale(0.3, 0.18, 0.25).translate(0, 0.06, 0), [2.6, 0.7, 0.15])
 
+const tumbleweed = (): Build => () => {
+  const gs: THREE.BufferGeometry[] = []
+  for (let i = 0; i < 14; i++) gs.push(col(new THREE.TorusGeometry(0.55, 0.025, 3, 10).rotateX(i * 0.7).rotateY(i * 1.3).translate(0, 0.6, 0), [0.6, 0.5, 0.32], 0.3))
+  return merge(gs)
+}
+const charred = (): Build => () => {
+  const gs: THREE.BufferGeometry[] = []
+  for (let i = 0; i < 7; i++) gs.push(col(new THREE.CylinderGeometry(0.03, 0.07, 1.8, 4).translate(0, 0.9, 0).rotateZ(0.25 + 0.2 * (i % 3)).rotateY(i * 0.9), [0.13, 0.1, 0.09], 0.2))
+  return merge(gs)
+}
+const tallGrass = (c: [number, number, number]): Build => tuft(c, 1.6, 9, 0.09)
+
 // ── per world (cell metres, grid cells across, chance a cell holds one, scale range) ──
 const SEEDED = (k: Omit<Kind, 'seed'>[]): Kind[] => k.map((x, i) => ({ ...x, seed: 17.3 + i * 31.7 }))
 const FLAG_COL: Record<string, [number, number, number]> = { desert: [1.0, 0.42, 0.1], ice: [1.0, 0.35, 0.1], lava: [1.0, 0.75, 0.1], forest: [0.2, 0.5, 1.0], jungle: [1.0, 0.85, 0.15] }
@@ -103,11 +115,14 @@ const KINDS: Record<string, Kind[]> = {
     { name: 'pebble', build: pebble([0.66, 0.36, 0.2]), cell: 4, grid: 110, density: 0.55, scale: [0.5, 1.6] },
     { name: 'rock', build: lowRock([0.6, 0.34, 0.2]), cell: 11, grid: 64, density: 0.3, scale: [0.4, 0.9] },
     { name: 'scrub', build: dryBush(), cell: 14, grid: 56, density: 0.5, scale: [0.6, 1.0], tilt: 0.1 },
+    { name: 'bigscrub', build: dryBush(), cell: 11, grid: 64, density: 0.55, scale: [1.8, 3.2], tilt: 0.12 },
+    { name: 'tumble', build: tumbleweed(), cell: 24, grid: 30, density: 0.4, scale: [0.9, 1.8] },
     FLAGS,
   ]),
   ice: SEEDED([
     { name: 'chip', build: iceChip(), cell: 3.5, grid: 120, density: 0.7, scale: [0.6, 1.6] },
     { name: 'mound', build: mound([0.78, 0.86, 1.0], 1.6, 0.56), cell: 14, grid: 56, density: 0.6, scale: [0.6, 1.6] },
+    { name: 'shrub', build: bush([0.86, 0.92, 1.0], 1.0, 1.6), cell: 13, grid: 44, density: 0.5, scale: [1.0, 2.2] },
     { name: 'snowman', build: snowman(), cell: 110, grid: 14, density: 0.4, scale: [0.9, 1.15] },
     FLAGS,
   ]),
@@ -115,6 +130,7 @@ const KINDS: Record<string, Kind[]> = {
     { name: 'pebble', build: pebble([0.26, 0.19, 0.16]), cell: 4, grid: 110, density: 0.5, scale: [0.5, 1.4] },
     { name: 'ash', build: () => col(new THREE.ConeGeometry(0.9, 0.36, 9, 1, true).translate(0, 0.16, 0), [0.5, 0.45, 0.42], 0.25), cell: 13, grid: 56, density: 0.4, scale: [0.6, 1.3] },
     { name: 'ember', build: ember(), cell: 7, grid: 90, density: 0.35, scale: [0.35, 0.9], glow: true },
+    { name: 'charred', build: charred(), cell: 12, grid: 60, density: 0.5, scale: [1.0, 2.0], tilt: 0.15 },
     { name: 'vent', build: vent(), cell: 34, grid: 30, density: 0.4, scale: [0.8, 1.6] },
     { name: 'ventglow', build: ventGlow(), cell: 34, grid: 30, density: 0.4, scale: [0.8, 1.6], glow: true },
     FLAGS,
@@ -122,13 +138,15 @@ const KINDS: Record<string, Kind[]> = {
   forest: SEEDED([
     { name: 'tuft', build: tuft([0.28, 0.46, 0.12], 0.7), cell: 5, grid: 100, density: 0.6, scale: [0.7, 1.6], tilt: 0.15 },
     { name: 'flower', build: tuft([0.95, 0.85, 0.3], 0.35, 5, 0.06), cell: 7, grid: 70, density: 0.3, scale: [0.8, 1.3] },
-    { name: 'bush', build: bush([0.4, 0.68, 0.26], 0.8, 1.0), cell: 15, grid: 52, density: 0.4, scale: [0.7, 1.4] },
+    { name: 'bush', build: bush([0.4, 0.68, 0.26], 0.8, 1.0), cell: 12, grid: 46, density: 0.55, scale: [1.2, 2.8] },
+    { name: 'tallgrass', build: tallGrass([0.36, 0.56, 0.16]), cell: 8, grid: 80, density: 0.5, scale: [0.9, 1.8], tilt: 0.15 },
     FLAGS,
   ]),
   jungle: SEEDED([
     { name: 'fern', build: fern([0.2, 0.32, 0.14]), cell: 6, grid: 90, density: 0.55, scale: [0.7, 1.6], tilt: 0.1 },
     { name: 'tuft', build: tuft([0.12, 0.26, 0.07], 0.6), cell: 4, grid: 110, density: 0.45, scale: [0.7, 1.5] },
-    { name: 'bush', build: bush([0.14, 0.3, 0.1], 0.9, 1.2), cell: 14, grid: 56, density: 0.45, scale: [0.7, 1.4] },
+    { name: 'bush', build: bush([0.14, 0.3, 0.1], 0.9, 1.2), cell: 12, grid: 46, density: 0.55, scale: [1.2, 2.6] },
+    { name: 'bigfern', build: fern([0.18, 0.3, 0.12]), cell: 10, grid: 64, density: 0.5, scale: [2.0, 3.5], tilt: 0.1 },
     FLAGS,
   ]),
 }

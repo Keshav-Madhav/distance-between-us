@@ -2390,8 +2390,7 @@ function drawRacer(p: Player, alpha: number, dt: number, isMe: boolean): void {
   // Sand thrown up behind, laid along the path since last frame.
   if (near && p.agl < 8) {
     const seg = v.lastDust.distanceTo(tmp)
-    // (Yours fades out with speed: past Mach 2 the chase camera flies through its own spray every frame.)
-    const n = Math.min(isMe ? 10 : 4, Math.ceil(seg / 14)) * (0.4 + p.boost * 0.8 + p.brake * 2) * (isMe ? THREE.MathUtils.clamp(1 - (p.mach - 1) / 1.5, 0, 1) : 1)
+    const n = Math.min(isMe ? 10 : 4, Math.ceil(seg / 14)) * (0.4 + p.boost * 0.8 + p.brake * 2)
     for (let i = 0; i < n; i++) {
       const k = Math.random()
       const x = v.lastDust.x + (tmp.x - v.lastDust.x) * k, z = v.lastDust.z + (tmp.z - v.lastDust.z) * k
@@ -2399,10 +2398,8 @@ function drawRacer(p: Player, alpha: number, dt: number, isMe: boolean): void {
       e.x = x + (Math.random() - 0.5) * 4; e.y = groundH(x, z) + 0.5; e.z = z + (Math.random() - 0.5) * 4
       const sp = 14 + p.boost * 22
       e.vx = p.vel.x * 0.08 + p.right.x * (Math.random() - 0.5) * sp * 2; e.vy = 6 + Math.random() * sp; e.vz = p.vel.z * 0.08 + p.right.z * (Math.random() - 0.5) * sp * 2
-      // (Your own lighter and smaller: from the chase camera, at burner, your own spray washed the whole
-      // lower screen orange and hid the road — speed read worse, not better.)
-      e.life = 0.9 + Math.random() * 1.1; e.size0 = 1.5; e.size1 = isMe ? 5 + p.boost * 3 : 9 + p.boost * 8
-      e.r = DUST[0]; e.g = DUST[1]; e.b = DUST[2]; e.a = (isMe ? 0.12 : 0.3) * (1 - p.agl / 8); e.drag = 2.4; e.grav = 6
+      e.life = 0.9 + Math.random() * 1.1; e.size0 = 1.5; e.size1 = 9 + p.boost * 8
+      e.r = DUST[0]; e.g = DUST[1]; e.b = DUST[2]; e.a = 0.3 * (1 - p.agl / 8); e.drag = 2.4; e.grav = 6
       fx.smoke.emit(e)
     }
   }
