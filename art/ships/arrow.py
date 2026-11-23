@@ -25,7 +25,14 @@ right.append(smooth(lathe('can_lip', lip + [(5.78, 0.75)], EX, EY, 40, M['paint'
 right.append(smooth(lathe('can_lipband', [(5.78, 0.75), (5.7, 0.75)], EX, EY, 40, M['trim']), 30))
 right.append(smooth(lathe('can_lip2', [(5.7, 0.75), (5.6, 0.75)], EX, EY, 40, M['paint']), 30))
 right.append(smooth(lathe('can_band0', [(5.6, 0.75), (5.15, 0.75)], EX, EY, 40, M['trim']), 30))
-right.append(smooth(lathe('can_front', [(5.15, 0.75), (4.6, 0.75), (1.65, 0.74)], EX, EY, 40, M['paint']), 30))
+right.append(smooth(lathe('can_front', [(5.15, 0.75), (4.6, 0.75), (3.62, 0.748)], EX, EY, 40, M['paint']), 30))
+right.append(smooth(lathe('can_seam', [(3.62, 0.748), (3.6, 0.735), (3.52, 0.735), (3.5, 0.748)], EX, EY, 40, M['gun']), 30))
+right.append(smooth(lathe('can_mid', [(3.5, 0.748), (1.65, 0.74)], EX, EY, 40, M['paint']), 30))
+# A faired sensor blister on the can's top, and a vent pair on its inboard flank.
+right.append(smooth_loft('blister', [(4.9, EX, EY + 0.72, 0.03, 0.02, 0.02, 2), (4.6, EX, EY + 0.72, 0.13, 0.09, 0.04, 2.4), (3.9, EX, EY + 0.72, 0.13, 0.08, 0.04, 2.4), (3.75, EX, EY + 0.72, 0.03, 0.02, 0.02, 2)], 16, 12, M['paint']))
+right.append(cyl('blister_lens', 0.045, 0.02, (EX, EY + 0.8, 4.75), 'y', 12, M['glass']) if False else box('blister_lens', (0.12, 0.02, 0.1), (EX, EY + 0.795, 4.6), material=M['glass']))
+for dz in (0.0, 0.22):
+    right.append(box('vent_in', (0.03, 0.3, 0.12), (EX - 0.745, EY + 0.1, 2.9 - dz), (0, 0, 0), M['carbon']))
 # Paired vent slots near the rear band (skin detail, sparse).
 for a in (1.05, 1.25):
     right.append(box('vent_slot', (0.05, 0.03, 0.4), (EX + 0.742 * math.cos(a), EY + 0.742 * math.sin(a), 2.3), (0, 0, a - math.pi / 2), M['carbon']))
@@ -35,15 +42,13 @@ right.append(smooth(lathe('can_rear', [(1.05, 0.735), (0.75, 0.73), (0.7, 0.69)]
 right.append(ring('can_rim', 0.7, 0.03, (EX, EY, 0.7), 40, M['metal']))
 # Intake: a dark duct, a fan of blades, a spinner.
 right.append(smooth(lathe('duct', [(6.0, 0.6), (5.7, 0.59), (5.4, 0.58)], EX, EY, 32, M['carbon'], cap1=True), 60))
-f = fan('fan', EX, EY, 5.5, 0.16, 0.56, 30, 0.55, 0.24, M['gun'])
-for p in f.data.polygons: p.use_smooth = True
-right.append(f)
+right.append(fan_smooth('fan', EX, EY, 5.5, 0.17, 0.565, 20, 0.75, 0.3, 4, M['gun']))
 right.append(cyl('hub', 0.18, 0.06, (EX, EY, 5.42), 'z', 24, M['carbon']))
-right.append(ring('fan_shroud', 0.57, 0.025, (EX, EY, 5.5), 40, M['gun']))
+right.append(ring('fan_shroud', 0.575, 0.03, (EX, EY, 5.5), 40, M['carbon']))
 for i in range(12):  # stator vanes behind the fan
     a = 2 * math.pi * i / 12
     right.append(box('stator', (0.38, 0.02, 0.06), (EX + 0.37 * math.cos(a), EY + 0.37 * math.sin(a), 5.3), (0, 0, a), M['gun']))
-right.append(cyl('spinner', 0.18, 0.4, (EX, EY, 5.65), 'z', 20, M['metal'], r2=0.02))
+right.append(smooth(lathe('spinner', [(5.9, 0.0), (5.85, 0.06), (5.75, 0.13), (5.6, 0.18), (5.45, 0.19)], EX, EY, 32, M['metal']), 70))
 
 # ── Exposed machinery behind the can: compressor stages of different diameters (grey housings and
 # dark gaps), canisters strapped along the core, two thick orange feed pipes clamped close to it.
@@ -52,7 +57,7 @@ for k, (z0, z1, r, m) in enumerate([(0.7, 0.45, 0.7, 'gun'), (0.45, 0.05, 0.6, '
     right.append(smooth(lathe('stage', [(z0, r * 0.94), (z0 - 0.03, r), (z1 + 0.03, r), (z1, r * 0.94)], EX, EY, 32, M[m], cap0=True, cap1=True), 40))
     if m == 'gun':  # flange lips at both ends, and radial ribs on two stages
         for z in (z0 - 0.02, z1 + 0.02):
-            right.append(ring('flange', r + 0.01, 0.025, (EX, EY, z), 32, M['metal']))
+            right.append(ring('flange', r + 0.01, 0.025, (EX, EY, z), 22, M['metal'], minor=4))
         if k in (2,):
             for i in range(12):
                 a = 2 * math.pi * (i + 0.5) / 12
@@ -68,7 +73,7 @@ for (a, z0, z1, rr) in [(-0.35, 0.5, -1.6, 0.14), (0.35, 0.2, -0.9, 0.11), (-0.9
     for z in (z0 - 0.08, z1 + 0.08):
         right.append(cyl('aux_cap', rr * 1.08, 0.08, (x, y, z), 'z', 14, M['trim']))
     for z in (z0 - 0.3, z1 + 0.3):  # saddle brackets into the drum
-        right.append(box('saddle', (0.1, rr + 0.12, 0.12), (EX + (0.7 + rr / 2) * math.cos(a), EY + (0.7 + rr / 2) * math.sin(a), z), (0, 0, a - math.pi / 2), M['gun']))
+        right.append(box('saddle', (0.16, rr + 0.2, 0.16), (EX + (0.7 + rr / 2) * math.cos(a), EY + (0.7 + rr / 2) * math.sin(a), z), (0, 0, a - math.pi / 2), M['gun']))
 # Two thick orange feed pipes flush on the drum, clamps staggered.
 for j, a in enumerate((1.7, 4.0)):
     right.append(tube('feed_pipe', [(EX + rr * math.cos(a), EY + rr * math.sin(a), z) for (z, rr) in [(0.72, 0.76), (0.4, 0.76), (-0.1, 0.78), (-0.9, 0.78), (-1.2, 0.73), (-1.8, 0.73), (-2.5, 0.6)]], 0.055, M['trim']))
@@ -90,12 +95,10 @@ place(fin, (0, -0.4, 0), (EX + 0.78, 0.0, 1.2)); right.append(fin)
 ft = plate('fin_tip', [(-2.45, 1.37), (-2.6, 1.41), (-3.22, 1.0), (-3.0, 0.98)], 0.26, M['trim'], 'x', 0.0, 0.05)
 place(ft, (0, -0.4, 0), (EX + 0.78, 0.0, 1.2)); right.append(ft)
 # ── Skid rail along each can's lower outer side, faired into it; the hover glow under it.
-right.append(box('skid_rail', (0.07, 0.07, 3.3), (EX + 0.66, EY - 0.5, 3.4), material=M['metal'], bevel=0.015))
-for z in (4.8, 3.4, 2.0):
-    right.append(box('standoff', (0.08, 0.1, 0.1), (EX + 0.6, EY - 0.45, z), (0, 0, 0.75), M['gun']))
-right.append(box('skid_glow', (0.05, 0.01, 3.1), (EX + 0.66, EY - 0.54, 3.4), material=M['glow']))
+right.append(poly_loft('strake', [(5.1, EX + 0.6, EY - 0.46, 0.02, 0.02, 0.02), (4.6, EX + 0.62, EY - 0.47, 0.12, 0.06, 0.06), (1.9, EX + 0.62, EY - 0.47, 0.12, 0.06, 0.06), (1.4, EX + 0.6, EY - 0.46, 0.02, 0.02, 0.02)], [(1, 0), (0.4, 1), (-1, 0.6), (-1, -0.6), (0.4, -1)], 32, M['gun']))
+right.append(box('skid_glow', (0.06, 0.01, 2.6), (EX + 0.64, EY - 0.535, 3.25), material=M['glow']))
 # Rear fin root: a fairing and an actuator housing where the swept fin meets the engine.
-right.append(smooth_loft('fin_root', [(1.9, EX + 0.62, EY, 0.04, 0.04, 0.04, 2), (1.45, EX + 0.7, EY, 0.2, 0.3, 0.26, 2.4), (0.3, EX + 0.74, EY, 0.2, 0.3, 0.26, 2.4), (-0.4, EX + 0.66, EY, 0.04, 0.04, 0.04, 2)], 16, 16, M['paint']))
+right.append(poly_loft('fin_root', [(2.4, EX + 0.6, EY + 0.02, 0.02, 0.04, 0.04), (1.6, EX + 0.72, EY + 0.02, 0.16, 0.3, 0.26), (0.4, EX + 0.76, EY + 0.02, 0.17, 0.28, 0.24), (-0.6, EX + 0.62, EY + 0.02, 0.02, 0.04, 0.04)], [(1, 0), (0.35, 1), (-1, 0.45), (-1, -0.45), (0.35, -1)], 36, M['paint'], angle=60))
 right.append(cyl('fin_act', 0.05, 0.6, (EX + 0.78, EY + 0.28, 0.5), 'z', 10, M['gun']))
 
 # ── Struts: a faired pylon at the intake end, an X brace behind.
@@ -119,7 +122,7 @@ BODY_UNUSED = [
 ]
 # Hard-chined section: a flat top, chamfers down to a sharp chine, a shallow hull below.
 HEX = [(1.0, 0.0), (0.82, 0.55), (0.5, 0.92), (0.0, 1.0), (-0.5, 0.92), (-0.82, 0.55), (-1.0, 0.0), (-0.7, -0.55), (-0.3, -0.95), (0.0, -1.0), (0.3, -0.95), (0.7, -0.55)]
-SPINE = [(6.15, 0, 0.8, 0.1, 0.05, 0.04), (5.4, 0, 0.82, 0.5, 0.22, 0.2), (3.6, 0, 0.86, 0.66, 0.44, 0.26), (1.2, 0, 0.9, 0.76, 0.56, 0.3),
+SPINE = [(6.15, 0, 0.78, 0.14, 0.03, 0.04), (5.4, 0, 0.8, 0.56, 0.13, 0.2), (3.6, 0, 0.84, 0.68, 0.38, 0.26), (1.2, 0, 0.9, 0.76, 0.56, 0.3),
          (-0.8, 0, 0.9, 0.88, 0.58, 0.3), (-2.6, 0, 0.88, 1.0, 0.56, 0.28), (-3.6, 0, 0.86, 0.94, 0.46, 0.28), (-4.1, 0, 0.84, 0.66, 0.3, 0.26)]
 body = poly_loft('body', SPINE, HEX, 56, M['paint'])
 # An orange stripe along each chine, a dark keel plate under the hull.
@@ -129,12 +132,14 @@ poly_loft('keel', [(z, 0, cy - b - 0.01, a * 0.32, 0.03, 0.03) for (z, cx, cy, a
 # Canopy: a big smoked oval over the middle of the spine, orange frame lines across it.
 TOP = 1.44
 frame = smooth_loft('canopy_frame', [(1.15, 0, TOP - 0.05, 0.06, 0.06, 0.04, 2.0), (0.7, 0, TOP - 0.05, 0.46, 0.08, 0.04, 2.4), (-1.0, 0, TOP - 0.05, 0.62, 0.1, 0.04, 2.4), (-2.6, 0, TOP - 0.05, 0.5, 0.08, 0.04, 2.4), (-3.0, 0, TOP - 0.05, 0.06, 0.06, 0.04, 2.0)], 32, 28, M['trim'])
-can = smooth_loft('canopy', [(1.05, 0, TOP, 0.05, 0.02, 0.02, 2.0), (0.6, 0, TOP, 0.42, 0.14, 0.03, 2.4), (-1.0, 0, TOP, 0.58, 0.26, 0.04, 2.4), (-2.5, 0, TOP, 0.46, 0.16, 0.03, 2.4), (-2.9, 0, TOP, 0.05, 0.02, 0.02, 2.0)], 32, 28, M['glass'])
+can = smooth_loft('canopy', [(1.05, 0, TOP, 0.05, 0.02, 0.02, 2.0), (0.6, 0, TOP, 0.44, 0.24, 0.03, 2.3), (-1.0, 0, TOP, 0.6, 0.4, 0.04, 2.3), (-2.5, 0, TOP, 0.48, 0.26, 0.03, 2.3), (-2.9, 0, TOP, 0.05, 0.02, 0.02, 2.0)], 32, 28, M['glass'])
+# A dark tub under the glass (the white spine showed through and made it pale).
+smooth_loft('canopy_tub', [(0.95, 0, TOP - 0.01, 0.05, 0.02, 0.02, 2.0), (0.6, 0, TOP - 0.01, 0.42, 0.22, 0.03, 2.3), (-1.0, 0, TOP - 0.01, 0.57, 0.37, 0.04, 2.3), (-2.5, 0, TOP - 0.01, 0.46, 0.24, 0.03, 2.3), (-2.8, 0, TOP - 0.01, 0.05, 0.02, 0.02, 2.0)], 24, 20, M['carbon'])
 for z in (0.1, -1.0, -2.1):
     k = math.sqrt(max(0.0, 1 - ((z + 1.0) / 1.95) ** 2))
-    pts = [(0.59 * k * math.cos(t), TOP + 0.265 * k * math.sin(t), z) for t in [i * math.pi / 12 for i in range(13)]]
+    pts = [(0.61 * k * math.cos(t), TOP + 0.405 * k * math.sin(t), z) for t in [i * math.pi / 12 for i in range(13)]]
     tube('canopy_bow', pts, 0.022, M['trim'])
-tube('canopy_spine', [(0, TOP + 0.12, 0.6), (0, TOP + 0.27, -1.0), (0, TOP + 0.16, -2.5)], 0.02, M['trim'])
+tube('canopy_spine', [(0, TOP + 0.2, 0.6), (0, TOP + 0.41, -1.0), (0, TOP + 0.26, -2.5)], 0.02, M['trim'])
 # Twin raked dorsal fins at the spine's tail, with root fillets.
 for side in (1, -1):
     df = plate('dorsal', [(0.0, 0.0), (-0.45, 0.9), (-0.78, 0.92), (-0.95, 0.0)], 0.12, M['paint'], 'x', 0.0, 0.035)
@@ -153,7 +158,7 @@ tube('binder', [(-EX + 0.74, EY, 6.03), (-0.6, EY, 6.2), (0, EY, 6.26), (0.6, EY
 for i, x in enumerate((-EX, 0.0, EX)):
     empty(f'nozzle_{i}' + ('' if x else '@0.45'), (x, EY if x else 0.84, NZ))
 empty('wingtip', (EX + 0.8 + 1.9 * math.sin(0.55), 1.0, -0.4 - 1.9 * math.cos(0.55)))
-empty('number', (EX + 0.77, EY + 0.05, 3.3))
+empty('number', (EX + 0.77, EY + 0.05, 2.55))
 
 out = os.environ.get('OUT', '/tmp')
 print('TRIANGLES', tri_count()); tri_report()

@@ -211,6 +211,26 @@ def tri_count():
             me = ob.evaluated_get(dg).to_mesh(); me.calc_loop_triangles(); n += len(me.loop_triangles); ob.evaluated_get(dg).to_mesh_clear()
     return n
 
+def fan_smooth(name, cx, cy, z, r0, r1, n=20, twist=0.7, chord=0.26, steps=4, material=None):
+    """Twisted blades as smooth curved strips (several radial steps each), shaded smooth."""
+    bm = bmesh.new()
+    for i in range(n):
+        a = 2 * math.pi * i / n; rows = []
+        for k in range(steps + 1):
+            r = r0 + (r1 - r0) * k / steps
+            tw = twist * (1.0 - 0.5 * k / steps)
+            w = chord * (0.75 + 0.35 * k / steps) / r
+            row = []
+            for side in (-1, 1):
+                aa = a + side * w * math.cos(tw); zz = z + side * chord * math.sin(tw) * 0.5
+                row.append(bm.verts.new(G(cx + r * math.cos(aa), cy + r * math.sin(aa), zz)))
+            rows.append(row)
+        for A, B in zip(rows, rows[1:]):
+            bm.faces.new((A[0], B[0], B[1], A[1]))
+    ob = obj_from_bm(name, bm, material)
+    for p in ob.data.polygons: p.use_smooth = True
+    return ob
+
 def fan(name, cx, cy, z, r0, r1, n=26, twist=0.55, chord=0.16, material=None):
     """A turbofan face: n overlapping twisted blades from hub radius r0 to tip r1, at depth z (game)."""
     bm = bmesh.new()
