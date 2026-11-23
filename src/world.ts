@@ -14,7 +14,7 @@ import { cloudGlsl, LOOK, PLANET_R, SPACE_FN, SPACE_U } from './space'
 const landGeometry = (kind: 'mesa' | 'butte' | 'spire', seed: number, v: number) => BIOME === 'lava' ? lavaGeometry(kind, seed, v) : BIOME === 'forest' ? forestGeometry(kind, seed, v) : BIOME === 'jungle' ? jungleGeometry(kind, seed, v) : iceGeometry(kind, seed, v)
 import { FBMT_GLSL, NOISE_TEX, patchStandard, WORLD_GLSL } from './shaders'
 import { SHADOW_GLSL, SHADOW_U } from './shadow'
-import { hiDistFor, simplified } from './lod'
+import { LodPair, lodFade, patchLodDither, type LodView } from './lod'
 
 export function rng(seed: number): () => number {
   let a = seed >>> 0
@@ -1065,9 +1065,14 @@ interface Placed {
   vx?: number
   vz?: number
   vetoed?: boolean
+  /** Extra sink (× h): half-buried blocks. And where `by` was last computed (it only changes on a wrap). */
+  sink?: number
+  bx?: number
+  bz?: number
 }
 
 const TMP_DIR = new THREE.Vector3()
+const LV: LodView = { cx: 0, cz: 0, vx: 0, vz: 0 }
 
 /**
  * Things the course places once and never moves (trackside rocks, shards, trees, spires): one set per
@@ -1076,56 +1081,41 @@ const TMP_DIR = new THREE.Vector3()
  * whole: nearly every cell touched the view, so ~2M triangles of trackside trees were drawn in MONSOON.)
  */
 class StaticSet {
-  readonly node = new THREE.Group()
-  private readonly hi: THREE.InstancedMesh
-  private readonly lo: THREE.InstancedMesh
+  readonly node: THREE.Group
+  private readonly pair: LodPair
   private readonly mats: Float32Array
-  /** x, z, reach (horizontal radius, generous) per item. */
+  /** x, z, reach (horizontal radius, generous), height per item. */
   private readonly at: Float32Array
   constructor(geo: THREE.BufferGeometry, mat: THREE.Material, mats: THREE.Matrix4[], at: number[]) {
     const n = mats.length
     this.mats = new Float32Array(n * 16)
     mats.forEach((m, i) => this.mats.set(m.elements, i * 16))
     this.at = Float32Array.from(at)
-    const make = () => {
-      const m = new THREE.InstancedMesh(geo, mat, Math.max(1, n))
-      m.frustumCulled = false
-      m.instanceMatrix.setUsage(THREE.DynamicDrawUsage)
-      m.count = 0
-      this.node.add(m)
-      return m
-    }
-    this.hi = make()
-    this.lo = make()
-    void simplified(geo).then((g) => { this.lo.geometry = g })
+    this.pair = new LodPair(geo, mat, n)
+    this.node = this.pair.node
   }
-  update(cx: number, cz: number, fx: number, fz: number, cosHalf: number, hiDist: number): void {
-    const a = this.hi.instanceMatrix.array as Float32Array, b = this.lo.instanceMatrix.array as Float32Array
-    const n = this.at.length / 3
-    let kh = 0, kl = 0
+  update(v: LodView, fx: number, fz: number, cosHalf: number): void {
+    const n = this.at.length / 4, A = this.at
+    this.pair.begin()
     for (let i = 0; i < n; i++) {
-      const dx = this.at[i * 3] - cx, dz = this.at[i * 3 + 1] - cz, reach = this.at[i * 3 + 2]
+      const dx = A[i * 4] - v.cx, dz = A[i * 4 + 1] - v.cz, reach = A[i * 4 + 2]
       const d = Math.hypot(dx, dz)
-      // (Within 600 m it stays, seen or not: its shadow may fall into view.)
-      if (d > 600 + reach && (dx * fx + dz * fz) / d < cosHalf - reach / d) continue
-      if (d - reach < hiDist) { a.set(this.mats.subarray(i * 16, i * 16 + 16), kh * 16); kh++ }
-      else { b.set(this.mats.subarray(i * 16, i * 16 + 16), kl * 16); kl++ }
+      // (Close enough that its shadow may fall into view: kept, seen or not.)
+      if (d > Math.min(1000, 150 + A[i * 4 + 3] * 5) + reach && (dx * fx + dz * fz) / d < cosHalf - reach / d) continue
+      this.pair.put(this.mats, i * 16, lodFade(dx, dz, reach, v))
     }
-    for (const [m, k] of [[this.hi, kh], [this.lo, kl]] as const) {
-      m.count = k
-      m.instanceMatrix.clearUpdateRanges()
-      m.instanceMatrix.addUpdateRange(0, k * 16)
-      m.instanceMatrix.needsUpdate = true
-    }
+    this.pair.end()
   }
 }
 
+const TMP_M = new Float32Array(16)
 class Wrapped {
-  mesh: THREE.InstancedMesh
   readonly items: Placed[] = []
+  private pair: LodPair | null = null
+  node = new THREE.Group()
   constructor(
-    geo: THREE.BufferGeometry,
-    mat: THREE.Material,
+    private readonly geo: THREE.BufferGeometry,
+    private readonly mat: THREE.Material,
     readonly tile: number,
     public sinkFrom: number,
     readonly bury: number,
@@ -1134,34 +1124,16 @@ class Wrapped {
     readonly veto: ((x: number, z: number, r: number) => boolean) | null = null,
     /** Fully sunk (and not drawn) past this distance. */
     public sinkTo = tile / 2,
-  ) {
-    this.mesh = new THREE.InstancedMesh(geo, mat, 1)
-    this.lo = this.mesh
-  }
-  /** The full shape near you, its simplified twin (src/lod.ts) further out: both in `node`. */
-  lo: THREE.InstancedMesh
-  readonly node = new THREE.Group()
+  ) {}
+  /** After the items are dealt: the full shape and its simplified twin (src/lod.ts), both in `node`. */
   finish(): void {
-    const old = this.mesh
-    const make = () => {
-      const m = new THREE.InstancedMesh(old.geometry, old.material, Math.max(1, this.items.length))
-      m.frustumCulled = false
-      m.instanceMatrix.setUsage(THREE.DynamicDrawUsage)
-      m.count = 0
-      this.node.add(m)
-      return m
-    }
-    this.mesh = make()
-    this.lo = make()
-    // (Until the twin is ready the far ones draw the full shape: same look, just not cheaper yet.)
-    void simplified(old.geometry).then((g) => { this.lo.geometry = g })
+    this.pair = new LodPair(this.geo, this.mat, this.items.length)
+    this.node = this.pair.node
   }
-  update(cx: number, cz: number, fx = 0, fz = 0, cosHalf = -2, hiDist = 1e9): void {
-    const a = this.mesh.instanceMatrix.array as Float32Array, b = this.lo.instanceMatrix.array as Float32Array
-    let kl = 0
+  update(v: LodView, fx = 0, fz = 0, cosHalf = -2): void {
+    const pair = this.pair!, cx = v.cx, cz = v.cz, m = TMP_M
     const T = this.tile
-    // Only the ones near enough to see are written (compacted): the rest cost no vertex work at all.
-    let k = 0
+    pair.begin()
     for (let i = 0; i < this.items.length; i++) {
       const it = this.items[i]
       const x = it.ox + T * Math.floor((cx - it.ox) / T + 0.5)
@@ -1173,32 +1145,25 @@ class Wrapped {
       if (this.veto && (it.vx !== x || it.vz !== z)) { it.vx = x; it.vz = z; it.vetoed = this.veto(x, z, it.r) }
       it.grow = it.vetoed ? 0 : grow
       if (it.grow < 0.03) continue
-      it.by = groundH(x, z) - this.bury * it.h - 3
-      // Behind the view and past shadow reach (~1 km: a tall grove's shadow falls that far): not drawn.
+      // (Cached until it wraps: thousands of clutter items, one terrain lookup each per frame, added up.)
+      if (it.bx !== x || it.bz !== z) { it.bx = x; it.bz = z; it.by = groundH(x, z) - (this.bury + (it.sink ?? 0)) * it.h - 3 }
+      // Out of view and past shadow reach (a tall grove's shadow falls far, a block's not): not drawn.
       // (MONSOON drew 6M triangles of forest, half of it behind the camera.)
-      if (cheb > 1000 + it.r) {
-        const dx = x - cx, dz = z - cz, d = Math.hypot(dx, dz)
-        // The item's angular half-width widens the cone so a grove at the edge is never clipped.
+      const dx = x - cx, dz = z - cz, reach = it.r * 1.8 + it.h * 0.5
+      if (cheb > Math.min(1000, 150 + it.h * 5) + it.r) {
+        const d = Math.hypot(dx, dz)
         if ((dx * fx + dz * fz) / d < cosHalf - (it.r * 1.8 + it.h) / d) continue
       }
       const sy = it.h * it.grow
       const c = Math.cos(it.yaw)
       const s = Math.sin(it.yaw)
-      // (Distance to the nearest point of it: a 600 m grove switches by its edge, not its middle.)
-      const hi = Math.hypot(x - cx, z - cz) - it.r * 1.6 < hiDist
-      const t = hi ? a : b
-      const o = (hi ? k++ : kl++) * 16
-      t[o] = c * it.r; t[o + 1] = 0; t[o + 2] = -s * it.r; t[o + 3] = 0
-      t[o + 4] = 0; t[o + 5] = sy; t[o + 6] = 0; t[o + 7] = 0
-      t[o + 8] = s * it.r; t[o + 9] = 0; t[o + 10] = c * it.r; t[o + 11] = 0
-      t[o + 12] = x; t[o + 13] = it.by; t[o + 14] = z; t[o + 15] = 1
+      m[0] = c * it.r; m[1] = 0; m[2] = -s * it.r; m[3] = 0
+      m[4] = 0; m[5] = sy; m[6] = 0; m[7] = 0
+      m[8] = s * it.r; m[9] = 0; m[10] = c * it.r; m[11] = 0
+      m[12] = x; m[13] = it.by; m[14] = z; m[15] = 1
+      pair.put(m, 0, lodFade(dx, dz, reach, v))
     }
-    for (const [m, n] of [[this.mesh, k], [this.lo, kl]] as const) {
-      m.count = n
-      m.instanceMatrix.clearUpdateRanges()
-      m.instanceMatrix.addUpdateRange(0, n * 16)
-      m.instanceMatrix.needsUpdate = true
-    }
+    pair.end()
   }
 }
 
@@ -1248,7 +1213,7 @@ export class World {
    * clear(x, z, r): false where a mesa of radius r must not stand (the race course corridor).
    * keepOff(x, z, r): true where a boulder must not be (the racing line itself).
    */
-  constructor(clear: (x: number, z: number, r: number) => boolean = () => true, keepOff: ((x: number, z: number, r: number) => boolean) | null = null) {
+  constructor(clear: (x: number, z: number, r: number) => boolean = () => true, keepOff: ((x: number, z: number, r: number) => boolean) | null = null, clutterOff: ((x: number, z: number, r: number) => boolean) | null = null) {
     this.sky = new THREE.Mesh(new THREE.SphereGeometry(1000, 48, 24), skyMaterial(false))
     this.sky.renderOrder = -10
     this.sky.frustumCulled = false
@@ -1283,6 +1248,7 @@ export class World {
     const spikeMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.18, metalness: 0, flatShading: true })
     patchStandard(spikeMat, { ice: true, spike: true, aur: AUR_T, shadow: true })
     this.spikeMat = spikeMat
+    patchLodDither(mesaMat); patchLodDither(spikeMat)
     const r = rng(1234)
     const kinds: [Kind, number, number][] = BIOME === 'lava'
       // CINDER: cinder cones first, a few basalt massifs (the column fields read as a city skyline).
@@ -1389,6 +1355,7 @@ export class World {
     bg.computeVertexNormals()
     const bMat = new THREE.MeshStandardMaterial({ color: 0x8a3a1c, roughness: 0.95, flatShading: true })
     patchStandard(bMat, { strata: true, shadow: true })
+    patchLodDither(bMat)
     const bw = new Wrapped(bg, bMat, 6000, 2400, 0.12, () => 0.92, false, keepOff, 3000)
     let bt = 0
     while (bw.items.length < 80 && bt++ < 4000) {
@@ -1400,6 +1367,42 @@ export class World {
     bw.finish()
     this.wrapped.push(bw)
     this.group.add(bw.node)
+
+    // The near field everywhere, not only along the course: the same clumps of shards, lone blocks and
+    // stands of trees that line the track (src/main.ts, the course's near field), dealt across a 12 km
+    // tile that repeats, kept off the racing corridor. Full shapes near, simplified twins far.
+    if (clutterOff) {
+      const TILE = 12000
+      const ws: Wrapped[] = []
+      for (const kind of ['butte', 'spire'] as const) for (let v = 0; v < 3; v++) {
+        const { geo, prof } = landGeometry(kind, kind.length * 31 + 7 + v * 101, v)
+        // (MONSOON's mist hides it past ~3 km; elsewhere it rises from the haze by 4.5 km.)
+        const far = JUNGLE ? 3200 : 4600
+        ws.push(new Wrapped(geo, ICE && kind === 'spire' ? spikeMat : mesaMat, TILE, far * 0.7, 0.06, prof, false, clutterOff, far))
+      }
+      const GREEN = FOREST
+      // (~25 items a km², the density the course's own near field has.)
+      const N = JUNGLE || BIOME === 'forest' ? 900 : 700
+      for (let c = 0; c < N; c++) {
+        const cx = r() * TILE, cz = r() * TILE
+        const zr = r()
+        const zone = GREEN ? (zr < 0.75 ? 'forest' : zr < 0.9 ? 'glacier' : 'open') : zr < 0.35 ? 'forest' : zr < 0.65 ? 'glacier' : 'open'
+        const n = zone === 'forest' ? 2 + Math.floor(r() * 6) : zone === 'glacier' ? 1 + Math.floor(r() * 3) : 1 + Math.floor(r() * 2)
+        const spread = 50 + r() * (zone === 'forest' ? 260 : 180)
+        for (let q = 0; q < n; q++) {
+          const a = r() * 6.28, d = Math.sqrt(r()) * spread
+          const pSpike = zone === 'forest' ? 0.75 : zone === 'glacier' ? 0.35 : 0.3
+          const roll = r(), spike = roll < pSpike, sentinel = zone === 'forest' && roll > 0.94
+          const sc = 0.4 + 1.6 * r()
+          let rad = sentinel ? 30 + r() * 15 : spike ? 6 + r() * 8 : (12 + r() * 12) * sc
+          let h = sentinel ? 120 + r() * 80 : spike ? (JUNGLE ? 110 + r() * 80 : zone === 'forest' ? 45 + r() * 95 : 20 + r() * 40) * (q === 0 ? 1 : 0.55 + r() * 0.45) : GREEN ? rad * (1.3 + r() * 0.8) : (10 + r() * 16) * sc
+          if (LAVA && (spike || sentinel)) { h *= 0.3; rad *= 1.5 }
+          const kind = spike || sentinel ? 1 : 0
+          ws[kind * 3 + Math.floor(r() * 2.999)].items.push({ ox: (cx + Math.cos(a) * d + TILE) % TILE, oz: (cz + Math.sin(a) * d + TILE) % TILE, r: rad, h, yaw: r() * 6.28, x: 0, z: 0, by: 0, grow: 1, sink: spike || sentinel ? 0 : r() * 0.35 })
+        }
+      }
+      for (const w of ws) { w.finish(); this.wrapped.push(w); this.group.add(w.node) }
+    }
 
     // (The course's hour: the sun's colour and strength, from the same light as the sky.)
     this.sunLight = new THREE.DirectionalLight(new THREE.Color(LIGHT.sunCol[0], LIGHT.sunCol[1], LIGHT.sunCol[2]).multiplyScalar(1 / 2.4), 3.0 * (LIGHT.sunCol[0] + LIGHT.sunCol[1] + LIGHT.sunCol[2]) / 6.43)
@@ -1440,7 +1443,7 @@ export class World {
       const by = groundH(o.x, o.z) - 0.06 * o.h - 3
       this.fixed.push({ ...o, yaw, by, prof: this.fixedProf })
       mats.push(new THREE.Matrix4().compose(v.set(o.x, by, o.z), q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), yaw), sc.set(o.r, o.h, o.r)))
-      at.push(o.x, o.z, o.r * 1.8 + o.h * 0.5)
+      at.push(o.x, o.z, o.r * 1.8 + o.h * 0.5, o.h)
     })
     const set = new StaticSet(this.spireGeo!, this.mesaMat!, mats, at)
     this.statics.push(set)
@@ -1521,7 +1524,7 @@ export class World {
         this.fixed.push({ x: o.x, z: o.z, r: o.r, h: o.h, yaw: o.yaw, by, prof, big: o.r >= 60 })
         q.setFromEuler(e.set(o.tilt ?? 0, o.yaw, (o.tilt ?? 0) * 0.6, 'YXZ'))
         mats.push(m.compose(v.set(o.x, by, o.z), q, sc.set(o.r, o.h, o.r)).clone())
-        at.push(o.x, o.z, o.r * 1.8 + o.h * 0.5)
+        at.push(o.x, o.z, o.r * 1.8 + o.h * 0.5, o.h)
       })
       const set = new StaticSet(geo, g[0].kind === 'spire' && BIOME === 'ice' ? this.spikeMat! : this.mesaMat!, mats, at)
       this.statics.push(set)
@@ -1550,7 +1553,8 @@ export class World {
     return rt.texture
   }
 
-  update(cam: THREE.Vector3, time: number, view?: THREE.PerspectiveCamera, mach = 0): void {
+  /** `vel`: the camera's velocity (motion-aware LOD, src/lod.ts). */
+  update(cam: THREE.Vector3, time: number, view?: THREE.PerspectiveCamera, vel?: THREE.Vector3): void {
     this.sky.position.copy(cam)
     this.hills.position.set(cam.x, 0, cam.z)
     this.deck.position.set(cam.x, 2600, cam.z)
@@ -1569,9 +1573,10 @@ export class World {
         cosHalf = Math.cos(Math.min(Math.PI, half + 0.35))
       }
     }
-    const hiD = hiDistFor(mach)
-    for (const w of this.wrapped) w.update(cam.x, cam.z, fx, fz, cosHalf, hiD)
-    if (this.courseRocks.visible) for (const st of this.statics) st.update(cam.x, cam.z, fx, fz, cosHalf, hiD)
+    const lv = LV
+    lv.cx = cam.x; lv.cz = cam.z; lv.vx = vel?.x ?? 0; lv.vz = vel?.z ?? 0
+    for (const w of this.wrapped) w.update(lv, fx, fz, cosHalf)
+    if (this.courseRocks.visible) for (const st of this.statics) st.update(lv, fx, fz, cosHalf)
     this.ground.uTime.value = time
     AUR_T.value = time
   }

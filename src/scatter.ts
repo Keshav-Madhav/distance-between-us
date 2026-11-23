@@ -166,7 +166,8 @@ export class Scatter {
   readonly group = new THREE.Group()
   private readonly cam = { value: new THREE.Vector2() }
   private readonly on = { value: 1 }
-  private readonly lods: { g: THREE.InstancedBufferGeometry; n: number; R: number; cell: number; radius: { value: number }; fine: boolean }[] = []
+  private readonly view = { value: new THREE.Vector3(0, 0, -2) }
+  private readonly lods: { g: THREE.InstancedBufferGeometry; n: number; R: number; cell: number; radius: { value: number }; centre: { value: THREE.Vector2 }; fine: boolean }[] = []
 
   constructor() {
     // (Code ships with the same kind set per world: one material per kind keeps the shaders' seeds apart.)
@@ -188,8 +189,8 @@ export class Scatter {
     g.instanceCount = n
     const R = (k.cell * k.grid) / 2
     // Fine props (pebbles, chips, tufts, embers…): at speed their field shrinks to ~55% of its radius.
-    const radius = { value: R }
-    this.lods.push({ g, n, R, cell: k.cell, radius, fine: k.scale[1] < 2 && !k.near })
+    const radius = { value: R }, centre = { value: new THREE.Vector2() }
+    this.lods.push({ g, n, R, cell: k.cell, radius, centre, fine: k.scale[1] < 2 && !k.near })
     const mat = k.glow
       ? new THREE.MeshBasicMaterial({ vertexColors: true })
       : new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.92, metalness: 0, flatShading: true, side: THREE.DoubleSide })
@@ -199,6 +200,8 @@ export class Scatter {
       prev.call(mat, s, r)
       s.uniforms.uScatCam = this.cam
       s.uniforms.uScatR = radius
+      s.uniforms.uScatC = centre
+      s.uniforms.uScatView = this.view
       s.uniforms.uScatOn = this.on
       Object.assign(s.uniforms, MOUND_U)
       const head = `${TERRAIN_GLSL}
@@ -206,15 +209,20 @@ attribute vec2 aCell;
 uniform vec2 uScatCam;
 uniform float uScatOn;
 uniform float uScatR;
+uniform vec2 uScatC;
+uniform vec3 uScatView;
 float scHash(vec2 p) { p = fract(p * vec2(0.1031, 0.1030)); p += dot(p, p.yx + 33.33); return fract((p.x + p.y) * p.x); }
 vec3 scPos; float scS; float scA; float scT;`
       const place = `{
-        vec2 c0 = floor(uScatCam / ${k.cell.toFixed(1)});
+        vec2 c0 = floor(uScatC / ${k.cell.toFixed(1)});
         vec2 c = c0 + aCell;
         float h1 = scHash(c + ${k.seed.toFixed(2)}), h2 = scHash(c * 1.7 + ${(k.seed + 5.1).toFixed(2)}), h3 = scHash(c * 0.73 + ${(k.seed + 9.7).toFixed(2)});
         vec2 xz = (c + vec2(h2, h3)) * ${k.cell.toFixed(1)};
-        float d = length(xz - uScatCam);
+        float d = length(xz - uScatC);
         float keep = step(h1, ${k.density.toFixed(3)}) * (1.0 - smoothstep(uScatR * 0.72, uScatR * 0.96, d)) * uScatOn;
+        // View cull (see update): the instance's angular half-width widens the cone a little.
+        { vec2 dv = xz - uScatC; float dl = length(dv);
+          if (dl > 40.0 && dot(dv, uScatView.xy) < (uScatView.z - ${(k.scale[1] * 3).toFixed(1)} / dl) * dl) keep = 0.0; }
         ${k.where === 'river' ? 'keep *= smoothstep(0.25, 0.45, riverAt(xz));' : BIOME === 'ice' ? '' : 'keep *= 1.0 - smoothstep(0.08, 0.2, riverAt(xz));'} // (POLAR SHELF's rivers are frozen: props sit on them, or whole stretches were bare)
         scS = mix(${k.scale[0].toFixed(2)}, ${k.scale[1].toFixed(2)}, fract(h1 * 13.7)) * keep;
         scA = h2 * 6.2832;
@@ -259,12 +267,19 @@ vec3 scPos; float scS; float scA; float scT;`
   }
 
   /** Follow the camera; hidden in space and when the world fades out. */
-  update(cam: THREE.Vector3, visible: boolean, mach = 0): void {
+  /**
+   * `fx, fz`: the look direction on the ground; `cosHalf`: cos of the half view angle plus a margin.
+   * Each instance outside that cone (and past ~40 m, so nothing vanishes beside you in a snap turn)
+   * is collapsed in the vertex shader before the terrain lookup: per-instance view culling on the GPU.
+   */
+  update(cam: THREE.Vector3, visible: boolean, mach = 0, fx = 0, fz = 0, cosHalf = -2): void {
+    this.view.value.set(fx, fz, cosHalf)
     this.cam.value.set(cam.x, cam.z)
     const f = 1 - 0.45 * THREE.MathUtils.smoothstep(mach, 1.5, 6.5)
     for (const l of this.lods) {
       const r = l.fine ? l.R * f : l.R
       l.radius.value = r
+      l.centre.value.set(cam.x, cam.z)
       // (Cells whose centres lie within r, plus a ring for the cell offset: π(r/cell + 1.5)².)
       l.g.instanceCount = Math.min(l.n, Math.ceil(Math.PI * (r / l.cell + 1.5) ** 2))
     }

@@ -215,7 +215,8 @@ const clearAt = (x: number, z: number, r: number) => {
       if (course.distance(x + ix * REBASE, z + iz * REBASE) < (course.def.clearance ?? 850) + r) return false
   return true
 }
-const world = new World(clearAt, (x, z, r) => course.distance(x, z) < 460 + r)
+// (Clutter keeps the same berth from the line as the course's own near field: 350 m past the gates.)
+const world = new World(clearAt, (x, z, r) => course.distance(x, z) < 460 + r, (x, z, r) => course.distance(x, z) < 350 + Math.max(0, course.gateHalf - 260) + r * 1.6)
 bootMark('world')
 await breathe()
 world.addFixed(course.rocks)
@@ -325,6 +326,20 @@ if (BIOME !== 'desert') {
 scene.add(world.group)
 // Near-field scatter: harmless ground clutter round the camera (pebbles, grass, scrub, mounds, vents, flags).
 const scatter = new Scatter()
+const _cf = new THREE.Vector3()
+/** The camera's look direction flattened onto the ground (unit, or zero looking straight down). */
+function camFwdFlat(): THREE.Vector3 {
+  camera.getWorldDirection(_cf); _cf.y = 0
+  const l = _cf.length()
+  return l > 0.2 ? _cf.multiplyScalar(1 / l) : _cf.set(0, 0, 0)
+}
+/** The horizontal view cone for culling: [fx, fz, cos(half-FOV + 0.35 rad margin)]; no cull looking down. */
+function viewCone(): [number, number, number] {
+  const f = camFwdFlat()
+  if (f.x === 0 && f.z === 0) return [0, 0, -2]
+  const half = Math.atan(Math.tan((camera.fov * Math.PI) / 360) * camera.aspect)
+  return [f.x, f.z, Math.cos(Math.min(Math.PI, half + 0.35))]
+}
 let scatterForceOff = false
 scene.add(scatter.group)
 scene.add(course.group)
@@ -2757,8 +2772,8 @@ function frame(now: number): void {
   sound.scrape(mode === 'title' ? 0 : Math.max(player.scrape, player.drifting || player.spin > 0 ? 0.25 + Math.abs(player.slip) * 0.35 : 0))
   sound.slide(mode === 'title' || player.airborne ? 0 : player.drifting ? 0.4 + Math.min(0.6, Math.abs(player.slip)) : 0, player.drift / 2.6, player.spin > 0 ? player.yawRate : 0)
 
-  world.update(camera.position, time, camera, mode === 'title' ? 0 : player.mach)
-  scatter.update(camera.position, !scatterForceOff && BIOME !== 'space' && WORLD_FADE.uWorldFade.value.y < 0.5 && camera.position.y - groundH(camera.position.x, camera.position.z) < 2500, mode === 'title' ? 0 : player.mach)
+  world.update(camera.position, time, camera, mode === 'title' ? undefined : player.vel)
+  scatter.update(camera.position, !scatterForceOff && BIOME !== 'space' && WORLD_FADE.uWorldFade.value.y < 0.5 && camera.position.y - groundH(camera.position.x, camera.position.z) < 2500, mode === 'title' ? 0 : player.mach, ...viewCone())
   updateTips(realDt)
   const G = world.ground
   G.uCraft.value.copy(renderPos)
