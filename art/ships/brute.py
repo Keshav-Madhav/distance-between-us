@@ -39,8 +39,8 @@ right.append(poly_loft('front_house', [(F0, FX, FY, FH * 0.9, FH * 0.86, FH * 0.
 right.append(poly_loft('front_rim', [(F0 + 0.03, FX, FY, FH * 0.91, FH * 0.87, FH * 0.87), (F0 - 0.1, FX, FY, FH * 1.012, FH * 0.962, FH * 0.942), (F0 - 0.35, FX, FY, FH * 1.012, FH * 0.962, FH * 0.942)], SQ, 6, M['trim'], cap1=False, angle=50))
 right.append(poly_loft('front_band', [(F1 + 0.75, FX, FY, FH * 1.008, FH * 0.958, FH * 0.938), (F1 + 0.5, FX, FY, FH * 1.008, FH * 0.958, FH * 0.938)], SQ, 3, M['trim'], cap1=False, angle=50))
 right.append(smooth(lathe('front_duct', [(F0, 0.69), (F0 - 0.3, 0.67), (F0 - 0.5, 0.66)], FX, FY, 40, M['carbon'], cap1=True), 60))
-right.append(fan_smooth('front_fan', FX, FY, F0 - 0.38, 0.24, 0.65, 16, 0.7, 0.34, 5, M['gun']))
-right.append(smooth(lathe('front_spinner', [(F0, 0.006), (F0 - 0.03, 0.07), (F0 - 0.1, 0.14), (F0 - 0.2, 0.21), (F0 - 0.3, 0.26), (F0 - 0.34, 0.28), (F0 - 0.55, 0.28)], FX, FY, 40, M['metal'], cap1=True), 85))
+right.append(fan_smooth('front_fan', FX, FY, F0 - 0.4, 0.27, 0.65, 16, 0.85, 0.34, 5, M['gun']))
+right.append(smooth(lathe('front_spinner', [(F0, 0.006), (F0 - 0.03, 0.07), (F0 - 0.1, 0.14), (F0 - 0.2, 0.21), (F0 - 0.28, 0.27), (F0 - 0.32, 0.3), (F0 - 0.6, 0.3), (F0 - 0.64, 0.28)], FX, FY, 48, M['gun'], cap1=True), 89))
 right.append(ring('front_shroud', 0.665, 0.035, (FX, FY, F0 - 0.38), 36, M['carbon']))
 right.append(box('marker', (0.03, 0.24, 0.14), (FX + FH + 0.01, FY - 0.2, F0 - 0.6), material=M['trim']))
 for dz in (0.0, 0.2, 0.4):
@@ -50,18 +50,28 @@ for dz in (0.0, 0.2, 0.4):
 right.append(poly_loft('rear_house', [(R0, RX, RY, RH * 0.86, RH * 0.86, RH * 0.84), (R0 - 0.22, RX, RY, RH, RH, RH * 0.97), (R1 + 0.3, RX, RY, RH, RH, RH * 0.97), (R1, RX, RY, RH * 0.88, RH * 0.88, RH * 0.85)], BOX, 20, M['paint'], cap1=True, angle=50))
 right.append(poly_loft('rear_rim', [(R0 - 0.12, RX, RY, RH * 1.01, RH * 1.01, RH * 0.98), (R0 - 0.45, RX, RY, RH * 1.01, RH * 1.01, RH * 0.98)], BOX, 3, M['trim'], cap1=False, angle=50))
 LT, LZ = RY + RH, (R0 + R1) / 2 - 0.15
-right.append(cyl('lift_well', 0.62, 0.3, (RX, LT - 0.16, LZ), 'y', 32, M['carbon']))
-right.append(cyl('lift_floor', 0.6, 0.02, (RX, LT - 0.28, LZ), 'y', 32, M['gun']))
-for i in range(14):
-    a = 2 * math.pi * i / 14
-    right.append(box('lift_blade', (0.05, 0.02, 0.44), (RX + 0.3 * math.cos(a), LT - 0.18, LZ + 0.3 * math.sin(a)), (0, -a + math.pi / 2, 0), M['gun']))
-right.append(cyl('lift_hub', 0.12, 0.12, (RX, LT - 0.16, LZ), 'y', 16, M['metal']))
-bpy.ops.mesh.primitive_torus_add(major_radius=0.67, minor_radius=0.07, major_segments=36, minor_segments=6)
-t = bpy.context.active_object; t.name = 'lift_rim'; t.location = G(RX, LT, LZ); bpy.ops.object.transform_apply(location=True)
+CH = 0.2  # collar height above the lid
+bm = bmesh.new(); segs = 40; rings = []
+for (r, h) in [(0.74, -0.04), (0.74, CH * 0.8), (0.71, CH), (0.64, CH), (0.62, CH * 0.75), (0.62, -0.12)]:
+    rings.append([bm.verts.new(G(RX + r * math.cos(2 * math.pi * j / segs), LT + h, LZ + r * math.sin(2 * math.pi * j / segs))) for j in range(segs)])
+for A, B in zip(rings, rings[1:]):
+    for j in range(segs):
+        j1 = (j + 1) % segs; bm.faces.new((A[j], A[j1], B[j1], B[j]))
+bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+right.append(smooth(obj_from_bm('lift_collar', bm, M['paint']), 50))
+right.append(cyl('lift_floor', 0.62, 0.03, (RX, LT - 0.1, LZ), 'y', 40, M['carbon']))
+for i in range(16):
+    a = 2 * math.pi * i / 16
+    right.append(box('lift_blade', (0.06, 0.02, 0.42), (RX + 0.33 * math.cos(a), LT + 0.02, LZ + 0.33 * math.sin(a)), (0.35, -a + math.pi / 2, 0), M['gun']))
+right.append(cyl('lift_hub', 0.13, 0.16, (RX, LT, LZ), 'y', 20, M['metal']))
+bpy.ops.mesh.primitive_torus_add(major_radius=0.685, minor_radius=0.04, major_segments=40, minor_segments=5)
+t = bpy.context.active_object; t.name = 'lift_rim'; t.location = G(RX, LT + CH, LZ); bpy.ops.object.transform_apply(location=True)
 t.data.materials.append(M['trim']); right.append(smooth(t, 60))
 # Side face detail: a panel of vents and an access hatch handle on the outer flank.
 SX = RX + RH          # outer face
-right.append(box('access_panel', (0.08, 0.6, 0.9), (SX + 0.02, RY + 0.15, R0 - 1.0), material=M['paint'], bevel=0.03))
+right.append(box('access_panel', (0.06, 0.6, 0.9), (SX - 0.01, RY + 0.15, R0 - 1.0), material=M['gun'], bevel=0.02))
+for dz in (-0.3, 0.3):
+    right.append(box('panel_bolt', (0.05, 0.06, 0.06), (SX + 0.02, RY + 0.4, R0 - 1.0 + dz), material=M['metal']))
 right.append(box('grille', (0.06, 0.42, 0.62), (SX - 0.0, RY - 0.4, R1 + 0.6), material=M['carbon'], bevel=0.02))
 for dz in (-0.2, -0.07, 0.06, 0.19):
     right.append(box('grille_slat', (0.07, 0.4, 0.04), (SX + 0.01, RY - 0.4, R1 + 0.6 + dz), material=M['gun']))
@@ -90,11 +100,14 @@ for (dx, dz, h) in [(-0.2, F1 - 0.35, 0.42), (0.25, F1 - 0.75, 0.34)]:
     right.append(cyl('gearbox_cap', 0.17, 0.06, (MX + dx, MY + 0.66 + h, dz), 'y', 18, M['trim']))
 right.append(box('pump', (0.34, 0.5, 0.7), (MX + 0.72, MY + 0.05, (F1 + R0) / 2), material=M['gun'], bevel=0.04))
 right.append(cyl('pump_motor', 0.14, 0.5, (MX + 0.92, MY + 0.05, (F1 + R0) / 2), 'z', 14, M['metal']))
-right.append(cyl('tank', 0.17, 2.6, (MX + 0.86, MY - 0.42, (F1 + R0) / 2 + 0.1), 'z', 16, M['metal']))
-for z in (F1 + 0.6, R0 - 0.4):
-    right.append(cyl('tank_band', 0.18, 0.08, (MX + 0.86, MY - 0.42, z), 'z', 16, M['trim']))
-right.append(tube('run', [(MX + 0.9, MY + 0.55, F1 + 1.0), (MX + 0.95, MY + 0.5, (F1 + R0) / 2), (MX + 0.9, MY + 0.55, R0 - 0.9)], 0.045, M['brass']))
-right.append(box('valve', (0.18, 0.2, 0.2), (MX + 0.95, MY + 0.5, (F1 + R0) / 2), material=M['gun'], bevel=0.02))
+for (dx, dy, r) in [(0.62, -0.4, 0.16), (-0.62, 0.3, 0.14), (0.55, 0.45, 0.12)]:  # tanks packed round the core
+    right.append(cyl('tank', r, F1 - R0 - 0.1, (MX + dx, MY + dy, (F1 + R0) / 2), 'z', 16, M['metal']))
+    for z in (F1 - 0.15, R0 + 0.15):
+        right.append(cyl('tank_band', r * 1.08, 0.07, (MX + dx, MY + dy, z), 'z', 16, M['trim']))
+right.append(box('compressor', (0.5, 0.32, 0.6), (MX - 0.15, MY + 0.72, (F1 + R0) / 2), material=M['gun'], bevel=0.04))
+for k in range(3):  # a bundle of pipes on the inner side
+    right.append(tube('bundle', [(MX - 0.7, MY - 0.2 + k * 0.1, F1 + 0.1), (MX - 0.74, MY - 0.2 + k * 0.1, (F1 + R0) / 2), (MX - 0.7, MY - 0.2 + k * 0.1, R0 - 0.1)], 0.035, M['brass' if k == 1 else 'trim']))
+right.append(box('valve', (0.18, 0.2, 0.2), (MX + 0.78, MY + 0.05, (F1 + R0) / 2 - 0.3), material=M['gun'], bevel=0.02))
 right.append(box('manifold', (0.6, 0.18, 0.9), (MX, MY - 0.7, (F1 + R0) / 2), material=M['carbon'], bevel=0.03))
 for (a, col) in [(2.3, 'trim'), (3.4, 'brass'), (4.6, 'trim')]:  # pipes tight to the core, clamped at both ends
     pts = [(MX + 0.66 * math.cos(a), MY + 0.66 * math.sin(a), z) for z in (F1 + 0.05, (F1 + R0) / 2, R0 - 0.05)]
@@ -106,11 +119,15 @@ for (a, col) in [(2.3, 'trim'), (3.4, 'brass'), (4.6, 'trim')]:  # pipes tight t
 for (z, y, d) in [(F1 + 1.0, 0.95, 0.7), ((F1 + R0) / 2, 0.92, 0.5), (R1 + 1.2, 1.0, 0.9)]:
     right.append(box('beam', (1.0, 0.42, d), (1.35, y, z), material=M['gun'], bevel=0.05))
 
+# Shoulders: the hull's upper flank reaching out to the modules over the bay.
+right.append(poly_loft('shoulder', [(3.4, 1.15, 1.42, 0.05, 0.05, 0.05), (2.8, 1.18, 1.48, 0.3, 0.12, 0.2), (-1.2, 1.18, 1.5, 0.3, 0.12, 0.2), (-1.8, 1.15, 1.46, 0.05, 0.05, 0.05)],
+                         [(1, 0), (0.6, 1), (-1, 1), (-1, -1), (0.6, -0.6)], 30, M['paint'], angle=50))
+
 join_mirror(right)
 
 # ── Cabin: a tall faceted wedge, as tall as the modules, pressed against them.
 HEX = [(1.0, 0.0), (0.86, 0.6), (0.5, 0.95), (0.0, 1.0), (-0.5, 0.95), (-0.86, 0.6), (-1.0, 0.0), (-0.8, -0.6), (-0.4, -0.95), (0.0, -1.0), (0.4, -0.95), (0.8, -0.6)]
-CAB = [(4.6, 0, 0.64, 0.46, 0.16, 0.22), (3.9, 0, 0.86, 0.94, 0.66, 0.4), (2.6, 0, 1.02, 1.12, 1.08, 0.5), (0.6, 0, 1.06, 1.14, 1.18, 0.52),
+CAB = [(4.78, 0, 0.62, 0.08, 0.04, 0.05), (4.6, 0, 0.64, 0.46, 0.16, 0.22), (3.9, 0, 0.86, 0.94, 0.66, 0.4), (2.6, 0, 1.02, 1.12, 1.08, 0.5), (0.6, 0, 1.06, 1.14, 1.18, 0.52),
        (-0.9, 0, 1.04, 1.12, 1.08, 0.52), (-1.9, 0, 0.98, 0.94, 0.86, 0.46), (-2.4, 0, 0.94, 0.64, 0.56, 0.4)]
 poly_loft('cabin', CAB, HEX, 48, M['paint'], angle=52)
 _zs = sorted(c[0] for c in CAB); _top = _mono_cubic(_zs, [next(c[2] + c[4] for c in CAB if c[0] == z) for z in _zs])
@@ -119,15 +136,17 @@ poly_loft('stripe_f', [(z, 0, _top(z) + 0.006, 0.22, 0.012, 0.012) for z in (3.0
 # Canopy: a raised faceted glass house with a frame.
 TOP = _top(1.6)
 poly_loft('canopy', [(2.9, 0, TOP - 0.05, 0.08, 0.04, 0.02), (2.5, 0, TOP - 0.05, 0.6, 0.26, 0.02), (1.6, 0, TOP - 0.05, 0.78, 0.44, 0.02), (0.5, 0, TOP - 0.05, 0.72, 0.42, 0.02), (0.1, 0, TOP - 0.05, 0.08, 0.04, 0.02)],
-          [(1.0, 0.0), (0.75, 0.8), (0.3, 1.0), (-0.3, 1.0), (-0.75, 0.8), (-1.0, 0.0), (0.0, -1.0)], 28, M['glass'], angle=20)
-poly_loft('canopy_frame', [(3.05, 0, TOP - 0.06, 0.12, 0.1, 0.03), (2.5, 0, TOP - 0.06, 0.74, 0.14, 0.03), (1.6, 0, TOP - 0.06, 0.92, 0.15, 0.03), (0.5, 0, TOP - 0.06, 0.86, 0.14, 0.03), (-0.05, 0, TOP - 0.06, 0.12, 0.1, 0.03)], [(1, 0), (0.4, 1), (-0.4, 1), (-1, 0), (0, -1)], 28, M['gun'], angle=60)
+          [(math.cos(t), math.sin(t) ** 0.8 if t <= math.pi else -0.3) for t in [i * math.pi / 14 for i in range(15)]] + [(0.0, -1.0)], 28, M['glass'], angle=70)
+smooth_loft('canopy_frame', [(3.0, 0, TOP - 0.06, 0.1, 0.12, 0.03, 2.4), (2.5, 0, TOP - 0.06, 0.64, 0.16, 0.03, 2.4), (1.6, 0, TOP - 0.06, 0.82, 0.18, 0.03, 2.4), (0.5, 0, TOP - 0.06, 0.76, 0.17, 0.03, 2.4), (0.0, 0, TOP - 0.06, 0.1, 0.12, 0.03, 2.4)], 24, 24, M['gun'])
 for side in (1, -1):
     for dz in (0.0, 0.18, 0.36):
         box('cab_vent', (0.05, 0.3, 0.09), (side * 1.13, 1.2, -0.5 - dz), (0.3, 0, 0), M['gun'])
 # Rear deck: stacked pipes and a pump block on the cabin's back.
 RD = _top(-1.2)
 box('deck_block', (0.7, 0.2, 0.7), (0, RD + 0.08, -1.0), material=M['gun'], bevel=0.03)
-cyl('deck_tank', 0.12, 1.2, (0, RD + 0.24, -1.0), 'x', 14, M['metal'])
+cyl('deck_tank', 0.12, 0.62, (0, RD + 0.24, -1.0), 'x', 14, M['metal'])
+for dx in (-0.25, 0.25):
+    box('deck_saddle', (0.08, 0.18, 0.2), (dx, RD + 0.18, -1.0), material=M['gun'])
 for dx in (-0.36, 0.0, 0.36):
     tube('deck_pipe', [(dx, RD + 0.06, -0.4), (dx, RD + 0.16, -1.3), (dx * 1.3, _top(-1.9) + 0.06, -2.1)], 0.04, M['brass' if dx == 0 else 'trim'])
 # Tail: a centre exhaust housing, recessed thruster.

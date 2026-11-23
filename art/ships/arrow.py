@@ -46,7 +46,7 @@ right.append(smooth(lathe('can_rear', [(CR + 0.35, 0.735), (CR + 0.05, 0.73), (C
 right.append(ring('can_rim', 0.7, 0.03, (EX, EY, CR), 40, M['metal']))
 # Intake: a dark duct, a fan of blades, a spinner.
 right.append(smooth(lathe('duct', [(6.0, 0.6), (5.7, 0.59), (5.4, 0.58)], EX, EY, 32, M['carbon'], cap1=True), 60))
-right.append(fan_smooth('fan', EX, EY, 5.45, 0.22, 0.565, 14, 0.75, 0.36, 5, M['gun']))
+right.append(fan_smooth('fan', EX, EY, 5.4, 0.285, 0.565, 14, 0.75, 0.34, 4, M['carbon']))
 right.append(cyl('hub', 0.18, 0.06, (EX, EY, 5.42), 'z', 24, M['carbon']))
 right.append(ring('fan_shroud', 0.575, 0.03, (EX, EY, 5.5), 40, M['carbon']))
 for i in range(12):  # stator vanes behind the fan
@@ -71,7 +71,7 @@ for i in range(20):
     a = 2 * math.pi * (i + 0.5) / 20
     right.append(box('cool_fin', (0.015, 0.13, 0.7), (EX + 0.6 * math.cos(a), EY + 0.6 * math.sin(a), MZ(-2.15)), (0, 0, a - math.pi / 2), M['gun']))
 # Auxiliary cylinders on the outboard side only, of different sizes.
-for (a, z0, z1, rr) in [(0.45, MZ(0.35), MZ(-1.3), 0.12)]:
+for (a, z0, z1, rr) in []:
     x, y = EX + (0.72 + rr) * math.cos(a), EY + (0.72 + rr) * math.sin(a)
     right.append(cyl('aux', rr, z0 - z1, (x, y, (z0 + z1) / 2), 'z', 14, M['brass']))
     for z in (z0 - 0.08, z1 + 0.08):
@@ -80,17 +80,17 @@ for (a, z0, z1, rr) in [(0.45, MZ(0.35), MZ(-1.3), 0.12)]:
         right.append(box('saddle', (0.16, rr + 0.2, 0.16), (EX + (0.7 + rr / 2) * math.cos(a), EY + (0.7 + rr / 2) * math.sin(a), z), (0, 0, a - math.pi / 2), M['gun']))
 # Two thick orange feed pipes flush on the drum, clamps staggered.
 # Feed lines: arcs from a brass fitting on one stage to a fitting on the next (not a noodle).
-for j, a in enumerate((1.7, 4.1)):
+for j, a in enumerate((1.7, 2.55)):
     stations = [MZ(0.6), MZ(-0.4), MZ(-1.35), MZ(-2.2)]
     for k, (za, zb) in enumerate(zip(stations, stations[1:])):
         if (k + j) % 3 == 2: continue
         pts = []
         for q in range(9):
-            u = q / 8; rr = 0.76 + 0.05 * math.sin(math.pi * u)
+            u = q / 8; rr = 0.765
             pts.append((EX + rr * math.cos(a), EY + rr * math.sin(a), za + (zb - za) * u))
         right.append(tube('feed_pipe', pts, 0.05, M['trim']))
         for z in (za, zb):
-            right.append(cyl('fitting', 0.075, 0.1, (EX + 0.75 * math.cos(a), EY + 0.75 * math.sin(a), z), 'z', 10, M['brass']))
+            right.append(cyl('fitting', 0.07, 0.08, (EX + 0.75 * math.cos(a), EY + 0.75 * math.sin(a), z), 'z', 10, M['brass']))
 # Thin copper coils wrapped round the brass stage.
 right.append(tube('coil', [(EX + 0.66 * math.cos(t * 0.6), EY + 0.66 * math.sin(t * 0.6), MZ(0.4) - t * 0.012) for t in range(0, 60, 2)], 0.018, M['brass']))
 
@@ -105,12 +105,11 @@ right.append(cyl('hot_core', 0.4, 0.02, (EX, EY, -3.72), 'z', 32, M['hot']))
 
 # ── Side vane (outboard of each engine) sweeping out into a fin at the back.
 fin = plate('fin', [(0.0, 0.62), (0.0, 1.0), (-1.2, 1.26), (-1.5, 1.0), (-1.2, 0.66)], 0.2, M['paint'], 'x', 0.0, 0.06)
-place(fin, (0, -0.3, 0), (EX + 0.84, 0.0, CR + 1.35)); right.append(fin)
-right.append(poly_loft('talon_pylon', [(CR + 2.2, EX + 0.62, EY, 0.03, 0.05, 0.05), (CR + 1.5, EX + 0.74, EY + 0.03, 0.15, 0.24, 0.2), (CR + 0.7, EX + 0.78, EY + 0.03, 0.14, 0.22, 0.18), (CR + 0.15, EX + 0.7, EY + 0.03, 0.04, 0.08, 0.06)], [(1, 0), (0.3, 1), (-1, 0.7), (-1, -0.7), (0.3, -1)], 30, M['paint'], angle=60))
+place(fin, (0, -0.3, 0), (EX + 0.84, 0.0, CR + 1.6)); right.append(fin)
+right.append(poly_loft('talon_pylon', [(CR + 2.45, EX + 0.62, EY, 0.03, 0.05, 0.05), (CR + 1.75, EX + 0.74, EY + 0.03, 0.15, 0.24, 0.2), (CR + 0.95, EX + 0.78, EY + 0.03, 0.14, 0.22, 0.18), (CR + 0.4, EX + 0.7, EY + 0.03, 0.04, 0.08, 0.06)], [(1, 0), (0.3, 1), (-1, 0.7), (-1, -0.7), (0.3, -1)], 30, M['paint'], angle=60))
 ft = plate('fin_tip', [(-1.12, 1.24), (-1.22, 1.27), (-1.52, 1.0), (-1.38, 0.98)], 0.22, M['trim'], 'x', 0.0, 0.05)
-place(ft, (0, -0.3, 0), (EX + 0.84, 0.0, CR + 1.35)); right.append(ft)
+place(ft, (0, -0.3, 0), (EX + 0.84, 0.0, CR + 1.6)); right.append(ft)
 # ── Skid rail along each can's lower outer side, faired into it; the hover glow under it.
-right.append(box('skid_glow', (0.06, 0.01, 2.6), (EX + 0.64, EY - 0.535, 3.25), material=M['glow']))
 # Rear fin root: a fairing and an actuator housing where the swept fin meets the engine.
 right.append(poly_loft('fin_root', [(CR + 0.85, EX + 0.62, EY + 0.02, 0.02, 0.04, 0.04), (CR + 0.4, EX + 0.72, EY + 0.02, 0.2, 0.26, 0.22), (CR - 0.6, EX + 0.76, EY + 0.02, 0.2, 0.24, 0.2), (CR - 1.4, EX + 0.62, EY + 0.02, 0.02, 0.04, 0.04)], [(1, 0), (0.2, 0.35), (-1, 1.0), (-1, -1.0), (0.2, -0.35)], 36, M['paint'], angle=60))
 right.append(cyl('fin_act', 0.05, 0.6, (EX + 0.78, EY + 0.28, CR - 0.3), 'z', 10, M['gun']))
@@ -147,8 +146,8 @@ for dz in (0.0, 0.55):
 poly_loft('keel', [(z, 0, cy - b - 0.01, a * 0.32, 0.03, 0.03) for (z, cx, cy, a, t, b) in SPINE[1:-1]], [(1, 0), (0.6, 1), (-0.6, 1), (-1, 0), (-0.6, -1), (0.6, -1)], 40, M['carbon'], cap1=True)
 # Canopy: a big smoked oval over the middle of the spine, orange frame lines across it.
 TOP = 1.46
-CZ, CL, CW, CH = 2.3, 2.3, 0.66, 0.62   # canopy centre, half length, half width, height (forward, raised)
-TOP = 1.6
+CZ, CL, CW, CH = 2.3, 2.2, 0.62, 0.5   # canopy centre, half length, half width, height (forward, raised)
+TOP = 1.5
 def egg(scale_w, scale_h, base, z_pad=0.0, n=14):
     st = []
     for i in range(n + 1):
@@ -160,11 +159,11 @@ smooth_loft('canopy_skirt', [(z, 0, 1.26, a * 1.08, TOP - 1.26 + 0.02, 0.05, 2.6
 frame = smooth_loft('canopy_frame', [(z, 0, TOP - 0.03, a * 1.05, 0.06, 0.03, 2.4) for (z, cx, cy, a, t, b, n) in egg(1.0, 1.0, TOP, 0.0)], 24, 22, M['trim'])
 can = smooth_loft('canopy', egg(1.0, 1.0, TOP), 28, 22, M['glass'], angle=80)
 smooth_loft('canopy_tub', egg(0.95, 0.94, TOP - 0.01), 16, 14, M['carbon'])
-for f in (-0.6, -0.2, 0.2, 0.6):
+for f in (-0.35, 0.35):
     z = CZ + f * CL; k = math.sqrt(max(0.0, 1 - f * f)) ** 0.8
     pts = [(CW * k * 1.01 * math.cos(t), TOP + CH * k * 1.01 * math.sin(t), z) for t in [i * math.pi / 12 for i in range(13)]]
-    tube('canopy_bow', pts, 0.022, M['trim'])
-tube('canopy_spine', [(0, TOP + CH * 0.62, CZ + CL * 0.8), (0, TOP + CH * 1.01, CZ), (0, TOP + CH * 0.62, CZ - CL * 0.8)], 0.02, M['trim'])
+    tube('canopy_bow', pts, 0.014, M['trim'])
+tube('canopy_spine', [(0, TOP + CH * 0.62, CZ + CL * 0.8), (0, TOP + CH * 1.01, CZ), (0, TOP + CH * 0.62, CZ - CL * 0.8)], 0.014, M['trim'])
 poly_loft('spine_strip', [(CZ - CL - 0.1, 0, _top(CZ - CL - 0.1) - 0.006, 0.1, 0.02, 0.02), (-1.6, 0, _top(-1.6) - 0.004, 0.3, 0.018, 0.018), (-2.6, 0, _top(-2.6) - 0.004, 0.36, 0.018, 0.018), (-3.4, 0, _top(-3.4) - 0.004, 0.22, 0.018, 0.018)], [(1, 0), (0.9, 1), (-0.9, 1), (-1, 0), (-0.9, -1), (0.9, -1)], 24, M['gun'], cap1=True, angle=80)
 for sx in (1, -1):  # belly vents on the spine's underside
     for dz in (0.0, 0.3, 0.6):
