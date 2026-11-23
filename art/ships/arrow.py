@@ -56,8 +56,7 @@ right.append(smooth(lathe('spinner', [(6.0, 0.006), (5.995, 0.03), (5.96, 0.07),
 
 # ── Exposed machinery behind the can: compressor stages of different diameters (grey housings and
 # dark gaps), canisters strapped along the core, two thick orange feed pipes clamped close to it.
-for k, (z0, z1, r, m) in enumerate([(MZ(0.7), MZ(0.45), 0.7, 'gun'), (MZ(0.45), MZ(0.05), 0.64, 'gun'), (MZ(0.05), MZ(-0.85), 0.72, 'gun'),
-                       (MZ(-0.85), MZ(-1.05), 0.64, 'brass'), (MZ(-1.05), MZ(-1.7), 0.68, 'gun'), (MZ(-1.7), MZ(-2.6), 0.62, 'gun')]):
+for k, (z0, z1, r, m) in enumerate([(MZ(0.7), MZ(-0.85), 0.7, 'gun'), (MZ(-0.85), MZ(-1.05), 0.72, 'brass'), (MZ(-1.05), MZ(-2.6), 0.66, 'gun')]):
     right.append(smooth(lathe('stage', [(z0, r * 0.94), (z0 - 0.03, r), (z1 + 0.03, r), (z1, r * 0.94)], EX, EY, 26, M[m], cap0=True, cap1=True), 40))
     if m == 'brass':  # flange lips on the one brass band
         for z in (z0 - 0.02, z1 + 0.02):
