@@ -152,7 +152,7 @@ export class Race {
     })
     this.state = 'grid'
     this.clock = 0
-    this.countdown = 3.6
+    this.countdown = 4.4 // (0.8 s more: the menu was still fading over the first count)
     this.lastCount = 4
     this.boostHeldSince = -1
   }

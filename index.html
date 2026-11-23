@@ -71,8 +71,9 @@
   #lock .t { position: absolute; top: 64px; left: 50%; transform: translateX(-50%); font-size: 11px; letter-spacing: 0.3em; color: var(--red); white-space: nowrap; font-weight: 700; }
   #arrow { position: absolute; width: 0; height: 0; border-left: 14px solid transparent; border-right: 14px solid transparent; border-bottom: 26px solid var(--red); display: none; filter: drop-shadow(0 0 8px var(--red)); }
   #arrow .t { position: absolute; top: 30px; left: 50%; transform: translateX(-50%); color: var(--red); font-size: 11px; letter-spacing: 0.3em; font-weight: 700; white-space: nowrap; }
-  #flash { position: absolute; left: 50%; top: 24%; transform: translate(-50%, -50%); font-size: 34px; font-weight: 700; letter-spacing: 0.3em; opacity: 0; text-shadow: 0 0 30px rgba(255,150,60,0.9); white-space: nowrap; }
-  #warn { position: absolute; left: 0; right: 0; top: 16vh; text-align: center; color: var(--red); font-weight: 700; opacity: 0; }
+  #flash { position: absolute; left: 50%; top: 30%; transform: translate(-50%, -50%); font-size: 34px; font-weight: 700; letter-spacing: 0.3em; opacity: 0; text-shadow: 0 0 30px rgba(255,150,60,0.9); white-space: nowrap; }
+  /* (Warnings sit high, the WRECKED / MACH callout lower: they shared one strip and overprinted.) */
+  #warn { position: absolute; left: 0; right: 0; top: 11vh; text-align: center; color: var(--red); font-weight: 700; opacity: 0; }
   #warn .big { font-size: 40px; letter-spacing: 0.35em; }
   #warn .small { font-size: 14px; letter-spacing: 0.4em; margin-top: 8px; }
   #pops { position: absolute; left: 2vw; top: calc(3vh + 386px); text-align: left; }
@@ -189,7 +190,8 @@
   #pause { background: rgba(4,6,9,0.78); backdrop-filter: blur(7px); pointer-events: auto; }
   /* (The settings list ran off the bottom: it scrolls, from the top.) */
   #pause:not(.from-title) { justify-content: flex-start; overflow-y: auto; padding: 6vh 0 8vh; }
-  body:has(#pause:not(.hide):not(.from-title)) #pops, body:has(#pause:not(.hide):not(.from-title)) #stand, body:has(#pause:not(.hide):not(.from-title)) #tip { opacity: 0 !important; }
+  /* Paused: the whole race HUD steps aside (its banners overprinted the pause menu). */
+  body:has(#pause:not(.hide):not(.from-title)) #hud, body:has(#pause:not(.hide):not(.from-title)) #mini { opacity: 0 !important; transition: opacity 0.15s; }
   #pause h2 { margin: 0 0 24px; letter-spacing: 0.4em; font-size: 16px; opacity: 0.8; }
   #pause h1.paused { margin: 0 0 18px; font-size: 46px; letter-spacing: 0.45em; }
   #pause.from-title h1.paused { display: none; }

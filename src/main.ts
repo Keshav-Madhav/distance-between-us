@@ -1276,7 +1276,8 @@ function drawTrackPreview(d: (typeof COURSES)[number]): void {
   const spires = d.loop ? 0 : (() => { let n = 0; for (let i = 1; i < N; i++) if (zs[i] > 4000) { const gp = d.spireGap(zs[i] / 1000); if (gp) n += (arc[i] - arc[i - 1]) / ((gp[0] + gp[1]) / 2) } return Math.round(n) })()
   const cell = (v: string, l: string) => `<div><b>${v}</b><small>${l}</small></div>`
   // (Gates for the whole race, as the race screen counts them: the loaded course knows exactly.)
-  const gates = d === course.def ? course.cps.length : Math.round((d.km * 1000 * (d.laps ?? 1)) / d.gateEvery) + 1
+  // (Counted as the race counts them, start and finish lines aside: the menu said 35 where the HUD said 33.)
+  const gates = d === course.def ? course.cps.length - 2 : Math.round((d.km * 1000 * (d.laps ?? 1)) / d.gateEvery) - 1
   $('#tp-stats').innerHTML = cell(`${d.km} km`, d.loop ? ((d.laps ?? 1) > 1 ? `Loop, ${d.laps} laps` : 'Loop') : 'Sprint') + cell(String(gates), 'Gates') + cell(String(d.racers ?? 10), 'Racers') +
     cell(`${Math.round((turning / L) * 100)}%`, 'Turning') + cell(rmin > 20000 ? 'Straight' : `${(rmin / 1000).toFixed(1)} km`, 'Tightest') +
     (d.jumps.length ? cell(String(d.jumps.length), 'Jumps') : spires ? cell(`~${spires}`, 'Spires') : '') + cell(bestOf(d.id) !== null ? fmtLap(bestOf(d.id)!) : 'No run yet', 'Your best') + cell(`${medalSvg(3, 14)}${fmtLap(medals(d)[0])}`, 'Gold time')
@@ -3202,11 +3203,11 @@ const mapQuad = new FullScreenQuad(new THREE.ShaderMaterial({
   depthWrite: false,
 }))
 let mapFrame = 0
-const overEl = $('#over')
+const overEl = $('#over'), pauseEl = $('#pause')
 /** The real top-down render under the map overlay: an orthographic camera straight down. */
 function renderMap(): void {
   // (Not behind the results: it is drawn into the 3D canvas, so CSS cannot hide it.)
-  if (mode !== 'race' || !mini.classList.contains('on') || !settings.map || !overEl.classList.contains('hide')) return
+  if (mode !== 'race' || !mini.classList.contains('on') || !settings.map || !overEl.classList.contains('hide') || !pauseEl.classList.contains('hide')) return
   if (!mapLayersSet) {
     mapLayersSet = true
     for (const o of world.group.children) {
@@ -3499,7 +3500,7 @@ const g = {
   boom: (x: number) => fx.explosion(player.pos.x + player.fwd.x * x, player.pos.y + 20, player.pos.z + player.fwd.z * x, player.vel.x, 0, player.vel.z, 1.5),
   debug: (on: boolean) => { debugEl.style.display = on ? 'block' : 'none' },
   stats: () => ({
-    fps: Math.round(fps), ms: +lastMs.toFixed(1), calls: renderer.info.render.calls, tris: renderer.info.render.triangles, mach: +player.mach.toFixed(2),
+    fps: Math.round(fps), ms: +lastMs.toFixed(1), bank: +player.bank.toFixed(3), calls: renderer.info.render.calls, tris: renderer.info.render.triangles, mach: +player.mach.toFixed(2),
     tier, scale: renderScale, hull: Math.round(player.hull), air: player.airborne, agl: +player.agl.toFixed(1),
     place: race.racers[0].place, crashing: player.crashing, burning: player.burning, slip: +(player.slip * 57.3).toFixed(1), spin: +player.spin.toFixed(2), drift: +player.drift.toFixed(2), yaw: +player.yawRate.toFixed(2), lap: race.lapOf(race.racers[0]), passed: race.racers[0].passed, race: race.state, particles: fx.glow.count + fx.smoke.count,
   }),
