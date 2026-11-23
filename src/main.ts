@@ -3597,15 +3597,17 @@ function arrowTo(p: THREE.Vector3, label: string): void {
   arrowEl.style.transform = `rotate(${Math.PI / 2 - a}rad)`
   // The label stays level (it turned with the arrow: vertical text down the screen edges), just inside
   // the arrow toward the middle, and out of the map and standings' boxes.
-  if (arrowLbl.textContent !== label) arrowLbl.textContent = label
   arrowLbl.style.display = 'block'
-  const lw = arrowLbl.offsetWidth || 120, lh = 14
+  // (Measured only when the text changes: a size read after this frame's style writes forced a layout
+  // every frame — cheap in Chrome, not in Firefox.)
+  if (arrowLbl.textContent !== label) { arrowLbl.textContent = label; arrowLblW = arrowLbl.offsetWidth }
+  const lw = arrowLblW || 120, lh = 14
   const px = (ex * 0.5 + 0.5) * innerWidth, py = (-ey * 0.5 + 0.5) * innerHeight
   // (Stepped in by half its own width: at the right edge it sat under its own arrow.)
   let lx = px - Math.cos(a) * (lw / 2 + 34) - lw / 2, ly = py + Math.sin(a) * 36 - lh / 2
   lx = Math.min(innerWidth - lw - 16, Math.max(16, lx)); ly = Math.min(innerHeight - lh - 16, Math.max(16, ly))
-  for (const el of [mini, $('#stand')]) {
-    const r = el.getBoundingClientRect()
+  for (const el of [mini, standEl]) {
+    const r = rectOf(el)
     if (r.width && lx < r.right + 8 && lx + lw > r.left - 8 && ly < r.bottom + 8 && ly + lh > r.top - 8) ly = r.bottom + 12
   }
   arrowLbl.style.left = `${lx}px`; arrowLbl.style.top = `${ly}px`
@@ -3614,6 +3616,21 @@ function arrowTo(p: THREE.Vector3, label: string): void {
 // Map (top left): a wide top-down window of the course — 1.5 km behind you to 7 km ahead, the line
 // running left to right — with the track as a band of its real width, every spire to scale, gate bars,
 // rivals and you; along the bottom, the whole sprint as a strip with everyone on it.
+// HUD boxes read every frame (the map's blit, the arrow label's dodge): cached, dropped when one resizes
+// or the window does — a read each frame forced a layout after the frame's style writes.
+const rectCache = new Map<Element, DOMRect>()
+function rectOf(el: Element): DOMRect {
+  let r = rectCache.get(el)
+  if (!r) { r = el.getBoundingClientRect(); rectCache.set(el, r) }
+  return r
+}
+let arrowLblW = 0
+{
+  const drop = () => rectCache.clear()
+  addEventListener('resize', drop)
+  const ro = new ResizeObserver(drop)
+  ro.observe(mini); ro.observe(standEl)
+}
 const miniCtx = mini.getContext('2d')!
 const MW = mini.width, MH = mini.height
 const MAP_H = MH - 56
@@ -3684,7 +3701,7 @@ function renderMap(): void {
   blitMap()
 }
 function blitMap(): void {
-  const r = mini.getBoundingClientRect()
+  const r = rectOf(mini)
   const sx = r.width / MW
   const x = r.left + 8 * sx, w = (MW - 16) * sx, top = r.top + 8 * sx, h = MAP_H * sx
   const y = innerHeight - top - h
