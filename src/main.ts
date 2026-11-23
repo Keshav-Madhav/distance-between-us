@@ -2620,6 +2620,9 @@ function drawRacer(p: Player, alpha: number, dt: number, isMe: boolean): void {
       e.vx = p.vel.x * 0.08 + p.right.x * (Math.random() - 0.5) * sp * 2; e.vy = 6 + Math.random() * sp; e.vz = p.vel.z * 0.08 + p.right.z * (Math.random() - 0.5) * sp * 2
       e.life = 0.9 + Math.random() * 1.1; e.size0 = 1.5; e.size1 = 9 + p.boost * 8
       e.r = DUST[0]; e.g = DUST[1]; e.b = DUST[2]; e.a = 0.3 * (1 - p.agl / 8); e.drag = 2.4; e.grav = 6
+      // (CINDER: the pack's ash, back-lit by the low sun, washed the whole lower screen grey and buried the
+      // route's edges — rivals' a third as dense there.)
+      if (BIOME === 'lava' && !isMe) e.a *= 0.35
       // WHITEWATER: over the river it is spray — white, thrown higher, falling faster (the rooster tail).
       if (canyon && canyon.style === 'forest' && world.canyonOn && canyon.inside(x, z)) { e.r = 0.9; e.g = 0.95; e.b = 1.0; e.a *= 0.5; e.vy *= 1.4; e.grav = 26; e.size1 *= 0.45 }
       fx.smoke.emit(e)

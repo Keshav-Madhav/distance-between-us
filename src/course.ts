@@ -1071,7 +1071,8 @@ export class Course {
     // pylon tips — so the edges stream past.
     if (BIOME === 'lava') {
       const every = 2, nm = Math.ceil(n / every) * 2
-      const mk = new THREE.InstancedMesh(new THREE.BoxGeometry(2.2, 0.7, 5).translate(0, 0.3, 0), new THREE.MeshBasicMaterial({ color: 0xffffff }), nm)
+      // (Posts 5 m tall: the edges are 330 m to each side — flat markers vanished into the horizon line.)
+      const mk = new THREE.InstancedMesh(new THREE.BoxGeometry(2.4, 5, 2.4).translate(0, 2.5, 0), new THREE.MeshBasicMaterial({ color: 0xffffff }), nm)
       let mi = 0
       for (let i = 0; i < n; i += every) {
         const [tx, tz] = this.tangent(i)
@@ -1087,6 +1088,28 @@ export class Course {
       }
       q.identity()
       mk.count = mi; mk.frustumCulled = false; this.group.add(mk)
+      // And a glowing line along each edge on the ground: at racing height the edges are 330 m off to the
+      // sides and only show far ahead, near the horizon — lines converging there read; posts were dots.
+      for (const side of [-1, 1]) {
+        const pos: number[] = [], idx: number[] = []
+        const edge = Math.min(this.gateHalf - 10, 250 + Math.max(0, this.gateHalf - 260))
+        for (let i = 0; i < n; i += 2) {
+          const [tx, tz] = this.tangent(i)
+          for (const w of [-2.5, 2.5]) {
+            const o = edge * side + w
+            const x = this.px[i] + tz * o, z = this.pz[i] - tx * o
+            pos.push(x, groundH(x, z) + 0.35, z)
+          }
+          const k = pos.length / 3 - 2
+          if (i > 0) idx.push(k - 2, k, k - 1, k - 1, k, k + 1)
+        }
+        const g = new THREE.BufferGeometry()
+        g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3))
+        g.setIndex(idx)
+        const line = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ color: side < 0 ? new THREE.Color(4, 1.2, 0.25) : new THREE.Color(2.6, 2.6, 3), side: THREE.DoubleSide }))
+        line.frustumCulled = false
+        this.group.add(line)
+      }
     }
 
     // ── route ribbons ──
