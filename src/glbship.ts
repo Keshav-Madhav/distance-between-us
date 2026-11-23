@@ -40,14 +40,19 @@ export function parseShipGlb(model: number, buf: ArrayBuffer): ModelArrays {
     return new Uint8Array(bin!, start, n)
   }
   const parts = new Map<string, { p: number[]; n: number[] }>()
-  const hooks = new Map<string, THREE.Vector3>()
+  const hooks = new Map<string, THREE.Vector3>(), hookVal = new Map<string, number>()
   const m4 = new THREE.Matrix4(), nm = new THREE.Matrix3(), v = new THREE.Vector3(), w = new THREE.Vector3()
   const walk = (ni: number, parent: THREE.Matrix4) => {
     const node = g.nodes[ni], local = new THREE.Matrix4()
     if (node.matrix) local.fromArray(node.matrix)
     else local.compose(new THREE.Vector3(...(node.translation ?? [0, 0, 0])), new THREE.Quaternion(...(node.rotation ?? [0, 0, 0, 1])), new THREE.Vector3(...(node.scale ?? [1, 1, 1])))
     const world = parent.clone().multiply(local)
-    if (node.mesh === undefined && node.name) hooks.set(node.name, new THREE.Vector3().setFromMatrixPosition(world))
+    if (node.mesh === undefined && node.name) {
+      // (A hook's name may carry a value: "nozzle_1@0.45" — the nozzle's flame size.)
+      const [nm, val] = node.name.split('@')
+      hooks.set(nm, new THREE.Vector3().setFromMatrixPosition(world))
+      if (val) hookVal.set(nm, +val)
+    }
     if (node.mesh !== undefined) {
       m4.copy(world); nm.getNormalMatrix(m4)
       for (const pr of g.meshes[node.mesh].primitives) {
@@ -72,7 +77,7 @@ export function parseShipGlb(model: number, buf: ArrayBuffer): ModelArrays {
   const num = H('number', [1.5, 0.8, 0])
   return {
     model, hi, lo: hi.map(([k, p, n]) => [k, p.slice(), n.slice()]),
-    spec: { nozzles: nz.map((q) => [q[0], q[1]] as [number, number]), nozzleZ: nz[1][2], wingtip: H('wingtip', [3, 0.6, -3]), number: { pos: num, rotY: Math.PI / 2, tilt: 0, size: 0.8 } },
+    spec: { nozzles: nz.map((q) => [q[0], q[1]] as [number, number]), nozzleZ: nz[1][2], nozzleR: [0, 1, 2].map((i) => hookVal.get(`nozzle_${i}`) ?? 1), wingtip: H('wingtip', [3, 0.6, -3]), number: { pos: num, rotY: Math.PI / 2, tilt: 0, size: 0.8 } },
   }
 }
 

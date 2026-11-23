@@ -142,9 +142,9 @@ def cyl(name, r, length, at, axis='z', seg=16, material=None, r2=None):
     if material: ob.data.materials.append(material)
     return smooth(ob, 50)
 
-def ring(name, r, thick, at, seg=32, material=None, sx=1.0, sy=1.0):
+def ring(name, r, thick, at, seg=24, material=None, sx=1.0, sy=1.0, minor=5):
     """A torus around the game z axis at `at` (a lip, a band, a flange)."""
-    bpy.ops.mesh.primitive_torus_add(major_radius=r, minor_radius=thick, major_segments=seg, minor_segments=8)
+    bpy.ops.mesh.primitive_torus_add(major_radius=r, minor_radius=thick, major_segments=min(seg, 28), minor_segments=minor)
     ob = bpy.context.active_object; ob.name = name
     ob.rotation_euler = (math.pi / 2, 0, 0); ob.scale = (sx, 1, sy)
     ob.location = G(*at)
@@ -210,3 +210,49 @@ def tri_count():
         if ob.type == 'MESH':
             me = ob.evaluated_get(dg).to_mesh(); me.calc_loop_triangles(); n += len(me.loop_triangles); ob.evaluated_get(dg).to_mesh_clear()
     return n
+
+def fan(name, cx, cy, z, r0, r1, n=26, twist=0.55, chord=0.16, material=None):
+    """A turbofan face: n overlapping twisted blades from hub radius r0 to tip r1, at depth z (game)."""
+    bm = bmesh.new()
+    for i in range(n):
+        a = 2 * math.pi * i / n
+        quad = []
+        for (r, side) in ((r0, -1), (r1, -1), (r1, 1), (r0, 1)):
+            tw = twist * (1.0 - 0.45 * (r - r0) / (r1 - r0))       # more pitch at the root
+            w = chord * (0.8 + 0.4 * (r - r0) / (r1 - r0)) / r       # angular half-width grows outward
+            aa = a + side * w * math.cos(tw)
+            zz = z + side * chord * math.sin(tw) * 0.5
+            quad.append(bm.verts.new(G(cx + r * math.cos(aa), cy + r * math.sin(aa), zz)))
+        bm.faces.new(quad)
+    ob = obj_from_bm(name, bm, material)
+    for p in ob.data.polygons: p.use_smooth = False
+    return ob
+
+def petals(name, cx, cy, z0, r, n, length, width, splay=0.14, thick=0.02, material=None):
+    """A nozzle crown: n tapered petals rooted on a ring of radius r at z0, pointing back (−z), splayed out."""
+    bm = bmesh.new()
+    for i in range(n):
+        a = 2 * math.pi * (i + 0.5) / n
+        ca, sa = math.cos(a), math.sin(a)
+        tx, ty = -sa, ca                       # tangent
+        rt = r + length * math.sin(splay)      # tip radius (splayed out)
+        base = [(r - thick, -width / 2), (r - thick, width / 2), (r + thick, width / 2), (r + thick, -width / 2)]
+        vs = [bm.verts.new(G(cx + rr * ca + t * tx, cy + rr * sa + t * ty, z0)) for (rr, t) in base]
+        tip = [bm.verts.new(G(cx + (rt - thick * 0.3) * ca, cy + (rt - thick * 0.3) * sa, z0 - length)), bm.verts.new(G(cx + (rt + thick * 0.3) * ca, cy + (rt + thick * 0.3) * sa, z0 - length))]
+        bm.faces.new((vs[0], vs[1], tip[0])); bm.faces.new((vs[3], tip[1], vs[2]))
+        bm.faces.new((vs[1], vs[2], tip[1], tip[0])); bm.faces.new((vs[0], tip[0], tip[1], vs[3]))
+        bm.faces.new((vs[0], vs[3], vs[2], vs[1]))
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+    ob = obj_from_bm(name, bm, material)
+    return ob
+
+def subsurf_obj(ob, levels=2):
+    subsurf(ob, levels); return ob
+
+def tri_report(top=14):
+    dg = bpy.context.evaluated_depsgraph_get(); agg = {}
+    for ob in bpy.context.scene.objects:
+        if ob.type == 'MESH':
+            me = ob.evaluated_get(dg).to_mesh(); me.calc_loop_triangles()
+            k = ob.name.split('.')[0]; agg[k] = agg.get(k, 0) + len(me.loop_triangles); ob.evaluated_get(dg).to_mesh_clear()
+    for k, v in sorted(agg.items(), key=lambda x: -x[1])[:top]: print('TRI', k, v)

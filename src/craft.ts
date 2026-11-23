@@ -173,10 +173,10 @@ function flameMaterial(core: THREE.Color, edge: THREE.Color): THREE.ShaderMateri
   })
 }
 
-function flameGeometry(radius: number, nozzles: [number, number][], nz: number): THREE.BufferGeometry {
+function flameGeometry(radius: number, nozzles: [number, number][], nz: number, scale?: number[]): THREE.BufferGeometry {
   const list: THREE.BufferGeometry[] = []
-  for (const [x, y] of nozzles) {
-    const g = new THREE.ConeGeometry(radius, 1, 20, 1, true)
+  for (const [i, [x, y]] of nozzles.entries()) {
+    const g = new THREE.ConeGeometry(radius * (scale?.[i] ?? 1), 1, 20, 1, true)
     g.translate(0, 0.5, 0)
     g.rotateX(-Math.PI / 2) // base at z = 0, tip at z = −1
     g.translate(x, y, nz)
@@ -219,7 +219,9 @@ export class Craft {
       carbon: new THREE.MeshStandardMaterial({ side: THREE.DoubleSide, color: 0x15171b, roughness: 0.3, metalness: 0.75, envMap: env, envMapIntensity: 1.3 }),
       metal: new THREE.MeshStandardMaterial({ side: THREE.DoubleSide, color: 0x9aa0a8, roughness: 0.12, metalness: 1, envMap: env, envMapIntensity: 1.5 }),
       // (Tinted and see-through: the pilot shows inside.)
-      glass: new THREE.MeshPhysicalMaterial({ color: 0x1a2c44, roughness: 0.04, metalness: 0.3, clearcoat: 1, envMap: env, envMapIntensity: 1.6, transparent: true, opacity: 0.62, depthWrite: false }),
+      // (Smoked: a pale see-through canopy read as clear plastic on the white ships.)
+      glass: new THREE.MeshPhysicalMaterial({ color: 0x0b1017, roughness: 0.06, metalness: 0.4, clearcoat: 1, envMap: env, envMapIntensity: 1.6, transparent: true, opacity: 0.86, depthWrite: false }),
+      gun: new THREE.MeshStandardMaterial({ side: THREE.DoubleSide, color: 0x3b4048, roughness: 0.34, metalness: 0.8, envMap: env, envMapIntensity: 1.3 }),
     }
     for (const m of Object.values(mats)) patchStandard(m as THREE.MeshStandardMaterial)
     liveryPatch(mats.paint as THREE.MeshPhysicalMaterial, this.livU)
@@ -331,7 +333,7 @@ export class Craft {
     for (const [key, g] of G.lo) this.lo.add(new THREE.Mesh(g, this.mats[key]))
     // Flames: two draws for all three nozzles.
     for (const [r, m] of [[0.48, this.flameMat], [0.26, this.innerMat]] as const) {
-      const f = new THREE.Mesh(flameGeometry(r, spec.nozzles, spec.nozzleZ), m)
+      const f = new THREE.Mesh(flameGeometry(r, spec.nozzles, spec.nozzleZ, spec.nozzleR), m)
       m.uniforms.uNz.value = spec.nozzleZ
       f.frustumCulled = false
       f.renderOrder = 5

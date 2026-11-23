@@ -14,6 +14,8 @@ export interface ShipSpec {
   /** Outer nozzles (x, y) at NOZZLE_Z, centre one at (0, y). */
   nozzles: [number, number][]
   nozzleZ: number
+  /** Per-nozzle flame size (1 = full); a small centre thruster gets a small flame. */
+  nozzleR?: number[]
   wingtip: [number, number, number]
   /** Where the racing numbers sit (right side; mirrored). */
   number: { pos: [number, number, number]; rotY: number; tilt: number; size: number }
