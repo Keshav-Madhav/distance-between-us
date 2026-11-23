@@ -6,7 +6,7 @@
 // Materials by key: paint (body colour), trim (team colour), carbon (dark), glass, metal, neon
 // (team-colour light), glow (cyan light), hot (nozzle cores).
 import * as THREE from 'three'
-import { loft, mirrorX, nacelle, sample, X, Y, Z, type Key } from './shipgeo'
+import { loft, mirrorX, nacelle, sample, surfaceNormal, X, Y, Z, type Key } from './shipgeo'
 
 export type Parts = Map<string, THREE.BufferGeometry[]>
 
@@ -42,15 +42,16 @@ export function buildShip(variant: number, hi: boolean): { parts: Parts; spec: S
     if (mirror) parts.get(key)!.push(mirrorX(g))
   }
   // (Hi detail: dense surfaces — every loft ~2× the rings and points it had.)
-  // (×3 since 2026-11-23: smoother curves, no facets on the pods and spine close up.)
-  const R = hi ? 3 : 0.35
+  // (×2: the surface's own normals make it smooth — the facets were never the triangle count.)
+  const R = hi ? 2 : 0.35
   const ring = (n: number) => Math.max(4, Math.round(n * R))
 
   /** A racing stripe: a band on a loft's skin whose centre angle sweeps from thA (at s0) to thB (at s1),
    *  width w (radians), tapering to points at both ends, a hair proud of the paint. */
   const swoosh = (keys: Key[], key: string, s0: number, s1: number, thA: number, thB: number, w: number, mirror: boolean) => {
     const N = ring(30), M = 4
-    const pos: number[] = [], idx: number[] = []
+    const pos: number[] = [], idx: number[] = [], nrm: number[] = [], nv = new THREE.Vector3()
+    const SO = { A: X, B: Y, rings: 1, around: 1 }
     for (let r = 0; r <= N; r++) {
       const u = r / N, k = sample(keys, s0 + (s1 - s0) * u)
       const e = 2 / k.n, thc = thA + (thB - thA) * (u * u * (3 - 2 * u)), ww = w * Math.pow(Math.sin(PI * u), 0.5)
@@ -58,11 +59,13 @@ export function buildShip(variant: number, hi: boolean): { parts: Parts; spec: S
         const th = thc - ww / 2 + (ww * j) / M, ca = Math.cos(th), sa = Math.sin(th)
         const x = k.a * 1.012 * Math.sign(ca) * Math.pow(Math.abs(ca), e), y = (sa >= 0 ? k.t : k.b) * 1.012 * Math.sign(sa) * Math.pow(Math.abs(sa), e)
         pos.push(k.c[0] + x, k.c[1] + y, k.c[2])
+        // (The hull's own normal under it: the stripe shades as part of the skin.)
+        surfaceNormal(keys, SO, s0 + (s1 - s0) * u, th, nv); nrm.push(nv.x, nv.y, nv.z)
       }
     }
     for (let r = 0; r < N; r++) for (let j = 0; j < M; j++) { const a = r * (M + 1) + j, b = a + 1, c = a + M + 1, d = c + 1; idx.push(a, c, b, b, c, d) }
     const g = new THREE.BufferGeometry()
-    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setIndex(idx); g.computeVertexNormals()
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('normal', new THREE.Float32BufferAttribute(nrm, 3)); g.setIndex(idx)
     put(key, g, mirror)
   }
 
@@ -211,14 +214,7 @@ export function buildShip(variant: number, hi: boolean): { parts: Parts; spec: S
     put('carbon', new THREE.CylinderGeometry(1, 0.9, 0.32, 40, 1, true).rotateX(PI / 2).scale(sx * 0.98, sy * 0.98, 1).translate(ix, iy, pz0 - 0.16), true)
     put('carbon', new THREE.CircleGeometry(1, 40).scale(sx * 0.9, sy * 0.9, 1).translate(ix, iy, pz0 - 0.32), true)
     put('metal', new THREE.ConeGeometry(Math.min(sx, sy) * 0.32, Math.min(sx, sy) * 0.55, 24).rotateX(PI / 2).translate(ix, iy, pz0 - 0.22), true)
-    // Panel seams: thin raised dark bands round the pods and the fuselage.
-    const seam = (keys: Key[], s: number, mirror: boolean, th0 = 0, th1 = 2 * PI) => {
-      const k0 = sample(keys, s - 0.012), k1 = sample(keys, s + 0.012)
-      for (const k of [k0, k1]) { k.a *= 1.015; k.t *= 1.015; k.b *= 1.015 }
-      put('carbon', loft([k0, k1], { A: X, B: Y, rings: 1, around: 48, th0, th1 }), mirror)
-    }
-    for (const z of [-2.6, -0.2, 1.0]) seam(pod, z, true)
-    for (const z of [-2.2, -0.2]) seam(fus, z, false, 0, PI)
+    // (No panel-seam rings: dark bands round the hull read as the panels not meeting.)
     // The pilot: a headrest, a torso, a helmet — in the tub, under the dome.
     put('carbon', new THREE.CapsuleGeometry(0.2, 0.2, 8, 20).scale(1.2, 1, 0.5).translate(0, 1.12, cz - 0.55))
     put('carbon', new THREE.CapsuleGeometry(0.17, 0.16, 8, 20).translate(0, 1.04, cz - 0.3))

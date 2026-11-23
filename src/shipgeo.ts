@@ -62,6 +62,40 @@ function naca(u: number): number {
   return (0.2969 * Math.sqrt(v) - 0.126 * v - 0.3516 * v * v + 0.2843 * v ** 3 - 0.1036 * v ** 4) / 0.1
 }
 
+/** A point on a loft's surface: path position s, section angle th. */
+function surfacePoint(keys: Key[], o: LoftOpts, s: number, th: number, k: Key, out: THREE.Vector3): THREE.Vector3 {
+  sample(keys, s, k)
+  const e = 2 / k.n, ca = Math.cos(th), sa = Math.sin(th)
+  let x: number, y: number
+  if (o.foil) { x = k.a * ca; y = (sa >= 0 ? k.t : k.b) * naca((1 - ca) / 2) * Math.sign(sa) }
+  else { x = k.a * sgnPow(ca, e); y = (sa >= 0 ? k.t : k.b) * sgnPow(sa, e) }
+  return out.set(k.c[0] + o.A.x * x + o.B.x * y, k.c[1] + o.A.y * x + o.B.y * y, k.c[2] + o.A.z * x + o.B.z * y)
+}
+const _pa = new THREE.Vector3(), _pb = new THREE.Vector3(), _pc = new THREE.Vector3(), _pd = new THREE.Vector3(), _kn: Key = { s: 0, c: [0, 0, 0], a: 0, t: 0, b: 0, n: 2 }
+/** The surface's normal at (s, th), from the shape itself (finite differences on the analytic
+ *  surface), pointing away from the section centre. Every patch of one loft — paint, stripe, belly —
+ *  gets the same normal along a shared edge, so they shade as one surface (per-patch vertex normals
+ *  disagreed at the seams: visible bands where the colours met). */
+export function surfaceNormal(keys: Key[], o: LoftOpts, s: number, th: number, out: THREE.Vector3): THREE.Vector3 {
+  const s0 = keys[0].s, s1 = keys[keys.length - 1].s
+  const ds = (s1 - s0) * 1e-3, dt = 1e-3
+  const sa = Math.max(s0, s - ds), sb = Math.min(s1, s + ds)
+  surfacePoint(keys, o, s, th + dt, _kn, _pa); surfacePoint(keys, o, s, th - dt, _kn, _pb)
+  _pa.sub(_pb)
+  surfacePoint(keys, o, sb, th, _kn, _pc); surfacePoint(keys, o, sa, th, _kn, _pd)
+  _pc.sub(_pd)
+  out.crossVectors(_pa, _pc)
+  if (out.lengthSq() < 1e-14) {
+    // Degenerate (a pointed end): straight out from the axis.
+    surfacePoint(keys, o, s, th, _kn, _pa); out.set(_pa.x - _kn.c[0], _pa.y - _kn.c[1], _pa.z - _kn.c[2])
+  }
+  out.normalize()
+  surfacePoint(keys, o, s, th, _kn, _pa)
+  const cx = _pa.x - _kn.c[0], cy = _pa.y - _kn.c[1], cz = _pa.z - _kn.c[2]
+  if (out.x * cx + out.y * cy + out.z * cz < 0) out.negate()
+  return out
+}
+
 export function loft(keys: Key[], o: LoftOpts): THREE.BufferGeometry {
   const s0 = keys[0].s, s1 = keys[keys.length - 1].s
   const th0 = o.th0 ?? 0, th1 = o.th1 ?? Math.PI * 2
@@ -71,6 +105,7 @@ export function loft(keys: Key[], o: LoftOpts): THREE.BufferGeometry {
   const idx: number[] = []
   const k: Key = { s: 0, c: [0, 0, 0], a: 0, t: 0, b: 0, n: 2 }
   const ringCentres: THREE.Vector3[] = []
+  const params: number[] = []
   for (let r = 0; r <= o.rings; r++) {
     // Rings bunch toward the ends (where the shape changes fastest: noses, tails, tips).
     const u = r / o.rings
@@ -80,6 +115,7 @@ export function loft(keys: Key[], o: LoftOpts): THREE.BufferGeometry {
     const e = 2 / k.n
     for (let j = 0; j < nA; j++) {
       const th = th0 + ((th1 - th0) * j) / (full ? o.around : o.around)
+      params.push(s, th)
       const ca = Math.cos(th), sa = Math.sin(th)
       let x: number, y: number
       if (o.foil) { x = k.a * ca; y = (sa >= 0 ? k.t : k.b) * naca((1 - ca) / 2) * Math.sign(sa) }
@@ -121,6 +157,13 @@ export function loft(keys: Key[], o: LoftOpts): THREE.BufferGeometry {
     g.setIndex(idx)
     g.computeVertexNormals()
   }
+  // The surface's own normals on every ring vertex (caps keep their fan's).
+  const nn = g.attributes.normal as THREE.BufferAttribute, v = new THREE.Vector3()
+  for (let i = 0; i < params.length / 2; i++) {
+    surfaceNormal(keys, o, params[i * 2], params[i * 2 + 1], v)
+    nn.setXYZ(i, v.x, v.y, v.z)
+  }
+  nn.needsUpdate = true
   return g
 }
 
