@@ -164,7 +164,7 @@ function flameMaterial(core: THREE.Color, edge: THREE.Color): THREE.ShaderMateri
         float fade = pow(clamp(1.0 - t, 0.0, 1.0), 1.6);
         // A smooth flicker (a per-frame random strobed).
         float flick = 0.9 + 0.1 * sin(uTime * 53.0 + vUv.x * 6.28) * sin(uTime * 31.0);
-        float diamonds = uBoost * smoothstep(0.55, 1.0, sin(t * 26.0 - uTime * 4.0)) * (1.0 - t);
+        float diamonds = uBoost * smoothstep(0.7, 1.0, sin(t * 18.0 - uTime * 4.0)) * (1.0 - t) * 0.45;
         vec3 c = mix(uEdge, uCore, body * (1.0 - t * 0.7)) * (fade * body * 0.9 + diamonds * 0.5);
         // Drift charge: the flame takes the charge's colour, brighter at the core.
         c = mix(c, uTint * (fade * body * 1.1 + 0.15 * fade), uTintA);
@@ -223,6 +223,7 @@ export class Craft {
       // (See-through: the pilot's helmet shows inside — a tinted, glossy, mostly clear canopy.)
       glass: new THREE.MeshPhysicalMaterial({ color: 0x2a3b4c, roughness: 0.12, metalness: 0.2, clearcoat: 1, envMap: env, envMapIntensity: 1.2, transparent: true, opacity: 0.38, depthWrite: false }),
       brass: new THREE.MeshStandardMaterial({ side: THREE.DoubleSide, color: 0xb8863b, roughness: 0.3, metalness: 0.9, envMap: env, envMapIntensity: 1.4 }),
+      helmet: new THREE.MeshPhysicalMaterial({ color: 0xf4f4f2, roughness: 0.25, metalness: 0.1, clearcoat: 1, envMap: env, envMapIntensity: 1.3 }),
       gun: new THREE.MeshStandardMaterial({ side: THREE.DoubleSide, color: 0x3b4048, roughness: 0.34, metalness: 0.8, envMap: env, envMapIntensity: 1.3 }),
     }
     for (const m of Object.values(mats)) patchStandard(m as THREE.MeshStandardMaterial)
@@ -362,8 +363,10 @@ export class Craft {
 
   setFlames(throttle: number, boost: number, time: number): void {
     // (Shorter and cooler than they were: the plumes ran down over the Mach readout, blown white.)
-    const len = 1.0 + throttle * 1.4 + boost * 4.2
-    const wid = 0.85 + boost * 0.35
+    // (The burner plume stays short: seen from the chase camera a long one ran back over the ship and
+    // its additive glow washed the hull out; the speed reads from the streaks and the shock diamonds.)
+    const len = 1.0 + throttle * 1.2 + boost * 2.4
+    const wid = 0.82 + boost * 0.2
     const j = 1 + Math.sin(time * 41) * 0.05 + Math.sin(time * 23) * 0.04
     for (const [m, k] of [[this.flameMat, 1], [this.innerMat, 0.55]] as const) {
       m.uniforms.uThrottle.value = throttle

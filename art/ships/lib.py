@@ -330,19 +330,36 @@ def poly_loft(name, stations, profile, steps=48, material=None, cap1=True, angle
     return smooth(obj_from_bm(name, bm, material), angle)
 
 def pilot(M, x, y, z, r=0.13, helmet='trim'):
-    """A seated pilot visible through the canopy: a helmet (team colour) with a dark visor band facing
-    forward, a headrest behind, shoulders below. (x, y, z) is the helmet centre, game frame."""
-    bpy.ops.mesh.primitive_uv_sphere_add(segments=20, ring_count=12, radius=r)
+    """A seated pilot visible through the canopy, from behind too: a bright white helmet with a
+    team-colour crest stripe and a dark visor band facing forward, shoulders below; the seat back is
+    low (a headrest behind the head hid it from the chase camera). (x, y, z) = helmet centre."""
+    r *= 1.2
+    hm = mat('helmet', (0.96, 0.96, 0.95), 0.1, 0.25)
+    bpy.ops.mesh.primitive_uv_sphere_add(segments=24, ring_count=14, radius=r)
     h = bpy.context.active_object; h.name = 'helmet'; h.scale = (0.95, 1.0, 1.08); h.location = G(x, y, z)
-    bpy.ops.object.transform_apply(location=True, scale=True); h.data.materials.append(M[helmet]); smooth(h, 80)
-    bpy.ops.mesh.primitive_uv_sphere_add(segments=20, ring_count=10, radius=r * 1.04)
+    bpy.ops.object.transform_apply(location=True, scale=True); h.data.materials.append(hm); smooth(h, 80)
+    bpy.ops.mesh.primitive_uv_sphere_add(segments=24, ring_count=12, radius=r * 1.03)
     v = bpy.context.active_object; v.name = 'visor'
     bm = bmesh.new(); bm.from_mesh(v.data)
     bmesh.ops.delete(bm, geom=[f for f in bm.faces if not (f.calc_center_median().y < -r * 0.25 and abs(f.calc_center_median().z) < r * 0.45)], context='FACES')
     bm.to_mesh(v.data); bm.free()
     v.scale = (0.95, 1.0, 1.08); v.location = G(x, y, z)
     bpy.ops.object.transform_apply(location=True, scale=True); v.data.materials.append(M['carbon']); smooth(v, 80)
-    box('headrest', (r * 2.0, r * 1.9, r * 0.5), (x, y - r * 0.35, z - r * 1.35), material=M['gun'], bevel=r * 0.15)
+    bpy.ops.mesh.primitive_uv_sphere_add(segments=24, ring_count=12, radius=r * 1.02)
+    c = bpy.context.active_object; c.name = 'crest'
+    bm = bmesh.new(); bm.from_mesh(c.data)
+    bmesh.ops.delete(bm, geom=[f for f in bm.faces if not (abs(f.calc_center_median().x) < r * 0.16 and f.calc_center_median().z > -r * 0.1)], context='FACES')
+    bm.to_mesh(c.data); bm.free()
+    c.scale = (0.95, 1.0, 1.08); c.location = G(x, y, z)
+    bpy.ops.object.transform_apply(location=True, scale=True); c.data.materials.append(M[helmet]); smooth(c, 80)
     bpy.ops.mesh.primitive_uv_sphere_add(segments=16, ring_count=8, radius=1)
-    s = bpy.context.active_object; s.name = 'shoulders'; s.scale = (r * 2.3, r * 1.3, r * 1.1); s.location = G(x, y - r * 1.55, z - r * 0.4)
+    s = bpy.context.active_object; s.name = 'shoulders'; s.scale = (r * 2.2, r * 0.9, r * 1.0); s.location = G(x, y - r * 1.35, z - r * 0.3)
     bpy.ops.object.transform_apply(location=True, scale=True); s.data.materials.append(M['gun']); smooth(s, 80)
+
+def flared_lip(name, cx, cy, z0, r, length, M, mat_key='gun'):
+    """A smooth flared nozzle lip (instead of a sawtooth crown): a short bell flaring out to the exit,
+    a rolled rim, two inner rings."""
+    ob = smooth(lathe(name, [(z0, r * 0.95), (z0 - length * 0.5, r * 1.02), (z0 - length, r * 1.12), (z0 - length - 0.03, r * 1.08), (z0 - length + 0.02, r * 1.0)], cx, cy, 40, M[mat_key]), 35)
+    rim = ring(name + '_rim', r * 1.1, 0.025, (cx, cy, z0 - length), 40, M['metal'])
+    inner = ring(name + '_in', r * 0.86, 0.018, (cx, cy, z0 - length * 0.4), 32, M['metal'])
+    return [ob, rim, inner]

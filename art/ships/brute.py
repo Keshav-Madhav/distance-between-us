@@ -134,16 +134,12 @@ TOP = _top(1.6)
 poly_loft('canopy', [(2.9, 0, TOP - 0.05, 0.08, 0.04, 0.02), (2.5, 0, TOP - 0.05, 0.42, 0.24, 0.02), (1.6, 0, TOP - 0.05, 0.54, 0.4, 0.02), (0.5, 0, TOP - 0.05, 0.5, 0.38, 0.02), (0.1, 0, TOP - 0.05, 0.08, 0.04, 0.02)],
           [(math.cos(t), math.sin(t) ** 0.8 if t <= math.pi else -0.3) for t in [i * math.pi / 14 for i in range(15)]] + [(0.0, -1.0)], 28, M['glass'], angle=70)
 smooth_loft('canopy_frame', [(3.0, 0, TOP - 0.06, 0.1, 0.12, 0.03, 2.4), (2.5, 0, TOP - 0.06, 0.46, 0.13, 0.03, 2.4), (1.6, 0, TOP - 0.06, 0.58, 0.14, 0.03, 2.4), (0.5, 0, TOP - 0.06, 0.54, 0.13, 0.03, 2.4), (0.0, 0, TOP - 0.06, 0.1, 0.12, 0.03, 2.4)], 24, 24, M['gun'])
-pilot(M, 0, TOP + 0.14, 1.35, 0.16)
+pilot(M, 0, TOP + 0.18, 1.3, 0.16)
 for side in (1, -1):
     for dz in (0.0, 0.18, 0.36):
         box('cab_vent', (0.05, 0.3, 0.09), (side * 1.13, 1.2, -0.5 - dz), (0.3, 0, 0), M['gun'])
 # Rear deck: stacked pipes and a pump block on the cabin's back.
 RD = _top(-1.2)
-box('deck_block', (0.7, 0.2, 0.7), (0, RD + 0.02, -1.0), material=M['gun'], bevel=0.03)
-cyl('deck_tank', 0.12, 0.62, (0, RD + 0.24, -1.0), 'x', 14, M['metal'])
-for dx in (-0.25, 0.25):
-    box('deck_saddle', (0.08, 0.18, 0.2), (dx, RD + 0.18, -1.0), material=M['gun'])
 # Tail: a centre exhaust housing, recessed thruster.
 smooth(lathe('tail_housing', [(-2.0, 0.48), (-2.25, 0.46), (-2.3, 0.4)], 0, 0.94, 40, M['gun']), 40)
 smooth(lathe('tail_nozzle', [(-2.3, 0.32), (-2.4, 0.34), (NZ, 0.32)], 0, 0.94, 40, M['metal']), 40)

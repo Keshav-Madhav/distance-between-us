@@ -99,7 +99,7 @@ right.append(tube('coil', [(EX + 0.66 * math.cos(t * 0.6), EY + 0.66 * math.sin(
 right.append(smooth(lathe('nozzle', [(-2.6, 0.5), (-2.9, 0.57), (-3.5, 0.55), (-3.75, 0.5)], EX, EY, 40, M['metal']), 30))
 right.append(ring('nozzle_band', 0.565, 0.03, (EX, EY, -3.1), 40, M['trim']))
 right.append(ring('crown_base', 0.5, 0.07, (EX, EY, -3.72), 40, M['gun']))
-right.append(petals('petals', EX, EY, -3.7, 0.53, 12, 0.5, 0.21, -0.24, 0.014, M['metal']))
+right.extend(flared_lip('lip', EX, EY, -3.7, 0.5, 0.42, M))
 right.append(smooth(lathe('liner', [(-3.5, 0.48), (-3.7, 0.44), (-3.8, 0.0)], EX, EY, 32, M['carbon']), 60))
 c = bpy.data.objects.get('liner')
 right.append(cyl('hot_core', 0.4, 0.02, (EX, EY, -3.72), 'z', 32, M['hot']))
@@ -116,7 +116,7 @@ right.append(poly_loft('fin_root', [(CR + 0.85, EX + 0.62, EY + 0.02, 0.02, 0.04
 
 # ── Pylons: spine to can.
 for (zc, ch) in [(0.9, 1.1), (-1.7, 1.0)]:  # tapered pylons, spine to can, filleted both ends
-    pl = smooth_loft('pylon', [(-0.98, 0, EY + 0.06, ch * 0.62, 0.15, 0.15, 2.0), (-0.85, 0, EY + 0.06, ch * 0.5, 0.09, 0.09, 2.0), (-0.6, 0, EY + 0.06, ch * 0.46, 0.08, 0.08, 2.0), (-0.42, 0, EY + 0.06, ch * 0.62, 0.15, 0.15, 2.0)], 16, 10, M['gun'], cap0=True, cap1=True)
+    pl = smooth_loft('pylon', [(-0.98, 0, EY + 0.06, ch * 0.62, 0.24, 0.24, 2.0), (-0.85, 0, EY + 0.06, ch * 0.52, 0.17, 0.17, 2.0), (-0.6, 0, EY + 0.06, ch * 0.5, 0.16, 0.16, 2.0), (-0.42, 0, EY + 0.06, ch * 0.62, 0.24, 0.24, 2.0)], 16, 10, M['gun'], cap0=True, cap1=True)
     place(pl, (0, -math.pi / 2, 0), (0, 0, zc)); right.append(pl)
 
 join_mirror(right)
@@ -160,7 +160,6 @@ frame = smooth_loft('canopy_frame', [(z, 0, TOP - 0.03, a * 1.05, 0.06, 0.03, 2.
 can = smooth_loft('canopy', egg(1.0, 1.0, TOP), 28, 22, M['glass'], angle=80)
 smooth_loft('canopy_tub', egg(0.95, 0.12, TOP - 0.01), 16, 14, M['carbon'])
 pilot(M, 0, TOP + 0.2, CZ - 0.45, 0.16)
-box('seat', (0.42, 0.06, 0.6), (0, TOP + 0.02, CZ - 0.3), material=M['gun'])
 for f in (-0.35, 0.35):
     z = CZ + f * CL; k = math.sqrt(max(0.0, 1 - f * f)) ** 0.8
     pts = [(CW * k * 1.01 * math.cos(t), TOP + CH * k * 1.01 * math.sin(t), z) for t in [i * math.pi / 12 for i in range(13)]]

@@ -24,7 +24,7 @@ right = []
 
 # ── Body: a sharp arrowhead lens delta with squared tips.
 WING = [(5.0, 0, BY - 0.05, 0.05, 0.03, 0.03, 1.8), (4.0, 0, BY - 0.02, 0.45, 0.14, 0.12, 1.9), (2.2, 0, BY, 0.95, 0.24, 0.2, 1.9),
-        (0.8, 0, BY, 1.15, 0.26, 0.2, 1.9), (0.0, 0, BY, 2.9, 0.24, 0.2, 1.9), (-1.0, 0, BY, 3.55, 0.22, 0.18, 1.9), (-1.3, 0, BY, 3.6, 0.2, 0.17, 1.9), (-2.05, 0, BY, 3.6, 0.18, 0.15, 1.9), (-2.25, 0, BY, 2.4, 0.09, 0.08, 1.8)]
+        (0.8, 0, BY, 1.15, 0.26, 0.2, 1.9), (0.0, 0, BY, 2.9, 0.24, 0.2, 1.9), (-1.0, 0, BY, 3.55, 0.22, 0.18, 1.9), (-1.3, 0, BY, 3.6, 0.2, 0.17, 1.9), (-1.85, 0, BY, 3.6, 0.18, 0.15, 1.9), (-2.0, 0, BY, 2.4, 0.09, 0.08, 1.8)]
 smooth_loft('body', WING, 64, 60, M['paint'], cap1=True, angle=60)
 # Cockpit hump down the centre, the canopy set into it.
 HUMP = [(4.4, 0, BY, 0.1, 0.05, 0.05, 2.0), (3.4, 0, BY + 0.04, 0.46, 0.34, 0.12, 2.6), (1.6, 0, BY + 0.06, 0.62, 0.6, 0.14, 3.0),
@@ -32,7 +32,7 @@ HUMP = [(4.4, 0, BY, 0.1, 0.05, 0.05, 2.0), (3.4, 0, BY + 0.04, 0.46, 0.34, 0.12
 smooth_loft('hump', HUMP, 36, 50, M['paint'], cap1=True)
 _zs = sorted(r[0] for r in HUMP); _top = _mono_cubic(_zs, [next(r[2] + r[4] for r in HUMP if r[0] == z) for z in _zs])
 smooth_loft('canopy', [(2.9, 0, _top(2.7) - 0.08, 0.05, 0.03, 0.02, 2.0), (2.5, 0, _top(2.4) - 0.08, 0.34, 0.22, 0.02, 2.4), (1.6, 0, _top(1.6) - 0.08, 0.46, 0.36, 0.02, 2.4), (0.6, 0, _top(0.6) - 0.08, 0.42, 0.26, 0.02, 2.4), (0.2, 0, _top(0.3) - 0.08, 0.05, 0.03, 0.02, 2.0)], 28, 20, M['glass'])
-pilot(M, 0, _top(1.2) + 0.1, 1.15, 0.14)
+pilot(M, 0, _top(1.2) + 0.12, 1.15, 0.14)
 poly_loft('hump_strip', [(z, 0, _top(z) + 0.003, 0.18, 0.012, 0.012) for z in (0.2, -0.5, -1.0)], [(1, 0), (0.9, 1), (-0.9, 1), (-1, 0), (-0.9, -1), (0.9, -1)], 20, M['gun'], cap1=True, angle=80)
 for sx in (1, -1):  # cockpit side vents
     for dz in (0.0, 0.16, 0.32):
@@ -73,11 +73,9 @@ right.append(tube('wing_edge', [(1.2, BY + 0.05, 0.75), (2.4, BY + 0.06, 0.0), (
 join_mirror(right)
 
 # ── Rear centre machinery block between the nacelles, and the centre thruster.
-box('rear_bay', (0.9, 0.1, 1.1), (0, BY + 0.14, -1.85), material=M['carbon'], bevel=0.02)
+box('rear_bay', (0.9, 0.06, 0.9), (0, BY + 0.1, -1.75), material=M['carbon'], bevel=0.02)
 for dx in (-0.25, 0.0, 0.25):
-    tube('bay_pipe', [(dx, BY + 0.22, -1.4), (dx * 1.1, BY + 0.26, -1.9), (dx, BY + 0.22, -2.3)], 0.04, M['brass' if dx == 0 else 'trim'])
-for z in (-1.55, -2.2):
-    box('bay_manifold', (0.7, 0.08, 0.1), (0, BY + 0.24, z), material=M['gun'])
+    tube('bay_pipe', [(dx, BY + 0.15, -1.4), (dx * 1.1, BY + 0.18, -1.75), (dx, BY + 0.15, -2.1)], 0.035, M['brass' if dx == 0 else 'trim'])
 smooth(lathe('tail_nozzle', [(-2.4, 0.24), (-2.55, 0.26), (NZ, 0.24)], 0, BY + 0.12, 28, M['metal']), 40)
 smooth(lathe('tail_liner', [(NZ, 0.22), (-2.5, 0.18), (-2.42, 0.0)], 0, BY + 0.12, 24, M['carbon']), 60)
 cyl('tail_hot', 0.17, 0.02, (0, BY + 0.12, -2.45), 'z', 20, M['hot'])

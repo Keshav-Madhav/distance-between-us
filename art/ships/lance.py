@@ -71,10 +71,11 @@ for sx in (1, -1):
     box('wingtip_cap', (0.06, 0.07, 0.75), (sx * 3.03, FY - 0.14, -1.68), material=M['gun'], bevel=0.02)
 
 # ── Tail fin: tall, raked, on the spine.
-tf = plate('tail', [(0.0, 0.0), (-1.0, 1.45), (-1.55, 1.5), (-1.8, 0.0)], 0.12, M['paint'], 'x', 0.0, 0.04)
-place(tf, (0, 0, 0), (0, _top(-2.3) - 0.05, -1.9))
-tt = plate('tail_flash', [(-0.55, 0.8), (-0.95, 1.38), (-1.1, 1.38), (-0.72, 0.8)], 0.13, M['gun'], 'x', 0.0, 0.01)
-place(tt, (0, 0, 0), (0, _top(-2.3) - 0.05, -1.9))
+for sx in (1, -1):
+    tf = plate('tail', [(0.0, 0.0), (-0.8, 1.05), (-1.25, 1.1), (-1.5, 0.0)], 0.1, M['paint'], 'x', 0.0, 0.035)
+    place(tf, (0, 0, -0.38 * sx), (0.3 * sx, _top(-2.3) - 0.08, -1.9))
+    tt = plate('tail_flash', [(-0.45, 0.6), (-0.78, 1.0), (-0.92, 1.0), (-0.6, 0.6)], 0.11, M['gun'], 'x', 0.0, 0.01)
+    place(tt, (0, 0, -0.38 * sx), (0.3 * sx, _top(-2.3) - 0.08, -1.9))
 
 # ── Top machinery ahead of the main nozzle, then the main nozzle.
 MZ0, MZ1 = -2.0, -3.4
@@ -82,7 +83,7 @@ smooth(lathe('main_core', [(MZ0, 0.3), (MZ1, 0.32)], 0, FY + 0.05, 24, M['gun'])
 for (z0, z1, r, m) in [(MZ0 - 0.05, MZ0 - 0.35, 0.4, 'brass'), (MZ0 - 0.45, MZ0 - 0.9, 0.44, 'gun'), (MZ0 - 1.0, MZ1, 0.4, 'carbon')]:
     smooth(lathe('mstage', [(z0, r * 0.94), (z0 - 0.03, r), (z1 + 0.03, r), (z1, r * 0.94)], 0, FY + 0.05, 24, M[m], cap0=True, cap1=True), 40)
 smooth(lathe('main_nozzle', [(MZ1, 0.42), (MZ1 - 0.12, 0.46), (NZ + 0.05, 0.44), (NZ, 0.4)], 0, FY + 0.05, 36, M['metal']), 30)
-petals('main_petals', 0, FY + 0.05, NZ + 0.05, 0.4, 12, 0.22, 0.2, -0.2, 0.012, M['gun'])
+flared_lip('main_lip', 0, FY + 0.05, NZ + 0.08, 0.4, 0.22, M)
 cyl('main_hot', 0.32, 0.02, (0, FY + 0.05, MZ1 - 0.1), 'z', 28, M['hot'])
 for sx in (1, -1):
     tube('top_pipe', [(sx * 0.3, FY + 0.32, MZ0 + 0.2), (sx * 0.42, FY + 0.4, MZ0 - 0.5), (sx * 0.38, FY + 0.36, MZ0 - 1.0), (sx * 0.3, FY + 0.3, MZ1 + 0.1)], 0.035, M['brass'])
@@ -119,7 +120,7 @@ poly_loft('keel', [(0.2, 0, FY - 0.36, 0.03, 0.04, 0.04), (-0.5, 0, FY - 0.4, 0.
 # Game hooks.
 empty('nozzle_0@0.7', (-EX, EY, NZ)); empty('nozzle_1@0.75', (0, FY + 0.05, NZ)); empty('nozzle_2@0.7', (EX, EY, NZ))
 empty('wingtip', (3.05, FY - 0.14, -1.7))
-empty('number@0.55', (0.07, _top(-2.3) + 0.65, -2.55))
+empty('number@0.45', (0.3 + 0.55 * math.sin(0.38) + 0.06, _top(-2.3) - 0.08 + 0.55 * math.cos(0.38), -2.55))
 
 out = os.environ.get('OUT', '/tmp')
 print('TRIANGLES', tri_count()); tri_report()

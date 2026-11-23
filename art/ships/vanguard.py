@@ -35,7 +35,6 @@ _zs = sorted(r[0] for r in SPINE); _top = _mono_cubic(_zs, [next(r[2] + r[4] for
 smooth_loft('canopy', [(3.5, 0, _top(3.3) - 0.07, 0.05, 0.03, 0.02, 2.0), (3.1, 0, _top(3.0) - 0.07, 0.3, 0.2, 0.02, 2.2), (2.2, 0, _top(2.2) - 0.07, 0.4, 0.34, 0.02, 2.2), (1.35, 0, _top(1.4) - 0.07, 0.34, 0.22, 0.02, 2.2), (1.0, 0, _top(1.1) - 0.07, 0.05, 0.03, 0.02, 2.0)], 28, 20, M['glass'])
 pilot(M, 0, _top(2.0) + 0.1, 1.95, 0.13)
 # A dark spine strip behind the canopy.
-poly_loft('spine_strip', [(z, 0, _top(z) + 0.003, 0.12, 0.012, 0.012) for z in (0.7, -0.4, -1.5, -2.4)], [(1, 0), (0.9, 1), (-0.9, 1), (-1, 0), (-0.9, -1), (0.9, -1)], 24, M['gun'], cap1=True, angle=80)
 
 # ── Wingtip vents (dark recessed slots with slats) and side vents under the nose.
 right.append(box('tip_cap', (0.1, 0.22, 0.95), (3.13, BY + 0.0, -1.92), material=M['gun'], bevel=0.03))
@@ -57,8 +56,6 @@ for (z0, z1, r, m) in [(EZ0 - 0.05, EZ0 - 0.4, 0.5, 'gun'), (EZ0 - 0.5, EZ0 - 0.
     right.append(smooth(lathe('stage', [(z0, r * 0.94), (z0 - 0.03, r), (z1 + 0.03, r), (z1, r * 0.94)], EX, EY, 26, M[m], cap0=True, cap1=True), 40))
     for z in (z0 - 0.02, z1 + 0.02):
         right.append(ring('flange', r + 0.01, 0.02, (EX, EY, z), 20, M['metal'], minor=3))
-for (a, col) in [(0.8, 'trim'), (2.2, 'brass'), (3.6, 'trim')]:
-    right.append(tube('pipe', [(EX + 0.54 * math.cos(a), EY + 0.54 * math.sin(a), z) for z in (EZ0 - 0.05, (EZ0 + EZ1) / 2, EZ1 + 0.05)], 0.035, M[col]))
 for (a, rr) in [(0.0, 0.09), (2.9, 0.08)]:
     x, y = EX + (0.52 + rr) * math.cos(a), EY + (0.52 + rr) * math.sin(a)
     right.append(cyl('canister', rr, 1.0, (x, y, (EZ0 + EZ1) / 2), 'z', 12, M['metal']))
@@ -74,8 +71,6 @@ right.append(cyl('hot', 0.36, 0.02, (EX, EY, -2.85), 'z', 28, M['hot']))
 # Nacelle fairing: lofted up out of the wing round each engine's lower half (no pylon gap).
 right.append(smooth_loft('nacelle', [(0.6, EX, BY + 0.12, 0.08, 0.06, 0.06, 2.0), (0.1, EX, BY + 0.2, 0.6, 0.28, 0.14, 2.4), (-2.3, EX, BY + 0.2, 0.62, 0.3, 0.14, 2.6), (-2.75, EX, BY + 0.18, 0.5, 0.22, 0.12, 2.4)], 32, 30, M['paint']))
 # Machinery in the bay between each engine and the spine: pipes clamped down, a pump block.
-for k, dy in enumerate((0.0, 0.1)):
-    right.append(tube('bay_pipe', [(0.52, EY - 0.1 + dy, -0.1), (0.48, EY - 0.08 + dy, -1.0), (0.52, EY - 0.1 + dy, -1.9)], 0.035, M['trim' if k else 'brass']))
 for z in (-0.4, -1.6):
     right.append(box('bay_clamp', (0.14, 0.24, 0.08), (0.5, EY - 0.05, z), material=M['gun']))
 right.append(box('bay_pump', (0.22, 0.2, 0.4), (0.5, EY - 0.2, -1.0), material=M['gun'], bevel=0.02))

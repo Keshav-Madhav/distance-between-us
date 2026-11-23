@@ -39,7 +39,7 @@ poly_loft('top_stripe', [(z, 0, _top(z) + 0.004, 0.07, 0.01, 0.01) for z in (5.4
 CZ0 = 0.5
 smooth_loft('canopy_base', [(CZ0 + 1.05, 0, _top(CZ0 + 1.0) - 0.04, 0.05, 0.04, 0.02, 2.0), (CZ0 + 0.7, 0, _top(CZ0 + 0.7) - 0.02, 0.3, 0.1, 0.02, 2.4), (CZ0, 0, _top(CZ0) - 0.02, 0.36, 0.12, 0.02, 2.4), (CZ0 - 0.8, 0, _top(CZ0 - 0.8) - 0.02, 0.3, 0.1, 0.02, 2.4), (CZ0 - 1.1, 0, _top(CZ0 - 1.1) - 0.04, 0.05, 0.04, 0.02, 2.0)], 24, 20, M['paint'])
 smooth_loft('canopy', [(CZ0 + 0.95, 0, _top(CZ0) + 0.06, 0.04, 0.03, 0.02, 2.0), (CZ0 + 0.6, 0, _top(CZ0) + 0.06, 0.24, 0.18, 0.02, 2.2), (CZ0 - 0.1, 0, _top(CZ0) + 0.06, 0.3, 0.26, 0.02, 2.2), (CZ0 - 0.75, 0, _top(CZ0) + 0.06, 0.24, 0.16, 0.02, 2.2), (CZ0 - 1.0, 0, _top(CZ0) + 0.06, 0.04, 0.03, 0.02, 2.0)], 28, 20, M['glass'])
-pilot(M, 0, _top(CZ0) + 0.17, CZ0 - 0.25, 0.11)
+pilot(M, 0, _top(CZ0) + 0.16, CZ0 - 0.25, 0.11)
 for f in (-0.4, 0.25):
     z = CZ0 - 0.1 + f * 1.0; k = math.sqrt(max(0, 1 - f * f))
     tube('canopy_bow', [(0.3 * k * math.cos(t), _top(CZ0) + 0.06 + 0.26 * k * math.sin(t), z) for t in [i * math.pi / 10 for i in range(11)]], 0.014, M['trim'])
@@ -59,7 +59,7 @@ poly_loft('gond_pylon', [(2.5, 0, GY + 0.28, 0.06, 0.08, 0.08), (1.8, 0, GY + 0.
 box('belly_glow', (0.06, 0.01, 2.6), (0, GY - 0.26, 1.0), material=M['glow'])
 
 # ── Central engine: exposed machinery from the body's tail to the spiked nozzle.
-EY = BY - 0.02
+EY = BY - 0.22
 smooth(lathe('eng_core', [(EZ0 + 0.3, 0.5), (EZ0, 0.52), (EZ1, 0.5)], 0, EY, 32, M['gun']), 40)
 for (z0, z1, r, m) in [(EZ0 - 0.05, EZ0 - 0.45, 0.62, 'gun'), (EZ0 - 0.55, EZ0 - 0.75, 0.56, 'brass'), (EZ0 - 0.85, EZ0 - 1.45, 0.64, 'gun'), (EZ0 - 1.55, EZ0 - 1.75, 0.55, 'carbon'), (EZ0 - 1.85, EZ1, 0.6, 'gun')]:
     smooth(lathe('stage', [(z0, r * 0.94), (z0 - 0.03, r), (z1 + 0.03, r), (z1, r * 0.94)], 0, EY, 28, M[m], cap0=True, cap1=True), 40)
@@ -78,7 +78,7 @@ for (a, rr) in [(0.2, 0.11), (2.95, 0.11), (4.0, 0.12), (5.4, 0.1)]:  # canister
     box('strap', (0.14, rr + 0.14, 0.1), ((0.56 + rr / 2) * math.cos(a), EY + (0.56 + rr / 2) * math.sin(a), EZ0 - 1.15), (0, 0, a - math.pi / 2), M['gun'])
 smooth(lathe('nozzle', [(EZ1, 0.62), (EZ1 - 0.15, 0.68), (NZ + 0.15, 0.66), (NZ + 0.05, 0.6)], 0, EY, 40, M['metal']), 30)
 ring('nozzle_band', 0.69, 0.06, (0, EY, EZ1 - 0.25), 40, M['trim'])
-petals('petals', 0, EY, NZ + 0.08, 0.6, 14, 0.36, 0.22, -0.18, 0.014, M['gun'])
+flared_lip('lip', 0, EY, NZ + 0.12, 0.58, 0.3, M)
 smooth(lathe('liner', [(NZ + 0.1, 0.56), (EZ1 - 0.1, 0.48), (EZ1, 0.0)], 0, EY, 32, M['carbon']), 60)
 cyl('hot', 0.46, 0.02, (0, EY, EZ1 - 0.12), 'z', 32, M['hot'])
 
@@ -90,9 +90,7 @@ right.append(fan_smooth('pod_fan', PX, PY, -0.9, 0.09, 0.19, 14, 0.75, 0.1, 3, M
 right.append(smooth(lathe('pod_spinner', [(-0.76, 0.006), (-0.8, 0.05), (-0.86, 0.085), (-0.95, 0.09)], PX, PY, 24, M['gun'], cap1=True), 85))
 right.append(smooth(lathe('pod_nozzle', [(NZ + 0.05, 0.27), (NZ, 0.25), (NZ + 0.15, 0.21)], PX, PY, 28, M['metal']), 40))
 right.append(cyl('pod_hot', 0.19, 0.02, (PX, PY, NZ + 0.14), 'z', 20, M['hot']))
-for dz in (0.0, 0.16):
-    right.append(box('pod_vent', (0.04, 0.12, 0.08), (PX - 0.2 + dz, PY + 0.32, -2.0), material=M['carbon']))
-arm = smooth_loft('arm', [(-0.15, 0, 0, 0.36, 0.06, 0.06, 2.0), (0.4, 0, 0, 0.32, 0.05, 0.05, 2.0), (1.0, 0, 0, 0.3, 0.05, 0.05, 2.0)], 16, 10, M['gun'], cap0=True, cap1=True)
+arm = smooth_loft('arm', [(-0.15, 0, 0, 0.55, 0.12, 0.12, 2.0), (0.4, 0, 0, 0.5, 0.1, 0.1, 2.0), (1.1, 0, 0, 0.5, 0.11, 0.11, 2.0)], 16, 10, M['paint'], cap0=True, cap1=True)
 place(arm, (0, math.pi / 2, 0.4), (0.4, BY - 0.12, -1.7)); right.append(arm)
 wl = plate('winglet', [(0.0, 0.0), (0.0, 0.08), (-0.7, 0.1), (-0.95, 0.04), (-0.7, -0.02)], 0.05, M['paint'], 'y', 0.0, 0.015)
 right.append(plate('winglet', [(PX + 0.36, -1.8), (PX + 0.36, -2.7), (PX + 1.1, -3.05), (PX + 1.15, -2.75)], 0.05, M['paint'], 'y', PY, 0.015))
