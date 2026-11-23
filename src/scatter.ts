@@ -189,13 +189,15 @@ const KINDS: Record<string, Kind[]> = {
     { name: 'tallpillar', build: pillar([0.62, 0.34, 0.2]), cell: 70, grid: 16, density: 0.3, scale: [1.6, 2.8], far: true },
   ]),
   ice: SEEDED([
-    { name: 'chip', build: iceChip(), cell: 3.5, grid: 76, density: 0.7, scale: [0.6, 1.6], debris: true },
+    { name: 'chip', build: iceChip(), cell: 3.5, grid: 76, density: 0.5, scale: [0.6, 1.6], debris: true },
     { name: 'mound', build: mound([0.78, 0.86, 1.0], 1.6, 0.56), cell: 14, grid: 56, density: 0.6, scale: [0.6, 1.6] },
     { name: 'spike', build: spike(), cell: 30, grid: 24, density: 0.4, scale: [0.5, 1.3], near: 30, tilt: 0.25 },
     { name: 'shrub', build: bush([0.86, 0.92, 1.0], 1.0, 1.6), cell: 13, grid: 44, density: 0.5, scale: [1.0, 2.2] },
     { name: 'snowman', build: snowman(), cell: 110, grid: 14, density: 0.4, scale: [0.9, 1.15] },
     FLAGS,
     { name: 'drift', build: mound([0.84, 0.9, 1.0], 1.6, 0.56), cell: 24, grid: 28, density: 0.42, scale: [2.4, 4.4], near: 18 },
+    // (A second shape on the ice floor: one identical pyramid at even density read as sprinkles.)
+    { name: 'flake', build: () => col(new THREE.OctahedronGeometry(1, 0).scale(0.5, 0.07, 0.32).translate(0, 0.05, 0), [0.62, 0.78, 0.94], 0.35), cell: 5, grid: 64, density: 0.4, scale: [0.6, 2.0], tilt: 0.5, debris: true },
     { name: 'tallspike', build: spike(), cell: 60, grid: 18, density: 0.35, scale: [1.6, 2.8], tilt: 0.2, far: true },
   ]),
   lava: SEEDED([
@@ -339,7 +341,7 @@ vec3 scPos; float scS; float scA; float scT;`
         float dens = min(0.95, ${k.density.toFixed(3)} * (1.0 + 2.0 * edge));`}
         float keep = step(h1, dens) * (1.0 - smoothstep(uScatR * 0.72, uScatR * 0.96, d)) * uScatOn;
         ${near ? 'keep *= 1.0 - step(uNearR, d); // (the refined near ring)' : SOLID.has(k.name) ? 'keep *= step(uNearR, d); // (the near ring is drawn refined)' : ''}
-        ${k.where === 'river' || k.debris ? '' : 'keep *= 1.0 - smoothstep(0.25, 0.6, wear.r);'}
+        ${k.debris || (k.where === 'river' && k.name !== 'reeds') ? '' : 'keep *= 1.0 - smoothstep(0.25, 0.6, wear.r);'} // (reeds too: where the course crosses water they stood on the racing line)
         ${k.far ? 'keep *= 1.0 - smoothstep(0.05, 0.4, wear.b); // (tall ones only outside the corridor: far, sparse)' : ''}
         // View cull (see update): the instance's angular half-width widens the cone a little.
         { vec2 dv = xz - uScatC; float dl = length(dv);

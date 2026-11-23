@@ -564,6 +564,9 @@ function terrainMaterial(shared: GroundUniforms, snap: { value: THREE.Vector2 },
         float shd = sunShadow(vW);
         sun *= shd;
         vec3 col = alb * (SUN_COL * sun + skyColor(n) * 0.36 + vec3(0.5, 0.22, 0.1) * 0.2);
+        // In a cast shadow the sunlit ground around it and the open sky still light it: ~35% of the sun as
+        // bounce (a mesa's shadow fell to flat black: the track and craft read as a void — the art review).
+        col += alb * (SUN_COL * max(dot(n, SUN_DIR), 0.0) * 0.35 + skyColor(n) * 0.2) * (1.0 - shd);
         #ifdef BIOME_ICE
         // Snow is lit by the whole sky more than by the low sun; the ice mirrors the sky and aurora.
         // (Snow: bright under an open twilight sky — the old sand bounce removed, a cool ambient added.)
@@ -648,7 +651,15 @@ function terrainMaterial(shared: GroundUniforms, snap: { value: THREE.Vector2 },
         vec2 dc = p - uCraft.xz;
         float near = exp(-uShadowK * 0.25);
         float hov = exp(-dot(dc, dc) / 22.0) * near;
+        // The hover's glow on the ground, in each world's own key (the same cold blue under the craft on
+        // every world read as a HUD backing in the warm ones).
+        #if defined(BIOME_ICE)
         col += vec3(0.1, 0.5, 1.0) * hov * 0.5;
+        #elif defined(BIOME_FOREST)
+        col += vec3(0.35, 0.75, 0.6) * hov * 0.35;
+        #else
+        col += vec3(1.0, 0.55, 0.28) * hov * 0.32;
+        #endif
         float ba = dot(dc, uFwd);
         float sd = dot(dc, side) / 3.5;
         // (x·x, never pow(x, 2.0): pow of a negative is NaN in GLSL — black pixels around the craft.)
