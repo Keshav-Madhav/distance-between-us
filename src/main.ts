@@ -2967,7 +2967,6 @@ function updateHud(dt: number, slow: boolean): void {
   document.body.classList.toggle('warning', warnT > 0 || flashT > 0)
   warnEl.style.opacity = warnT > 0 ? String((Math.sin(warnT * 14) > -0.3 ? 1 : 0.2) * Math.min(1, warnT)) : '0'
   countT = Math.max(0, countT - dt)
-  posHold = Math.max(0, posHold - dt)
   // (Standings and gaps wait for the green light: before it they listed 0.00 gaps in grid order.)
   document.body.classList.toggle('counting', mode === 'race' && race.countdown > 0)
   countEl.style.opacity = String(Math.min(1, countT * 2.5))
@@ -2978,12 +2977,17 @@ function updateHud(dt: number, slow: boolean): void {
     if (slow) {
       $('#r-pos').innerHTML = `${me.place}<small>/${race.racers.length}</small>`
       // An overtake is an event: P3 → P2 pops (held a moment, so a jostle doesn't spam it), the box flashes.
-      if (race.countdown <= 0 && !me.finished && lastPlace > 0 && me.place !== lastPlace) {
-        if (posHold <= 0) { pop(`P${lastPlace} → P${me.place}`); if (me.place < lastPlace) sound.chime(1, false); posHold = 1.2 }
+      // (Only once the new place has held 0.6 s: side by side with a rival, P2/P3 swapped every few
+      // frames and the label never left the screen.)
+      if (race.countdown > 0) { lastPlace = 0; posHold = 0 }
+      else if (lastPlace === 0) lastPlace = me.place
+      else if (me.finished || me.place === lastPlace) posHold = 0
+      else if ((posHold += 0.1) >= 0.6) {
+        pop(`P${lastPlace} → P${me.place}`); if (me.place < lastPlace) sound.chime(1, false)
         const box = $('#r-pos').parentElement!
         box.classList.remove('gain', 'lose'); void box.offsetWidth; box.classList.add(me.place < lastPlace ? 'gain' : 'lose')
+        lastPlace = me.place; posHold = 0
       }
-      lastPlace = race.countdown > 0 ? 0 : me.place
       $('#r-lap').innerHTML = `${(race.toGo(me) / 1000).toFixed(1)}<small> KM</small>`
       $('#r-pen').textContent = ''
       // Rows built once; each tick only changes text that actually changed (no innerHTML re-parse,
