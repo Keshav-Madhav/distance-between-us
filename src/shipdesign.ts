@@ -43,7 +43,7 @@ export function buildShip(variant: number, hi: boolean): { parts: Parts; spec: S
   }
   // (Hi detail: dense surfaces — every loft ~2× the rings and points it had.)
   // (×2: the surface's own normals make it smooth — the facets were never the triangle count.)
-  const R = hi ? 2 : 0.35
+  const R = hi ? 0.9 : 0.3
   const ring = (n: number) => Math.max(4, Math.round(n * R))
 
   /** A racing stripe: a band on a loft's skin whose centre angle sweeps from thA (at s0) to thB (at s1),
@@ -76,8 +76,8 @@ export function buildShip(variant: number, hi: boolean): { parts: Parts; spec: S
   // (Slimmed: "some ships still feel weirdly bulky" — 2026-11-21.)
   const podW = brute ? 0.58 : needle ? 0.41 : 0.5
   const podH = brute ? 0.55 : needle ? 0.43 : 0.5
-  const bodyW = brute ? 1.16 : needle ? 0.92 : 1.06
-  const nose = needle ? 7.4 : brute ? 5.6 : 6.3
+  const bodyW = brute ? 1.28 : needle ? 0.92 : 1.06
+  const nose = needle ? 7.2 : brute ? 5.2 : 5.7
   const tailZ = -4.45
   const NY = 0.36 // nozzle line height
   const CY = 0.5, CR = 0.36 // centre nozzle
@@ -91,9 +91,14 @@ export function buildShip(variant: number, hi: boolean): { parts: Parts; spec: S
     K(-3.3, [0, 0.46, -3.3], bodyW * 0.82, 0.62, 0.38, 3.2),
     K(-1.2, [0, 0.42, -1.2], bodyW, 0.8, 0.4, 3.4),
     K(0.9, [0, 0.38, 0.9], bodyW * 0.94, 0.74, 0.38, 3.2),
-    K(2.9, [0, 0.3, 2.9], bodyW * 0.7, 0.5, 0.32, 2.8),
-    K(nose - 1.6, [0, 0.2, nose - 1.6], bodyW * 0.38, 0.27, 0.22, 2.4),
-    K(nose, [0, 0.12, nose], 0.03, 0.03, 0.03, 2),
+    K(2.9, [0, 0.3, 2.9], bodyW * 0.74, 0.5, 0.32, 2.6),
+    // Noses with character (a plain cone read as a missile): ARROW a flat chined spatula, BRUTE a
+    // blunt shovel, NEEDLE a long fine point — squareness under 2 makes the chine edge.
+    ...(brute
+      ? [K(nose - 1.3, [0, 0.24, nose - 1.3], bodyW * 0.62, 0.32, 0.24, 2.6), K(nose, [0, 0.18, nose], 0.42, 0.1, 0.1, 2.8), K(nose + 0.14, [0, 0.18, nose + 0.14], 0.3, 0.05, 0.05, 2.6), K(nose + 0.18, [0, 0.18, nose + 0.18], 0.04, 0.01, 0.01, 2)]
+      : needle
+        ? [K(nose - 2.2, [0, 0.2, nose - 2.2], bodyW * 0.42, 0.24, 0.18, 1.9), K(nose, [0, 0.12, nose], 0.04, 0.02, 0.02, 2)]
+        : [K(nose - 1.5, [0, 0.2, nose - 1.5], bodyW * 0.52, 0.22, 0.14, 1.75), K(nose, [0, 0.12, nose], 0.12, 0.025, 0.025, 1.8), K(nose + 0.06, [0, 0.12, nose + 0.06], 0.02, 0.01, 0.01, 2)]),
   ]
   const F = { A: X, B: Y, rings: ring(44), around: ring(30), capStart: !hi }
   // Livery split by section angle: paint shoulders, a trim stripe down the spine, a carbon belly.
@@ -106,17 +111,18 @@ export function buildShip(variant: number, hi: boolean): { parts: Parts; spec: S
   const cz = needle ? 2.2 : 1.6
   const can: Key[] = [
     K(cz - 2.3, [0, 0.96, cz - 2.3], 0.06, 0.04, 0.02, 2),
-    K(cz - 1.4, [0, 1.0, cz - 1.4], 0.46, 0.46, 0.3, 2.2),
-    K(cz, [0, 0.98, cz], 0.52, 0.52, 0.3, 2.3),
-    K(cz + 1.25, [0, 0.76, cz + 1.25], 0.34, 0.36, 0.08, 2.2),
+    K(cz - 1.4, [0, 0.94, cz - 1.4], 0.44, 0.44, 0.3, 2.2),
+    K(cz, [0, 0.92, cz], 0.5, 0.5, 0.3, 2.3),
+    K(cz + 1.25, [0, 0.7, cz + 1.25], 0.32, 0.34, 0.08, 2.2),
     K(cz + 1.8, [0, 0.66, cz + 1.8], 0.04, 0.03, 0.02, 2),
   ]
   const C = { A: X, B: Y, rings: ring(28), around: ring(20) }
   put('glass', loft(can, { ...C, th0: 0.32, th1: PI - 0.32 }))
-  put('carbon', loft(can, { ...C, th0: 0, th1: 0.32, around: ring(3) }))
-  put('carbon', loft(can, { ...C, th0: PI - 0.32, th1: PI, around: ring(3) }))
+  // (Body-colour sills flowing up into the glass: a black collar made the dome float.)
+  put('paint', loft(can, { ...C, th0: 0, th1: 0.32, around: ring(3) }))
+  put('paint', loft(can, { ...C, th0: PI - 0.32, th1: PI, around: ring(3) }))
   // The cockpit tub: the dome's lower half, dark, sunk into the spine (the glass showed paint before).
-  put('carbon', loft(can, { ...C, th0: PI, th1: 2 * PI }))
+  put('paint', loft(can, { ...C, th0: PI, th1: 2 * PI }))
 
   // ── engine pods ── (right side, mirrored): pointed nose, fat round tail around the nozzle
   const pz0 = needle ? 2.6 : brute ? 2.0 : 2.4
@@ -160,20 +166,41 @@ export function buildShip(variant: number, hi: boolean): { parts: Parts; spec: S
     K(0, [tipX - 0.05, NY - 0.22, -3.5], 0.48, 0.045, 0.045, 2),
     K(1, [tipX + 0.2, NY + 0.6, -3.95], 0.26, 0.03, 0.03, 2),
   ]
-  put('trim', loft(roundTip(tipFin, 0.1), { A: Z, B: X, rings: ring(5), around: ring(14), foil: true, capStart: true, capEnd: true }), true)
+  put('paint', loft(roundTip(tipFin, 0.1), { A: Z, B: X, rings: ring(5), around: ring(14), foil: true, capStart: true, capEnd: true }), true)
+  // Elevons: their own surfaces behind the outer wing's trailing edge (a real hinge gap, not a line).
+  {
+    const x0 = podX + 0.55, x1 = tipX - 0.25, at = (x: number) => (x - (podX + 0.3)) / (tipX - (podX + 0.3))
+    const te = (x: number) => { const u = at(x); return -2.3 + (-3.5 + 2.3) * u - (1.15 + (0.6 - 1.15) * u) }
+    const yy = (x: number) => NY - 0.04 + (-0.18) * at(x)
+    const ev: Key[] = [K(x0, [x0, yy(x0), te(x0) - 0.17], 0.14, 0.03, 0.022, 2), K(x1, [x1, yy(x1), te(x1) - 0.15], 0.12, 0.025, 0.018, 2)]
+    put('paint', loft(ev, { A: Z, B: Y, rings: 2, around: ring(12), foil: true, capStart: true, capEnd: true }), true)
+  }
+  // The glove: one blended surface from the fuselage's flank to the pod (the pods hung off a thin
+  // strut and read as bolted on) — a lens across the gap, its edges buried in body and pod.
+  {
+    const gx = podX / 2, ga = podX / 2 + 0.05
+    const glove: Key[] = [
+      K(-4.0, [gx, NY + 0.04, -4.0], ga, 0.18, 0.1, 2.4),
+      K(-2.6, [gx, NY + 0.06, -2.6], ga, 0.3, 0.14, 2.6),
+      K(-0.4, [gx, NY + 0.06, -0.4], ga, 0.3, 0.14, 2.6),
+      K(1.0, [gx - 0.1, NY + 0.02, 1.0], ga - 0.1, 0.14, 0.08, 2.4),
+      K(pz0 - 0.2, [gx - 0.2, NY, pz0 - 0.2], 0.1, 0.02, 0.02, 2),
+    ]
+    put('paint', loft(glove, { A: X, B: Y, rings: ring(24), around: ring(24) }), true)
+  }
 
   // ── tail fins ──
   const finH = brute ? 1.7 : 1.35
   let number: ShipSpec['number']
   if (needle) {
     const dorsal: Key[] = [
-      K(0, [0, 1.0, -2.6], 1.15, 0.06, 0.06, 2),
+      K(0, [0, 1.0, -2.6], 1.15, 0.1, 0.1, 2),
       K(1, [0, 1.0 + finH + 0.4, -3.9], 0.5, 0.04, 0.04, 2),
     ]
     put('paint', loft(dorsal, { A: Z, B: X, rings: ring(8), around: ring(16), foil: true }))
     { const k0 = sample(dorsal, 0.9), k1 = sample(dorsal, 1); for (const k of [k0, k1]) { k.a *= 1.03; k.t *= 1.15; k.b *= 1.15 } put('neon', loft(roundTip([k0, k1], 0.6), { A: Z, B: X, rings: 4, around: ring(16), foil: true, capEnd: true })) }
     // Canards by the nose.
-    put('trim', loft(roundTip([K(0.25, [0.25, 0.22, nose - 2.4], 0.45, 0.05, 0.03, 2), K(1.25, [1.25, 0.32, nose - 2.8], 0.22, 0.03, 0.02, 2)]), { A: Z, B: Y, rings: 8, around: ring(14), foil: true, capEnd: true }), true)
+    put('paint', loft(roundTip([K(0.3, [0.3, 0.24, nose - 3.3], 0.5, 0.06, 0.04, 2), K(1.2, [1.2, 0.3, nose - 3.65], 0.24, 0.035, 0.025, 2)]), { A: Z, B: Y, rings: 8, around: ring(14), foil: true, capEnd: true }), true)
     number = { pos: [0.09, 1.75, -3.15], rotY: PI / 2, tilt: 0, size: 0.8 }
   } else {
     const fx = podX - 0.05
@@ -205,30 +232,30 @@ export function buildShip(variant: number, hi: boolean): { parts: Parts; spec: S
       put('hot', new THREE.CircleGeometry(r * 0.8, 32).rotateY(PI).translate(x, y, tailZ + 0.38))
       // A converging metal shroud behind the lip (flat box petals read as a black tyre).
       const sh = [new THREE.Vector2(r * 1.04, 0), new THREE.Vector2(r * 1.0, -0.12), new THREE.Vector2(r * 0.95, -0.24), new THREE.Vector2(r * 0.92, -0.24), new THREE.Vector2(r * 0.95, 0)]
-      put('metal', new THREE.LatheGeometry(sh, 64).rotateX(PI / 2).translate(x, y, tailZ))
+      put('metal', new THREE.LatheGeometry(sh, 32).rotateX(PI / 2).translate(x, y, tailZ))
     }
     // Pod intakes: a metal lip, a dark mouth, a spinner cone.
     const ix = podX - 0.06, iy = NY - 0.04, sx = podW * 0.7, sy = podH * 0.63
-    put('metal', new THREE.TorusGeometry(1 - 0.03 / Math.min(sx, sy), 0.035 / Math.min(sx, sy), 12, 48).scale(sx, sy, 1).translate(ix, iy, pz0), true)
+    put('paint', new THREE.TorusGeometry(1 - 0.03 / Math.min(sx, sy), 0.045 / Math.min(sx, sy), 10, 32).scale(sx, sy, 1).translate(ix, iy, pz0), true)
     // The duct: a short dark tube into the pod, closed by the fan face.
     put('carbon', new THREE.CylinderGeometry(1, 0.9, 0.32, 40, 1, true).rotateX(PI / 2).scale(sx * 0.98, sy * 0.98, 1).translate(ix, iy, pz0 - 0.16), true)
     put('carbon', new THREE.CircleGeometry(1, 40).scale(sx * 0.9, sy * 0.9, 1).translate(ix, iy, pz0 - 0.32), true)
     put('metal', new THREE.ConeGeometry(Math.min(sx, sy) * 0.32, Math.min(sx, sy) * 0.55, 24).rotateX(PI / 2).translate(ix, iy, pz0 - 0.22), true)
     // (No panel-seam rings: dark bands round the hull read as the panels not meeting.)
     // The pilot: a headrest, a torso, a helmet — in the tub, under the dome.
-    put('carbon', new THREE.CapsuleGeometry(0.2, 0.2, 8, 20).scale(1.2, 1, 0.5).translate(0, 1.12, cz - 0.55))
-    put('carbon', new THREE.CapsuleGeometry(0.17, 0.16, 8, 20).translate(0, 1.04, cz - 0.3))
-    put('trim', new THREE.SphereGeometry(0.16, 32, 20).scale(0.95, 1, 1.1).translate(0, 1.26, cz - 0.22))
+    put('carbon', new THREE.CapsuleGeometry(0.2, 0.2, 8, 20).scale(1.2, 1, 0.5).translate(0, 1.06, cz - 0.55))
+    put('carbon', new THREE.CapsuleGeometry(0.17, 0.16, 8, 20).translate(0, 0.98, cz - 0.3))
+    put('trim', new THREE.SphereGeometry(0.16, 16, 10).scale(0.95, 1, 1.1).translate(0, 1.2, cz - 0.22))
     // Hover emitters: strips that follow the pods' and the belly's skin.
     const strip = (keys: Key[], s0: number, s1: number, mirror: boolean) => {
       const ks: Key[] = []
       for (let i = 0; i <= 8; i++) { const k = sample(keys, s0 + ((s1 - s0) * i) / 8); k.a *= 1.01; k.t *= 1.01; k.b *= 1.01; ks.push(k) }
-      put('glow', loft(ks, { A: X, B: Y, rings: 8, around: 2, th0: 1.5 * PI - 0.12, th1: 1.5 * PI + 0.12 }), mirror)
+      put('glow', loft(ks, { A: X, B: Y, rings: 8, around: 2, th0: 1.5 * PI - 0.05, th1: 1.5 * PI + 0.05 }), mirror)
     }
     strip(pod, -3.0, 0.8, true)
     strip(fus, 2.6, 3.3, false)
-    // Tail light: a short bar on the tail's top, inside its width.
-    put('neon', new THREE.BoxGeometry(0.42, 0.04, 0.05).translate(0, 0.48 + (brute ? 0.55 : 0.44) + 0.03, tailZ + 0.42))
+    // A pitot ahead of the nose.
+    if (!brute) put('metal', new THREE.CylinderGeometry(0.012, 0.025, 0.6, 8).rotateX(PI / 2).translate(0, 0.12, nose + 0.28))
 
   } else {
     for (const [x, y, r] of [[0, CY, CR], [podX, NY, PR], [-podX, NY, PR]] as const) put('hot', new THREE.CircleGeometry(r * 0.95, 10).rotateY(PI).translate(x, y, tailZ - 0.015))

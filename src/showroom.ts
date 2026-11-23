@@ -51,8 +51,12 @@ const views: [number, number, number, number, number, number][] = [
   [-10, 2.2, -2, 0, 1.0, -2.5], // 7: close left side, aft
   [10, 2.2, -2, 0, 1.0, -2.5], // 8: close right side, aft
 ]
-const view = views[+(new URLSearchParams(location.search).get('view') ?? 0)]
+// ?cam=x,y,z,tx,ty,tz overrides the view; ?noground hides the ground (for views from below).
+const Q = new URLSearchParams(location.search)
+const view = (Q.get('cam')?.split(',').map(Number) as typeof views[number] | undefined) ?? views[+(Q.get('view') ?? 0)]
+if (Q.has('noground')) ground.visible = false
 camera.position.set(view[0], view[1], view[2])
 camera.lookAt(view[3], view[4], view[5])
 renderer.render(scene, camera)
+;(window as unknown as { tris: number }).tris = renderer.info.render.triangles
 ;(window as unknown as { ready: boolean }).ready = true
