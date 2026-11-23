@@ -124,7 +124,10 @@ export class StarSystem {
           float graze = 1.0 - max(dot(n, -d), 0.0);
           // (Some of the air over the whole disc, as a world's own view of itself from orbit shows it — the
           //  handover then morphs between two pictures of the same planet, not two planets.)
-          col = mix(col, uAtm[i].rgb * (term * 1.2 + 0.01), (0.2 + pow(graze, 4.0) * 0.45) * uAtm[i].w);
+          // (The veil thins as you close on it: within a few thousand km the world's own view of itself is
+          //  saturated ground under thin air, and the handover cross-faded from a pale lilac disc to it.)
+          float far = smoothstep(1500.0, 15000.0, t);
+          col = mix(col, uAtm[i].rgb * (term * 1.2 + 0.01), (0.05 + 0.15 * far + pow(graze, 4.0) * 0.45) * uAtm[i].w);
           return col;
         }
         void main() {
