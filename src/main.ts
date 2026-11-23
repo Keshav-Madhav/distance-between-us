@@ -390,6 +390,20 @@ const rivalVoices: import('./audio').RivalVoice[] = []
 const camRight = new THREE.Vector3()
 const passSide = new Map<object, number>()
 let whooshCool = 0
+// Near misses: skimming solid rock at speed pays a small kick (chains within 4 s).
+let closeCool = 0, closeChain = 0, closeChainT = 0
+function closeCall(gap: number, lat: number): void {
+  if (gap > 11 || gap < -2 || closeCool > 0 || player.mach < 2.5 || player.crashing || mode !== 'race' || race.state !== 'racing') return
+  closeCool = 0.8
+  closeChain = closeChainT > 0 ? closeChain + 1 : 1
+  closeChainT = 4
+  pop(closeChain > 1 ? `CLOSE CALL ×${closeChain}` : 'CLOSE CALL')
+  sound.whoosh(1, lat > 0 ? 0.9 : -0.9)
+  cam.punch += 3 + Math.min(3, closeChain)
+  shake(0.18)
+  // (A real reward, small: ~1.5% speed, more for a chain — threading the rocks is the fast line.)
+  player.vel.multiplyScalar(1 + Math.min(0.03, 0.012 + 0.004 * closeChain))
+}
 
 const shake = (t: number) => { cam.trauma = Math.min(1, cam.trauma + t) }
 const huntObs: import('./world').Obstacle[] = []
@@ -2825,12 +2839,15 @@ function frame(now: number): void {
         const lat = (rk.x - player.pos.x) * player.right.x + (rk.z - player.pos.z) * player.right.z
         const close = Math.abs(lat) - rk.r
         if (close < 160) { sound.whoosh(Math.min(1, 50 / Math.max(close, 8)) * Math.min(1, player.mach / 3), lat > 0 ? 0.8 : -0.8); if (close < 40) shake(0.12) }
+        closeCall(close, lat)
       }
     }
     // The trackside landmarks (ice, basalt): each one a whoosh as it rips past, fainter the further
     // off it stands; a few per second at most (a shard forest is a rush, not a machine gun).
     whooshCool -= realDt
-    if (player.mach > 1.2 && BIOME !== 'desert') {
+    closeCool -= realDt
+    closeChainT -= realDt
+    if (player.mach > 1.2) {
       for (const lm of world.landmarks) {
         const dx = lm.x - player.pos.x, dz = lm.z - player.pos.z
         if (dx * dx + dz * dz > 1200 * 1200) { passSide.delete(lm); continue }
@@ -2839,6 +2856,9 @@ function frame(now: number): void {
         passSide.set(lm, ahead)
         if (was > 0 && ahead <= 0 && whooshCool <= 0) {
           const lat = dx * player.right.x + dz * player.right.z
+          // (Only what stands taller than the craft counts: skimming a toppled block is no feat.)
+          if (lm.h > 12 && player.pos.y < groundH(lm.x, lm.z) + lm.h * 0.8) closeCall(Math.abs(lat) - lm.r, lat)
+          if (BIOME === 'desert') continue
           const close = Math.max(8, Math.abs(lat) - lm.r)
           if (close < 700) {
             const lvl = Math.min(1, 80 / close) * Math.min(1, lm.h / 60) * Math.min(1, player.mach / 4)

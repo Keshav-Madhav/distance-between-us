@@ -35,7 +35,7 @@ if (swapped) {
   await p.waitForTimeout(4000)
   const f = p.frames().find((fr) => fr !== p.mainFrame())
   await f.waitForFunction('window.__g && window.__g.ready', null, { timeout: 60000 })
-  const st = await f.evaluate(() => ({ mode: window.__g.mode, air: window.__g.freeAir, alt: Math.round(window.__g.flight.agl / 1000), url: location.search }))
+  const st = await f.evaluate(() => ({ mode: window.__g.mode, air: window.__g.freeAir, alt: Math.round(window.__g.flight.agl / 1000), speed: Math.round(window.__g.flight.speed / 1000) }))
   console.log('in the planet:', st)
   await p.screenshot({ path: `${OUT}/orbit-4-arrived.png` })
   await p.waitForTimeout(5000)
