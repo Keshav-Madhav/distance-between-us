@@ -116,7 +116,7 @@ join_mirror(right)
 poly_loft('keel', [(0.2, 0, FY - 0.36, 0.03, 0.04, 0.04), (-0.5, 0, FY - 0.4, 0.14, 0.06, 0.08), (-2.6, 0, FY - 0.4, 0.14, 0.06, 0.08), (-3.2, 0, FY - 0.38, 0.03, 0.04, 0.04)], [(1, 0), (0.5, 1), (-0.5, 1), (-1, 0), (-0.5, -1), (0.5, -1)], 24, M['gun'], angle=50)
 
 # Game hooks.
-empty('nozzle_0', (-EX, EY, NZ)); empty('nozzle_1', (0, FY + 0.05, NZ)); empty('nozzle_2', (EX, EY, NZ))
+empty('nozzle_0@0.7', (-EX, EY, NZ)); empty('nozzle_1@0.75', (0, FY + 0.05, NZ)); empty('nozzle_2@0.7', (EX, EY, NZ))
 empty('wingtip', (3.05, FY - 0.14, -1.7))
 empty('number@0.55', (0.07, _top(-2.3) + 0.65, -2.55))
 
