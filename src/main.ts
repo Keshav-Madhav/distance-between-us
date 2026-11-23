@@ -531,10 +531,10 @@ race.racers.forEach((r, i) => {
     wreckage.burst(r.p.pos.x, r.p.pos.y, r.p.pos.z, v.x, v.y, v.z, Math.round(10 + sev * 10), 60 + sev * 50, paint.body, paint.trim)
     fx.dust(x, y - 2, z, nx * 50 + v.x * 0.3, nz * 50 + v.z * 0.3, Math.round(18 + sev * 20), 14 + sev * 10, 40)
     // (Your own: smaller — right in front of the chase camera it whited the whole screen out.)
-    const ek = mine ? 0.5 : 1
+    const ek = mine ? 0.28 : 1
     fx.explosion(x, y, z, v.x * 0.3, 10, v.z * 0.3, (destroyed ? 2.4 : 1 + sev * 0.5) * ek)
     fx.explosion(x + nx * 6, y + 4, z + nz * 6, v.x * 0.5, 20, v.z * 0.5, 0.8 * ek)
-    shock.ground(x, z, 0.7 + sev * 0.3, 1.2, true)
+    shock.ground(x, z, (0.7 + sev * 0.3) * (mine ? 0.5 : 1), 1.2, true)
     shock.air(r.p.pos, r.p.fwd, r.p.vel, 0.8 + sev * 0.2, 1)
     sound.wreck(Math.min(1.5, sev), mine ? 0 : dist)
     if (!mine) return
@@ -2114,6 +2114,7 @@ const tmp = new THREE.Vector3()
 const nozzleW = new THREE.Vector3()
 const proj = new THREE.Vector3()
 const renderPos = new THREE.Vector3()
+let lastPlace = 0, posHold = 0
 let attractYaw = 0
 let orbitYaw = -0.65, orbitPitch = 0.12, orbitKey = 0, orbitKeyP = 0
 {
@@ -2947,6 +2948,7 @@ function updateHud(dt: number, slow: boolean): void {
   document.body.classList.toggle('warning', warnT > 0 || flashT > 0)
   warnEl.style.opacity = warnT > 0 ? String((Math.sin(warnT * 14) > -0.3 ? 1 : 0.2) * Math.min(1, warnT)) : '0'
   countT = Math.max(0, countT - dt)
+  posHold = Math.max(0, posHold - dt)
   // (Standings and gaps wait for the green light: before it they listed 0.00 gaps in grid order.)
   document.body.classList.toggle('counting', mode === 'race' && race.countdown > 0)
   countEl.style.opacity = String(Math.min(1, countT * 2.5))
@@ -2956,6 +2958,13 @@ function updateHud(dt: number, slow: boolean): void {
     const me = race.racers[0]
     if (slow) {
       $('#r-pos').innerHTML = `${me.place}<small>/${race.racers.length}</small>`
+      // An overtake is an event: P3 → P2 pops (held a moment, so a jostle doesn't spam it), the box flashes.
+      if (race.countdown <= 0 && !me.finished && lastPlace > 0 && me.place !== lastPlace) {
+        if (posHold <= 0) { pop(`P${lastPlace} → P${me.place}`); if (me.place < lastPlace) sound.chime(1, false); posHold = 1.2 }
+        const box = $('#r-pos').parentElement!
+        box.classList.remove('gain', 'lose'); void box.offsetWidth; box.classList.add(me.place < lastPlace ? 'gain' : 'lose')
+      }
+      lastPlace = race.countdown > 0 ? 0 : me.place
       $('#r-lap').innerHTML = `${(race.toGo(me) / 1000).toFixed(1)}<small> KM</small>`
       $('#r-pen').textContent = ''
       // Rows built once; each tick only changes text that actually changed (no innerHTML re-parse,

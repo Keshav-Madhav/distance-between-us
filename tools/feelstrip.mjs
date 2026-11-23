@@ -7,7 +7,8 @@ const b = await chromium.launch({ channel: 'chrome', headless: true, args: ['--m
 const p = await (await b.newContext({ viewport: { width: 960, height: 540 } })).newPage()
 await p.goto(`${URL}/?course=${C}`); await p.waitForFunction('window.__g && window.__g.ready', null, { timeout: 120000 })
 await p.click('#start'); await p.waitForTimeout(5200)
-await p.keyboard.down('KeyW'); await p.keyboard.down('ShiftLeft'); await p.waitForTimeout(8000)
+if (process.env.AUTO) await p.evaluate(() => window.__g.autopilot(true))
+await p.keyboard.down('KeyW'); await p.keyboard.down('ShiftLeft'); await p.waitForTimeout(+(process.env.T ?? 8000))
 const fs = []
 for (let i = 0; i < 6; i++) { const f = `${OUT}.${i}.png`; await p.screenshot({ path: f }); fs.push(f); await p.waitForTimeout(60) }
 await b.close()

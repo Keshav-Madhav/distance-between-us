@@ -207,6 +207,9 @@
   #pause .go { margin-top: 24px; font-size: 13px; letter-spacing: 0.4em; opacity: 0.8; }
   #race { position: absolute; left: 50%; top: 3vh; transform: translateX(-50%); display: none; gap: 34px; text-align: center; text-shadow: 0 2px 14px rgba(0,0,0,0.45); }
   #race.on { display: flex; }
+  #race > div.gain { animation: posgain 0.7s; } #race > div.lose { animation: poslose 0.7s; }
+  @keyframes posgain { 0% { background: rgba(90,230,140,0.75); } 100% { background: rgba(8,10,14,0.62); } }
+  @keyframes poslose { 0% { background: rgba(255,80,60,0.7); } 100% { background: rgba(8,10,14,0.62); } }
   #race .lab { font-size: 11px; letter-spacing: 0.4em; opacity: 0.75; }
   #race .v { font-size: 34px; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1.05; }
   #race .v small { font-size: 18px; opacity: 0.7; }
