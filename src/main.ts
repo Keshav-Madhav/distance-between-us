@@ -325,7 +325,7 @@ if (BIOME !== 'desert') {
 }
 scene.add(world.group)
 // Near-field scatter: harmless ground clutter round the camera (pebbles, grass, scrub, mounds, vents, flags).
-const scatter = new Scatter()
+const scatter = new Scatter(world.ground)
 const _cf = new THREE.Vector3()
 /** The camera's look direction flattened onto the ground (unit, or zero looking straight down). */
 function camFwdFlat(): THREE.Vector3 {
@@ -3605,6 +3605,7 @@ const g = {
   /** Tests: stop the simulation (no pause UI) and draw single frames on demand, for exact A/B diffs. */
   hold: (v: boolean) => { paused = v },
   draw: () => { post.render(0) },
+  snapCam: () => { cam.snap(player.heading) },
   scatterVis: (v: boolean) => { scatter.group.visible = v; scatterForceOff = !v },
   force: (c: import('./player').Controls | null) => { forced = c },
   sound,
@@ -3625,7 +3626,7 @@ const g = {
     tier, scale: renderScale, dyn: +dynScale.toFixed(2), px: [renderer.domElement.width, renderer.domElement.height], hull: Math.round(player.hull), air: player.airborne, agl: +player.agl.toFixed(1),
     place: race.racers[0].place, crashing: player.crashing, burning: player.burning, slip: +(player.slip * 57.3).toFixed(1), spin: +player.spin.toFixed(2), drift: +player.drift.toFixed(2), yaw: +player.yawRate.toFixed(2), lap: race.lapOf(race.racers[0]), passed: race.racers[0].passed, race: race.state, particles: fx.glow.count + fx.smoke.count,
   }),
-  player, race, course, combat, flight, fc, CFG, world, scene, camera, post, fx, input, wreckage, shards,
+  player, race, course, combat, flight, fc, CFG, world, scene, camera, post, fx, input, wreckage, shards, scatter,
   spaceOff: (v: boolean) => { spaceOff = v },
   setSpeed: (v: number) => { testSpeed = v },
   get craftPos() { return visuals.get(player)!.craft.root.position },

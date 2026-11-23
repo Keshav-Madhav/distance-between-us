@@ -41,9 +41,25 @@ for (const [speed, mach] of [['slow', 0.8], ['fast', 6.5]]) {
     }, { f: POS[k], mach })
     // The chase camera's springs settle; the autopilot holds the line (same code in every build).
     await p.waitForTimeout(speed === 'slow' ? 2500 : 1500)
+    // Exact: put it back on the same point (the camera is settled for this heading and speed), let one
+    // frame run, freeze, draw. (A free-running capture drifted 0.1-0.3 km between builds at Mach 6.5.)
+    await p.evaluate(({ f, mach }) => new Promise((res) => {
+      const g = window.__g, co = g.course
+      const jumps = co.def.jumps ?? []
+      let ff = f
+      for (let n = 0; n < 20 && jumps.some((j) => Math.abs(j - ff) < 0.03); n++) ff += 0.01
+      const i = co.startI + Math.round(ff * (co.finishI - co.startI))
+      const [tx, tz] = co.tangent(i)
+      g.player.reset(co.px[i], co.pz[i], Math.atan2(tx, tz), mach)
+      g.race.racers[0].idx = i
+      if (g.snapCam) g.snapCam()
+      requestAnimationFrame(() => requestAnimationFrame(() => { if (g.hold) { g.hold(true); g.draw() } res() }))
+    }), { f: POS[k], mach })
     await p.screenshot({ path: `${OUT}/${C}-${speed}-${k}-${TAG}.png` })
     const st = await p.evaluate(() => window.__g.stats())
-    console.log(`${C} ${speed} ${k} ${TAG} mach ${st.mach} tris ${(st.tris / 1e6).toFixed(2)}M`)
+    await p.evaluate(() => { if (window.__g.hold) window.__g.hold(false) })
+    const togo = await p.evaluate(() => document.querySelector('#r-lap')?.textContent)
+    console.log(`${C} ${speed} ${k} ${TAG} mach ${st.mach} togo ${togo} tris ${(st.tris / 1e6).toFixed(2)}M`)
   }
 }
 if (errs.length) console.log('page errors:', errs.slice(0, 3).join(' | '))

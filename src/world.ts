@@ -1391,7 +1391,8 @@ export class World {
         const spread = 50 + r() * (zone === 'forest' ? 260 : 180)
         for (let q = 0; q < n; q++) {
           const a = r() * 6.28, d = Math.sqrt(r()) * spread
-          const pSpike = zone === 'forest' ? 0.75 : zone === 'glacier' ? 0.35 : 0.3
+          // (In the green worlds a 'block' is a whole grove, 5-7k triangles: mostly single trees instead.)
+          const pSpike = GREEN ? 0.88 : zone === 'forest' ? 0.75 : zone === 'glacier' ? 0.35 : 0.3
           const roll = r(), spike = roll < pSpike, sentinel = zone === 'forest' && roll > 0.94
           const sc = 0.4 + 1.6 * r()
           let rad = sentinel ? 30 + r() * 15 : spike ? 6 + r() * 8 : (12 + r() * 12) * sc

@@ -110,9 +110,21 @@ const tallGrass = (c: [number, number, number]): Build => tuft(c, 1.6, 9, 0.09)
 const reeds = (c: [number, number, number]): Build => tuft(c, 3.2, 11, 0.06)
 const spike = (): Build => () => col(new THREE.ConeGeometry(0.9, 6, 5).translate(0, 3, 0), [0.62, 0.82, 1.0], 0.3)
 const pillar = (c: [number, number, number]): Build => () => col(new THREE.CylinderGeometry(0.9, 1.4, 7, 6).translate(0, 3.5, 0), c, 0.3)
+// A cinder heap: a lumpy, slumped mound of clinker (a plain cone read as an untextured pyramid).
+const cinderHeap = (): Build => () => {
+  const g = new THREE.IcosahedronGeometry(1, 1)
+  const p = g.attributes.position
+  for (let i = 0; i < p.count; i++) {
+    const x = p.getX(i), y = p.getY(i), z = p.getZ(i)
+    const k = 1 + 0.22 * Math.sin(x * 7.1 + z * 3.3) * Math.cos(z * 5.7 - x * 2.1)
+    p.setXYZ(i, x * k * 0.95, Math.max(0, y) * 0.42 * k, z * k * 0.8)
+  }
+  return col(g.translate(0, -0.02, 0), [0.3, 0.26, 0.25], 0.45)
+}
 const lilies = (): Build => () => col(new THREE.CircleGeometry(0.7, 7).rotateX(-Math.PI / 2).translate(0, 0.05, 0), [0.25, 0.5, 0.2], 0.3)
 
 // ── per world (cell metres, grid cells across, chance a cell holds one, scale range) ──
+// (Seeds by position: new kinds go after FLAGS, or every kind after them reshuffles its layout.)
 const SEEDED = (k: Omit<Kind, 'seed'>[]): Kind[] => k.map((x, i) => ({ ...x, seed: 17.3 + i * 31.7 }))
 const FLAG_COL: Record<string, [number, number, number]> = { desert: [1.0, 0.42, 0.1], ice: [1.0, 0.35, 0.1], lava: [1.0, 0.75, 0.1], forest: [0.2, 0.5, 1.0], jungle: [1.0, 0.85, 0.15] }
 const FLAGS: Omit<Kind, 'seed'> = { name: 'flag', build: flag(FLAG_COL[BIOME] ?? [1, 0.4, 0.1]), cell: 60, grid: 24, density: 0.35, scale: [0.9, 1.2] }
@@ -123,19 +135,19 @@ const KINDS: Record<string, Kind[]> = {
     { name: 'scrub', build: dryBush(), cell: 14, grid: 56, density: 0.5, scale: [0.6, 1.0], tilt: 0.1 },
     { name: 'bigscrub', build: dryBush(), cell: 11, grid: 64, density: 0.55, scale: [1.8, 3.2], tilt: 0.12 },
     { name: 'tumble', build: tumbleweed(), cell: 24, grid: 30, density: 0.4, scale: [0.9, 1.8] },
-    // Big fly-through scrub in the 30-300 m band (what fills the frame at speed is what passes there).
-    { name: 'giantscrub', build: dryBush(), cell: 26, grid: 26, density: 0.45, scale: [4.0, 6.5], tilt: 0.12, near: 18 },
     { name: 'pillar', build: pillar([0.62, 0.34, 0.2]), cell: 34, grid: 22, density: 0.35, scale: [0.6, 1.4], near: 30 },
     FLAGS,
+    // Big fly-through scrub in the 30-300 m band (what fills the frame at speed is what passes there).
+    { name: 'giantscrub', build: dryBush(), cell: 26, grid: 26, density: 0.45, scale: [4.0, 6.5], tilt: 0.12, near: 18 },
   ]),
   ice: SEEDED([
     { name: 'chip', build: iceChip(), cell: 3.5, grid: 76, density: 0.7, scale: [0.6, 1.6] },
     { name: 'mound', build: mound([0.78, 0.86, 1.0], 1.6, 0.56), cell: 14, grid: 56, density: 0.6, scale: [0.6, 1.6] },
-    { name: 'drift', build: mound([0.84, 0.9, 1.0], 1.6, 0.56), cell: 24, grid: 28, density: 0.5, scale: [3.0, 6.0], near: 18 },
     { name: 'spike', build: spike(), cell: 30, grid: 24, density: 0.4, scale: [0.5, 1.3], near: 30, tilt: 0.25 },
     { name: 'shrub', build: bush([0.86, 0.92, 1.0], 1.0, 1.6), cell: 13, grid: 44, density: 0.5, scale: [1.0, 2.2] },
     { name: 'snowman', build: snowman(), cell: 110, grid: 14, density: 0.4, scale: [0.9, 1.15] },
     FLAGS,
+    { name: 'drift', build: mound([0.84, 0.9, 1.0], 1.6, 0.56), cell: 24, grid: 28, density: 0.42, scale: [2.4, 4.4], near: 18 },
   ]),
   lava: SEEDED([
     { name: 'pebble', build: pebble([0.26, 0.19, 0.16]), cell: 4, grid: 66, density: 0.5, scale: [0.5, 1.4] },
@@ -143,11 +155,11 @@ const KINDS: Record<string, Kind[]> = {
     { name: 'ember', build: ember(), cell: 7, grid: 60, density: 0.35, scale: [0.35, 0.9], glow: true },
     { name: 'pillar', build: pillar([0.14, 0.11, 0.1]), cell: 32, grid: 24, density: 0.4, scale: [0.6, 1.4], near: 30 },
     { name: 'spatter', build: ember(), cell: 6, grid: 90, density: 0.45, scale: [0.6, 1.6], glow: true, where: 'river' },
-    { name: 'heap', build: () => col(new THREE.ConeGeometry(0.9, 0.5, 9, 1, true).translate(0, 0.22, 0), [0.32, 0.28, 0.27], 0.3), cell: 24, grid: 28, density: 0.5, scale: [3.0, 6.0], near: 18 },
     { name: 'charred', build: charred(), cell: 12, grid: 60, density: 0.5, scale: [1.0, 2.0], tilt: 0.15 },
     { name: 'vent', build: vent(), cell: 20, grid: 36, density: 0.4, scale: [0.8, 1.6] },
     { name: 'ventglow', build: ventGlow(), cell: 20, grid: 36, density: 0.4, scale: [0.8, 1.6], glow: true },
     FLAGS,
+    { name: 'heap', build: cinderHeap(), cell: 24, grid: 28, density: 0.5, scale: [3.0, 6.0], near: 18 },
   ]),
   forest: SEEDED([
     { name: 'tuft', build: tuft([0.28, 0.46, 0.12], 0.7), cell: 5, grid: 60, density: 0.6, scale: [0.7, 1.6], tilt: 0.15 },
@@ -155,20 +167,28 @@ const KINDS: Record<string, Kind[]> = {
     { name: 'bush', build: bush([0.4, 0.68, 0.26], 0.8, 1.0), cell: 12, grid: 46, density: 0.55, scale: [1.2, 2.8] },
     { name: 'reeds', build: reeds([0.42, 0.58, 0.2]), cell: 7, grid: 80, density: 0.55, scale: [0.8, 1.4], tilt: 0.12, where: 'river' },
     { name: 'lily', build: lilies(), cell: 6, grid: 80, density: 0.4, scale: [0.7, 1.6], where: 'river' },
-    { name: 'giantbush', build: bush([0.36, 0.62, 0.22], 0.9, 1.1), cell: 24, grid: 28, density: 0.45, scale: [3.2, 5.5], near: 18 },
     { name: 'tallgrass', build: tallGrass([0.36, 0.56, 0.16]), cell: 8, grid: 80, density: 0.5, scale: [0.9, 1.8], tilt: 0.15 },
     FLAGS,
+    { name: 'giantbush', build: bush([0.36, 0.62, 0.22], 0.9, 1.1), cell: 24, grid: 28, density: 0.45, scale: [3.2, 5.5], near: 18 },
   ]),
   jungle: SEEDED([
     { name: 'fern', build: fern([0.2, 0.32, 0.14]), cell: 6, grid: 90, density: 0.55, scale: [0.7, 1.6], tilt: 0.1 },
     { name: 'tuft', build: tuft([0.12, 0.26, 0.07], 0.6), cell: 4, grid: 70, density: 0.45, scale: [0.7, 1.5] },
     { name: 'bush', build: bush([0.14, 0.3, 0.1], 0.9, 1.2), cell: 12, grid: 46, density: 0.55, scale: [1.2, 2.6] },
     { name: 'reeds', build: reeds([0.2, 0.34, 0.12]), cell: 7, grid: 80, density: 0.55, scale: [0.8, 1.5], tilt: 0.12, where: 'river' },
-    { name: 'hugefern', build: fern([0.16, 0.28, 0.11]), cell: 22, grid: 30, density: 0.5, scale: [4.5, 7.0], tilt: 0.1, near: 18 },
     { name: 'bigfern', build: fern([0.18, 0.3, 0.12]), cell: 10, grid: 64, density: 0.5, scale: [2.0, 3.5], tilt: 0.1 },
     FLAGS,
+    { name: 'hugefern', build: fern([0.16, 0.28, 0.11]), cell: 22, grid: 30, density: 0.5, scale: [4.5, 7.0], tilt: 0.1, near: 18 },
   ]),
 }
+
+/** How close to the lens a kind may come: props big enough to cover the HUD (ferns, bushes) stay
+ *  14 m off; small ones 8 m (a fern over the HULL bar was the judges' note). */
+const nearOf = (k: Kind): number => k.near ?? (k.name === 'flag' ? 20 : k.scale[1] >= 2 ? 14 : 8)
+/** Giants (4 m+) and flags also keep further off the lens at speed: at Mach 6 a 6 m bush 20 m away
+ *  was a screen-wide blurred slab. (Only those: applied to every prop over 2 m it emptied the near
+ *  field — the scrub whipping past at 10-40 m is what sells the speed.) */
+const BIGNEAR = (k: Kind): boolean => k.scale[1] >= 4 || k.name === 'flag'
 
 export class Scatter {
   readonly group = new THREE.Group()
@@ -177,7 +197,12 @@ export class Scatter {
   private readonly view = { value: new THREE.Vector3(0, 0, -2) }
   private readonly lods: { g: THREE.InstancedBufferGeometry; n: number; R: number; cell: number; radius: { value: number }; centre: { value: THREE.Vector2 }; fine: boolean }[] = []
 
-  constructor() {
+  /** The course's wear map (R: where races actually run): big props stay off it. */
+  private readonly track: { tTrack: { value: THREE.Texture | null }; uTrackBox: { value: THREE.Vector4 }; uTrackOn: { value: number } }
+  /** Extra lens clearance for big props, growing with speed (m). */
+  private readonly nearAdd = { value: 0 }
+  constructor(track: { tTrack: { value: THREE.Texture | null }; uTrackBox: { value: THREE.Vector4 }; uTrackOn: { value: number } }) {
+    this.track = track
     // (Code ships with the same kind set per world: one material per kind keeps the shaders' seeds apart.)
     for (const k of KINDS[BIOME] ?? []) this.group.add(this.mesh(k))
   }
@@ -210,6 +235,7 @@ export class Scatter {
       s.uniforms.uScatR = radius
       s.uniforms.uScatC = centre
       s.uniforms.uScatView = this.view
+      s.uniforms.tTrack = this.track.tTrack; s.uniforms.uTrackBox = this.track.uTrackBox; s.uniforms.uTrackOn = this.track.uTrackOn; s.uniforms.uNearAdd = this.nearAdd
       s.uniforms.uScatOn = this.on
       Object.assign(s.uniforms, MOUND_U)
       const head = `${TERRAIN_GLSL}
@@ -219,6 +245,10 @@ uniform float uScatOn;
 uniform float uScatR;
 uniform vec2 uScatC;
 uniform vec3 uScatView;
+uniform sampler2D tTrack;
+uniform vec4 uTrackBox;
+uniform float uTrackOn;
+uniform float uNearAdd;
 float scHash(vec2 p) { p = fract(p * vec2(0.1031, 0.1030)); p += dot(p, p.yx + 33.33); return fract((p.x + p.y) * p.x); }
 vec3 scPos; float scS; float scA; float scT;`
       const place = `{
@@ -231,6 +261,10 @@ vec3 scPos; float scS; float scA; float scT;`
         // View cull (see update): the instance's angular half-width widens the cone a little.
         { vec2 dv = xz - uScatC; float dl = length(dv);
           if (dl > 40.0 && dot(dv, uScatView.xy) < (uScatView.z - ${(k.scale[1] * 3).toFixed(1)} / dl) * dl) keep = 0.0; }
+        ${k.scale[1] >= 4 && !k.near ? `// Giants off the racing line (the wear map's packing, where the simulated races ran): a bush
+        // in the exhaust or a drift dome dead ahead read as an obstacle you were about to hit.
+        { vec2 tuv = (xz - uTrackBox.xy) / uTrackBox.zw;
+          if (uTrackOn > 0.01 && keep > 0.0 && tuv.x > 0.0 && tuv.y > 0.0 && tuv.x < 1.0 && tuv.y < 1.0) keep *= 1.0 - smoothstep(0.08, 0.22, texture2D(tTrack, tuv).r); }` : ''}
         ${k.where === 'river' ? 'keep *= smoothstep(0.25, 0.45, riverAt(xz));' : BIOME === 'ice' ? '' : 'keep *= 1.0 - smoothstep(0.08, 0.2, riverAt(xz));'} // (POLAR SHELF's rivers are frozen: props sit on them, or whole stretches were bare)
         scS = mix(${k.scale[0].toFixed(2)}, ${k.scale[1].toFixed(2)}, fract(h1 * 13.7)) * keep;
         scA = h2 * 6.2832;
@@ -239,7 +273,8 @@ vec3 scPos; float scS; float scA; float scT;`
         scPos = vec3(xz.x, keep > 0.0 ? groundH(xz) - 0.04 : -1e4, xz.y);
         // (Not right at the lens: up close a fern or a twig filled the screen.)
         // (A clear pocket round you and your craft, ~10 m ahead: foliage covered it.)
-        scS *= smoothstep(${(k.near ?? 8).toFixed(1)}, ${((k.near ?? 8) + 16).toFixed(1)}, distance(scPos, cameraPosition));
+        ${BIGNEAR(k) ? `float nearD = ${nearOf(k).toFixed(1)} + uNearAdd;` : `float nearD = ${nearOf(k).toFixed(1)};`}
+        scS *= smoothstep(nearD, nearD + 16.0, distance(scPos, cameraPosition));
       }`
       s.vertexShader = s.vertexShader
         .replace('#include <common>', `#include <common>\n${head}`)
@@ -282,6 +317,7 @@ vec3 scPos; float scS; float scA; float scT;`
    */
   update(cam: THREE.Vector3, visible: boolean, mach = 0, fx = 0, fz = 0, cosHalf = -2): void {
     this.view.value.set(fx, fz, cosHalf)
+    this.nearAdd.value = Math.max(0, mach - 1.5) * 4
     this.cam.value.set(cam.x, cam.z)
     const f = 1 - 0.45 * THREE.MathUtils.smoothstep(mach, 1.5, 6.5)
     for (const l of this.lods) {
