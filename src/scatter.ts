@@ -201,7 +201,8 @@ vec3 scPos; float scS; float scA; float scT;`
         scT = (h3 - 0.5) * ${(k.tilt ?? 0).toFixed(2)};
         scPos = vec3(xz.x, groundH(xz) - 0.04, xz.y);
         // (Not right at the lens: up close a fern or a twig filled the screen.)
-        scS *= smoothstep(5.0, 14.0, distance(scPos, cameraPosition));
+        // (A clear pocket round you and your craft, ~10 m ahead: foliage covered it.)
+        scS *= smoothstep(8.0, 24.0, distance(scPos, cameraPosition));
       }`
       s.vertexShader = s.vertexShader
         .replace('#include <common>', `#include <common>\n${head}`)

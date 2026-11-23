@@ -1171,14 +1171,14 @@ export class Course {
     for (let l = 0; l < LINES; l++) {
       const skill = 0.55 + rnd() * 0.5
       line(skill, (rnd() + rnd() + rnd() - 1.5) * 90, 1.2 + rnd() * 2.5, rnd() * 6.28)
-      g.strokeStyle = `rgba(255,0,0,${(0.9 / Math.sqrt(LINES)) * (0.6 + rnd() * 0.6)})`
+      g.strokeStyle = `rgba(255,0,0,${(1.3 / Math.sqrt(LINES)) * (0.6 + rnd() * 0.6)})`
       g.lineWidth = (26 + rnd() * 40) * kx
       pathO(); g.stroke()
     }
     // Fresh grooves: thin, sharper, broken (lifted where a craft skipped a crest).
     for (let l = 0; l < 150; l++) {
       line(0.6 + rnd() * 0.45, (rnd() + rnd() - 1) * 80, 0.8 + rnd() * 2.0, rnd() * 6.28)
-      g.strokeStyle = `rgba(0,255,0,${0.08 + rnd() * 0.22})`
+      g.strokeStyle = `rgba(0,255,0,${0.14 + rnd() * 0.3})`
       g.lineWidth = Math.max(1, (2 + rnd() * 5) * kx)
       g.setLineDash([(300 + rnd() * 2500) * kx, (60 + rnd() * 500) * kx])
       g.lineDashOffset = rnd() * 3000
