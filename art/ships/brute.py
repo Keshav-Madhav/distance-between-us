@@ -1,11 +1,13 @@
-# BRUTE — from concept art/ships/concepts/brute-0.png. A heavy four-module crawler: two big front fan
-# engines in rounded-square housings with orange rims; two rear box modules with lift fans facing up
-# and the main exhausts out the back; exposed machinery between front and rear modules; a faceted
-# wedge cabin with an orange centre stripe and a multi-pane canopy; a tubular bumper frame round the
-# nose. Game frame: x right, y up, z forward. Exhausts end on one exit plane.
+# BRUTE — from concept art/ships/concepts/brute-0.png. The heavy one: a near-square footprint of four
+# big masses packed round a short, tall wedge cabin. Two front fan engines in rounded-square housings
+# with orange rims; two taller rear box modules with lift fans on top and the main exhausts out the
+# back; between front and rear a short, crammed engine bay (stages, pumps, gearbox canisters, clamped
+# pipes); thick box beams tie the cabin to the modules; a wraparound bumper frame. Game frame: x right,
+# y up, z forward.
 import sys, os, math
 sys.path.insert(0, os.path.dirname(__file__))
 from lib import *
+from lib import _mono_cubic
 
 reset()
 M = {k: mat(k, *v) for k, v in {
@@ -16,112 +18,123 @@ M = {k: mat(k, *v) for k, v in {
 M['glow'] = mat('glow', (0.4, 0.85, 1.0), 0, 0.3, emit=(0.4, 0.85, 1.0))
 M['hot'] = mat('hot', (1.0, 0.55, 0.2), 0, 0.3, emit=(1.0, 0.55, 0.2))
 
-FX, FY = 2.0, 0.95      # front engine centre (wide stance)
-RX, RY = 2.05, 1.12     # rear module centre (taller than the front fans)
-K = 1.24                # housing scale (chunky)
-NZ = -4.2
-SQ = [(1.0, 0.0), (0.92, 0.62), (0.62, 0.92), (0.0, 1.0), (-0.62, 0.92), (-0.92, 0.62), (-1.0, 0.0), (-0.92, -0.62), (-0.62, -0.92), (0.0, -1.0), (0.62, -0.92), (0.92, -0.62)]
+def rsq(n=4.0, pts=32):
+    """A rounded-square profile (superellipse), smooth enough to shade without facets."""
+    out = []
+    for i in range(pts):
+        t = 2 * math.pi * i / pts; c, s = math.cos(t), math.sin(t)
+        out.append((math.copysign(abs(c) ** (2 / n), c), math.copysign(abs(s) ** (2 / n), s)))
+    return out
+SQ, BOX = rsq(3.2), rsq(5.0)
+
+FX, FY, FH = 2.0, 0.95, 0.84          # front engine centre, half size
+RX, RY, RH = 2.05, 1.1, 0.92          # rear module centre, half size (taller)
+F0, F1 = 4.0, 2.1                      # front housing z range
+R0, R1 = 0.9, -2.7                     # rear module z range
+NZ = -3.45                             # exit plane
 right = []
 
-# ── Front engines: a rounded-square housing, open at the front, orange rim, a fan inside.
-right.append(poly_loft('front_house', [(5.3, FX, FY, 0.62 * K, 0.58 * K, 0.58 * K), (5.15, FX, FY, 0.68 * K, 0.64 * K, 0.64 * K), (3.6, FX, FY, 0.7 * K, 0.66 * K, 0.64 * K), (2.9, FX, FY, 0.6 * K, 0.56 * K, 0.56 * K)], SQ, 24, M['paint'], cap1=True, angle=50))
-right.append(poly_loft('front_rim', [(5.33, FX, FY, 0.63 * K, 0.59 * K, 0.59 * K), (5.2, FX, FY, 0.69 * K, 0.65 * K, 0.65 * K), (4.95, FX, FY, 0.69 * K, 0.65 * K, 0.65 * K)], SQ, 6, M['trim'], cap1=False, angle=50))
-right.append(poly_loft('front_band', [(3.95, FX, FY, 0.705 * K, 0.665 * K, 0.645 * K), (3.7, FX, FY, 0.705 * K, 0.665 * K, 0.645 * K)], SQ, 3, M['trim'], cap1=False, angle=50))
-right.append(smooth(lathe('front_duct', [(5.3, 0.69), (5.0, 0.67), (4.8, 0.66)], FX, FY, 36, M['carbon'], cap1=True), 60))
-right.append(fan_smooth('front_fan', FX, FY, 4.92, 0.25, 0.65, 16, 0.7, 0.34, 5, M['gun']))
-right.append(smooth(lathe('front_spinner', [(5.3, 0.0), (5.27, 0.06), (5.2, 0.13), (5.1, 0.2), (4.98, 0.25), (4.8, 0.25)], FX, FY, 40, M['metal'], cap1=True), 85))
-right.append(ring('front_shroud', 0.665, 0.035, (FX, FY, 4.92), 36, M['carbon']))
-# Orange side marker and a vent block on each housing's outer side.
-right.append(box('marker', (0.03, 0.24, 0.14), (FX + 0.7 * K, FY - 0.15, 4.6), material=M['trim']))
+# ── Front engines.
+right.append(poly_loft('front_house', [(F0, FX, FY, FH * 0.9, FH * 0.86, FH * 0.86), (F0 - 0.15, FX, FY, FH, FH * 0.95, FH * 0.93), (F1 + 0.4, FX, FY, FH, FH * 0.95, FH * 0.93), (F1, FX, FY, FH * 0.86, FH * 0.82, FH * 0.8)], SQ, 20, M['paint'], cap1=True, angle=50))
+right.append(poly_loft('front_rim', [(F0 + 0.03, FX, FY, FH * 0.91, FH * 0.87, FH * 0.87), (F0 - 0.1, FX, FY, FH * 1.012, FH * 0.962, FH * 0.942), (F0 - 0.35, FX, FY, FH * 1.012, FH * 0.962, FH * 0.942)], SQ, 6, M['trim'], cap1=False, angle=50))
+right.append(poly_loft('front_band', [(F1 + 0.75, FX, FY, FH * 1.008, FH * 0.958, FH * 0.938), (F1 + 0.5, FX, FY, FH * 1.008, FH * 0.958, FH * 0.938)], SQ, 3, M['trim'], cap1=False, angle=50))
+right.append(smooth(lathe('front_duct', [(F0, 0.69), (F0 - 0.3, 0.67), (F0 - 0.5, 0.66)], FX, FY, 40, M['carbon'], cap1=True), 60))
+right.append(fan_smooth('front_fan', FX, FY, F0 - 0.38, 0.24, 0.65, 16, 0.7, 0.34, 5, M['gun']))
+right.append(smooth(lathe('front_spinner', [(F0, 0.006), (F0 - 0.03, 0.07), (F0 - 0.1, 0.14), (F0 - 0.2, 0.21), (F0 - 0.3, 0.26), (F0 - 0.34, 0.28), (F0 - 0.55, 0.28)], FX, FY, 40, M['metal'], cap1=True), 85))
+right.append(ring('front_shroud', 0.665, 0.035, (FX, FY, F0 - 0.38), 36, M['carbon']))
+right.append(box('marker', (0.03, 0.24, 0.14), (FX + FH + 0.01, FY - 0.2, F0 - 0.6), material=M['trim']))
 for dz in (0.0, 0.2, 0.4):
-    right.append(box('louvre', (0.04, 0.4, 0.09), (FX + 0.69 * K, FY + 0.15, 4.3 - dz), (0.35, 0, 0), M['gun']))
+    right.append(box('louvre', (0.05, 0.42, 0.09), (FX + FH, FY + 0.18, F1 + 1.3 - dz), (0.35, 0, 0), M['gun']))
 
-# ── Rear modules: boxy housings with a lift fan on top and the main exhaust at the back.
-BOX = [(1.0, 0.0), (0.97, 0.75), (0.75, 0.97), (0.0, 1.0), (-0.75, 0.97), (-0.97, 0.75), (-1.0, 0.0), (-0.97, -0.75), (-0.75, -0.97), (0.0, -1.0), (0.75, -0.97), (0.97, -0.75)]
-right.append(poly_loft('rear_house', [(-0.3, RX, RY, 0.66 * K, 0.7 * K, 0.7 * K), (-0.55, RX, RY, 0.74 * K, 0.8 * K, 0.78 * K), (-3.15, RX, RY, 0.74 * K, 0.8 * K, 0.78 * K), (-3.5, RX, RY, 0.64 * K, 0.7 * K, 0.68 * K)], BOX, 24, M['paint'], cap1=True, angle=50))
-right.append(poly_loft('rear_rim', [(-0.5, RX, RY, 0.745 * K, 0.805 * K, 0.785 * K), (-0.85, RX, RY, 0.745 * K, 0.805 * K, 0.785 * K)], BOX, 3, M['trim'], cap1=False, angle=50))
-# Lift fan (axis up): a dark well, blades, an orange rim on the housing's flat top.
-LT = RY + 0.8 * K
-lf = (RX, LT, -2.0)
-right.append(cyl('lift_well', 0.62, 0.05, (lf[0], LT - 0.03, lf[2]), 'y', 28, M['carbon']))
+# ── Rear modules: boxy, taller, a lift fan on top, the exhaust at the back.
+right.append(poly_loft('rear_house', [(R0, RX, RY, RH * 0.86, RH * 0.86, RH * 0.84), (R0 - 0.22, RX, RY, RH, RH, RH * 0.97), (R1 + 0.3, RX, RY, RH, RH, RH * 0.97), (R1, RX, RY, RH * 0.88, RH * 0.88, RH * 0.85)], BOX, 20, M['paint'], cap1=True, angle=50))
+right.append(poly_loft('rear_rim', [(R0 - 0.12, RX, RY, RH * 1.01, RH * 1.01, RH * 0.98), (R0 - 0.45, RX, RY, RH * 1.01, RH * 1.01, RH * 0.98)], BOX, 3, M['trim'], cap1=False, angle=50))
+LT, LZ = RY + RH, (R0 + R1) / 2 - 0.15
+right.append(cyl('lift_well', 0.62, 0.05, (RX, LT - 0.03, LZ), 'y', 32, M['carbon']))
 for i in range(14):
     a = 2 * math.pi * i / 14
-    right.append(box('lift_blade', (0.05, 0.02, 0.44), (lf[0] + 0.3 * math.cos(a), LT + 0.005, lf[2] + 0.3 * math.sin(a)), (0, -a + math.pi / 2, 0), M['gun']))
-right.append(cyl('lift_hub', 0.11, 0.06, (lf[0], LT + 0.01, lf[2]), 'y', 16, M['metal']))
-bpy.ops.mesh.primitive_torus_add(major_radius=0.65, minor_radius=0.05, major_segments=28, minor_segments=5)
-t = bpy.context.active_object; t.name = 'lift_rim'; t.location = G(lf[0], LT, lf[2]); bpy.ops.object.transform_apply(location=True)
+    right.append(box('lift_blade', (0.05, 0.02, 0.44), (RX + 0.3 * math.cos(a), LT + 0.005, LZ + 0.3 * math.sin(a)), (0, -a + math.pi / 2, 0), M['gun']))
+right.append(cyl('lift_hub', 0.12, 0.06, (RX, LT + 0.01, LZ), 'y', 16, M['metal']))
+bpy.ops.mesh.primitive_torus_add(major_radius=0.66, minor_radius=0.05, major_segments=32, minor_segments=5)
+t = bpy.context.active_object; t.name = 'lift_rim'; t.location = G(RX, LT, LZ); bpy.ops.object.transform_apply(location=True)
 t.data.materials.append(M['trim']); right.append(smooth(t, 60))
-# Main exhaust: a flared nozzle out of the module's back, petals, hot core.
-right.append(smooth(lathe('nozzle', [(-3.45, 0.56), (-3.6, 0.6), (-3.95, 0.58), (-4.05, 0.54)], RX, RY, 36, M['metal']), 30))
-right.append(petals('petals', RX, RY, -4.0, 0.54, 12, 0.26, 0.24, -0.2, 0.014, M['gun']))
-right.append(cyl('hot', 0.42, 0.02, (RX, RY, -3.75), 'z', 28, M['hot']))
-right.append(ring('nozzle_band', 0.6, 0.035, (RX, RY, -3.7), 28, M['trim']))
+# Side face detail: a panel of vents and an access hatch handle on the outer flank.
+for dz in (0.0, 0.18, 0.36, 0.54):
+    right.append(box('side_vent', (0.05, 0.5, 0.08), (RX + RH, RY + 0.05, R1 + 1.2 + dz), (0.3, 0, 0), M['gun']))
+right.append(box('hatch_handle', (0.06, 0.06, 0.4), (RX + RH + 0.02, RY - 0.45, R0 - 0.9), material=M['metal']))
+# Exhaust.
+right.append(smooth(lathe('nozzle', [(R1 - 0.05, 0.56), (R1 - 0.2, 0.6), (NZ + 0.1, 0.58), (NZ + 0.02, 0.54)], RX, RY, 36, M['metal']), 30))
+right.append(petals('petals', RX, RY, NZ + 0.05, 0.54, 12, 0.24, 0.24, -0.2, 0.014, M['gun']))
+right.append(cyl('hot', 0.44, 0.02, (RX, RY, R1 - 0.15), 'z', 28, M['hot']))
+right.append(ring('nozzle_band', 0.6, 0.035, (RX, RY, R1 - 0.25), 28, M['trim']))
 
-# ── Exposed machinery between front and rear modules: a core shaft with stages, canisters, pipes.
-MX, MY = 2.0, 0.95
-right.append(smooth(lathe('core', [(2.95, 0.5), (2.7, 0.52), (-0.25, 0.52), (-0.4, 0.5)], MX, MY, 28, M['gun']), 40))
-for (z0, z1, r, m) in [(2.6, 2.15, 0.66, 'gun'), (1.85, 1.3, 0.6, 'brass'), (1.0, 0.65, 0.68, 'gun'), (0.35, -0.1, 0.58, 'brass')]:
+# ── Engine bay between front and rear: short and crammed.
+MX, MY = 2.0, 0.98
+right.append(smooth(lathe('core', [(F1 + 0.05, 0.56), (F1 - 0.05, 0.6), (R0 + 0.05, 0.6), (R0 - 0.05, 0.56)], MX, MY, 28, M['gun']), 40))
+for (z0, z1, r, m) in [(F1 - 0.1, F1 - 0.4, 0.74, 'brass'), (F1 - 0.55, F1 - 0.75, 0.7, 'gun')]:
     right.append(smooth(lathe('stage', [(z0, r * 0.94), (z0 - 0.03, r), (z1 + 0.03, r), (z1, r * 0.94)], MX, MY, 28, M[m], cap0=True, cap1=True), 40))
     for z in (z0 - 0.02, z1 + 0.02):
-        right.append(ring('flange', r + 0.01, 0.022, (MX, MY, z), 22, M['metal'], minor=4))
-for (a, z0, z1, rr) in [(0.5, 2.3, 0.6, 0.13), (-0.6, 1.9, -0.3, 0.12), (2.3, 2.2, 0.9, 0.1)]:
-    x, y = MX + (0.68 + rr) * math.cos(a), MY + (0.68 + rr) * math.sin(a)
-    right.append(cyl('canister', rr, z0 - z1, (x, y, (z0 + z1) / 2), 'z', 12, M['metal']))
-    for z in (z0 - 0.06, z1 + 0.06):
-        right.append(cyl('canister_cap', rr * 1.1, 0.07, (x, y, z), 'z', 12, M['trim']))
-    for z in (z0 - 0.3, z1 + 0.3):
-        right.append(box('saddle', (0.14, rr + 0.18, 0.14), (MX + (0.6 + rr / 2) * math.cos(a), MY + (0.6 + rr / 2) * math.sin(a), z), (0, 0, a - math.pi / 2), M['gun']))
-for j, a in enumerate((1.4, 3.6, 5.0)):
-    pts = [(MX + (0.72 + 0.05 * math.sin(q + j)) * math.cos(a + 0.15 * math.sin(q * 0.6)), MY + (0.72 + 0.05 * math.sin(q + j)) * math.sin(a + 0.15 * math.sin(q * 0.6)), 2.9 - q * 0.16) for q in range(21)]
-    right.append(tube('pipe', pts, 0.045, M['trim'] if j != 1 else M['metal']))
-# Frame rails tying front housing to rear module (top and bottom), so the machinery sits in a cage.
-for (dy, dx) in [(0.76, 0.0), (-0.74, 0.15)]:
-    right.append(tube('rail', [(FX + dx, FY + dy, 3.0), (MX + dx, MY + dy + 0.04, 1.2), (RX + dx, RY + dy, -0.4)], 0.07, M['gun']))
+        right.append(ring('flange', r + 0.01, 0.025, (MX, MY, z), 22, M['metal'], minor=4))
+# Gearbox canisters standing on top (white, orange caps), a pump block on the outside, a manifold below.
+for (dx, dz, h) in [(-0.2, F1 - 0.35, 0.42), (0.25, F1 - 0.75, 0.34)]:
+    right.append(cyl('gearbox', 0.16, h, (MX + dx, MY + 0.66 + h / 2, dz), 'y', 18, M['paint']))
+    right.append(cyl('gearbox_cap', 0.17, 0.06, (MX + dx, MY + 0.66 + h, dz), 'y', 18, M['trim']))
+right.append(box('pump', (0.34, 0.5, 0.7), (MX + 0.72, MY + 0.05, (F1 + R0) / 2), material=M['gun'], bevel=0.04))
+right.append(cyl('pump_motor', 0.14, 0.5, (MX + 0.92, MY + 0.05, (F1 + R0) / 2), 'z', 14, M['metal']))
+right.append(box('manifold', (0.6, 0.18, 0.9), (MX, MY - 0.7, (F1 + R0) / 2), material=M['carbon'], bevel=0.03))
+for (a, col) in [(2.3, 'trim'), (3.4, 'brass'), (4.6, 'trim')]:  # pipes tight to the core, clamped at both ends
+    pts = [(MX + 0.66 * math.cos(a), MY + 0.66 * math.sin(a), z) for z in (F1 + 0.05, (F1 + R0) / 2, R0 - 0.05)]
+    right.append(tube('pipe', pts, 0.05, M[col]))
+    for z in (F1 - 0.02, R0 + 0.02):
+        right.append(cyl('clamp', 0.08, 0.07, (MX + 0.66 * math.cos(a), MY + 0.66 * math.sin(a), z), 'z', 10, M['gun']))
 
-# ── Struts from the cabin to the modules (dark tubular frame).
-for (z, y) in [(3.6, 0.85), (2.4, 0.7), (-1.4, 0.8), (-2.6, 0.75)]:
-    right.append(tube('strut', [(0.86, y + 0.15, z), (1.25, y + 0.1, z - 0.25), (FX - 0.8, y + 0.1, z - 0.35)], 0.08, M['gun']))
+# ── Thick box beams from the cabin to the modules (at the front housing, the bay and the rear module).
+for (z, y, d) in [(F1 + 1.0, 0.95, 0.7), ((F1 + R0) / 2, 0.92, 0.5), (R1 + 1.2, 1.0, 0.9)]:
+    right.append(box('beam', (1.0, 0.42, d), (1.35, y, z), material=M['gun'], bevel=0.05))
 
 join_mirror(right)
 
-# ── Cabin: a faceted wedge, wide and low, its nose dropping to the bumper.
+# ── Cabin: a tall faceted wedge, as tall as the modules, pressed against them.
 HEX = [(1.0, 0.0), (0.86, 0.6), (0.5, 0.95), (0.0, 1.0), (-0.5, 0.95), (-0.86, 0.6), (-1.0, 0.0), (-0.8, -0.6), (-0.4, -0.95), (0.0, -1.0), (0.4, -0.95), (0.8, -0.6)]
-CAB = [(5.0, 0, 0.66, 0.4, 0.16, 0.22), (4.3, 0, 0.78, 0.82, 0.48, 0.36), (2.6, 0, 0.9, 0.96, 0.78, 0.44), (0.6, 0, 0.94, 1.0, 0.82, 0.46),
-       (-1.6, 0, 0.94, 0.98, 0.76, 0.46), (-3.3, 0, 0.9, 0.82, 0.6, 0.42), (-4.0, 0, 0.86, 0.56, 0.4, 0.36)]
-poly_loft('cabin', CAB, HEX, 56, M['paint'])
-# Orange centre stripe along the flat top (a hair proud), black stripe edges.
-poly_loft('stripe', [(z, 0, cy + t + 0.004, 0.2, 0.012, 0.012) for (z, cx, cy, a, t, b) in CAB[1:-1] if not (0.3 < z < 2.7)], [(1, 0), (0.95, 1), (-0.95, 1), (-1, 0), (-0.95, -1), (0.95, -1)], 30, M['trim'], cap1=True, angle=80)
-# Canopy: a multi-pane faceted glass house on the cabin's front top, framed.
-TOP = 0.92 + 0.8
-glass = poly_loft('canopy', [(3.3, 0, TOP - 0.06, 0.05, 0.02, 0.02), (2.8, 0, TOP - 0.06, 0.58, 0.22, 0.02), (1.6, 0, TOP - 0.06, 0.76, 0.42, 0.02), (0.5, 0, TOP - 0.06, 0.7, 0.4, 0.02), (0.1, 0, TOP - 0.06, 0.05, 0.02, 0.02)],
-                  [(1.0, 0.0), (0.75, 0.8), (0.3, 1.0), (-0.3, 1.0), (-0.75, 0.8), (-1.0, 0.0), (0.0, -1.0)], 30, M['glass'], angle=20)
-for z in (2.4, 1.6, 0.8):  # pane frames
-    k = 1.0
-    tube('pane', [(0.74, TOP - 0.04, z), (0.56, TOP + 0.3, z), (0.22, TOP + 0.36, z), (-0.22, TOP + 0.36, z), (-0.56, TOP + 0.3, z), (-0.74, TOP - 0.04, z)], 0.03, M['gun'])
-tube('pane_spine', [(0, TOP + 0.2, 2.9), (0, TOP + 0.36, 1.6), (0, TOP + 0.33, 0.4)], 0.03, M['gun'])
-# Cabin tail thruster (small), recessed.
-smooth(lathe('tail_nozzle', [(-3.95, 0.26), (-4.12, 0.28), (-4.2, 0.26)], 0, 0.86, 24, M['metal']), 40)
-smooth(lathe('tail_liner', [(-4.2, 0.24), (-4.08, 0.21), (-3.98, 0.18)], 0, 0.86, 24, M['carbon']), 50)
-cyl('tail_hot', 0.17, 0.02, (0, 0.86, -3.99), 'z', 20, M['hot'])
-# Vents on the cabin flanks behind the canopy.
+CAB = [(4.6, 0, 0.62, 0.42, 0.14, 0.2), (3.9, 0, 0.82, 0.86, 0.56, 0.38), (2.6, 0, 0.98, 1.04, 0.86, 0.48), (0.6, 0, 1.02, 1.08, 0.92, 0.5),
+       (-1.4, 0, 1.0, 1.04, 0.84, 0.5), (-2.8, 0, 0.94, 0.86, 0.66, 0.44), (-3.35, 0, 0.9, 0.6, 0.44, 0.38)]
+poly_loft('cabin', CAB, HEX, 48, M['paint'])
+_zs = sorted(c[0] for c in CAB); _top = _mono_cubic(_zs, [next(c[2] + c[4] for c in CAB if c[0] == z) for z in _zs])
+poly_loft('stripe', [(z, 0, _top(z) + 0.006, 0.22, 0.012, 0.012) for z in (-3.2, -2.4, -1.2, -0.2)], [(1, 0), (0.95, 1), (-0.95, 1), (-1, 0), (-0.95, -1), (0.95, -1)], 20, M['trim'], cap1=True, angle=80)
+poly_loft('stripe_f', [(z, 0, _top(z) + 0.006, 0.22, 0.012, 0.012) for z in (3.0, 3.6, 4.2)], [(1, 0), (0.95, 1), (-0.95, 1), (-1, 0), (-0.95, -1), (0.95, -1)], 16, M['trim'], cap1=True, angle=80)
+# Canopy: a raised faceted glass house with a frame.
+TOP = _top(1.6)
+poly_loft('canopy', [(2.9, 0, TOP - 0.05, 0.08, 0.04, 0.02), (2.5, 0, TOP - 0.05, 0.6, 0.26, 0.02), (1.6, 0, TOP - 0.05, 0.78, 0.44, 0.02), (0.5, 0, TOP - 0.05, 0.72, 0.42, 0.02), (0.1, 0, TOP - 0.05, 0.08, 0.04, 0.02)],
+          [(1.0, 0.0), (0.75, 0.8), (0.3, 1.0), (-0.3, 1.0), (-0.75, 0.8), (-1.0, 0.0), (0.0, -1.0)], 28, M['glass'], angle=20)
+poly_loft('canopy_frame', [(3.0, 0, TOP - 0.07, 0.1, 0.06, 0.03), (2.5, 0, TOP - 0.07, 0.68, 0.08, 0.03), (1.6, 0, TOP - 0.07, 0.86, 0.09, 0.03), (0.5, 0, TOP - 0.07, 0.8, 0.08, 0.03), (0.0, 0, TOP - 0.07, 0.1, 0.06, 0.03)], [(1, 0), (0, 1), (-1, 0), (0, -1)], 28, M['gun'], angle=60)
+for z in (2.4, 1.6, 0.8):
+    tube('pane', [(0.76, TOP - 0.05, z), (0.57, TOP + 0.33, z), (0.23, TOP + 0.39, z), (-0.23, TOP + 0.39, z), (-0.57, TOP + 0.33, z), (-0.76, TOP - 0.05, z)], 0.03, M['gun'])
+tube('pane_spine', [(0, TOP + 0.2, 2.75), (0, TOP + 0.39, 1.6), (0, TOP + 0.36, 0.4)], 0.03, M['gun'])
 for side in (1, -1):
     for dz in (0.0, 0.18, 0.36):
-        box('cab_vent', (0.04, 0.26, 0.09), (side * 0.99, 1.1, -0.6 - dz), (0.3, 0, 0), M['gun'])
+        box('cab_vent', (0.05, 0.28, 0.09), (side * 1.07, 1.12, -0.8 - dz), (0.3, 0, 0), M['gun'])
+# Tail: a centre exhaust housing, recessed thruster.
+poly_loft('tail_housing', [(-2.9, 0, 0.92, 0.5, 0.42, 0.36), (-3.3, 0, 0.92, 0.46, 0.4, 0.34)], BOX, 4, M['gun'], cap1=False, angle=50)
+smooth(lathe('tail_nozzle', [(-3.3, 0.3), (-3.42, 0.32), (NZ, 0.3)], 0, 0.92, 24, M['metal']), 40)
+smooth(lathe('tail_liner', [(NZ, 0.28), (-3.35, 0.24), (-3.25, 0.2)], 0, 0.92, 24, M['carbon']), 50)
+cyl('tail_hot', 0.2, 0.02, (0, 0.92, -3.26), 'z', 20, M['hot'])
 
-# ── Bumper frame round the nose: a tubular U from the front housings' lower inner corners.
-tube('bumper', [(FX - 0.6, 0.28, 5.15), (1.3, 0.24, 5.9), (0.6, 0.24, 6.1), (-0.6, 0.24, 6.1), (-1.3, 0.24, 5.9), (-FX + 0.6, 0.28, 5.15)], 0.08, M['gun'])
+# ── Bumper: a U-frame from under each front housing, round the nose.
 for sx in (1, -1):
-    tube('bumper_post', [(sx * 0.55, 0.22, 6.05), (sx * 0.4, 0.55, 5.0)], 0.05, M['gun'])
-    tube('bumper_leg', [(sx * 1.05, 0.22, 5.85), (sx * 1.2, 0.3, 5.2)], 0.05, M['gun'])
-box('skid_glow', (2.0, 0.012, 0.08), (0, 0.15, 6.05), material=M['glow'])
-for sx in (1, -1):  # hover glow under each module
-    box('pad_glow', (1.1, 0.012, 1.8), (sx * FX, FY - 0.64 * K - 0.01, 4.2), material=M['glow'])
-    box('pad_glow', (1.1, 0.012, 2.2), (sx * RX, RY - 0.78 * K - 0.01, -2.0), material=M['glow'])
+    tube('bumper_mount', [(sx * (FX - 0.4), FY - FH + 0.05, F1 + 0.6), (sx * (FX - 0.5), 0.2, F0 + 0.2)], 0.08, M['gun'])
+tube('bumper', [(FX - 0.5, 0.2, F0 + 0.2), (FX - 0.6, 0.18, F0 + 0.75), (1.0, 0.18, F0 + 0.95), (-1.0, 0.18, F0 + 0.95), (-FX + 0.6, 0.18, F0 + 0.75), (-FX + 0.5, 0.2, F0 + 0.2)], 0.09, M['gun'])
+for sx in (1, -1):
+    tube('bumper_post', [(sx * 0.6, 0.18, F0 + 0.95), (sx * 0.38, 0.6, 4.3)], 0.06, M['gun'])
+box('bumper_glow', (1.8, 0.012, 0.06), (0, 0.1, F0 + 0.95), material=M['glow'])
+for sx in (1, -1):  # hover glow: slim strips under each module
+    for dx in (-0.4, 0.4):
+        box('pad_glow', (0.06, 0.012, 1.4), (sx * (FX + dx), FY - FH * 0.93 - 0.01, (F0 + F1) / 2), material=M['glow'])
+        box('pad_glow', (0.06, 0.012, 2.6), (sx * (RX + dx), RY - RH * 0.97 - 0.01, (R0 + R1) / 2), material=M['glow'])
 
 # Game hooks.
-empty('nozzle_0', (-RX, RY, NZ)); empty('nozzle_1@0.4', (0, 0.86, NZ)); empty('nozzle_2', (RX, RY, NZ))
-empty('wingtip', (RX + 0.72 * K, RY + 0.3, -3.0))
-empty('number', (RX + 0.72 * K + 0.01, RY - 0.05, -1.2))
+empty('nozzle_0', (-RX, RY, NZ)); empty('nozzle_1@0.45', (0, 0.92, NZ)); empty('nozzle_2', (RX, RY, NZ))
+empty('wingtip', (RX + RH, RY + 0.3, R1 + 0.3))
+empty('number', (RX + RH + 0.01, RY - 0.25, R0 - 1.0))
 
 out = os.environ.get('OUT', '/tmp')
 print('TRIANGLES', tri_count()); tri_report()

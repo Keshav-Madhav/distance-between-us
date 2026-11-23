@@ -52,7 +52,7 @@ right.append(ring('fan_shroud', 0.575, 0.03, (EX, EY, 5.5), 40, M['carbon']))
 for i in range(12):  # stator vanes behind the fan
     a = 2 * math.pi * i / 12
     right.append(box('stator', (0.38, 0.02, 0.06), (EX + 0.37 * math.cos(a), EY + 0.37 * math.sin(a), 5.3), (0, 0, a), M['gun']))
-right.append(smooth(lathe('spinner', [(6.0, 0.0), (5.99, 0.03), (5.96, 0.07), (5.91, 0.11), (5.84, 0.155), (5.76, 0.19), (5.67, 0.22), (5.6, 0.25), (5.56, 0.27), (5.25, 0.27), (5.2, 0.25)], EX, EY, 48, M['metal'], cap1=True), 89))
+right.append(smooth(lathe('spinner', [(6.0, 0.006), (5.995, 0.03), (5.96, 0.07), (5.91, 0.11), (5.84, 0.155), (5.76, 0.19), (5.67, 0.22), (5.6, 0.25), (5.56, 0.27), (5.25, 0.27), (5.2, 0.25)], EX, EY, 48, M['metal'], cap1=True), 89))
 
 # ── Exposed machinery behind the can: compressor stages of different diameters (grey housings and
 # dark gaps), canisters strapped along the core, two thick orange feed pipes clamped close to it.
@@ -104,10 +104,10 @@ c = bpy.data.objects.get('liner')
 right.append(cyl('hot_core', 0.4, 0.02, (EX, EY, -3.72), 'z', 32, M['hot']))
 
 # ── Side vane (outboard of each engine) sweeping out into a fin at the back.
-fin = plate('fin', [(0.0, 0.58), (0.0, 1.02), (-2.6, 1.4), (-3.2, 1.0), (-2.6, 0.62)], 0.24, M['paint'], 'x', 0.0, 0.07)
+fin = plate('fin', [(0.0, 0.6), (0.0, 1.0), (-1.95, 1.32), (-2.4, 1.0), (-1.95, 0.64)], 0.22, M['paint'], 'x', 0.0, 0.07)
 place(fin, (0, -0.4, 0), (EX + 0.86, 0.0, CR - 0.55)); right.append(fin)
-right.append(plate('talon_pylon', [(CR + 0.5, 0.62), (CR + 0.25, 1.02), (CR - 0.75, 1.02), (CR - 0.75, 0.62)], 0.26, M['paint'], 'x', EX + 0.8, 0.07))
-ft = plate('fin_tip', [(-2.45, 1.37), (-2.6, 1.41), (-3.22, 1.0), (-3.0, 0.98)], 0.26, M['trim'], 'x', 0.0, 0.05)
+right.append(poly_loft('talon_pylon', [(CR + 0.9, EX + 0.66, EY, 0.03, 0.05, 0.05), (CR + 0.2, EX + 0.76, EY + 0.03, 0.16, 0.24, 0.2), (CR - 0.6, EX + 0.8, EY + 0.03, 0.15, 0.22, 0.18), (CR - 1.0, EX + 0.78, EY + 0.03, 0.08, 0.14, 0.12)], [(1, 0), (0.3, 1), (-1, 0.7), (-1, -0.7), (0.3, -1)], 30, M['paint'], angle=60))
+ft = plate('fin_tip', [(-1.85, 1.3), (-1.97, 1.33), (-2.42, 1.0), (-2.25, 0.98)], 0.24, M['trim'], 'x', 0.0, 0.05)
 place(ft, (0, -0.4, 0), (EX + 0.86, 0.0, CR - 0.55)); right.append(ft)
 # ── Skid rail along each can's lower outer side, faired into it; the hover glow under it.
 right.append(poly_loft('strake', [(5.1, EX + 0.6, EY - 0.46, 0.02, 0.02, 0.02), (4.6, EX + 0.6, EY - 0.47, 0.16, 0.1, 0.1), (CR + 0.9, EX + 0.6, EY - 0.47, 0.16, 0.1, 0.1), (CR + 0.4, EX + 0.58, EY - 0.46, 0.02, 0.02, 0.02)], [(1, 0), (0.4, 1), (-1, 0.6), (-1, -0.6), (0.4, -1)], 32, M['paint']))
@@ -146,8 +146,6 @@ for dz in (0.0, 0.55):
     z0 = 5.1 - dz
     tube('chevron', [(-0.36, _top(z0 - 0.6) + 0.02, z0 - 0.6), (0, _top(z0) + 0.025, z0), (0.36, _top(z0 - 0.6) + 0.02, z0 - 0.6)], 0.045, M['trim'])
 # An orange stripe along each chine, a dark keel plate under the hull.
-for side in (1, -1):
-    poly_loft('chine_stripe', [(z, side * (a + 0.012), cy, 0.02, 0.03, 0.03) for (z, cx, cy, a, t, b) in SPINE[1:-1]], [(1, 0), (0, 1), (-1, 0), (0, -1)], 40, M['trim'], cap1=False, angle=80)
 poly_loft('keel', [(z, 0, cy - b - 0.01, a * 0.32, 0.03, 0.03) for (z, cx, cy, a, t, b) in SPINE[1:-1]], [(1, 0), (0.6, 1), (-0.6, 1), (-1, 0), (-0.6, -1), (0.6, -1)], 40, M['carbon'], cap1=True)
 # Canopy: a big smoked oval over the middle of the spine, orange frame lines across it.
 TOP = 1.46
@@ -161,7 +159,7 @@ def egg(scale_w, scale_h, base, z_pad=0.0, n=14):
     return st
 # Skirt: a white fairing from the spine up to the canopy sill (one solid shape in side view).
 smooth_loft('canopy_skirt', [(z, 0, 1.26, a * 1.08, TOP - 1.26 + 0.02, 0.05, 2.6) for (z, cx, cy, a, t, b, n) in egg(1.0, 1.0, TOP, 0.25)], 24, 22, M['paint'])
-frame = smooth_loft('canopy_frame', [(z, 0, TOP - 0.03, a * 1.05, 0.06, 0.03, 2.4) for (z, cx, cy, a, t, b, n) in egg(1.0, 1.0, TOP, 0.12)], 24, 22, M['trim'])
+frame = smooth_loft('canopy_frame', [(z, 0, TOP - 0.03, a * 1.05, 0.06, 0.03, 2.4) for (z, cx, cy, a, t, b, n) in egg(1.0, 1.0, TOP, 0.0)], 24, 22, M['trim'])
 can = smooth_loft('canopy', egg(1.0, 1.0, TOP), 28, 22, M['glass'], angle=80)
 smooth_loft('canopy_tub', egg(0.95, 0.94, TOP - 0.01), 16, 14, M['carbon'])
 for f in (-0.6, -0.2, 0.2, 0.6):
@@ -169,9 +167,12 @@ for f in (-0.6, -0.2, 0.2, 0.6):
     pts = [(CW * k * 1.01 * math.cos(t), TOP + CH * k * 1.01 * math.sin(t), z) for t in [i * math.pi / 12 for i in range(13)]]
     tube('canopy_bow', pts, 0.022, M['trim'])
 tube('canopy_spine', [(0, TOP + CH * 0.62, CZ + CL * 0.8), (0, TOP + CH * 1.01, CZ), (0, TOP + CH * 0.62, CZ - CL * 0.8)], 0.02, M['trim'])
+poly_loft('spine_strip', [(z, 0, _top(z) + 0.004, 0.16, 0.012, 0.012) for z in (-0.4, -1.4, -2.4, -3.2)], [(1, 0), (0.9, 1), (-0.9, 1), (-1, 0), (-0.9, -1), (0.9, -1)], 24, M['gun'], cap1=True, angle=80)
+for z0 in (-0.6, -1.3):
+    tube('top_chevron', [(-0.5, _top(z0 - 0.45) + 0.015, z0 - 0.45), (-0.2, _top(z0) + 0.02, z0), (0.2, _top(z0) + 0.02, z0), (0.5, _top(z0 - 0.45) + 0.015, z0 - 0.45)], 0.03, M['gun'])
 # Twin raked dorsal fins at the spine's tail, with root fillets.
 for side in (1, -1):
-    df = plate('dorsal', [(0.0, 0.0), (-0.45, 0.9), (-0.78, 0.92), (-0.95, 0.0)], 0.12, M['paint'], 'x', 0.0, 0.035)
+    df = plate('dorsal', [(0.25, 0.0), (-0.5, 0.9), (-0.85, 0.92), (-1.0, 0.0)], 0.17, M['paint'], 'x', 0.0, 0.05)
     place(df, (0, 0, -0.24 * side), (0.45 * side, 1.36, -3.0))
     dt = plate('dorsal_tip', [(-0.42, 0.83), (-0.46, 0.92), (-0.79, 0.93), (-0.76, 0.84)], 0.13, M['trim'], 'x', 0.0, 0.03)
     place(dt, (0, 0, -0.24 * side), (0.45 * side, 1.36, -3.0))
