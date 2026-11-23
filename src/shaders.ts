@@ -383,6 +383,23 @@ function patchStandardBase(mat: THREE.MeshStandardMaterial, opts: PatchOpts = {}
           vec3 c = tx * wxz.x + tz * wxz.y;
           // A slow large-scale shift so neighbouring mesas are not the same rock.
           c *= mix(vec3(1.0), vec3(1.08, 0.86, 0.8), vnoise(vFogW.xz * 0.0007));
+          // Variety along a long wall (the player: the canyon walls read as one texture repeated): the
+          // formations change colour over a few km — cream sandstone, deep red, a grey-violet shale band —
+          // their thickness wanders, desert varnish streaks run down the faces, and slabs have fallen
+          // (blocky lighter scars).
+          {
+            float fz = vnoise(vFogW.xz * 0.00045 + 11.0), fz2 = vnoise(vFogW.xz * 0.0011 + 4.0);
+            float band = fract((wy0 + 40.0 * fz2) / (60.0 + 50.0 * fz));
+            vec3 cream = vec3(1.18, 1.05, 0.86), deep = vec3(0.86, 0.6, 0.5), shale = vec3(0.78, 0.74, 0.82);
+            vec3 tint = mix(cream, deep, smoothstep(0.3, 0.7, fz));
+            tint = mix(tint, shale, smoothstep(0.82, 0.9, band) * (1.0 - smoothstep(0.95, 1.0, band)) * 0.8);
+            c *= mix(vec3(1.0), tint, 0.55);
+            float along = (vFogW.x * wxz.y + vFogW.z * wxz.x);
+            float varnish = smoothstep(0.55, 0.85, vnoise(vec2(along * 0.045, vFogW.y * 0.0025))) * smoothstep(0.4, 0.0, abs(vWN.y));
+            c *= 1.0 - 0.38 * varnish;
+            float slab = step(0.78, vnoise(floor(vec2(along / 38.0, vFogW.y / 26.0)) + 7.0)) * smoothstep(0.4, 0.0, abs(vWN.y));
+            c = mix(c, c * vec3(1.22, 1.12, 1.0), slab * 0.6);
+          }
           // Flat tops: sand-covered cap rock.
           vec3 top = texture2D(tSand, vFogW.xz / 30.0).rgb * vec3(0.95, 0.9, 0.85);
           c = mix(c, top, smoothstep(0.7, 0.92, vWN.y));
