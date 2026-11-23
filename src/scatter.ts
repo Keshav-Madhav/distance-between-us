@@ -56,9 +56,9 @@ const fern = (c: [number, number, number]): Build => () => {
 const bush = (c: [number, number, number], r: number, h: number): Build => () => {
   // A loose clump of lumpy blobs (reads soft: something you fly straight through).
   const gs: THREE.BufferGeometry[] = []
-  for (let i = 0; i < 4; i++) {
-    const a = i * 2.1, d = r * 0.45
-    gs.push(col(new THREE.IcosahedronGeometry(r * (0.55 + 0.15 * (i % 2)), 1).scale(1, h / r * 0.8, 1).translate(Math.cos(a) * d, h * 0.45, Math.sin(a) * d), c, 0.35))
+  for (let i = 0; i < 6; i++) {
+    const a = i * 2.1, d = r * (0.3 + 0.25 * (i % 3) / 2)
+    gs.push(col(new THREE.IcosahedronGeometry(r * (0.38 + 0.12 * (i % 3)), 1).translate(Math.cos(a) * d, h * (0.3 + 0.12 * (i % 4)), Math.sin(a) * d), c, 0.35))
   }
   return merge(gs)
 }
@@ -67,13 +67,13 @@ const dryBush = (): Build => () => {
   const gs: THREE.BufferGeometry[] = []
   for (let i = 0; i < 11; i++) {
     const a = i * 2.4, e = 0.4 + 0.5 * ((i * 17) % 9) / 9
-    gs.push(col(new THREE.CylinderGeometry(0.02, 0.04, 1.1, 3).translate(0, 0.55, 0).rotateZ(e).rotateY(a), [0.42, 0.33, 0.24], 0.3))
+    gs.push(col(new THREE.CylinderGeometry(0.02, 0.04, 0.65, 3).translate(0, 0.32, 0).rotateZ(e).rotateY(a), [0.62, 0.55, 0.38], 0.3))
   }
-  gs.push(col(new THREE.IcosahedronGeometry(0.42, 0).scale(1, 0.6, 1).translate(0, 0.32, 0), [0.4, 0.38, 0.24], 0.2))
+  gs.push(col(new THREE.IcosahedronGeometry(0.3, 0).scale(1, 0.55, 1).translate(0, 0.2, 0), [0.58, 0.52, 0.34], 0.2))
   return merge(gs)
 }
 const mound = (c: [number, number, number], r: number, h: number): Build => () => col(new THREE.SphereGeometry(1, 10, 5, 0, Math.PI * 2, 0, Math.PI / 2).scale(r, h, r * 0.75), c, 0.06)
-const iceChip = (): Build => () => col(new THREE.OctahedronGeometry(1, 0).scale(0.26, 0.2, 0.22).translate(0, 0.08, 0), [0.87, 0.93, 0.98], 0.15)
+const iceChip = (): Build => () => col(new THREE.OctahedronGeometry(1, 0).scale(0.3, 0.24, 0.26).translate(0, 0.1, 0), [0.62, 0.82, 1.0], 0.4)
 const snowman = (): Build => () => merge([
   col(new THREE.SphereGeometry(0.55, 10, 7).translate(0, 0.45, 0), [0.95, 0.96, 1.0]),
   col(new THREE.SphereGeometry(0.4, 10, 7).translate(0, 1.15, 0), [0.95, 0.96, 1.0]),
@@ -96,25 +96,25 @@ const ember = (): Build => () => col(new THREE.DodecahedronGeometry(1, 0).scale(
 
 // ── per world (cell metres, grid cells across, chance a cell holds one, scale range) ──
 const SEEDED = (k: Omit<Kind, 'seed'>[]): Kind[] => k.map((x, i) => ({ ...x, seed: 17.3 + i * 31.7 }))
-const FLAG_COL: Record<string, [number, number, number]> = { desert: [1.0, 0.42, 0.1], ice: [0.9, 0.15, 0.2], lava: [1.0, 0.75, 0.1], forest: [0.2, 0.5, 1.0], jungle: [1.0, 0.85, 0.15] }
-const FLAGS: Omit<Kind, 'seed'> = { name: 'flag', build: flag(FLAG_COL[BIOME] ?? [1, 0.4, 0.1]), cell: 90, grid: 20, density: 0.3, scale: [0.9, 1.2] }
+const FLAG_COL: Record<string, [number, number, number]> = { desert: [1.0, 0.42, 0.1], ice: [1.0, 0.35, 0.1], lava: [1.0, 0.75, 0.1], forest: [0.2, 0.5, 1.0], jungle: [1.0, 0.85, 0.15] }
+const FLAGS: Omit<Kind, 'seed'> = { name: 'flag', build: flag(FLAG_COL[BIOME] ?? [1, 0.4, 0.1]), cell: 60, grid: 24, density: 0.35, scale: [0.9, 1.2] }
 const KINDS: Record<string, Kind[]> = {
   desert: SEEDED([
     { name: 'pebble', build: pebble([0.66, 0.36, 0.2]), cell: 4, grid: 110, density: 0.55, scale: [0.5, 1.6] },
     { name: 'rock', build: lowRock([0.6, 0.34, 0.2]), cell: 11, grid: 64, density: 0.3, scale: [0.4, 0.9] },
-    { name: 'scrub', build: dryBush(), cell: 14, grid: 56, density: 0.5, scale: [0.7, 1.5], tilt: 0.1 },
+    { name: 'scrub', build: dryBush(), cell: 14, grid: 56, density: 0.5, scale: [0.6, 1.0], tilt: 0.1 },
     FLAGS,
   ]),
   ice: SEEDED([
-    { name: 'chip', build: iceChip(), cell: 4, grid: 110, density: 0.6, scale: [0.6, 1.5] },
-    { name: 'mound', build: mound([0.93, 0.95, 1.0], 1.6, 0.42), cell: 14, grid: 56, density: 0.6, scale: [0.6, 1.6] },
-    { name: 'snowman', build: snowman(), cell: 140, grid: 14, density: 0.35, scale: [0.9, 1.15] },
+    { name: 'chip', build: iceChip(), cell: 3.5, grid: 120, density: 0.7, scale: [0.6, 1.6] },
+    { name: 'mound', build: mound([0.78, 0.86, 1.0], 1.6, 0.56), cell: 14, grid: 56, density: 0.6, scale: [0.6, 1.6] },
+    { name: 'snowman', build: snowman(), cell: 110, grid: 14, density: 0.4, scale: [0.9, 1.15] },
     FLAGS,
   ]),
   lava: SEEDED([
     { name: 'pebble', build: pebble([0.26, 0.19, 0.16]), cell: 4, grid: 110, density: 0.5, scale: [0.5, 1.4] },
-    { name: 'ash', build: mound([0.36, 0.32, 0.3], 0.9, 0.28), cell: 13, grid: 56, density: 0.4, scale: [0.6, 1.3] },
-    { name: 'ember', build: ember(), cell: 7, grid: 90, density: 0.35, scale: [0.6, 1.5], glow: true },
+    { name: 'ash', build: () => col(new THREE.ConeGeometry(0.9, 0.36, 9, 1, true).translate(0, 0.16, 0), [0.5, 0.45, 0.42], 0.25), cell: 13, grid: 56, density: 0.4, scale: [0.6, 1.3] },
+    { name: 'ember', build: ember(), cell: 7, grid: 90, density: 0.35, scale: [0.35, 0.9], glow: true },
     { name: 'vent', build: vent(), cell: 34, grid: 30, density: 0.4, scale: [0.8, 1.6] },
     { name: 'ventglow', build: ventGlow(), cell: 34, grid: 30, density: 0.4, scale: [0.8, 1.6], glow: true },
     FLAGS,
@@ -122,11 +122,11 @@ const KINDS: Record<string, Kind[]> = {
   forest: SEEDED([
     { name: 'tuft', build: tuft([0.28, 0.46, 0.12], 0.7), cell: 5, grid: 100, density: 0.6, scale: [0.7, 1.6], tilt: 0.15 },
     { name: 'flower', build: tuft([0.95, 0.85, 0.3], 0.35, 5, 0.06), cell: 7, grid: 70, density: 0.3, scale: [0.8, 1.3] },
-    { name: 'bush', build: bush([0.3, 0.54, 0.22], 0.8, 1.0), cell: 15, grid: 52, density: 0.4, scale: [0.7, 1.4] },
+    { name: 'bush', build: bush([0.4, 0.68, 0.26], 0.8, 1.0), cell: 15, grid: 52, density: 0.4, scale: [0.7, 1.4] },
     FLAGS,
   ]),
   jungle: SEEDED([
-    { name: 'fern', build: fern([0.16, 0.36, 0.1]), cell: 6, grid: 90, density: 0.55, scale: [0.7, 1.6], tilt: 0.1 },
+    { name: 'fern', build: fern([0.2, 0.32, 0.14]), cell: 6, grid: 90, density: 0.55, scale: [0.7, 1.6], tilt: 0.1 },
     { name: 'tuft', build: tuft([0.12, 0.26, 0.07], 0.6), cell: 4, grid: 110, density: 0.45, scale: [0.7, 1.5] },
     { name: 'bush', build: bush([0.14, 0.3, 0.1], 0.9, 1.2), cell: 14, grid: 56, density: 0.45, scale: [0.7, 1.4] },
     FLAGS,
@@ -182,6 +182,8 @@ vec3 scPos; float scS; float scA; float scT;`
         scA = h2 * 6.2832;
         scT = (h3 - 0.5) * ${(k.tilt ?? 0).toFixed(2)};
         scPos = vec3(xz.x, groundH(xz) - 0.04, xz.y);
+        // (Not right at the lens: up close a fern or a twig filled the screen.)
+        scS *= smoothstep(5.0, 14.0, distance(scPos, cameraPosition));
       }`
       s.vertexShader = s.vertexShader
         .replace('#include <common>', `#include <common>\n${head}`)

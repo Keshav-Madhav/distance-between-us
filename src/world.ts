@@ -492,9 +492,7 @@ function terrainMaterial(shared: GroundUniforms, snap: { value: THREE.Vector2 },
           alb *= 1.0 + 0.1 * smoothstep(0.4, 1.0, wv) * (1.0 - gm);
           // Wildflowers, close in: sparse dots of white, yellow, violet.
           float fd = 1.0 - smoothstep(40.0, 220.0, length(vW - cameraPosition));
-          #ifdef BIOME_JUNGLE
-          fd = 0.0;
-          #endif
+          fd = 0.0; // (the scatter's flower clumps replace these: flat discs read as litter)
           if (fd > 0.0) {
             vec2 fc = floor(p * 0.9);
             float fl = step(0.985, hash12(fc)) * (1.0 - smoothstep(0.2, 0.42, length(fract(p * 0.9) - 0.5))) * fd * (1.0 - gm);
