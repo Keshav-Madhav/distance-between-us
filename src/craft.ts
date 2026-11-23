@@ -365,8 +365,8 @@ export class Craft {
     // (Shorter and cooler than they were: the plumes ran down over the Mach readout, blown white.)
     // (The burner plume stays short: seen from the chase camera a long one ran back over the ship and
     // its additive glow washed the hull out; the speed reads from the streaks and the shock diamonds.)
-    const len = 1.0 + throttle * 1.2 + boost * 2.4
-    const wid = 0.82 + boost * 0.2
+    const len = 0.9 + throttle * 0.9 + boost * 1.5
+    const wid = 0.8 + boost * 0.15
     const j = 1 + Math.sin(time * 41) * 0.05 + Math.sin(time * 23) * 0.04
     for (const [m, k] of [[this.flameMat, 1], [this.innerMat, 0.55]] as const) {
       m.uniforms.uThrottle.value = throttle

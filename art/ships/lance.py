@@ -85,10 +85,6 @@ for (z0, z1, r, m) in [(MZ0 - 0.05, MZ0 - 0.35, 0.4, 'brass'), (MZ0 - 0.45, MZ0 
 smooth(lathe('main_nozzle', [(MZ1, 0.42), (MZ1 - 0.12, 0.46), (NZ + 0.05, 0.44), (NZ, 0.4)], 0, FY + 0.05, 36, M['metal']), 30)
 flared_lip('main_lip', 0, FY + 0.05, NZ + 0.08, 0.4, 0.22, M)
 cyl('main_hot', 0.32, 0.02, (0, FY + 0.05, MZ1 - 0.1), 'z', 28, M['hot'])
-for sx in (1, -1):
-    tube('top_pipe', [(sx * 0.3, FY + 0.32, MZ0 + 0.2), (sx * 0.42, FY + 0.4, MZ0 - 0.5), (sx * 0.38, FY + 0.36, MZ0 - 1.0), (sx * 0.3, FY + 0.3, MZ1 + 0.1)], 0.035, M['brass'])
-    for z in (MZ0 - 0.4, MZ1 + 0.4):
-        cyl('collar', 0.06, 0.06, (sx * 0.4, FY + 0.38, z), 'z', 10, M['gun'])
 for z in (MZ0 - 0.4, MZ0 - 0.95):
     ring('mflange', 0.45, 0.02, (0, FY + 0.05, z), 22, M['metal'], minor=3)
 
@@ -103,11 +99,6 @@ for (z0, z1, r, m) in [(-1.75, -2.1, 0.4, 'gun'), (-2.2, -2.4, 0.36, 'brass'), (
     right.append(ring('eflange', r + 0.01, 0.018, (EX, EY, z0 - 0.02), 20, M['metal'], minor=3))
 for (z, r) in ((-1.9, 0.45), (-2.15, 0.43), (-2.45, 0.46), (-2.75, 0.44), (-3.0, 0.46)):  # flange lips on each step
     right.append(ring('eflange2', r, 0.022, (EX, EY, z), 22, M['metal'], minor=3))
-for k, a in enumerate((0.5, 2.6)):  # coolant pipes bent over the steps, clamped
-    pts = [(EX + (0.47 + 0.04 * math.sin(q * 1.4)) * math.cos(a), EY + (0.47 + 0.04 * math.sin(q * 1.4)) * math.sin(a), -1.75 - q * 0.14) for q in range(10)]
-    right.append(tube('epipe', pts, 0.03, M['brass' if k else 'trim']))
-    for z in (-1.8, -3.0):
-        right.append(box('eclamp', (0.09, 0.09, 0.07), (EX + 0.47 * math.cos(a), EY + 0.47 * math.sin(a), z), material=M['gun']))
 right.append(smooth(lathe('enozzle', [(-3.1, 0.4), (-3.2, 0.42), (NZ + 0.05, 0.4), (NZ, 0.36)], EX, EY, 32, M['gun']), 30))
 right.append(smooth(lathe('eliner', [(NZ, 0.34), (-3.3, 0.28), (-3.2, 0.0)], EX, EY, 28, M['carbon']), 60))
 right.append(cyl('ehot', 0.28, 0.02, (EX, EY, -3.25), 'z', 24, M['hot']))

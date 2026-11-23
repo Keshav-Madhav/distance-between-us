@@ -62,14 +62,6 @@ for k, (z0, z1, r, m) in enumerate([(MZ(0.7), MZ(0.45), 0.7, 'gun'), (MZ(0.45), 
     if m in ('gun', 'brass'):  # flange lips at both ends, and radial ribs on two stages
         for z in (z0 - 0.02, z1 + 0.02):
             right.append(ring('flange', r + 0.01, 0.025, (EX, EY, z), 20, M['metal'], minor=3))
-        if k in (2,):
-            for i in range(12):
-                a = 2 * math.pi * (i + 0.5) / 12
-                right.append(box('rib', (0.05, 0.05, abs(z1 - z0) - 0.1), (EX + (r + 0.02) * math.cos(a), EY + (r + 0.02) * math.sin(a), (z0 + z1) / 2), (0, 0, a - math.pi / 2), M['metal']))
-# Cooling fins round the last band (it read as a missing mesh).
-for i in range(20):
-    a = 2 * math.pi * (i + 0.5) / 20
-    right.append(box('cool_fin', (0.015, 0.13, 0.7), (EX + 0.6 * math.cos(a), EY + 0.6 * math.sin(a), MZ(-2.15)), (0, 0, a - math.pi / 2), M['gun']))
 # Auxiliary cylinders on the outboard side only, of different sizes.
 for (a, z0, z1, rr) in []:
     x, y = EX + (0.72 + rr) * math.cos(a), EY + (0.72 + rr) * math.sin(a)
@@ -85,7 +77,7 @@ def stage_r(z):
     for (z0, z1, r) in STAGES:
         if z1 <= z <= z0: return r
     return 0.6
-for a in (1.7, 2.55):
+for a in (2.1,):
     pts = []
     for q in range(41):
         z = MZ(0.68) + (MZ(-2.5) - MZ(0.68)) * q / 40

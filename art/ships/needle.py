@@ -90,7 +90,7 @@ right.append(fan_smooth('pod_fan', PX, PY, -0.9, 0.09, 0.19, 14, 0.75, 0.1, 3, M
 right.append(smooth(lathe('pod_spinner', [(-0.76, 0.006), (-0.8, 0.05), (-0.86, 0.085), (-0.95, 0.09)], PX, PY, 24, M['gun'], cap1=True), 85))
 right.append(smooth(lathe('pod_nozzle', [(NZ + 0.05, 0.27), (NZ, 0.25), (NZ + 0.15, 0.21)], PX, PY, 28, M['metal']), 40))
 right.append(cyl('pod_hot', 0.19, 0.02, (PX, PY, NZ + 0.14), 'z', 20, M['hot']))
-arm = smooth_loft('arm', [(-0.15, 0, 0, 0.55, 0.12, 0.12, 2.0), (0.4, 0, 0, 0.5, 0.1, 0.1, 2.0), (1.1, 0, 0, 0.5, 0.11, 0.11, 2.0)], 16, 10, M['paint'], cap0=True, cap1=True)
+arm = smooth_loft('arm', [(-0.15, 0, 0, 0.95, 0.1, 0.1, 1.9), (0.5, 0, 0, 0.7, 0.06, 0.06, 1.9), (1.15, 0, 0, 0.75, 0.09, 0.09, 1.9)], 20, 12, M['paint'], cap0=True, cap1=True)
 place(arm, (0, math.pi / 2, 0.4), (0.4, BY - 0.12, -1.7)); right.append(arm)
 wl = plate('winglet', [(0.0, 0.0), (0.0, 0.08), (-0.7, 0.1), (-0.95, 0.04), (-0.7, -0.02)], 0.05, M['paint'], 'y', 0.0, 0.015)
 right.append(plate('winglet', [(PX + 0.36, -1.8), (PX + 0.36, -2.7), (PX + 1.1, -3.05), (PX + 1.15, -2.75)], 0.05, M['paint'], 'y', PY, 0.015))

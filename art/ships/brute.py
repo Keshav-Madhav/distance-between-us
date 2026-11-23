@@ -144,7 +144,7 @@ RD = _top(-1.2)
 smooth(lathe('tail_housing', [(-2.0, 0.48), (-2.25, 0.46), (-2.3, 0.4)], 0, 0.94, 40, M['gun']), 40)
 smooth(lathe('tail_nozzle', [(-2.3, 0.32), (-2.4, 0.34), (NZ, 0.32)], 0, 0.94, 40, M['metal']), 40)
 smooth(lathe('tail_liner', [(NZ, 0.3), (-2.36, 0.26), (-2.26, 0.22)], 0, 0.94, 32, M['carbon']), 50)
-cyl('tail_hot', 0.22, 0.02, (0, 0.94, -2.27), 'z', 24, M['hot'])
+cyl('tail_hot', 0.24, 0.02, (0, 0.94, -2.34), 'z', 24, M['hot'])
 
 # ── Bumper: a U-frame from under each front housing, round the nose.
 for sx in (1, -1):
@@ -163,11 +163,6 @@ for sx in (1, -1):
     tube('bumper_post', [(sx * 0.6, 0.18, F0 + 0.95), (sx * 0.38, 0.6, 4.3)], 0.08, M['gun'])
     box('post_mount', (0.2, 0.08, 0.2), (sx * 0.38, 0.62, 4.3), material=M['gun'])
 box('bumper_glow', (1.8, 0.012, 0.06), (0, 0.1, F0 + 0.95), material=M['glow'])
-for sx in (1, -1):  # hover glow: slim strips under each module
-    for dx in (-0.4, 0.4):
-        box('pad_glow', (0.06, 0.012, 1.4), (sx * (FX + dx), FY - FH * 0.93 - 0.01, (F0 + F1) / 2), material=M['glow'])
-        box('pad_glow', (0.06, 0.012, 2.6), (sx * (RX + dx), RY - RH * 0.97 - 0.01, (R0 + R1) / 2), material=M['glow'])
-
 # Game hooks.
 empty('nozzle_0', (-RX, RY, NZ)); empty('nozzle_1@0.5', (0, 0.94, NZ)); empty('nozzle_2', (RX, RY, NZ))
 empty('wingtip', (RX + RH, RY + 0.3, R1 + 0.3))

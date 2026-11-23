@@ -63,9 +63,7 @@ for (a, rr) in [(0.0, 0.09), (2.9, 0.08)]:
 right.append(smooth(lathe('can', [(EZ1, 0.5), (EZ1 - 0.05, 0.55), (-2.55, 0.56), (-2.8, 0.53)], EX, EY, 36, M['paint'], cap0=True), 35))
 right.append(smooth(lathe('can_band', [(EZ1 - 0.15, 0.555), (EZ1 - 0.35, 0.555)], EX, EY, 36, M['trim']), 35))
 right.append(smooth(lathe('nozzle', [(-2.8, 0.5), (-2.95, 0.52), (NZ + 0.05, 0.5), (NZ, 0.46)], EX, EY, 36, M['gun']), 30))
-for i in range(18):  # ribbed nozzle
-    a = 2 * math.pi * i / 18
-    right.append(box('rib', (0.05, 0.05, 0.42), (EX + 0.52 * math.cos(a), EY + 0.52 * math.sin(a), -3.03), (0, 0, a - math.pi / 2), M['metal']))
+right.extend(flared_lip('lip', EX, EY, NZ + 0.3, 0.5, 0.28, M))
 right.append(smooth(lathe('liner', [(NZ, 0.44), (-2.9, 0.36), (-2.8, 0.0)], EX, EY, 28, M['carbon']), 60))
 right.append(cyl('hot', 0.36, 0.02, (EX, EY, -2.85), 'z', 28, M['hot']))
 # Nacelle fairing: lofted up out of the wing round each engine's lower half (no pylon gap).
