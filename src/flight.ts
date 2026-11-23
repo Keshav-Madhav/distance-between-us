@@ -67,6 +67,11 @@ const UP = new THREE.Vector3(0, 1, 0)
 /** "Up" for level flight, banking and the view: the world's — or, near a planet in ORBIT, the planet's
  *  (set by the game; shared by the craft and its camera). */
 export const UP_REF = new THREE.Vector3(0, 1, 0)
+/** How much there is an "up" at all (1 in a world or near a planet, 0 in deep space): scales the
+ *  auto-bank and self-levelling, turns A/D from a banked turn into a pure yaw about the craft's own
+ *  vertical, and lets the camera follow the craft's roll instead of holding a horizon. */
+export const FLY_LEVEL = { k: 1 }
+const _ax = new THREE.Vector3()
 const AX = new THREE.Vector3(1, 0, 0), AY = new THREE.Vector3(0, 1, 0), AZ = new THREE.Vector3(0, 0, 1)
 
 export class FlightCraft {
@@ -198,14 +203,17 @@ export class FlightCraft {
       const target = turnIn * (this.sandbox ? 1.35 : 1.0) // up to ~57° into a turn (77° in FREE ROAM); level when straight (also from inverted)
       let d = target - bank
       d = Math.atan2(Math.sin(d), Math.cos(d))
-      rollCmd = THREE.MathUtils.clamp(d * 2.5, -1, 1)
+      rollCmd = THREE.MathUtils.clamp(d * 2.5, -1, 1) * FLY_LEVEL.k // (deep space: nothing to level to)
     }
     const ease = 1 - Math.exp(-dt * 10)
     this.rates.x += (pitchIn * pitchMax - this.rates.x) * ease
     this.rates.y += (turnIn * turnMax - this.rates.y) * ease
     this.rates.z += (rollCmd * F.rollRate - this.rates.z) * ease
     // Turn about the world's up (pre-multiplied: a world-axis rotation); pitch and roll in the craft.
-    _q.setFromAxisAngle(UP_REF, -this.rates.y * dt); this.quat.premultiply(_q)
+    // Turn about "up" — or, in deep space, about the craft's own vertical (a pure yaw).
+    _ax.copy(UP_REF).multiplyScalar(FLY_LEVEL.k).addScaledVector(this.up, 1 - FLY_LEVEL.k)
+    if (_ax.lengthSq() < 1e-6) _ax.copy(this.up)
+    _q.setFromAxisAngle(_ax.normalize(), -this.rates.y * dt); this.quat.premultiply(_q)
     _q.setFromAxisAngle(AX, -this.rates.x * dt); this.quat.multiply(_q)
     _q.setFromAxisAngle(AZ, this.rates.z * dt); this.quat.multiply(_q)
     this.quat.normalize()
@@ -379,7 +387,8 @@ export class FlightCam {
     const wantBack = fwd.clone().multiplyScalar(0.7).addScaledVector(vdir, 0.3).normalize()
     // The view's up: the world's, taking a little of the craft's roll — and all of it when the craft
     // goes past vertical (through a loop the world's up would flip the view).
-    const lean = THREE.MathUtils.clamp(this.horizon + Math.max(0, -cUp.dot(UP_REF)) * 1.4, 0, 1)
+    // (Deep space: no horizon to hold — the view rolls with the craft.)
+    const lean = THREE.MathUtils.lerp(1, THREE.MathUtils.clamp(this.horizon + Math.max(0, -cUp.dot(UP_REF)) * 1.4, 0, 1), FLY_LEVEL.k)
     const wantUp = UP_REF.clone().lerp(cUp, lean)
     if (wantUp.lengthSq() < 1e-4) wantUp.copy(cUp)
     wantUp.normalize()

@@ -586,7 +586,12 @@ export class Sound {
   }
 
   /** Per frame: engine, wind, rivals and music follow the race. */
-  update(dt: number, mach: number, boost: number, brake: number, lockProg: number, locked: boolean, alive: boolean, heat: number, burning = false, rivals: RivalVoice[] = []): void {
+  update(dt: number, machIn: number, boost: number, brake: number, lockProg: number, locked: boolean, alive: boolean, heat: number, burning = false, rivals: RivalVoice[] = [], vac = 0): void {
+    // (Every pitch and level here was tuned for Mach 1-10: in ORBIT, at Mach 60,000, the burner's sub was
+    //  asked for 130 kHz and the wind kept growing — "very weird whooshing". Capped; and in vacuum there
+    //  is no air: no wind, the engines a quieter hum through the hull.)
+    const mach = Math.min(machIn, 12)
+    const air = 1 - vac
     const ctx = this.ctx
     if (!ctx) return
     const t = ctx.currentTime
@@ -597,7 +602,7 @@ export class Sound {
     const burn = burning && alive ? 1 : 0
     this.rumbleG.gain.setTargetAtTime(live * (0.32 + 0.35 * boost + 0.3 * burn), t, k)
     this.rumbleF.frequency.setTargetAtTime(110 + 150 * s + 120 * boost, t, k)
-    this.roarG.gain.setTargetAtTime(live * (0.1 + 0.32 * s + 0.25 * boost), t, k)
+    this.roarG.gain.setTargetAtTime(live * (0.1 + 0.32 * s + 0.25 * boost) * (0.35 + 0.65 * air), t, k)
     this.roarF.frequency.setTargetAtTime(240 + 1400 * s + 500 * boost, t, k)
     const f0 = 36 + 72 * s + 22 * boost
     this.toneA.frequency.setTargetAtTime(f0, t, k)
@@ -610,9 +615,9 @@ export class Sound {
     this.burnG.gain.setTargetAtTime(burn * 0.7, t, burn ? 0.06 : 0.18)
     this.burnSub.frequency.setTargetAtTime(32 + mach * 2, t, 0.1)
     this.burnRoarF.frequency.setTargetAtTime(600 + 140 * Math.min(10, mach), t, 0.2)
-    this.crackleG.gain.setTargetAtTime(burn * 3.2 + live * boost * 0.4, t, 0.04)
+    this.crackleG.gain.setTargetAtTime((burn * 3.2 + live * boost * 0.4) * (0.25 + 0.75 * air), t, 0.04)
     // (Quieter: "the wind passing noise is too much" — 2026-11-21.)
-    this.windG.gain.setTargetAtTime(0.03 + 0.22 * Math.pow(Math.min(1, s), 1.5), t, k)
+    this.windG.gain.setTargetAtTime((0.03 + 0.22 * Math.pow(Math.min(1, s), 1.5)) * air, t, k)
     // Recorded layers: the roar's pitch rides the speed; the burner is the same roar, deeper and fat.
     if (this.engS) {
       this.engS.src.playbackRate.setTargetAtTime(0.62 + 0.09 * Math.min(10, mach) + 0.08 * boost, t, 0.08)
@@ -625,7 +630,7 @@ export class Sound {
     }
     if (this.windS) {
       this.windS.src.playbackRate.setTargetAtTime(0.75 + 0.5 * Math.min(1, s), t, 0.2)
-      this.windS.g.gain.setTargetAtTime(live * 0.16 * Math.pow(Math.min(1.2, s), 1.4), t, 0.15)
+      this.windS.g.gain.setTargetAtTime(live * 0.16 * Math.pow(Math.min(1.2, s), 1.4) * air, t, 0.15)
     }
     this.windF.frequency.setTargetAtTime(500 + 8500 * Math.min(1, s * s), t, k)
     this.brakeG.gain.setTargetAtTime(live * brake * 0.26, t, 0.03)

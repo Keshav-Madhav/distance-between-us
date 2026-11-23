@@ -11,7 +11,7 @@ import { Fx, resetE } from './particles'
 import { Trail } from './trails'
 import { Player } from './player'
 import { Combat } from './combat'
-import { FLIGHT, FlightCam, FlightCraft, type FlightControls, UP_REF } from './flight'
+import { FLIGHT, FlightCam, FlightCraft, type FlightControls, FLY_LEVEL, UP_REF } from './flight'
 import { Shards } from './shards'
 import { Rings } from './rings'
 import { Tips } from './tips'
@@ -1542,7 +1542,7 @@ let freeAir = false, freeAirT = 0
 let camBlend = 0, landBlend = 0
 const camFromOff = new THREE.Vector3(), camFromQ = new THREE.Quaternion()
 const landQ = new THREE.Quaternion(), landTmpQ = new THREE.Quaternion()
-const FREE_HINTS = ['<b>W · SHIFT</b>THROTTLE · BURNER (GROUND AND AIR)', '<b>A D · S</b>STEER · BRAKE', '<b>SPACE · C</b>NOSE UP · NOSE DOWN (IT STAYS WHERE YOU POINT IT)', '<b>TO SPACE</b>POINT THE NOSE UP, HOLD SHIFT · PAST 80 KM YOU ARE IN ORBIT', '<b>NO DAMAGE</b>DRIVE UP ANY ROCK, LAUNCH OFF THE TOP', '<b>BEAMS</b>CRYSTAL TRAILS · TAKE ALL FIVE'].map((h) => `<div>${h}</div>`).join('')
+const FREE_HINTS = ['<b>W · SHIFT</b>THROTTLE · BURNER (GROUND AND AIR)', '<b>A D · S</b>STEER · BRAKE', '<b>SPACE · C</b>NOSE UP · NOSE DOWN (IT STAYS WHERE YOU POINT IT)', '<b>A D · Q E</b>TURN (BANKS ITSELF; A PURE YAW IN DEEP SPACE) · ROLL', '<b>TO SPACE</b>POINT THE NOSE UP, HOLD SHIFT · PAST 80 KM YOU ARE IN ORBIT', '<b>NO DAMAGE</b>DRIVE UP ANY ROCK, LAUNCH OFF THE TOP', '<b>BEAMS</b>CRYSTAL TRAILS · TAKE ALL FIVE'].map((h) => `<div>${h}</div>`).join('')
 function camBlendStart(): void { camFromOff.subVectors(camera.position, renderPos); camFromQ.copy(camera.quaternion); camBlend = 1 }
 function freeOff(): void {
   freeAir = false
@@ -1553,7 +1553,7 @@ function freeOff(): void {
   $('#score .lab').textContent = 'SCORE'
 }
 function startFree(): void {
-  UP_REF.set(0, 1, 0)
+  UP_REF.set(0, 1, 0); FLY_LEVEL.k = 1
   ;(document.activeElement as HTMLElement | null)?.blur?.() // (see Input: a focused START restarted the run on Space)
   freeOff()
   applyPending()
@@ -1815,8 +1815,9 @@ function systemStep(): void {
   if (nb.i >= 0) {
     const rn = _sn.subVectors(sysPos, PLANETS[nb.i].pos).normalize()
     const w = 1 - THREE.MathUtils.smoothstep(nb.alt, 2e7, 4e8) // (full within 20,000 km; none past 400,000)
-    UP_REF.set(0, 1, 0).lerp(rn, w).normalize()
-  } else UP_REF.set(0, 1, 0)
+    UP_REF.copy(rn)
+    FLY_LEVEL.k = w
+  } else FLY_LEVEL.k = 0
   // Cruise: Shift scales the speed with the distance to the nearest body (half of it a second) — a
   // planet millions of km off is seconds away, and you slow by yourself as you close on anything.
   const safe = 0.5 * Math.max(nb.alt, 0)
@@ -2811,7 +2812,7 @@ function frame(now: number): void {
     if (player.crashing) crashBreak = 2
   } else if (mode === 'hunt' || mode === 'free') sound.setSection(player.crashing ? 'break' : 'drop')
   else sound.setSection('title')
-  sound.update(realDt, engineMach, player.boost, player.brake, mode === 'hunt' ? combat.lockProgress : 0, mode === 'hunt' && combat.locked, play && !player.dead && !player.crashing, heat, player.burning, rivalVoices)
+  sound.update(realDt, engineMach, player.boost, player.brake, mode === 'hunt' ? combat.lockProgress : 0, mode === 'hunt' && combat.locked, play && !player.dead && !player.crashing, heat, player.burning, rivalVoices, mode === 'free' ? space.vac : 0)
 
   sunShadow.enabled = tier !== 'low' && settings.shadows
   sunShadow.update(renderer, scene, camera.position, tmp.set(camera.matrixWorld.elements[8] * -1, 0, camera.matrixWorld.elements[10] * -1))
