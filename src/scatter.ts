@@ -260,7 +260,7 @@ export class Scatter {
   private readonly on = { value: 1 }
   private readonly view = { value: new THREE.Vector3(0, 0, -2) }
   private readonly nearR = { value: 0 }
-  private readonly nears: { g: THREE.InstancedBufferGeometry; m: number; centre: { value: THREE.Vector2 } }[] = []
+  private readonly nears: { g: THREE.InstancedBufferGeometry; m: number; centre: { value: THREE.Vector2 }; mesh: THREE.Mesh }[] = []
   private readonly lods: { g: THREE.InstancedBufferGeometry; n: number; R: number; cell: number; radius: { value: number }; centre: { value: THREE.Vector2 }; fine: boolean }[] = []
 
   /** The course's wear map (R: where races actually run): big props stay off it. */
@@ -297,7 +297,7 @@ export class Scatter {
     if (!near) this.lods.push({ g, n, R, cell: k.cell, radius, centre, fine: k.scale[1] < 2 && !k.near })
     // (The near twin follows the camera too: its centre was never set, so its ring was drawn round the
     // world's origin and the first 70 m beside you were empty.)
-    else this.nears.push({ g, m: Math.min(n, Math.ceil(Math.PI * (NEAR_MAX / k.cell + 1.5) ** 2)), centre })
+    else this.nears.push({ g, m: Math.min(n, Math.ceil(Math.PI * (NEAR_MAX / k.cell + 1.5) ** 2)), centre, mesh: null as unknown as THREE.Mesh })
     if (near) void afterBoot().then(() => { const r = refined(base); for (const name of ['position', 'normal', 'color']) g.setAttribute(name, r.attributes[name]) })
     const mat = k.glow
       ? new THREE.MeshBasicMaterial({ vertexColors: true })
@@ -405,6 +405,7 @@ vec3 scPos; float scS; float scA; float scT;`
     const m = new THREE.Mesh(g, mat)
     m.frustumCulled = false
     m.renderOrder = 0
+    if (near) this.nears[this.nears.length - 1].mesh = m
     return m
   }
 
@@ -420,7 +421,7 @@ vec3 scPos; float scS; float scA; float scT;`
     // The refined ring: ~70 m at rest, gone by Mach 5 (with the surface detail).
     const nr = NEAR_MAX * (1 - THREE.MathUtils.smoothstep(mach, 1.5, 5))
     this.nearR.value = nr > 4 ? nr : 0
-    for (const n of this.nears) { n.g.instanceCount = this.nearR.value > 0 ? n.m : 0; n.centre.value.set(cam.x, cam.z) }
+    for (const n of this.nears) { n.g.instanceCount = this.nearR.value > 0 ? n.m : 0; n.mesh.visible = this.nearR.value > 0; n.centre.value.set(cam.x, cam.z) }
     this.cam.value.set(cam.x, cam.z)
     const f = 1 - 0.45 * THREE.MathUtils.smoothstep(mach, 1.5, 6.5)
     for (const l of this.lods) {

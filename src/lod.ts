@@ -228,6 +228,9 @@ export class LodPair {
   end(): void {
     for (const [m, k, keep] of [[this.hi, this.kh, this.keepHi], [this.lo, this.kl, this.keepLo], [this.up, this.ku, this.keepUp]] as const) {
       m.count = k
+      // (Nothing to draw: not drawn at all — an empty instanced mesh still cost a program bind and every
+      // uniform upload each frame, in the main pass and both shadow passes.)
+      m.visible = k > 0
       m.instanceMatrix.clearUpdateRanges(); m.instanceMatrix.addUpdateRange(0, k * 16); m.instanceMatrix.needsUpdate = true
       keep.clearUpdateRanges(); keep.addUpdateRange(0, k); keep.needsUpdate = true
     }
