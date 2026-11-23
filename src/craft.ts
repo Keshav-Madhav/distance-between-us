@@ -221,6 +221,7 @@ export class Craft {
       // (Tinted and see-through: the pilot shows inside.)
       // (Smoked: a pale see-through canopy read as clear plastic on the white ships.)
       glass: new THREE.MeshPhysicalMaterial({ color: 0x0b1017, roughness: 0.06, metalness: 0.4, clearcoat: 1, envMap: env, envMapIntensity: 1.6, transparent: true, opacity: 0.86, depthWrite: false }),
+      brass: new THREE.MeshStandardMaterial({ side: THREE.DoubleSide, color: 0xb8863b, roughness: 0.3, metalness: 0.9, envMap: env, envMapIntensity: 1.4 }),
       gun: new THREE.MeshStandardMaterial({ side: THREE.DoubleSide, color: 0x3b4048, roughness: 0.34, metalness: 0.8, envMap: env, envMapIntensity: 1.3 }),
     }
     for (const m of Object.values(mats)) patchStandard(m as THREE.MeshStandardMaterial)
