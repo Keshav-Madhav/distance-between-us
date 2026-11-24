@@ -596,6 +596,7 @@ wreckage.onSmoke = (x, y, z, vx, vz) => {
   fx.smoke.emit(e)
 }
 const sound = new Sound()
+sound.prepare() // (its generated buffers built in a worker now, not when it starts: src/audiogen.ts)
 const input = new Input()
 const player = new Player()
 const cam = new ChaseCam(camera)

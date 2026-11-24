@@ -11,6 +11,7 @@
 //
 // Distant sounds arrive late (343 m/s) — you can outrun an explosion's sound.
 
+import { genAudio, type AudioData } from './audiogen'
 import { BIOME } from './terrain'
 const BPM = 170
 const STEP = 60 / BPM / 4
@@ -132,6 +133,20 @@ export class Sound {
   /** Out of the air (FREE ROAM, ORBIT): the space score; back down, the world's own. */
   setSpace(on: boolean): void { if (on === this.inSpace) return; this.inSpace = on; this.refreshMusic() }
 
+  private pre: AudioData | null = null
+  /** At boot: the generated buffers built in a worker, at this device's sample rate (a suspended
+   *  context made only to read it), ready before the sound starts. */
+  prepare(): void {
+    try {
+      const probe = new AudioContext()
+      const sr = probe.sampleRate
+      void probe.close()
+      const w = new Worker(new URL('./audioworker.ts', import.meta.url), { type: 'module' })
+      w.onmessage = (e: MessageEvent<AudioData>) => { if (!this.ctx) this.pre = e.data; w.terminate() }
+      w.onerror = () => w.terminate()
+      w.postMessage(sr)
+    } catch { /* built in start, then */ }
+  }
   start(): void {
     if (this.ctx) { void this.ctx.resume(); return }
     const ctx = new AudioContext({ latencyHint: 'interactive' })
@@ -144,19 +159,12 @@ export class Sound {
     this.lowpass = ctx.createBiquadFilter(); this.lowpass.type = 'lowpass'; this.lowpass.frequency.value = 20000
     this.duck.connect(this.lowpass).connect(comp).connect(this.master).connect(ctx.destination)
 
-    // The space: a generated stereo impulse, exponential decay with a darkening tail.
+    // The generated buffers: from the worker started at boot (prepare), else built here.
     const sr = ctx.sampleRate
-    const len = Math.floor(sr * 2.6)
-    const ir = ctx.createBuffer(2, len, sr)
-    for (let ch = 0; ch < 2; ch++) {
-      const d = ir.getChannelData(ch)
-      let lp = 0
-      for (let i = 0; i < len; i++) {
-        const t = i / len
-        lp += (Math.random() * 2 - 1 - lp) * (0.9 - t * 0.75)
-        d[i] = lp * Math.pow(1 - t, 3.2) * (i < sr * 0.012 ? i / (sr * 0.012) : 1)
-      }
-    }
+    const A = this.pre && this.pre.sr === sr ? this.pre : genAudio(sr)
+    this.pre = null
+    const buf = (chans: Float32Array[]) => { const b = ctx.createBuffer(chans.length, chans[0].length, sr); chans.forEach((c, k) => b.copyToChannel(c as Float32Array<ArrayBuffer>, k)); return b }
+    const ir = buf(A.ir)
     this.verb = ctx.createConvolver(); this.verb.buffer = ir
     this.verbIn = ctx.createGain(); this.verbIn.gain.value = 0.55
     this.verbIn.connect(this.verb).connect(this.duck)
@@ -169,42 +177,10 @@ export class Sound {
     this.sfx.connect(this.duck)
     this.eng.connect(this.duck)
 
-    this.noise = ctx.createBuffer(1, sr * 2, sr)
-    const nd = this.noise.getChannelData(0)
-    for (let i = 0; i < nd.length; i++) nd[i] = Math.random() * 2 - 1
-    this.brown = ctx.createBuffer(1, sr * 2, sr)
-    const bd = this.brown.getChannelData(0)
-    let last = 0
-    for (let i = 0; i < bd.length; i++) { last = (last + 0.02 * (Math.random() * 2 - 1)) / 1.02; bd[i] = last * 3.5 }
-    // Smooth random (−1…1, ~8 new values a second, cosine-eased): turbulence for gains and filters —
-    // a steady noise loop is what made everything sound generated.
-    this.smooth = ctx.createBuffer(1, sr * 8, sr)
-    {
-      const d = this.smooth.getChannelData(0), per = sr / 8
-      const pts = Array.from({ length: 65 }, () => Math.random() * 2 - 1); pts[64] = pts[0]
-      for (let i = 0; i < d.length; i++) {
-        const k = Math.floor(i / per), u = (i % per) / per, e = (1 - Math.cos(u * Math.PI)) / 2
-        d[i] = pts[k] + (pts[k + 1] - pts[k]) * e
-      }
-    }
-    // Crackle: sparse pops — many small, a few big — each a tiny decaying burst. A real afterburner
-    // crackles; a chopped noise only buzzes.
-    this.crackle = ctx.createBuffer(2, sr * 3, sr)
-    for (let ch = 0; ch < 2; ch++) {
-      const d = this.crackle.getChannelData(ch)
-      let i = 0
-      while (i < d.length) {
-        i += Math.floor((-Math.log(1 - Math.random()) / 70) * sr)
-        const big = Math.random() < 0.08
-        const a = (big ? 0.7 + Math.random() * 0.3 : Math.random() ** 2 * 0.5)
-        const len = Math.floor(sr * (big ? 0.01 + Math.random() * 0.02 : 0.001 + Math.random() * 0.006))
-        let lp = 0
-        for (let j = 0; j < len && i + j < d.length; j++) {
-          lp += ((Math.random() * 2 - 1) - lp) * (big ? 0.35 : 0.8)
-          d[i + j] += lp * a * Math.exp((-5 * j) / len)
-        }
-      }
-    }
+    this.noise = buf([A.noise])
+    this.brown = buf([A.brown])
+    this.smooth = buf([A.smooth])
+    this.crackle = buf(A.crackle)
     const loop = (buf: AudioBuffer) => { const s = ctx.createBufferSource(); s.buffer = buf; s.loop = true; s.loopStart = Math.random() * Math.min(1, buf.duration); s.start(); return s }
     /** A slow random modulator (rate: new values per second ≈ 8·rate) scaled to ±depth, into a param. */
     const wob = (param: AudioParam, rate: number, depth: number) => {
