@@ -294,6 +294,9 @@ loadBar.style.width = '10%'
 const canvas = $<HTMLCanvasElement>('#game')
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance', reversedDepthBuffer: true })
 renderer.info.autoReset = false
+// (Shader error checks off in a release build: on a program's first use they read its log, which forces
+// the driver to finish it there and then — a stall mid-race. Development builds keep them.)
+renderer.debug.checkShaderErrors = !import.meta.env.PROD
 renderer.toneMapping = THREE.NoToneMapping
 {
   const seen = new Set<string>()
@@ -3997,7 +4000,46 @@ scene.traverse((o) => {
 const wreckCount = wreckage.mesh.count
 ;wreckage.mesh.count = 1
 bootMark('pre-compile')
-await renderer.compileAsync(scene, camera)
+/**
+ * Compile every material in `root`, hidden ones too (three compiles only what is visible: the space
+ * layer, the vapour cone, the ghost… then compiled on first sight — a 218 ms frame two seconds into a
+ * climb), into the kind of target it is really drawn into.
+ */
+async function compileAll(root: THREE.Object3D, target: THREE.WebGLRenderTarget | null): Promise<void> {
+  const hidden: THREE.Object3D[] = []
+  root.traverse((o) => { if (!o.visible) { hidden.push(o); o.visible = true } })
+  const culled: THREE.Object3D[] = []
+  renderer.setRenderTarget(target)
+  try {
+    await renderer.compileAsync(root, camera)
+    // …and drawn once (into a 4×4 target, culling off): the browser's GL layer finishes a program on its
+    // first real draw — compiled ahead or not — and three reads its log then: 203 ms the first time the
+    // space layer drew, two seconds into a climb.
+    if (target) {
+      root.traverse((o) => { if (o.frustumCulled) { o.frustumCulled = false; culled.push(o) } })
+      // (A slice at a time, the main thread handed back between them when booting behind a running
+      // world — drawn in one go it was a 150 ms stall on the world being flown.)
+      const units: THREE.Object3D[] = []
+      for (const o of root.children) { if (o.children.length > 12) units.push(...o.children); else units.push(o) }
+      const auto = renderer.autoClear
+      renderer.autoClear = false
+      for (const u of units) { renderer.setRenderTarget(target); renderer.render(u, camera); await breathe() }
+      renderer.autoClear = auto
+    }
+  } finally {
+    for (const o of hidden) o.visible = false
+    for (const o of culled) o.frustumCulled = true
+    renderer.setRenderTarget(null)
+  }
+}
+await compileAll(scene, null)
+{
+  // The scene and the space layer are drawn into the post chain's target (half float), not the screen.
+  const rt = new THREE.WebGLRenderTarget(4, 4, { type: THREE.HalfFloatType })
+  await compileAll(scene, rt)
+  await compileAll(space.scene, rt)
+  rt.dispose()
+}
 // The post passes' shaders too, both ways they are drawn (into a target, to the screen): compiled on
 // their first use they stalled a world switch ~200 ms.
 {
