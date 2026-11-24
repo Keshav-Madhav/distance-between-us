@@ -405,6 +405,11 @@
   #swapcard span { font-size: 12px; letter-spacing: 0.25em; opacity: 0.85; }
   #swapcard i { display: block; width: 240px; height: 2px; margin-top: 10px; background: rgba(255, 255, 255, 0.12); overflow: hidden; }
   #swapcard em { display: block; height: 100%; width: 0; background: var(--acc); box-shadow: 0 0 10px var(--acc); }
+  /* SHOW FPS (settings): frames a second, the frame's time, and the 1% low of the last few seconds. */
+  #fpsbox { position: fixed; right: 76px; bottom: 26px; z-index: 60; display: none; font-size: 11px; letter-spacing: 0.14em; font-variant-numeric: tabular-nums; color: var(--ink); opacity: 0.8; text-shadow: 0 1px 4px rgba(0,0,0,0.8); pointer-events: none; white-space: nowrap; }
+  #fpsbox.on { display: block; }
+  #fpsbox b { font-size: 15px; font-weight: 700; letter-spacing: 0.06em; margin-right: 4px; }
+  #fpsbox small { opacity: 0.65; margin-left: 10px; }
   #freeze.on { display: block; animation: freezeDrift 2.4s cubic-bezier(0.2, 0.6, 0.3, 1) forwards; will-change: transform; }
   @keyframes freezeDrift { from { transform: scale(1); } to { transform: scale(1.07); } }
   @media (prefers-reduced-motion: reduce) { #freeze.on { animation: none; } }
@@ -473,6 +478,7 @@
 <body>
 <canvas id="game"></canvas>
 <canvas id="freeze"></canvas>
+<div id="fpsbox" aria-hidden="true"></div>
 <div id="swapcard" aria-live="polite"><small>Loading</small><b id="ld-world"></b><span id="ld-course"></span><i><em id="ld-bar"></em></i></div>
 <div id="hud" class="layer">
   <div id="reticle"></div>
@@ -566,6 +572,7 @@
   <div class="sub">RACE</div>
   <label>RIVALS <select id="rivals"><option value="-0.7">EASY</option><option value="0" selected>NORMAL</option><option value="1">HARD</option><option value="2.2">ELITE</option><option value="4.5">IMPOSSIBLE</option></select></label>
   <label>GHOST OF YOUR BEST <input id="ghoston" type="checkbox" checked /></label>
+  <label>SHOW FPS <input id="fpson" type="checkbox" /></label>
   <div class="sub">COMFORT &amp; TIPS</div>
   <label>REDUCE SHAKE <input id="rs" type="checkbox" /></label>
   <label>SHOW TIPS <input id="tipson" type="checkbox" checked /></label>

@@ -1253,6 +1253,13 @@ export class World {
   }
   private readonly rings: { mesh: THREE.Mesh; snap: { value: THREE.Vector2 }; step: number }[] = []
   private readonly wrapped: Wrapped[] = []
+  private populateFn: ((pause: () => Promise<void>) => Promise<void>) | null = null
+  /** Place the world's shapes (see the constructor): once, straight after it, before anything else asks. */
+  async populate(pause: () => Promise<void> = () => Promise.resolve()): Promise<void> {
+    const f = this.populateFn
+    this.populateFn = null
+    if (f) await f(pause)
+  }
   /** Fixed rocks (the course's spires): not wrapped, always there. */
   private readonly fixed: { x: number; z: number; r: number; h: number; yaw: number; by: number; prof: Profile; big?: boolean }[] = []
   spikeMat: THREE.MeshStandardMaterial | null = null
@@ -1318,147 +1325,168 @@ export class World {
           ['butte', 240, 900],
           ['spire', 200, 600],
         ]
-    const all: Placed[] = []
-    this.mesaMat = mesaMat
-    for (const [kind, count, spacing] of kinds) {
-      // One instanced mesh per shape archetype; items are dealt across them at random.
-      const ws: Wrapped[] = []
-      for (let v = 0; v < (ICE ? ICE_VARIANTS : LAVA ? LAVA_VARIANTS : JUNGLE ? JUNGLE_VARIANTS : FOREST ? FOREST_VARIANTS : MESA_VARIANTS)[kind]; v++) {
-        const seed = kind.length * 31 + 7 + v * 101
-        const { geo, prof } = ICE || LAVA || FOREST ? landGeometry(kind, seed, v) : mesaCached(kind, seed, v)
-        if (kind === 'spire' && v === 0) { this.spireGeo = geo; this.fixedProf = prof }
-        ws.push(new Wrapped(geo, ICE && kind === 'spire' ? spikeMat : mesaMat, REBASE, 16500, 0.06, prof, true, null, 20000))
+    // (The placing — thousands of shapes checked against the course and each other, their LOD pairs built
+    // — runs in populate(), in steps: done here it was one long task, a freeze of the world being flown
+    // when this one boots behind it. Same random sequence, same world.)
+    this.populateFn = async (pause: () => Promise<void>) => {
+      const all: Placed[] = []
+      const GN = 16, GC = REBASE / GN, grid = new Map<number, Placed[]>()
+      let maxR = 0
+      this.mesaMat = mesaMat
+      for (const [kind, count, spacing] of kinds) {
+        // One instanced mesh per shape archetype; items are dealt across them at random.
+        const ws: Wrapped[] = []
+        for (let v = 0; v < (ICE ? ICE_VARIANTS : LAVA ? LAVA_VARIANTS : JUNGLE ? JUNGLE_VARIANTS : FOREST ? FOREST_VARIANTS : MESA_VARIANTS)[kind]; v++) {
+          const seed = kind.length * 31 + 7 + v * 101
+          const { geo, prof } = ICE || LAVA || FOREST ? landGeometry(kind, seed, v) : mesaCached(kind, seed, v)
+          if (kind === 'spire' && v === 0) { this.spireGeo = geo; this.fixedProf = prof }
+          ws.push(new Wrapped(geo, ICE && kind === 'spire' ? spikeMat : mesaMat, REBASE, 16500, 0.06, prof, true, null, 20000))
+        }
+        let placed = 0, tries = 0
+        while (placed < count && tries++ < count * 80) {
+          if ((tries & 511) === 0) await pause()
+          const ox = r() * REBASE
+          const oz = r() * REBASE
+          const sx = ((ox + REBASE / 2) % REBASE) - REBASE / 2
+          const sz = ((oz + REBASE / 2) % REBASE) - REBASE / 2
+          const v = Math.floor(r() * ws.length)
+          let rad: number, h: number
+          if (kind === 'mesa') {
+            rad = 160 + r() * 520; h = 110 + r() * 260
+            if (v === 1) h *= 1.25 // tiers need height to read
+            if (v === 2) rad *= 1.15
+            if (v === 4) h *= 0.8
+          } else if (kind === 'butte') { rad = 90 + r() * 160; h = 160 + r() * 140; if (v === 1) { rad *= 0.8; h *= 1.2 } }
+          else { rad = 35 + r() * 50; h = 140 + r() * 170; if (v === 2) h *= 1.15 }
+          if (ICE) {
+            if (kind === 'mesa') { rad *= 1.15; h *= 0.75 }
+            else if (kind === 'spire') { rad *= 0.8; h *= 1.25 }
+            else { rad *= 1.35; h *= 0.55 } // seracs: squat blocks, not towers
+            // Ice comes in every size: small bergs to giants (skewed small, a few huge).
+            const sc = 0.45 + 2.0 * Math.pow(r(), 2.2)
+            rad *= sc; h *= 0.6 + 0.4 * sc
+          }
+          if (JUNGLE) {
+            // Karst towers tall and narrow; the canopy a few hundred metres across, 70-120 m; emergents over it.
+            if (kind === 'mesa') { rad *= 0.5; h *= 1.25 }
+            else if (kind === 'butte') { rad *= 1.15; h = 85 + r() * 50 }
+            else { rad *= 0.85; h = 120 + r() * 70 }
+            const sc = 0.6 + 1.2 * Math.pow(r(), 2)
+            rad *= sc; h *= 0.75 + 0.25 * sc
+          } else if (FOREST) {
+            // Domes broad and rounded; groves a few hundred metres across and 60-120 m tall; giant trees.
+            if (kind === 'mesa') { rad *= 1.0; h *= 0.75 }
+            else if (kind === 'butte') { rad *= 0.7; h = 80 + r() * 80 }
+            else { rad *= 0.55; h *= 0.75 }
+            const sc = 0.55 + 1.5 * Math.pow(r(), 2)
+            rad *= sc; h *= 0.7 + 0.3 * sc
+          }
+          if (LAVA) {
+            // Massifs wide and low; cones broad (their slopes flare); stacks tall. Any size.
+            if (kind === 'mesa') { rad *= 1.7; h *= 1.3 } // big volcanoes, broad slopes
+            else if (kind === 'butte') { rad *= 1.8; h *= 0.9 }
+            else { rad *= 1.0; h *= 0.28 } // stacks: squat crags (tall hex towers read as skyscrapers)
+            const sc = 0.5 + 1.8 * Math.pow(r(), 2)
+            rad *= sc; h *= 0.6 + 0.4 * sc
+          }
+          if (!clear(sx, sz, rad * (ICE && kind === 'spire' ? 2.4 : 1.6))) continue
+          // (Against the ones placed nearby only — a grid on the wrapped plane, searched as far as the
+          // largest gap any of them could need — not against every one: the same answers, ~1,100 shapes
+          // each checked against all the others was most of the world's build.)
+          let ok = true
+          const reach = spacing + (maxR + rad) * 1.2, kc = Math.ceil(reach / GC) + 1
+          const gx = Math.floor(ox / GC), gz = Math.floor(oz / GC)
+          // (Wider than the grid: every cell once.)
+          const lo = 2 * kc + 1 >= GN ? -(GN >> 1) : -kc, hi = 2 * kc + 1 >= GN ? lo + GN - 1 : kc
+          for (let ix = lo; ix <= hi && ok; ix++) for (let iz = lo; iz <= hi && ok; iz++) {
+            const cell = grid.get(((gx + ix) % GN + GN) % GN * GN + ((gz + iz) % GN + GN) % GN)
+            if (cell) for (const o of cell) {
+              let dx = Math.abs(o.ox - ox); dx = Math.min(dx, REBASE - dx)
+              let dz = Math.abs(o.oz - oz); dz = Math.min(dz, REBASE - dz)
+              if (Math.hypot(dx, dz) < spacing + (o.r + rad) * 1.2) { ok = false; break }
+            }
+          }
+          if (!ok) continue
+          const it: Placed = { ox, oz, r: rad, h, yaw: r() * 6.28, x: 0, z: 0, by: 0, grow: 1 }
+          ws[v].items.push(it)
+          all.push(it)
+          maxR = Math.max(maxR, rad)
+          { const key = gx * GN + gz; let cell = grid.get(key); if (!cell) grid.set(key, (cell = [])); cell.push(it) }
+          placed++
+        }
+        for (const w of ws) {
+          w.finish()
+          this.wrapped.push(w)
+          this.group.add(w.node)
+          await pause()
+        }
       }
-      let placed = 0, tries = 0
-      while (placed < count && tries++ < count * 80) {
-        const ox = r() * REBASE
-        const oz = r() * REBASE
-        const sx = ((ox + REBASE / 2) % REBASE) - REBASE / 2
-        const sz = ((oz + REBASE / 2) % REBASE) - REBASE / 2
-        const v = Math.floor(r() * ws.length)
-        let rad: number, h: number
-        if (kind === 'mesa') {
-          rad = 160 + r() * 520; h = 110 + r() * 260
-          if (v === 1) h *= 1.25 // tiers need height to read
-          if (v === 2) rad *= 1.15
-          if (v === 4) h *= 0.8
-        } else if (kind === 'butte') { rad = 90 + r() * 160; h = 160 + r() * 140; if (v === 1) { rad *= 0.8; h *= 1.2 } }
-        else { rad = 35 + r() * 50; h = 140 + r() * 170; if (v === 2) h *= 1.15 }
-        if (ICE) {
-          if (kind === 'mesa') { rad *= 1.15; h *= 0.75 }
-          else if (kind === 'spire') { rad *= 0.8; h *= 1.25 }
-          else { rad *= 1.35; h *= 0.55 } // seracs: squat blocks, not towers
-          // Ice comes in every size: small bergs to giants (skewed small, a few huge).
-          const sc = 0.45 + 2.0 * Math.pow(r(), 2.2)
-          rad *= sc; h *= 0.6 + 0.4 * sc
-        }
-        if (JUNGLE) {
-          // Karst towers tall and narrow; the canopy a few hundred metres across, 70-120 m; emergents over it.
-          if (kind === 'mesa') { rad *= 0.5; h *= 1.25 }
-          else if (kind === 'butte') { rad *= 1.15; h = 85 + r() * 50 }
-          else { rad *= 0.85; h = 120 + r() * 70 }
-          const sc = 0.6 + 1.2 * Math.pow(r(), 2)
-          rad *= sc; h *= 0.75 + 0.25 * sc
-        } else if (FOREST) {
-          // Domes broad and rounded; groves a few hundred metres across and 60-120 m tall; giant trees.
-          if (kind === 'mesa') { rad *= 1.0; h *= 0.75 }
-          else if (kind === 'butte') { rad *= 0.7; h = 80 + r() * 80 }
-          else { rad *= 0.55; h *= 0.75 }
-          const sc = 0.55 + 1.5 * Math.pow(r(), 2)
-          rad *= sc; h *= 0.7 + 0.3 * sc
-        }
-        if (LAVA) {
-          // Massifs wide and low; cones broad (their slopes flare); stacks tall. Any size.
-          if (kind === 'mesa') { rad *= 1.7; h *= 1.3 } // big volcanoes, broad slopes
-          else if (kind === 'butte') { rad *= 1.8; h *= 0.9 }
-          else { rad *= 1.0; h *= 0.28 } // stacks: squat crags (tall hex towers read as skyscrapers)
-          const sc = 0.5 + 1.8 * Math.pow(r(), 2)
-          rad *= sc; h *= 0.6 + 0.4 * sc
-        }
-        if (!clear(sx, sz, rad * (ICE && kind === 'spire' ? 2.4 : 1.6))) continue
-        let ok = true
-        for (const o of all) {
-          let dx = Math.abs(o.ox - ox); dx = Math.min(dx, REBASE - dx)
-          let dz = Math.abs(o.oz - oz); dz = Math.min(dz, REBASE - dz)
-          if (Math.hypot(dx, dz) < spacing + (o.r + rad) * 1.2) { ok = false; break }
-        }
-        if (!ok) continue
-        const it: Placed = { ox, oz, r: rad, h, yaw: r() * 6.28, x: 0, z: 0, by: 0, grow: 1 }
-        ws[v].items.push(it)
-        all.push(it)
-        placed++
-      }
-      for (const w of ws) {
-        w.finish()
-        this.wrapped.push(w)
-        this.group.add(w.node)
-      }
-    }
 
-    // Boulders: knee-to-roof high.
-    const bGeo = new THREE.IcosahedronGeometry(1, 1)
-    {
-      const p = bGeo.attributes.position as THREE.BufferAttribute
-      for (let i = 0; i < p.count; i++) {
-        const k = 1 + 0.25 * Math.sin(p.getX(i) * 5 + p.getZ(i) * 3)
-        p.setXYZ(i, p.getX(i) * k, p.getY(i) * 0.75 * k, p.getZ(i) * k)
-      }
-    }
-    const bg = bGeo.toNonIndexed()
-    bg.computeVertexNormals()
-    const bMat = new THREE.MeshStandardMaterial({ color: 0x8a3a1c, roughness: 0.95, flatShading: true })
-    patchStandard(bMat, { strata: true, shadow: true, detail: true })
-    patchLodDither(bMat)
-    const bw = new Wrapped(bg, bMat, 6000, 2400, 0.12, () => 0.92, false, keepOff, 3000)
-    let bt = 0
-    while (bw.items.length < 80 && bt++ < 4000) {
-      const ox = r() * 6000
-      const oz = r() * 6000
-      const rad = 3 + Math.pow(r(), 2) * 9
-      bw.items.push({ ox, oz, r: rad, h: rad, yaw: r() * 6.28, x: 0, z: 0, by: 0, grow: 1 })
-    }
-    bw.finish()
-    this.wrapped.push(bw)
-    this.group.add(bw.node)
-
-    // The near field everywhere, not only along the course: the same clumps of shards, lone blocks and
-    // stands of trees that line the track (src/main.ts, the course's near field), dealt across a 12 km
-    // tile that repeats, kept off the racing corridor. Full shapes near, simplified twins far.
-    if (clutterOff) {
-      const TILE = 12000
-      const ws: Wrapped[] = []
-      for (const kind of ['butte', 'spire'] as const) for (let v = 0; v < 3; v++) {
-        const { geo, prof } = landGeometry(kind, kind.length * 31 + 7 + v * 101, v)
-        // (MONSOON's mist hides it past ~3 km; elsewhere it rises from the haze by 4.5 km.)
-        const far = JUNGLE ? 3200 : 4600
-        ws.push(new Wrapped(geo, ICE && kind === 'spire' ? spikeMat : mesaMat, TILE, far * 0.7, 0.06, prof, false, clutterOff, far, clutterHeight))
-      }
-      const GREEN = FOREST
-      // (~8 items a km²: at ~25 a km² the solid things you can hit were everywhere — the player: "too
-      // much, keep more than before but way less". The fly-through scatter carries the fullness.)
-      const N = JUNGLE || BIOME === 'forest' ? 290 : 230
-      for (let c = 0; c < N; c++) {
-        const cx = r() * TILE, cz = r() * TILE
-        const zr = r()
-        const zone = GREEN ? (zr < 0.75 ? 'forest' : zr < 0.9 ? 'glacier' : 'open') : zr < 0.35 ? 'forest' : zr < 0.65 ? 'glacier' : 'open'
-        const n = zone === 'forest' ? 2 + Math.floor(r() * 6) : zone === 'glacier' ? 1 + Math.floor(r() * 3) : 1 + Math.floor(r() * 2)
-        const spread = 50 + r() * (zone === 'forest' ? 260 : 180)
-        for (let q = 0; q < n; q++) {
-          const a = r() * 6.28, d = Math.sqrt(r()) * spread
-          // (In the green worlds a 'block' is a whole grove, 5-7k triangles: mostly single trees instead.)
-          const pSpike = GREEN ? 0.88 : zone === 'forest' ? 0.75 : zone === 'glacier' ? 0.35 : 0.3
-          const roll = r(), spike = roll < pSpike, sentinel = zone === 'forest' && roll > 0.94
-          const sc = 0.4 + 1.6 * r()
-          let rad = sentinel ? 30 + r() * 15 : spike ? 6 + r() * 8 : (12 + r() * 12) * sc
-          let h = sentinel ? 120 + r() * 80 : spike ? (JUNGLE ? 110 + r() * 80 : zone === 'forest' ? 45 + r() * 95 : 20 + r() * 40) * (q === 0 ? 1 : 0.55 + r() * 0.45) : GREEN ? rad * (1.3 + r() * 0.8) : (10 + r() * 16) * sc
-          if (LAVA && (spike || sentinel)) { h *= 0.3; rad *= 1.5 }
-          const kind = spike || sentinel ? 1 : 0
-          ws[kind * 3 + Math.floor(r() * 2.999)].items.push({ ox: (cx + Math.cos(a) * d + TILE) % TILE, oz: (cz + Math.sin(a) * d + TILE) % TILE, r: rad, h, yaw: r() * 6.28, x: 0, z: 0, by: 0, grow: 1, sink: spike || sentinel ? 0 : r() * 0.35 })
+      // Boulders: knee-to-roof high.
+      const bGeo = new THREE.IcosahedronGeometry(1, 1)
+      {
+        const p = bGeo.attributes.position as THREE.BufferAttribute
+        for (let i = 0; i < p.count; i++) {
+          const k = 1 + 0.25 * Math.sin(p.getX(i) * 5 + p.getZ(i) * 3)
+          p.setXYZ(i, p.getX(i) * k, p.getY(i) * 0.75 * k, p.getZ(i) * k)
         }
       }
-      for (const w of ws) { w.finish(); this.wrapped.push(w); this.group.add(w.node) }
-    }
+      const bg = bGeo.toNonIndexed()
+      bg.computeVertexNormals()
+      const bMat = new THREE.MeshStandardMaterial({ color: 0x8a3a1c, roughness: 0.95, flatShading: true })
+      patchStandard(bMat, { strata: true, shadow: true, detail: true })
+      patchLodDither(bMat)
+      const bw = new Wrapped(bg, bMat, 6000, 2400, 0.12, () => 0.92, false, keepOff, 3000)
+      let bt = 0
+      while (bw.items.length < 80 && bt++ < 4000) {
+        const ox = r() * 6000
+        const oz = r() * 6000
+        const rad = 3 + Math.pow(r(), 2) * 9
+        bw.items.push({ ox, oz, r: rad, h: rad, yaw: r() * 6.28, x: 0, z: 0, by: 0, grow: 1 })
+      }
+      bw.finish()
+      this.wrapped.push(bw)
+      this.group.add(bw.node)
+      await pause()
 
+      // The near field everywhere, not only along the course: the same clumps of shards, lone blocks and
+      // stands of trees that line the track (src/main.ts, the course's near field), dealt across a 12 km
+      // tile that repeats, kept off the racing corridor. Full shapes near, simplified twins far.
+      if (clutterOff) {
+        const TILE = 12000
+        const ws: Wrapped[] = []
+        for (const kind of ['butte', 'spire'] as const) for (let v = 0; v < 3; v++) {
+          const { geo, prof } = landGeometry(kind, kind.length * 31 + 7 + v * 101, v)
+          // (MONSOON's mist hides it past ~3 km; elsewhere it rises from the haze by 4.5 km.)
+          const far = JUNGLE ? 3200 : 4600
+          ws.push(new Wrapped(geo, ICE && kind === 'spire' ? spikeMat : mesaMat, TILE, far * 0.7, 0.06, prof, false, clutterOff, far, clutterHeight))
+        }
+        const GREEN = FOREST
+        // (~8 items a km²: at ~25 a km² the solid things you can hit were everywhere — the player: "too
+        // much, keep more than before but way less". The fly-through scatter carries the fullness.)
+        const N = JUNGLE || BIOME === 'forest' ? 290 : 230
+        for (let c = 0; c < N; c++) {
+          const cx = r() * TILE, cz = r() * TILE
+          const zr = r()
+          const zone = GREEN ? (zr < 0.75 ? 'forest' : zr < 0.9 ? 'glacier' : 'open') : zr < 0.35 ? 'forest' : zr < 0.65 ? 'glacier' : 'open'
+          const n = zone === 'forest' ? 2 + Math.floor(r() * 6) : zone === 'glacier' ? 1 + Math.floor(r() * 3) : 1 + Math.floor(r() * 2)
+          const spread = 50 + r() * (zone === 'forest' ? 260 : 180)
+          for (let q = 0; q < n; q++) {
+            const a = r() * 6.28, d = Math.sqrt(r()) * spread
+            // (In the green worlds a 'block' is a whole grove, 5-7k triangles: mostly single trees instead.)
+            const pSpike = GREEN ? 0.88 : zone === 'forest' ? 0.75 : zone === 'glacier' ? 0.35 : 0.3
+            const roll = r(), spike = roll < pSpike, sentinel = zone === 'forest' && roll > 0.94
+            const sc = 0.4 + 1.6 * r()
+            let rad = sentinel ? 30 + r() * 15 : spike ? 6 + r() * 8 : (12 + r() * 12) * sc
+            let h = sentinel ? 120 + r() * 80 : spike ? (JUNGLE ? 110 + r() * 80 : zone === 'forest' ? 45 + r() * 95 : 20 + r() * 40) * (q === 0 ? 1 : 0.55 + r() * 0.45) : GREEN ? rad * (1.3 + r() * 0.8) : (10 + r() * 16) * sc
+            if (LAVA && (spike || sentinel)) { h *= 0.3; rad *= 1.5 }
+            const kind = spike || sentinel ? 1 : 0
+            ws[kind * 3 + Math.floor(r() * 2.999)].items.push({ ox: (cx + Math.cos(a) * d + TILE) % TILE, oz: (cz + Math.sin(a) * d + TILE) % TILE, r: rad, h, yaw: r() * 6.28, x: 0, z: 0, by: 0, grow: 1, sink: spike || sentinel ? 0 : r() * 0.35 })
+          }
+        }
+        for (const w of ws) { w.finish(); this.wrapped.push(w); this.group.add(w.node); await pause() }
+      }
+    }
     // (The course's hour: the sun's colour and strength, from the same light as the sky.)
     this.sunLight = new THREE.DirectionalLight(new THREE.Color(LIGHT.sunCol[0], LIGHT.sunCol[1], LIGHT.sunCol[2]).multiplyScalar(1 / 2.4), 3.0 * (LIGHT.sunCol[0] + LIGHT.sunCol[1] + LIGHT.sunCol[2]) / 6.43)
     this.sunLight.position.set(SUN_DIR[0], SUN_DIR[1], SUN_DIR[2])

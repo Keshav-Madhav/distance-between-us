@@ -399,6 +399,7 @@ const clearAt = (x: number, z: number, r: number) => {
 const heightNearTrack = (x: number, z: number) => Math.min(1, 0.28 + Math.max(0, course.distance(x, z) - course.gateHalf) / 1400)
 await prebuildLand(breathe)
 const world = new World(clearAt, (x, z, r) => course.distance(x, z) < 460 + r, (x, z, r) => course.distance(x, z) < (course.def.gorge ? course.def.clearance! : course.gateHalf + 30) + r * 1.3 || (!!canyon && canyon.covers(x, z, r)), heightNearTrack)
+await world.populate(breathe)
 bootMark('world')
 await breathe()
 world.addFixed(course.rocks)
@@ -2520,6 +2521,8 @@ applyGraphics()
 $<HTMLSelectElement>('#as').onchange = (e) => { player.assist = +(e.target as HTMLSelectElement).value }
 $<HTMLSelectElement>('#rivals').onchange = (e) => { race.aiBoost = +(e.target as HTMLSelectElement).value }
 $<HTMLInputElement>('#ghoston').onchange = (e) => { settings.ghost = (e.target as HTMLInputElement).checked }
+// (The box's own class is the switch: the saved settings are restored before the frame code below is set up.)
+$<HTMLInputElement>('#fpson').onchange = (e) => { $('#fpsbox').classList.toggle('on', (e.target as HTMLInputElement).checked) }
 $<HTMLInputElement>('#fov').oninput = (e) => { fovMax = +(e.target as HTMLInputElement).value }
 try {
   const saved = localStorage.getItem('dbu-fov')
@@ -2580,6 +2583,18 @@ let orbitYaw = -0.65, orbitPitch = 0.12, orbitKey = 0, orbitKeyP = 0
   })
 }
 let hudT = 0
+/** SHOW FPS: the last 300 frame times (ms), redrawn four times a second. */
+let fpsBoxT = 0, fpsHead = 0, fpsN = 0
+const fpsRing = new Float32Array(300), fpsSorted = new Float32Array(300)
+function fpsBox(ms: number, dt: number): void {
+  fpsRing[fpsHead] = ms; fpsHead = (fpsHead + 1) % 300; if (fpsN < 300) fpsN++
+  if (!fpsBoxEl.classList.contains('on') || (fpsBoxT -= dt) > 0) return
+  fpsBoxT = 0.25
+  const v = fpsSorted.subarray(0, fpsN); v.set(fpsRing.subarray(0, fpsN)); v.sort()
+  const p99 = v[Math.min(fpsN - 1, Math.floor(fpsN * 0.99))] || ms
+  setHtml(fpsBoxEl, `<b>${Math.round(fps)}</b>FPS<small>${ms.toFixed(1)} MS</small><small>1% LOW ${Math.round(1000 / p99)}</small>`)
+}
+const fpsBoxEl = document.getElementById('fpsbox') as HTMLElement
 /** Frames drawn: the every-other-frame jobs split by its parity (the minimap even, the far shadow map odd). */
 let frameNo = 0
 
@@ -3442,6 +3457,7 @@ function frame(now: number): void {
   }
   renderMap()
   pm('map')
+  fpsBox(lastMs, realDt)
   hudT -= realDt
   updateHud(realDt, hudT <= 0)
   pm('hud')
