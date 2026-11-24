@@ -1772,8 +1772,29 @@ for (const b of $('#title').querySelectorAll<HTMLButtonElement>('#submodes butto
     subMode = b.dataset.sub as typeof subMode
     try { localStorage.setItem('dbu-sub', subMode) } catch { /* blocked */ }
     for (const x of $('#title').querySelectorAll<HTMLButtonElement>('#submodes button')) x.classList.toggle('on', x === b)
+    syncRivals()
   }
 }
+// RIVALS: on the race menu, under the mode (it was buried in settings) — hidden for TIME TRIAL, which has
+// none; DUEL's rival scales with it. Remembered (and carried over from where settings kept it).
+{
+  let v = '0'
+  try {
+    const own = localStorage.getItem('dbu-rivals')
+    if (own !== null) v = own
+    else { const old = JSON.parse(localStorage.getItem('dbu-settings') || 'null') as Record<string, string> | null; if (old?.rivals !== undefined) v = String(old.rivals) }
+  } catch { /* fresh */ }
+  const btns = [...$('#title').querySelectorAll<HTMLButtonElement>('#rivalpick button')]
+  if (!btns.some((b) => b.dataset.v === v)) v = '0'
+  const pick = (val: string) => {
+    race.aiBoost = +val
+    for (const b of btns) { b.classList.toggle('on', b.dataset.v === val); b.setAttribute('aria-checked', String(b.dataset.v === val)) }
+  }
+  for (const b of btns) b.onclick = () => { pick(b.dataset.v!); try { localStorage.setItem('dbu-rivals', b.dataset.v!) } catch { /* blocked */ } }
+  pick(v)
+}
+function syncRivals(): void { for (const e of $('#title').querySelectorAll<HTMLElement>('.rivals-only')) e.style.display = subMode === 'trial' ? 'none' : '' }
+syncRivals()
 /** Your best run's ghost on this course (every race mode): every other sim step (x, y, z, heading, bank, pitch). */
 const GHOST_N = 6
 let ghostRec: number[] = []
@@ -2519,7 +2540,7 @@ try {
 for (const id of ['#g-fps', '#g-scale', '#g-dist', '#g-part', '#g-bloom', '#g-blur', '#g-sharp', '#g-grain', '#g-cloud', '#g-map']) $(id).addEventListener('input', applyGraphics), $(id).addEventListener('change', applyGraphics)
 applyGraphics()
 $<HTMLSelectElement>('#as').onchange = (e) => { player.assist = +(e.target as HTMLSelectElement).value }
-$<HTMLSelectElement>('#rivals').onchange = (e) => { race.aiBoost = +(e.target as HTMLSelectElement).value }
+
 $<HTMLInputElement>('#ghoston').onchange = (e) => { settings.ghost = (e.target as HTMLInputElement).checked }
 // (The box's own class is the switch: the saved settings are restored before the frame code below is set up.)
 $<HTMLInputElement>('#fpson').onchange = (e) => { $('#fpsbox').classList.toggle('on', (e.target as HTMLInputElement).checked) }

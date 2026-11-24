@@ -242,10 +242,12 @@
   #title .topbar { position: absolute; left: 32px; right: 32px; top: 24px; display: flex; align-items: center; gap: 32px; }
   #title .topbar h1 { margin: 0; font-size: 18px; letter-spacing: 0.24em; line-height: 1; white-space: nowrap; text-align: left; }
   #title .tabs { display: flex; gap: 2px; padding: 3px; border: 1px solid rgba(255,255,255,0.14); background: rgba(0,0,0,0.35); }
-  #submodes { display: flex; gap: 2px; padding: 3px; margin-bottom: 14px; border: 1px solid rgba(255,255,255,0.14); background: rgba(0,0,0,0.35); }
-  #submodes button { flex: 1; padding: 8px 6px; border: 0; background: transparent; color: #f2e6dc; font: inherit; font-size: 12px; letter-spacing: 0.2em; cursor: pointer; }
-  #submodes button.on { background: var(--hot); color: #1b0f08; font-weight: 700; }
-  #submodes button:hover:not(.on) { background: rgba(255,255,255,0.08); }
+  #submodes, #rivalpick { display: flex; gap: 2px; padding: 3px; margin-bottom: 14px; border: 1px solid rgba(255,255,255,0.14); background: rgba(0,0,0,0.35); }
+  #submodes button, #rivalpick button { flex: 1; padding: 8px 6px; border: 0; background: transparent; color: #f2e6dc; font: inherit; font-size: 12px; letter-spacing: 0.2em; cursor: pointer; }
+  #submodes button.on, #rivalpick button.on { background: var(--hot); color: #1b0f08; font-weight: 700; }
+  /* (Five levels in the column's width: a little tighter than the modes.) */
+  #rivalpick button { font-size: 10.5px; letter-spacing: 0.12em; padding: 8px 2px; }
+  #submodes button:hover:not(.on), #rivalpick button:hover:not(.on) { background: rgba(255,255,255,0.08); }
   #title .tabs button { flex: 0 0 auto; padding: 7px 20px; border: none; background: none; font-size: 12px; letter-spacing: 0.26em; opacity: 0.65; margin: 0; }
   #title .tabs button:hover { opacity: 1; background: rgba(255,255,255,0.08); }
   #title .tabs button.on { background: var(--hot); color: #1a0d06; font-weight: 700; opacity: 1; }
@@ -527,6 +529,8 @@
     <div id="worlds"></div>
     <div class="sec race-only course-only">Mode</div>
     <div id="submodes" class="race-only course-only" role="tablist"><button data-sub="race" class="on">RACE</button><button data-sub="trial">TIME TRIAL</button><button data-sub="duel">DUEL</button></div>
+    <div class="sec race-only course-only rivals-only">Rivals</div>
+    <div id="rivalpick" class="race-only course-only rivals-only" role="radiogroup" aria-label="Rivals"><button data-v="-0.7">EASY</button><button data-v="0" class="on">NORMAL</button><button data-v="1">HARD</button><button data-v="2.2">ELITE</button><button data-v="4.5">IMPOSSIBLE</button></div>
     <div class="sec race-only course-only">Course</div>
     <div id="courses" class="race-only course-only"></div>
     <div class="free-only huntinfo"><b>HOW IT PLAYS</b><p>The whole world and nothing to win. Leave the ground — off a jump, a cliff, a rock's top, or Space at speed — and you fly; touch down anywhere and drive on. Same keys on the ground and in the air. Nothing hurts.</p><p class="soon">Beams mark trails of five crystals: on the ground, on the summits, up in the sky.</p><p>Keep climbing and you leave the air: point the nose up and hold Shift. Climb out past 1,500 km (Shift cruises up there) and you are back among the worlds.</p></div>
@@ -570,7 +574,6 @@
   <label>INVERT FLIGHT PITCH <input id="invp" type="checkbox" /></label>
   <label>FIELD OF VIEW <input id="fov" type="range" min="80" max="120" step="1" value="98" /></label>
   <div class="sub">RACE</div>
-  <label>RIVALS <select id="rivals"><option value="-0.7">EASY</option><option value="0" selected>NORMAL</option><option value="1">HARD</option><option value="2.2">ELITE</option><option value="4.5">IMPOSSIBLE</option></select></label>
   <label>GHOST OF YOUR BEST <input id="ghoston" type="checkbox" checked /></label>
   <label>SHOW FPS <input id="fpson" type="checkbox" /></label>
   <div class="sub">COMFORT &amp; TIPS</div>

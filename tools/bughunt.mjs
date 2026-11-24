@@ -180,7 +180,7 @@ await scenario('settings:live', async () => {
     for (const f of ['60', '120', 'max', 'auto']) { set('#g-fps', f); await wait(500) }
     set('#shadows', false); await wait(800); set('#shadows', true)
     set('#ghoston', false); await wait(500); set('#ghoston', true)
-    for (const r of ['-0.7', '2.2', '4.5', '0']) { set('#rivals', r); await wait(400) }
+    for (const r of ['-0.7', '2.2', '4.5', '0']) { document.querySelector(`#rivalpick button[data-v="${r}"]`).click(); if (g.race.aiBoost !== +r) throw new Error('rivals button did not set ' + r); await wait(400) }
     dispatchEvent(new KeyboardEvent('keydown', { code: 'Escape', key: 'Escape' })); await wait(600)
     dispatchEvent(new KeyboardEvent('keydown', { code: 'Escape', key: 'Escape' })); await wait(600)
   })
