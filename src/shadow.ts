@@ -110,7 +110,9 @@ export class SunShadow {
   }
 
   /** Re-render the maps around the camera (near every frame, far every other frame). */
-  update(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camPos: THREE.Vector3, fwd: THREE.Vector3): void {
+  /** `far`: redraw the far map this frame (every other frame; the caller picks the parity, so it never
+   *  lands on the same frame as the other every-other-frame work — the minimap's redraw). */
+  update(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camPos: THREE.Vector3, fwd: THREE.Vector3, far = this.frame % 2 === 1): void {
     SHADOW_U.uShOn.value = this.enabled ? 1 : 0
     if (!this.enabled) return
     this.frame++
@@ -121,7 +123,7 @@ export class SunShadow {
     renderer.setClearColor(0x000000, 0)
     scene.overrideMaterial = this.mat
     for (let k = 0; k < 2; k++) {
-      if (k === 1 && this.frame % 2 === 0) continue
+      if (k === 1 && !far) continue
       const half = k === 0 ? 180 : 2600
       const texel = (2 * half) / (k === 0 ? 1024 : 2048)
       // Centred a little ahead of the camera, snapped to whole texels in light space (no shimmer).

@@ -12,10 +12,11 @@ const b = await chromium.launch({ channel: 'chrome', headless: true, args: ['--m
 await calm()
 const ctx = await b.newContext({ viewport: { width: W, height: H }, deviceScaleFactor: DPR })
 const p = await ctx.newPage()
+await p.addInitScript((T) => { window.__T = T }, process.env.T ?? '8')
 await p.addInitScript(() => { const raf = window.requestAnimationFrame.bind(window); window.__freeze = false; window.requestAnimationFrame = (cb) => window.__freeze ? 0 : raf(cb) })
 await p.goto(`http://localhost:${port}/?course=${c}&q=${Q}&fixed=1`)
 await p.waitForFunction('window.__g && window.__g.ready', null, { timeout: 120000 })
-await p.evaluate(async () => { const g = window.__g; g.start(); g.skipCountdown(); g.autopilot(true); g.hold(true); g.fastSim(8); g.snapCam(); g.hold(false); await new Promise((r) => setTimeout(r, 2500)); g.hold(true); await new Promise((r) => setTimeout(r, 300)); window.__freeze = true })
+await p.evaluate(async () => { const g = window.__g; g.start(); g.skipCountdown(); g.autopilot(true); g.hold(true); g.fastSim(+(window.__T ?? 8)); g.snapCam(); g.hold(false); await new Promise((r) => setTimeout(r, 2500)); g.hold(true); await new Promise((r) => setTimeout(r, 300)); window.__freeze = true })
 // GPU time per frame from timer queries (EXT_disjoint_timer_query_webgl2), median of 40 frames after a
 // warm-up (the GPU clocks up under load) — CPU noise and clock idling stay out of it.
 const meas = () => p.evaluate(([N, R]) => {
@@ -44,6 +45,8 @@ const T = process.env.POST ? {
   course: 'const o = g.course.group; const v = o.visible; o.visible = false; return () => { o.visible = v }',
   ships: 'const k = g.scene.children.filter((o, i) => i >= 6 && i <= 29 && o.type === "Group" && o.visible); k.forEach((o) => o.visible = false); return () => k.forEach((o) => o.visible = true)',
   particles: 'const k = [g.fx.glow?.mesh ?? g.fx.glow?.points, g.fx.smoke?.mesh ?? g.fx.smoke?.points].filter(Boolean); k.forEach((o) => o.visible = false); return () => k.forEach((o) => o.visible = true)',
+  trails: 'const k = []; g.scene.traverse((o) => { if (o.isMesh && o.material?.transparent && o.material.isShaderMaterial && o.frustumCulled === false && o.parent === g.scene) k.push(o) }); k.forEach((o) => o.visible = false); return () => k.forEach((o) => o.visible = true)',
+  fxAll: 'const k = [g.fx.glow, g.fx.smoke].flatMap((x) => x ? Object.values(x).filter((v) => v && v.isObject3D) : []); k.forEach((o) => o.visible = false); return () => k.forEach((o) => o.visible = true)',
   bloom: 'const v = g.post.bloom.enabled; g.post.bloom.enabled = false; return () => { g.post.bloom.enabled = v }',
   finalPass: 'g.post.final.enabled = false; const b = g.post.bloom; b.renderToScreen = true; return () => { g.post.final.enabled = true; b.renderToScreen = false }',
   finalTrivial: 'const m = g.post.final.material, f = m.fragmentShader; m.fragmentShader = "uniform sampler2D tDiffuse; varying vec2 vUv; void main(){ gl_FragColor = texture2D(tDiffuse, vUv); }"; m.needsUpdate = true; (g.drawFrame ?? g.draw)(); return () => { m.fragmentShader = f; m.needsUpdate = true; (g.drawFrame ?? g.draw)() }',

@@ -107,12 +107,13 @@ const FINAL = {
         c = vec3(0.0);
         float wsum = 0.0;
         float j = hash(gl_FragCoord.xy + fract(uTime) * 61.0);
-        for (int i = 0; i < 8; i++) {
-          float t = (float(i) + j) / 8.0;
+        // (Six jittered reads, not eight: at Mach 6 this loop covered most of the frame at Retina size and
+        // was the pass's whole cost; the per-pixel jitter hides the step. A NaN read poisons the sum and
+        // the guard below swaps in an unblurred neighbour, as one tap's NaN did before.)
+        for (int i = 0; i < 6; i++) {
+          float t = (float(i) + j) / 6.0;
           float w = 1.0 - t * 0.5;
-          vec3 sm = texture2D(tDiffuse, uv - d * amt * t).rgb;
-          if (any(isnan(sm)) || any(isinf(sm))) continue;
-          c += sm * w;
+          c += texture2D(tDiffuse, uv - d * amt * t).rgb * w;
           wsum += w;
         }
         c /= max(wsum, 1e-4);

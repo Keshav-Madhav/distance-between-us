@@ -2368,7 +2368,7 @@ applyTier()
 
 // (Declared up here: applyGraphics() resets it during boot, before the frame-pacing code below.)
 let autoCap = 0
-let govAcc = 0, govN = 0, govBad = 0, govGood = 0, govLast = 0
+let govAcc = 0, govN = 0, govBad = 0, govGood = 0, govLast = 0, govClean = 0
 let pendingScale = -1, pendingTier: Tier | null = null, partCut = 1, detailT = 0
 function saveAuto(): void { try { localStorage.setItem('dbu-auto', JSON.stringify({ tier, renderScale, detail: detailCut })) } catch { /* blocked */ } }
 /**
@@ -2382,24 +2382,30 @@ function governor(frameMs: number): void {
   if (govAcc < 500) return
   const avg = govAcc / govN
   govAcc = 0; govN = 0
-  // (The free, instant knob first: the scene's share of the target.)
-  if (avg > 19) dynPerf = Math.max(0.6, dynPerf - 0.08)
-  else if (avg < 14) dynPerf = Math.min(1, dynPerf + 0.04)
-  govBad = avg > 19 && dynPerf <= 0.6 ? govBad + 1 : 0
-  govGood = avg < 13 ? govGood + 1 : 0
+  // Against the frame budget this screen actually has — its refresh, or the cap — not a fixed 60 Hz:
+  // on a 120 Hz screen a 10 ms frame misses every other refresh, and the old thresholds (19 ms) never
+  // saw it. Held frames read as exactly the budget; misses push the average over it.
+  const cap = frameCap(), budget = cap > 0 ? cap : Math.max(4, Math.min(34, refreshMs || 16.7))
+  const over = avg / budget
+  // (The free, instant knob first: the scene's share of the target. Down at once, up only after a
+  // second of clean frames — no see-saw.)
+  if (over > 1.08) { dynPerf = Math.max(0.6, dynPerf - (over > 1.3 ? 0.08 : 0.04)); govClean = 0 }
+  else if (over < 1.03 && ++govClean >= 2) { dynPerf = Math.min(1, dynPerf + 0.03); govClean = 0 }
+  govBad = over > 1.08 && dynPerf <= 0.6 ? govBad + 1 : 0
+  govGood = over < 1.03 ? govGood + 1 : 0
   const now = performance.now()
   // Mid-race detail, free to switch: once the resolution trim is spent, step the detail down (at most every
   // 1.5 s); back up only after a long run of good frames.
-  if (avg > 21 && dynPerf <= 0.6 && detailCut < 3 && now - detailT > 1500) { detailCut++; detailT = now; applyDetail(); saveAuto() }
-  else if (avg < 11 && govGood >= 12 && detailCut > 0 && now - detailT > 8000) { detailCut--; detailT = now; govGood = 0; applyDetail(); saveAuto() }
+  if (over > 1.15 && dynPerf <= 0.6 && detailCut < 3 && now - detailT > 1500) { detailCut++; detailT = now; applyDetail(); saveAuto() }
+  else if (over < 1.02 && govGood >= 12 && detailCut > 0 && dynPerf >= 1 && now - detailT > 8000) { detailCut--; detailT = now; govGood = 0; applyDetail(); saveAuto() }
   if (now - govLast < 3000) return
   let scale = pendingScale >= 0 ? pendingScale : renderScale
   if (govBad >= 3) scale = Math.max(0.6, scale - 0.1)
   else if (govGood >= 8 && scale < 1) scale = Math.min(1, scale + 0.08)
   if (scale !== (pendingScale >= 0 ? pendingScale : renderScale)) { pendingScale = scale; govLast = now; govBad = govGood = 0 }
-  if (avg > 26 && scale <= 0.6 && tier !== 'low') { pendingTier = tier === 'ultra' ? 'high' : tier === 'high' ? 'medium' : 'low'; govLast = now }
+  if (over > 1.5 && scale <= 0.6 && tier !== 'low') { pendingTier = tier === 'ultra' ? 'high' : tier === 'high' ? 'medium' : 'low'; govLast = now }
   // Mid-race relief that costs nothing to switch: fewer particles.
-  if (avg > 22) { partCut = Math.max(0.35, partCut * 0.8); fx.smoke.density = Math.min(TIERS[tier].density, settings.part) * partCut; fx.glow.density = settings.part * partCut }
+  if (over > 1.3) { partCut = Math.max(0.35, partCut * 0.8); fx.smoke.density = Math.min(TIERS[tier].density, settings.part) * partCut; fx.glow.density = settings.part * partCut }
   if (mode === 'title') applyPending()
 }
 /** Apply what the governor decided (between races only). */
@@ -2533,6 +2539,8 @@ let orbitYaw = -0.65, orbitPitch = 0.12, orbitKey = 0, orbitKeyP = 0
   })
 }
 let hudT = 0
+/** Frames drawn: the every-other-frame jobs split by its parity (the minimap even, the far shadow map odd). */
+let frameNo = 0
 
 /** Everything the 72 km wrap has shifted so far: the planet view uses unwrapped coordinates (its far
  *  textures are not 72 km periodic — at cruise they jumped with every wrap). */
@@ -3009,7 +3017,8 @@ function paceAuto(delta: number, now: number): void {
   autoFrames++
   if (delta > (autoCap || refresh) * 1.45) autoMisses++
   if (autoFrames >= 120) {
-    if (!autoCap && autoMisses > 10) { autoCap = 1000 / 60; autoSince = now }
+    // (The 60 cap is the last resort: first the resolution trims itself to hold the refresh — governor.)
+    if (!autoCap && autoMisses > 10 && (dynPerf <= 0.62 || tierName !== 'auto')) { autoCap = 1000 / 60; autoSince = now }
     else if (autoCap && autoMisses === 0 && now - autoSince > 30000) { autoCap = 0; autoSince = now }
     autoFrames = 0; autoMisses = 0
   }
@@ -3030,6 +3039,7 @@ function frame(now: number): void {
   last = now
   if (paused) return
   frames++; fpsT += realDt
+  frameNo++
   if (fpsT >= 0.5) { fps = frames / fpsT; frames = 0; fpsT = 0 }
   governor(lastMs)
   drainSwaps() // (one finished world shape swapped in a frame: src/lod.ts)
@@ -3337,7 +3347,9 @@ function frame(now: number): void {
   sound.update(realDt, engineMach, player.boost, player.brake, mode === 'hunt' ? combat.lockProgress : 0, mode === 'hunt' && combat.locked, play && !player.dead && !player.crashing, heat, player.burning, rivalVoices, mode === 'free' ? space.vac : 0)
 
   sunShadow.enabled = tier !== 'low' && settings.shadows && detailCut < 2
-  sunShadow.update(renderer, scene, camera.position, tmp.set(camera.matrixWorld.elements[8] * -1, 0, camera.matrixWorld.elements[10] * -1))
+  // (Far map on odd frames, the minimap on even ones: both every other frame, never the same frame —
+  // landing together made every second frame the heavy one.)
+  sunShadow.update(renderer, scene, camera.position, tmp.set(camera.matrixWorld.elements[8] * -1, 0, camera.matrixWorld.elements[10] * -1), (frameNo & 1) === 1)
   updateSpace()
   post.render(realDt)
   if (freezeWanted) {
@@ -3773,7 +3785,6 @@ const mapQuad = new FullScreenQuad(new THREE.ShaderMaterial({
   depthTest: false,
   depthWrite: false,
 }))
-let mapFrame = 0
 const overEl = $('#over'), pauseEl = $('#pause')
 /** The real top-down render under the map overlay: an orthographic camera straight down. */
 function renderMap(): void {
@@ -3794,7 +3805,7 @@ function renderMap(): void {
     })
   }
   // Redrawn evenly every other frame (cheap now), blitted every frame.
-  if ((mapFrame++ & 1) !== 0) { blitMap(); return }
+  if ((frameNo & 1) !== 0) { blitMap(); return }
   const kk = mapView.kk
   // World extents of the panel's map area (canvas px → metres), matching the overlay's mapping.
   // Heading-up: centred on the panel's centre point, screen-up along the line's direction.
