@@ -4144,12 +4144,20 @@ async function compileAll(root: THREE.Object3D, target: THREE.WebGLRenderTarget 
       for (const o of root.children) { if (o.children.length > 12) units.push(...o.children); else units.push(o) }
       root.traverse((o) => { if (o !== root) all.push(o) })
       const lights = all.filter((o) => (o as THREE.Light).isLight)
+      // Every texture uploaded on its own first, the main thread handed back between: drawn with the ground,
+      // its four big textures went up in one 100 ms slice.
+      {
+        const texs = new Set<THREE.Texture>()
+        const scan = (v: unknown) => { if (v && (v as THREE.Texture).isTexture) texs.add(v as THREE.Texture) }
+        root.traverse((o) => { const m = (o as THREE.Mesh).material; for (const x of m ? (Array.isArray(m) ? m : [m]) : []) { for (const v of Object.values(x)) scan(v); const u = (x as THREE.ShaderMaterial).uniforms; if (u) for (const k in u) scan(u[k]?.value) } })
+        for (const t of texs) { if (t.image || (t as THREE.DataTexture).isDataTexture) { renderer.initTexture(t); await breathe() } }
+      }
       autoWas = renderer.autoClear
       renderer.autoClear = false
-      for (let i = 0; i < units.length; i += 6) {
+      for (let i = 0; i < units.length; i += 2) {
         for (const o of all) o.visible = false
         for (const l of lights) for (let q: THREE.Object3D | null = l; q && q !== root; q = q.parent) q.visible = true
-        for (const u of units.slice(i, i + 6)) { u.traverse((o) => { o.visible = true }); for (let q = u.parent; q && q !== root; q = q.parent) q.visible = true }
+        for (const u of units.slice(i, i + 2)) { u.traverse((o) => { o.visible = true }); for (let q = u.parent; q && q !== root; q = q.parent) q.visible = true }
         renderer.setRenderTarget(target); renderer.render(root, camera)
         await breathe()
       }
