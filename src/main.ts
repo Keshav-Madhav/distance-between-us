@@ -24,7 +24,7 @@ import { Sound } from './audio'
 import { Input } from './input'
 import { Post } from './post'
 import { Scatter } from './scatter'
-import { LOD } from './lod'
+import { LOD, drainSwaps } from './lod'
 import { BIOME, biomeOf, type Biome, DUST, GREEN, groundH, SUN_DIR, WORLD_FADE } from './terrain'
 import { PLANET_R, Space, SPACE_U } from './space'
 import { PLANETS, StarSystem, STAR_R } from './system'
@@ -2974,6 +2974,7 @@ function frame(now: number): void {
   frames++; fpsT += realDt
   if (fpsT >= 0.5) { fps = frames / fpsT; frames = 0; fpsT = 0 }
   governor(lastMs)
+  drainSwaps() // (one finished world shape swapped in a frame: src/lod.ts)
   renderer.info.reset()
 
   let timeScale = 1
@@ -3938,6 +3939,10 @@ await renderer.compileAsync(scene, camera)
   renderer.setRenderTarget(null); await renderer.compileAsync(ps, camera)
   rt.dispose()
 }
+// …and the real chain once, scaled below 1 and at 1: the upscale pass first runs when dynamic resolution
+// kicks in (from Mach 1.5), and the variants the stand-in scene above compiled were not the ones the
+// chain draws — a 518 ms stall 1.3 s into every race.
+post.setScale(0.8); post.render(0); post.setScale(1); post.render(0)
 bootMark('compile')
 {
   const gl = renderer.getContext()

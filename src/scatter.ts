@@ -8,7 +8,7 @@
 // and it is one draw call per kind. Props grow in at the edge of the grid (no popping) and stay out of
 // rivers and lava.
 import * as THREE from 'three'
-import { afterBoot, refined } from './lod'
+import { refined, swapLater } from './lod'
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
 import { patchStandard } from './shaders'
 import { BIOME, MOUND_U, TERRAIN_GLSL } from './terrain'
@@ -298,7 +298,7 @@ export class Scatter {
     // (The near twin follows the camera too: its centre was never set, so its ring was drawn round the
     // world's origin and the first 70 m beside you were empty.)
     else this.nears.push({ g, m: Math.min(n, Math.ceil(Math.PI * (NEAR_MAX / k.cell + 1.5) ** 2)), centre, mesh: null as unknown as THREE.Mesh })
-    if (near) void afterBoot().then(() => { const r = refined(base); for (const name of ['position', 'normal', 'color']) g.setAttribute(name, r.attributes[name]) })
+    if (near) void refined(base).then((r) => swapLater(() => { for (const name of ['position', 'normal', 'color']) g.setAttribute(name, r.attributes[name]) }))
     const mat = k.glow
       ? new THREE.MeshBasicMaterial({ vertexColors: true })
       : new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.92, metalness: 0, flatShading: true, side: THREE.DoubleSide })
