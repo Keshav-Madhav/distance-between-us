@@ -82,7 +82,7 @@ const cache = new Map<THREE.BufferGeometry, Promise<THREE.BufferGeometry>>()
 // no idle time, so their 400 ms timeouts forced them in mid-race (stalls of 100–380 ms at the start).
 const workers: Worker[] = []
 let workerOk = true, nextJob = 0, rr = 0
-const pending = new Map<number, (d: GeoArrays & { none?: boolean }) => void>()
+const pending = new Map<number, (d: GeoArrays & { none?: boolean; fail?: boolean }) => void>()
 function worker(): Worker | null {
   if (!workerOk) return null
   if (!workers.length) {
@@ -91,7 +91,9 @@ function worker(): Worker | null {
       for (let i = 0; i < n; i++) {
         const w = new Worker(new URL('./geoworker.ts', import.meta.url), { type: 'module' })
         w.onmessage = (e: MessageEvent<GeoArrays & { id: number; none?: boolean }>) => { const f = pending.get(e.data.id); pending.delete(e.data.id); f?.(e.data) }
-        w.onerror = () => { workerOk = false }
+        // (A worker that fails — will not start, or dies: every job it holds falls back to the main thread, not
+        // left waiting forever with the shape stuck on its full form.)
+        w.onerror = () => { workerOk = false; for (const [id, f] of [...pending]) { pending.delete(id); f({ attrs: [], index: null, fail: true }) } }
         workers.push(w)
       }
     } catch { workerOk = false; return null }
@@ -103,10 +105,11 @@ function job(op: 'refine' | 'simplify', g: THREE.BufferGeometry, keep: number, l
   // (No worker: the old way, one at a time in idle time.)
   if (!w) return afterBoot().then(local)
   const id = nextJob++
-  return new Promise((done) => {
-    pending.set(id, (d) => done(d.none ? null : fromArrays(d)))
-    const msg = { id, op, keep, ...toArrays(g, true, op === 'refine' ? ['normal', 'aKeep'] : ['normal', 'aKeep']) }
-    w.postMessage(msg, [...msg.attrs.map((a) => a[1].buffer), ...(msg.index ? [msg.index.buffer] : [])])
+  return new Promise<THREE.BufferGeometry | null>((done) => {
+    pending.set(id, (d) => { if (d.fail) void afterBoot().then(local).then(done); else done(d.none ? null : fromArrays(d)) })
+    const msg = { id, op, keep, ...toArrays(g, true, ['normal', 'aKeep']) }
+    try { w.postMessage(msg, [...msg.attrs.map((a) => a[1].buffer), ...(msg.index ? [msg.index.buffer] : [])]) }
+    catch { pending.delete(id); void afterBoot().then(local).then(done) }
   })
 }
 const refinedCache = new Map<THREE.BufferGeometry, Promise<THREE.BufferGeometry>>()

@@ -15,4 +15,5 @@ function tx<T>(mode: IDBTransactionMode, f: (s: IDBObjectStore) => IDBRequest<T>
   return db().then((d) => new Promise<T>((res, rej) => { const q = f(d.transaction(ST, mode).objectStore(ST)); q.onsuccess = () => res(q.result); q.onerror = () => rej(q.error) }))
 }
 export const idbGet = (k: string): Promise<ArrayBuffer | undefined> => tx('readonly', (s) => s.get(k)).catch(() => undefined)
-export const idbSet = (k: string, v: ArrayBuffer): Promise<unknown> => tx('readwrite', (s) => s.put(v, k)).catch(() => undefined)
+/** Resolves true once stored, false if IndexedDB refused (a private window, a quota). */
+export const idbSet = (k: string, v: ArrayBuffer): Promise<boolean> => tx('readwrite', (s) => s.put(v, k)).then(() => true, () => false)

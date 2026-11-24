@@ -107,7 +107,7 @@ const WORLD_ACC: Record<string, string> = { desert: '#ff8a3d', ice: '#9fe8ff', l
 const loader = {
   el: null as HTMLElement | null, frame: null as HTMLIFrameElement | null, at: 0, shown: 0, t0: 0, raf: 0, showT: 0,
   begin(id: string, f: HTMLIFrameElement): void {
-    const el = (this.el ??= document.getElementById('loading'))
+    const el = (this.el ??= document.getElementById('swapcard'))
     if (!el) return
     this.frame = f; this.at = 0; this.shown = 0; this.t0 = performance.now()
     const biome = id === 'orbit' ? 'space' : biomeOf(id)
@@ -1794,13 +1794,15 @@ void (async () => {
       const k = localStorage.key(i)
       if (!k || !(k.startsWith('dbu-ghost-') || k.startsWith('dbu-inputs-'))) continue
       const v = localStorage.getItem(k)
-      if (v) { try { await idbSet(k.startsWith('dbu-ghost-') ? k : 'inputs-' + k.slice('dbu-inputs-'.length), unb64(v).buffer) } catch { /* bad */ } }
-      localStorage.removeItem(k)
+      // (Removed only once IndexedDB has it — a private window may refuse it, and the run would be lost.)
+      let saved = !v
+      if (v) { try { saved = await idbSet(k.startsWith('dbu-ghost-') ? k : 'inputs-' + k.slice('dbu-inputs-'.length), unb64(v).buffer) } catch { saved = true /* undecodable: nothing to keep */ } }
+      if (saved) localStorage.removeItem(k)
     }
   } catch { /* storage blocked */ }
   const g = await idbGet(ghostKey()), inp = await idbGet('inputs-' + course.def.id)
   if (!ghostMem) ghostMem = g && g.byteLength % 4 === 0 ? validGhost(new Float32Array(g)) : null
-  if (!inputsMem && inp && inp.byteLength % 4 === 0) inputsMem = new Float32Array(inp)
+  if (!inputsMem && inp && inp.byteLength % 4 === 0) { const a = new Float32Array(inp); if (a.every(Number.isFinite)) inputsMem = a }
 })()
 
 function startRace(): void {
@@ -4068,6 +4070,8 @@ async function compileAll(root: THREE.Object3D, target: THREE.WebGLRenderTarget 
   const hidden: THREE.Object3D[] = []
   root.traverse((o) => { if (!o.visible) { hidden.push(o); o.visible = true } })
   const culled: THREE.Object3D[] = []
+  let autoWas: boolean | null = null
+  const all: THREE.Object3D[] = []
   renderer.setRenderTarget(target)
   try {
     await renderer.compileAsync(root, camera)
@@ -4078,14 +4082,25 @@ async function compileAll(root: THREE.Object3D, target: THREE.WebGLRenderTarget 
       root.traverse((o) => { if (o.frustumCulled) { o.frustumCulled = false; culled.push(o) } })
       // (A slice at a time, the main thread handed back between them when booting behind a running
       // world — drawn in one go it was a 150 ms stall on the world being flown.)
+      // (The whole scene drawn with only the slice — and the lights — shown: drawn on its own, a slice had
+      // no lights, so its programs were light-less variants the real frames never use.)
       const units: THREE.Object3D[] = []
       for (const o of root.children) { if (o.children.length > 12) units.push(...o.children); else units.push(o) }
-      const auto = renderer.autoClear
+      root.traverse((o) => { if (o !== root) all.push(o) })
+      const lights = all.filter((o) => (o as THREE.Light).isLight)
+      autoWas = renderer.autoClear
       renderer.autoClear = false
-      for (const u of units) { renderer.setRenderTarget(target); renderer.render(u, camera); await breathe() }
-      renderer.autoClear = auto
+      for (let i = 0; i < units.length; i += 6) {
+        for (const o of all) o.visible = false
+        for (const l of lights) for (let q: THREE.Object3D | null = l; q && q !== root; q = q.parent) q.visible = true
+        for (const u of units.slice(i, i + 6)) { u.traverse((o) => { o.visible = true }); for (let q = u.parent; q && q !== root; q = q.parent) q.visible = true }
+        renderer.setRenderTarget(target); renderer.render(root, camera)
+        await breathe()
+      }
     }
   } finally {
+    for (const o of all) o.visible = true
+    if (autoWas !== null) renderer.autoClear = autoWas
     for (const o of hidden) o.visible = false
     for (const o of culled) o.frustumCulled = true
     renderer.setRenderTarget(null)
