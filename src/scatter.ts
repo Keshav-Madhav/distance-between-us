@@ -415,17 +415,20 @@ vec3 scPos; float scS; float scA; float scT;`
    * Each instance outside that cone (and past ~40 m, so nothing vanishes beside you in a snap turn)
    * is collapsed in the vertex shader before the terrain lookup: per-instance view culling on the GPU.
    */
+  /** The quality tier's say: the field's reach (instances go as its square) and the refined near ring. */
+  rangeK = 1
+  nearOn = true
   update(cam: THREE.Vector3, visible: boolean, mach = 0, fx = 0, fz = 0, cosHalf = -2): void {
     this.view.value.set(fx, fz, cosHalf)
     this.nearAdd.value = Math.max(0, mach - 1.5) * 4
     // The refined ring: ~70 m at rest, gone by Mach 5 (with the surface detail).
     const nr = NEAR_MAX * (1 - THREE.MathUtils.smoothstep(mach, 1.5, 5))
-    this.nearR.value = nr > 4 ? nr : 0
+    this.nearR.value = nr > 4 && this.nearOn ? nr : 0
     for (const n of this.nears) { n.g.instanceCount = this.nearR.value > 0 ? n.m : 0; n.mesh.visible = this.nearR.value > 0; n.centre.value.set(cam.x, cam.z) }
     this.cam.value.set(cam.x, cam.z)
     const f = 1 - 0.45 * THREE.MathUtils.smoothstep(mach, 1.5, 6.5)
     for (const l of this.lods) {
-      const r = l.fine ? l.R * f : l.R
+      const r = (l.fine ? l.R * f : l.R) * this.rangeK
       l.radius.value = r
       l.centre.value.set(cam.x, cam.z)
       // (Cells whose centres lie within r, plus a ring for the cell offset: π(r/cell + 1.5)².)

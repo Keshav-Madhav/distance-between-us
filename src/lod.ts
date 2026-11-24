@@ -5,6 +5,7 @@
 import * as THREE from 'three'
 import { SimplifyModifier } from 'three/addons/modifiers/SimplifyModifier.js'
 import { mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js'
+import { CASTER_LAYER } from './shadow'
 
 /**
  * Motion-aware LOD. The usual choice is by projected size (reach / distance, how big it looks). At
@@ -30,6 +31,12 @@ export function lodFade(dx: number, dz: number, reach: number, v: LodView): numb
   const w = Math.abs(v.vx * dz - v.vz * dx) / (d * d)
   return reach / d / (1 + w * TAU) / LOD_THRESHOLD
 }
+/**
+ * The quality tier's say over every LodPair: the score is scaled by `bias` (under 1: lighter shapes
+ * nearer) and the refined close-up form can be switched off (weaker GPUs: it is ~16× the triangles).
+ */
+export const LOD = { bias: 1, up: true, cut: 0 }
+// (`cut`: a score under which a shape is not drawn at all — a speck — dithered out over cut … 1.6 × cut.)
 const band = (a: number, lo: number, hi: number) => (a >= hi ? 1 : a <= lo ? 0 : (a - lo) / (hi - lo))
 
 /**
@@ -164,6 +171,8 @@ export class LodPair {
   readonly hi: THREE.InstancedMesh
   readonly lo: THREE.InstancedMesh
   readonly up: THREE.InstancedMesh
+  private readonly upShadow: THREE.InstancedMesh
+  private readonly hiShadow: THREE.InstancedMesh
   private readonly keepHi: THREE.InstancedBufferAttribute
   private readonly keepLo: THREE.InstancedBufferAttribute
   private readonly keepUp: THREE.InstancedBufferAttribute
@@ -190,18 +199,39 @@ export class LodPair {
     void afterBoot().then(() => { const r = view(refined(geo)); r.setAttribute('aKeep', this.keepUp); this.up.geometry = r })
     // (Until the twin is ready the far ones draw the full shape: same look, just not cheaper yet.)
     this.lo = make(view(geo), this.keepLo)
+    // Shadows from the light twin: the close-up and full forms cast as the simplified shape (the same
+    // instances; a shadow shows no surface detail) — the refined form is ~16× the triangles and both
+    // shadow maps drew it. Only the shadow camera sees these stand-ins.
+    const stand = (src: THREE.InstancedMesh) => {
+      const m = new THREE.InstancedMesh(view(geo), mat, n)
+      m.instanceMatrix = src.instanceMatrix
+      m.frustumCulled = false
+      m.count = 0
+      m.visible = false
+      m.layers.set(CASTER_LAYER)
+      src.userData.noCast = true
+      this.node.add(m)
+      return m
+    }
+    this.upShadow = stand(this.up)
+    this.hiShadow = stand(this.hi)
     // (After the world is up: simplifying every shape during boot doubled its 'world' step; until then the
     // far ones simply draw the full shape.)
     void afterBoot().then(() => simplified(geo)).then((g) => {
       const v = view(g)
       v.setAttribute('aKeep', this.keepLo)
       this.lo.geometry = v
+      this.upShadow.geometry = v; this.hiShadow.geometry = v
     })
   }
   begin(): void { this.kh = 0; this.kl = 0; this.ku = 0 }
   /** `m`: 16 floats (column-major) at `o`; `a`: the score from lodFade. */
   put(m: ArrayLike<number>, o: number, a: number): void {
-    const up = band(a, 3.2, 4.8)
+    a *= LOD.bias
+    // Too small to matter on this tier: dissolved out, then skipped.
+    const gone = LOD.cut > 0 ? 1 - band(a, LOD.cut, LOD.cut * 1.6) : 0
+    if (gone >= 1) return
+    const up = LOD.up ? band(a, 3.2, 4.8) : 0
     if (up > 0) {
       const c = this.up.instanceMatrix.array as Float32Array
       for (let i = 0; i < 16; i++) c[this.ku * 16 + i] = m[o + i]
@@ -222,7 +252,7 @@ export class LodPair {
     if (fade < 1) {
       const b = this.lo.instanceMatrix.array as Float32Array
       for (let i = 0; i < 16; i++) b[this.kl * 16 + i] = m[o + i]
-      ;(this.keepLo.array as Float32Array)[this.kl++] = fade > 0 ? -fade : 0
+      ;(this.keepLo.array as Float32Array)[this.kl++] = fade > 0 ? -fade : gone > 0 ? -gone : 0
     }
   }
   end(): void {
@@ -234,5 +264,7 @@ export class LodPair {
       m.instanceMatrix.clearUpdateRanges(); m.instanceMatrix.addUpdateRange(0, k * 16); m.instanceMatrix.needsUpdate = true
       keep.clearUpdateRanges(); keep.addUpdateRange(0, k); keep.needsUpdate = true
     }
+    this.upShadow.count = this.ku; this.upShadow.visible = this.ku > 0
+    this.hiShadow.count = this.kh; this.hiShadow.visible = this.kh > 0
   }
 }

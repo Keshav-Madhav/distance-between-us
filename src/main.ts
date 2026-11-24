@@ -24,6 +24,7 @@ import { Sound } from './audio'
 import { Input } from './input'
 import { Post } from './post'
 import { Scatter } from './scatter'
+import { LOD } from './lod'
 import { BIOME, biomeOf, type Biome, DUST, GREEN, groundH, SUN_DIR, WORLD_FADE } from './terrain'
 import { PLANET_R, Space, SPACE_U } from './space'
 import { PLANETS, StarSystem, STAR_R } from './system'
@@ -1956,9 +1957,11 @@ function readFree(): void {
 
 // ───────────────────────── quality ─────────────────────────
 type Tier = 'low' | 'medium' | 'high' | 'ultra'
-const TIERS: Record<Tier, { pr: number; samples: number; bloom: boolean; density: number }> = {
-  low: { pr: 0.75, samples: 0, bloom: false, density: 0.5 },
-  medium: { pr: 1, samples: 2, bloom: true, density: 0.75 },
+// lod: the LodPairs' score scale (lighter shapes nearer); up: their refined close-up form; scatter: the
+// ground clutter's reach (its instances go as the square); near: the scatter's refined near ring.
+const TIERS: Record<Tier, { pr: number; samples: number; bloom: boolean; density: number; lod?: number; up?: boolean; scatter?: number; near?: boolean; cut?: number }> = {
+  low: { pr: 0.75, samples: 0, bloom: false, density: 0.5, lod: 0.55, up: false, scatter: 0.6, near: false, cut: 0.16 },
+  medium: { pr: 1, samples: 2, bloom: true, density: 0.75, lod: 0.8, up: false, scatter: 0.8, near: false, cut: 0.08 },
   // (Full Retina now: at speed the scene drops to ~0.6 of it by itself — see dynScale — so the cost
   // lands only where the detail can actually be seen.)
   high: { pr: 2, samples: 2, bloom: true, density: 1 },
@@ -1966,6 +1969,28 @@ const TIERS: Record<Tier, { pr: number; samples: number; bloom: boolean; density
   ultra: { pr: 2, samples: 2, bloom: true, density: 1 },
 }
 let tierName = ((params.get('q') as Tier | null) ?? 'auto') as Tier | 'auto'
+/**
+ * AUTO's first guess, before anything has been measured (the governor corrects it from there): from the
+ * GPU's name and the device's memory and cores. Starting every machine on HIGH meant a weak laptop's
+ * first race ran at a fraction of its frame rate until the next menu.
+ */
+function guessTier(): Tier {
+  try {
+    const gl = renderer.getContext()
+    const ri = gl.getExtension('WEBGL_debug_renderer_info')
+    const name = String(ri ? gl.getParameter(ri.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER)).toLowerCase()
+    const nav = navigator as Navigator & { deviceMemory?: number }
+    const mem = nav.deviceMemory ?? 8, cores = navigator.hardwareConcurrency || 8
+    if (/swiftshader|llvmpipe|software|basic render|microsoft basic/.test(name)) return 'low'
+    if (mem <= 2 || cores <= 2) return 'low'
+    // Phone and tablet GPUs; older integrated ones (Intel HD / UHD, not Iris Xe or Arc).
+    if (/mali|adreno|powervr|apple gpu|videocore/.test(name)) return 'low'
+    if (/intel/.test(name) && !/iris\(r\) xe|iris xe|arc/.test(name)) return mem <= 4 || cores <= 4 ? 'low' : 'medium'
+    if (/iris|radeon\(tm\) graphics|radeon graphics|vega \d|apple m1(?! (pro|max|ultra))/.test(name)) return 'medium'
+    if (mem <= 4 || cores <= 4) return 'medium'
+    return 'high'
+  } catch { return 'high' }
+}
 let tier: Tier = tierName === 'auto' ? 'high' : tierName
 let renderScale = 1
 let caveK = 0
@@ -2249,11 +2274,25 @@ function updateSpace(): void {
 const sunShadow = new SunShadow()
 const markAllCasters = () => { markCasters(world.group); markCasters(course.group); for (const v of visuals.values()) markCasters(v.craft.root); markCasters(darts.mesh) }
 markAllCasters()
+/**
+ * Detail the governor can take away mid-race for free (no target reallocated, unlike the tier): 1 the
+ * refined close-up forms, 2 also the sun's shadows and a lighter LOD and shorter clutter, 3 lighter still.
+ */
+let detailCut = 0
+function applyDetail(): void {
+  const t = TIERS[tier], d = detailCut
+  LOD.bias = (t.lod ?? 1) * (d >= 3 ? 0.55 : d >= 2 ? 0.75 : 1)
+  LOD.up = (t.up ?? true) && d < 1
+  LOD.cut = (t.cut ?? 0) + (d >= 3 ? 0.1 : d >= 2 ? 0.05 : 0)
+  scatter.rangeK = (t.scatter ?? 1) * (d >= 3 ? 0.6 : d >= 2 ? 0.8 : 1)
+  scatter.nearOn = (t.near ?? true) && d < 1
+}
 function applyTier(): void {
   const t = TIERS[tier]
   post.setSamples(t.samples)
   post.bloom.enabled = t.bloom
   fx.smoke.density = t.density
+  applyDetail()
   resize()
 }
 function pixelRatio(): number { return Math.min(devicePixelRatio, TIERS[tier].pr) * renderScale }
@@ -2272,7 +2311,8 @@ applyTier()
 // (Declared up here: applyGraphics() resets it during boot, before the frame-pacing code below.)
 let autoCap = 0
 let govAcc = 0, govN = 0, govBad = 0, govGood = 0, govLast = 0
-let pendingScale = -1, pendingTier: Tier | null = null, partCut = 1
+let pendingScale = -1, pendingTier: Tier | null = null, partCut = 1, detailT = 0
+function saveAuto(): void { try { localStorage.setItem('dbu-auto', JSON.stringify({ tier, renderScale, detail: detailCut })) } catch { /* blocked */ } }
 /**
  * Dynamic resolution, with hysteresis — but never applied mid-race: a resize reallocates every render
  * target (a 194 ms stall, then a 200 ms frame, measured). It decides while you drive and applies on
@@ -2290,6 +2330,10 @@ function governor(frameMs: number): void {
   govBad = avg > 19 && dynPerf <= 0.6 ? govBad + 1 : 0
   govGood = avg < 13 ? govGood + 1 : 0
   const now = performance.now()
+  // Mid-race detail, free to switch: once the resolution trim is spent, step the detail down (at most every
+  // 1.5 s); back up only after a long run of good frames.
+  if (avg > 21 && dynPerf <= 0.6 && detailCut < 3 && now - detailT > 1500) { detailCut++; detailT = now; applyDetail(); saveAuto() }
+  else if (avg < 11 && govGood >= 12 && detailCut > 0 && now - detailT > 8000) { detailCut--; detailT = now; govGood = 0; applyDetail(); saveAuto() }
   if (now - govLast < 3000) return
   let scale = pendingScale >= 0 ? pendingScale : renderScale
   if (govBad >= 3) scale = Math.max(0.6, scale - 0.1)
@@ -2308,17 +2352,18 @@ function applyPending(): void {
   if (pendingTier && pendingTier !== tier) { tier = pendingTier; renderScale = 0.8; applyTier(); changed = true }
   else if (pendingScale >= 0 && Math.abs(pendingScale - renderScale) > 0.001) { renderScale = pendingScale; resize(); changed = true }
   pendingScale = -1; pendingTier = null
-  if (changed) try { localStorage.setItem('dbu-auto', JSON.stringify({ tier, renderScale })) } catch { /* blocked */ }
+  if (changed) saveAuto()
 }
 // AUTO starts where it settled last time (a slower machine should not re-learn every session).
 if (tierName === 'auto' && !params.has('fixed')) try {
   const v = JSON.parse(localStorage.getItem('dbu-auto') || 'null')
-  if (v && TIERS[v.tier as Tier]) { tier = v.tier; renderScale = Math.min(1, Math.max(0.6, +v.renderScale || 1)); applyTier() }
+  if (v && TIERS[v.tier as Tier]) { tier = v.tier; renderScale = Math.min(1, Math.max(0.6, +v.renderScale || 1)); detailCut = Math.min(3, Math.max(0, +v.detail || 0)); applyTier() }
+  else { tier = guessTier(); if (tier !== 'high') applyTier() }
 } catch { /* fresh */ }
 
 const qSel = $<HTMLSelectElement>('#q')
 qSel.value = tierName
-qSel.onchange = () => { tierName = qSel.value as Tier | 'auto'; tier = tierName === 'auto' ? 'high' : tierName; renderScale = 1; applyTier() }
+qSel.onchange = () => { tierName = qSel.value as Tier | 'auto'; tier = tierName === 'auto' ? guessTier() : tierName; renderScale = 1; detailCut = 0; applyTier() }
 const vols = () => sound.setVolumes(+$<HTMLInputElement>('#vm').value, +$<HTMLInputElement>('#vmu').value, +$<HTMLInputElement>('#vs').value)
 for (const id of ['#vm', '#vmu', '#vs']) $(id).oninput = vols
 // The soundtrack: AUTO plays each course's own track (and its climax take on the final stretch).
@@ -3232,7 +3277,7 @@ function frame(now: number): void {
   spaceMusic = mode === 'free' && (IN_SYSTEM || space.vac > 0.7)
   sound.update(realDt, engineMach, player.boost, player.brake, mode === 'hunt' ? combat.lockProgress : 0, mode === 'hunt' && combat.locked, play && !player.dead && !player.crashing, heat, player.burning, rivalVoices, mode === 'free' ? space.vac : 0)
 
-  sunShadow.enabled = tier !== 'low' && settings.shadows
+  sunShadow.enabled = tier !== 'low' && settings.shadows && detailCut < 2
   sunShadow.update(renderer, scene, camera.position, tmp.set(camera.matrixWorld.elements[8] * -1, 0, camera.matrixWorld.elements[10] * -1))
   updateSpace()
   post.render(realDt)
@@ -3969,6 +4014,9 @@ const g = {
   /** Tests: stop the simulation (no pause UI) and draw single frames on demand, for exact A/B diffs. */
   hold: (v: boolean) => { paused = v },
   draw: () => { post.render(0) },
+  /** Tests: a whole frame's drawing as the loop does it — the sun's shadow maps, then the scene and passes. */
+  drawFrame: () => { sunShadow.update(renderer, scene, camera.position, new THREE.Vector3(-camera.matrixWorld.elements[8], 0, -camera.matrixWorld.elements[10])); post.render(0) },
+  sunShadow, LOD,
   snapCam: () => { cam.snap(player.heading) },
   /** Tests: run the simulation `sec` seconds as fast as it goes (no frames drawn). */
   fastSim: (sec: number) => {
@@ -3995,7 +4043,7 @@ const g = {
   debug: (on: boolean) => { debugEl.style.display = on ? 'block' : 'none' },
   stats: () => ({
     fps: Math.round(fps), ms: +lastMs.toFixed(1), bank: +player.bank.toFixed(3), calls: renderer.info.render.calls, tris: renderer.info.render.triangles, mach: +player.mach.toFixed(2),
-    tier, scale: renderScale, dyn: +dynScale.toFixed(2), px: [renderer.domElement.width, renderer.domElement.height], hull: Math.round(player.hull), air: player.airborne, agl: +player.agl.toFixed(1),
+    tier, detail: detailCut, scale: renderScale, dyn: +dynScale.toFixed(2), px: [renderer.domElement.width, renderer.domElement.height], hull: Math.round(player.hull), air: player.airborne, agl: +player.agl.toFixed(1),
     place: race.racers[0].place, crashing: player.crashing, burning: player.burning, slip: +(player.slip * 57.3).toFixed(1), spin: +player.spin.toFixed(2), drift: +player.drift.toFixed(2), yaw: +player.yawRate.toFixed(2), lap: race.lapOf(race.racers[0]), passed: race.racers[0].passed, race: race.state, particles: fx.glow.count + fx.smoke.count,
   }),
   player, race, course, combat, flight, fc, CFG, world, scene, camera, post, fx, input, wreckage, shards, scatter,

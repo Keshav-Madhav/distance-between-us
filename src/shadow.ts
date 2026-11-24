@@ -155,6 +155,8 @@ export function markCasters(root: THREE.Object3D): void {
     const m = (o as THREE.Mesh).material as THREE.Material | THREE.Material[] | undefined
     if (!m || Array.isArray(m)) return
     if (m.transparent || m.blending !== THREE.NormalBlending || (m as THREE.ShaderMaterial).isShaderMaterial) return
+    // (A mesh with its own shadow stand-in: src/lod.ts, the refined close-up form.)
+    if (o.userData.noCast) return
     o.layers.enable(CASTER_LAYER)
   })
 }

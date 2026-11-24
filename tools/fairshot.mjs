@@ -14,7 +14,7 @@ const b = await chromium.launch({ channel: 'chrome', headless: true, args: ['--m
 const p = await (await b.newContext({ viewport: { width: 1280, height: 720 }, deviceScaleFactor: 2 })).newPage()
 const errs = []
 p.on('pageerror', (e) => errs.push(e.message))
-await p.goto(`${URL}?course=${C}&fixed=1`)
+await p.goto(`${URL}?course=${C}&fixed=1${process.env.Q ? `&q=${process.env.Q}` : ""}`)
 await p.waitForFunction('window.__g && window.__g.ready', null, { timeout: 120000 })
 await p.evaluate(() => {
   // (Tips and the controls card hidden by style: clicking the tips toggle opened the controls card.)
