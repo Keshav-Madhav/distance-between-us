@@ -7,7 +7,7 @@ import { DETAIL_U } from './shaders'
 import { Canyon, WATER_T } from './canyon'
 import { FullScreenQuad } from 'three/addons/postprocessing/Pass.js'
 import { CFG, MACH, REBASE } from './config'
-import { World } from './world'
+import { World, prebuildLand } from './world'
 import { primeModels, Craft, FINISHES, FLAMES, LIVERIES, MODELS, type Paint } from './craft'
 import { Fx, resetE } from './particles'
 import { Trail } from './trails'
@@ -256,7 +256,25 @@ function retire(): void {
     retired = true
     sound.suspend(true)
     renderer.dispose()
-    renderer.forceContextLoss()
+    // (Not forceContextLoss: tearing the whole context down at once was a 122 ms freeze of the world taking
+    // over, mid-flight. In a frame, the host removes the frame soon after, which frees it all; the top page,
+    // which stays, frees its GPU memory a few resources at a time when idle.)
+    if (window.parent === window) {
+      const res = new Set<{ dispose(): void }>()
+      const take = (m: THREE.Material) => { res.add(m); for (const v of Object.values(m)) if (v && (v as THREE.Texture).isTexture) res.add(v as THREE.Texture) }
+      for (const root of [scene, space.scene]) root.traverse((o) => {
+        const m = o as THREE.Mesh
+        if (m.geometry) res.add(m.geometry)
+        if (m.material) for (const x of Array.isArray(m.material) ? m.material : [m.material]) take(x)
+      })
+      const list = [...res]
+      const step = (d?: IdleDeadline) => {
+        const until = performance.now() + 4
+        while (list.length && (d ? d.timeRemaining() > 1 : performance.now() < until)) list.pop()!.dispose()
+        if (list.length) { if ('requestIdleCallback' in window) requestIdleCallback(step); else setTimeout(step, 50) }
+      }
+      setTimeout(step, 1500)
+    }
     if (window.parent === window) for (const el of Array.from(document.body.children)) if (el.tagName !== 'IFRAME' && el.tagName !== 'SCRIPT') (el as HTMLElement).style.display = 'none'
   }, 700)
 }
@@ -379,6 +397,7 @@ const clearAt = (x: number, z: number, r: number) => {
 /** How tall something may stand at (x, z), × its full height: near the track ~30% (tall spires there
  *  looked dangerous and walled off the view of the course), full from ~1.4 km past the gates. */
 const heightNearTrack = (x: number, z: number) => Math.min(1, 0.28 + Math.max(0, course.distance(x, z) - course.gateHalf) / 1400)
+await prebuildLand(breathe)
 const world = new World(clearAt, (x, z, r) => course.distance(x, z) < 460 + r, (x, z, r) => course.distance(x, z) < (course.def.gorge ? course.def.clearance! : course.gateHalf + 30) + r * 1.3 || (!!canyon && canyon.covers(x, z, r)), heightNearTrack)
 bootMark('world')
 await breathe()

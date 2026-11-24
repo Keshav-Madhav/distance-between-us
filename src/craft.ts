@@ -18,6 +18,7 @@ const LOD_DIST = 260
 /** Past this the whole ship is two draws (lit, glowing), its colours baked in: ~9 px tall here. */
 const FAR_DIST = 600
 const GLOW_KEYS = new Set(['glow', 'hot', 'neon'])
+const FAR_CACHE = new Map<number, { geo: THREE.BufferGeometry; spans: [string, number, number][]; glowing: boolean }[]>()
 const NOZZLE_Z = -4.45
 
 export interface Paint {
@@ -357,28 +358,41 @@ export class Craft {
   private farLit = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.3, metalness: 0.5, envMapIntensity: 1.3 })
   private farGlow = new THREE.MeshBasicMaterial({ vertexColors: true })
   private farParts: { geo: THREE.BufferGeometry; spans: [string, number, number][] }[] = []
-  /** The far ship: every part merged into one lit and one glowing mesh, each part's colour per vertex. */
+  /** The far ship: every part merged into one lit and one glowing mesh, each part's colour per vertex. The
+   *  merged shape is built once per model and shared (11 ships merged their own copies at every boot,
+   *  ~24 ms on the main thread); each ship adds only its colours. */
   private buildFar(parts: [string, THREE.BufferGeometry][]): void {
     for (const f of this.farParts) f.geo.dispose()
     this.farParts = []
-    for (const glowing of [false, true]) {
-      const list: THREE.BufferGeometry[] = [], spans: [string, number, number][] = []
-      let at = 0
-      for (const [key, g] of parts) {
-        if (GLOW_KEYS.has(key) !== glowing) continue
-        const c = new THREE.BufferGeometry()
-        c.setAttribute('position', g.attributes.position)
-        if (g.attributes.normal) c.setAttribute('normal', g.attributes.normal)
-        else c.computeVertexNormals()
-        const n = g.attributes.position.count
-        c.setIndex(g.index ?? Array.from({ length: n }, (_, i) => i))
-        list.push(c); spans.push([key, at, n]); at += n
+    let shared = FAR_CACHE.get(this.model)
+    if (!shared) {
+      shared = []
+      for (const glowing of [false, true]) {
+        const list: THREE.BufferGeometry[] = [], spans: [string, number, number][] = []
+        let at = 0
+        for (const [key, g] of parts) {
+          if (GLOW_KEYS.has(key) !== glowing) continue
+          const c = new THREE.BufferGeometry()
+          c.setAttribute('position', g.attributes.position)
+          if (g.attributes.normal) c.setAttribute('normal', g.attributes.normal)
+          else c.computeVertexNormals()
+          const n = g.attributes.position.count
+          c.setIndex(g.index ?? Array.from({ length: n }, (_, i) => i))
+          list.push(c); spans.push([key, at, n]); at += n
+        }
+        if (list.length) shared.push({ geo: mergeGeometries(list), spans, glowing })
       }
-      if (!list.length) continue
-      const geo = mergeGeometries(list)
-      geo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(at * 3), 3))
-      const mesh = new THREE.Mesh(geo, glowing ? this.farGlow : this.farLit)
-      this.lo.add(mesh)
+      FAR_CACHE.set(this.model, shared)
+    }
+    for (const { geo: base, spans, glowing } of shared) {
+      // (Its own geometry over the shared buffers — disposing it frees nothing the others use.)
+      const geo = new THREE.BufferGeometry()
+      geo.setAttribute('position', base.attributes.position)
+      geo.setAttribute('normal', base.attributes.normal)
+      geo.setIndex(base.index)
+      geo.boundingSphere = base.boundingSphere ?? (base.computeBoundingSphere(), base.boundingSphere)
+      geo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(base.attributes.position.count * 3), 3))
+      this.lo.add(new THREE.Mesh(geo, glowing ? this.farGlow : this.farLit))
       this.farParts.push({ geo, spans })
     }
     this.farColours()

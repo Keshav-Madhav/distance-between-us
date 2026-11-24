@@ -21,6 +21,28 @@ const landGeometry = (kind: 'mesa' | 'butte' | 'spire', seed: number, v: number)
   if (!g) LAND_CACHE.set(k, (g = landGeometryRaw(kind, seed, v)))
   return g
 }
+const MESA_CACHE = new Map<string, ReturnType<typeof mesaGeometry>>()
+const mesaCached = (kind: Kind, seed: number, v: number) => {
+  const k = kind + seed + ':' + v
+  let g = MESA_CACHE.get(k)
+  if (!g) MESA_CACHE.set(k, (g = mesaGeometry(kind, seed, v)))
+  return g
+}
+/**
+ * The world's landform shapes generated ahead of the World, one shape per step with `pause` between —
+ * the same calls (and seeds) the constructor makes, so it finds them all cached. Generated inside it,
+ * they were one 130 ms task: booting behind the world being flown (a planet arrival), a 130 ms freeze.
+ */
+export async function prebuildLand(pause: () => Promise<void>): Promise<void> {
+  const ICE = BIOME === 'ice', LAVA = BIOME === 'lava', FOREST = BIOME === 'forest' || BIOME === 'jungle', JUNGLE = BIOME === 'jungle'
+  const VAR = ICE ? ICE_VARIANTS : LAVA ? LAVA_VARIANTS : JUNGLE ? JUNGLE_VARIANTS : FOREST ? FOREST_VARIANTS : MESA_VARIANTS
+  for (const kind of ['mesa', 'butte', 'spire'] as const) for (let v = 0; v < VAR[kind]; v++) {
+    const seed = kind.length * 31 + 7 + v * 101
+    if (ICE || LAVA || FOREST) landGeometry(kind, seed, v); else mesaCached(kind, seed, v)
+    await pause()
+  }
+  for (const kind of ['butte', 'spire'] as const) for (let v = 0; v < 3; v++) { landGeometry(kind, kind.length * 31 + 7 + v * 101, v); await pause() }
+}
 import { FBMT_GLSL, NOISE_TEX, patchStandard, WORLD_GLSL } from './shaders'
 import { SHADOW_GLSL, SHADOW_U } from './shadow'
 import { LodPair, lodFade, patchLodDither, type LodView } from './lod'
@@ -1303,7 +1325,7 @@ export class World {
       const ws: Wrapped[] = []
       for (let v = 0; v < (ICE ? ICE_VARIANTS : LAVA ? LAVA_VARIANTS : JUNGLE ? JUNGLE_VARIANTS : FOREST ? FOREST_VARIANTS : MESA_VARIANTS)[kind]; v++) {
         const seed = kind.length * 31 + 7 + v * 101
-        const { geo, prof } = ICE || LAVA || FOREST ? landGeometry(kind, seed, v) : mesaGeometry(kind, seed, v)
+        const { geo, prof } = ICE || LAVA || FOREST ? landGeometry(kind, seed, v) : mesaCached(kind, seed, v)
         if (kind === 'spire' && v === 0) { this.spireGeo = geo; this.fixedProf = prof }
         ws.push(new Wrapped(geo, ICE && kind === 'spire' ? spikeMat : mesaMat, REBASE, 16500, 0.06, prof, true, null, 20000))
       }
