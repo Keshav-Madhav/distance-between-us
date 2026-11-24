@@ -2447,6 +2447,8 @@ function saveAuto(): void { try { localStorage.setItem('dbu-auto', JSON.stringif
  */
 function governor(frameMs: number): void {
   if (tierName !== 'auto' || params.has('fixed') || settings.scale < 1) return
+  // (Not in the first seconds of a boot, a race or a mode — see paceAuto — nor on a hitch frame.)
+  if (performance.now() < paceGraceUntil || frameMs > 250) return
   govAcc += frameMs; govN++
   if (govAcc < 500) return
   const avg = govAcc / govN
@@ -3094,7 +3096,15 @@ function frameCap(): number {
   if (settings.fps === '120' || settings.fps === 'max') return 0
   return autoCap
 }
+/** No pacing decisions until this time: a boot, a race start, a mode change — their first frames are heavy
+ *  (first draws, the start burst) and said nothing about the frame rate the race will hold. (On a 120 Hz
+ *  screen they tripped AUTO into a 60 cap in the first second, and it stayed there all race.) */
+let paceGraceUntil = 0, paceMode = '', paceState = '', capTries = 0
 function paceAuto(delta: number, now: number): void {
+  // A new moment: hold the judgement for 3 s.
+  const st = mode + '|' + race.state
+  if (st !== paceState) { paceState = st; paceGraceUntil = now + 3000; autoFrames = 0; autoMisses = 0; govAcc = 0; govN = 0; void paceMode }
+  if (now < paceGraceUntil || delta > 250) return
   if (settings.fps !== 'auto') return
   const refresh = refreshMs
   if (refresh > 12) return
@@ -3102,8 +3112,12 @@ function paceAuto(delta: number, now: number): void {
   if (delta > (autoCap || refresh) * 1.45) autoMisses++
   if (autoFrames >= 120) {
     // (The 60 cap is the last resort: first the resolution trims itself to hold the refresh — governor.)
-    if (!autoCap && autoMisses > 10 && (dynPerf <= 0.62 || tierName !== 'auto')) { autoCap = 1000 / 60; autoSince = now }
-    else if (autoCap && autoMisses === 0 && now - autoSince > 30000) { autoCap = 0; autoSince = now }
+    if (!autoCap && autoMisses > 10 && (dynPerf <= 0.62 || tierName !== 'auto')) { autoCap = 1000 / 60; autoSince = now; capTries++ }
+    // Capped, it cannot see whether the full rate would hold now: it tries again after 8 s, then backing off
+    // (16, 32, … 60 s) each time the try fails. (It waited for 30 s of perfect frames at 60, which said
+    // nothing about 120, and stayed capped all race.)
+    else if (autoCap && autoMisses <= 2 && now - autoSince > Math.min(60000, 8000 * 2 ** Math.max(0, capTries - 1))) { autoCap = 0; autoSince = now }
+    else if (!autoCap && autoMisses <= 2 && now - autoSince > 20000) capTries = 0
     autoFrames = 0; autoMisses = 0
   }
 }
