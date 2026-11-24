@@ -771,7 +771,7 @@ const enemyEls = Array.from({ length: 14 }, () => {
   $('#tags').appendChild(d)
   return d
 })
-const tagPlaced: { d: HTMLElement; x: number; y: number; dist: number; stacked?: boolean }[] = []
+const tagPlaced: { d: HTMLElement; x: number; y: number; dist: number; far: boolean; stacked?: boolean }[] = []
 const tagEls = race.racers.filter((r) => r.ai).map((r) => {
   const d = document.createElement('div')
   d.className = 'tag'
@@ -3296,6 +3296,13 @@ function frame(now: number): void {
   input.consume()
 }
 
+/** HUD writes that only touch the DOM when the value changes: an identical textContent still replaced
+ *  the text node, and an identical class string still restyled — every frame, in every browser. */
+function setText(el: Element, v: string): void { if (el.textContent !== v) el.textContent = v }
+function setHtml(el: Element & { _h?: string }, v: string): void { if (el._h !== v) { el._h = v; el.innerHTML = v } }
+function setCls(el: Element, v: string): void { if (el.className !== v) el.className = v }
+/** A screen marker moved by transform (no layout), anchored as its CSS anchors it. */
+function moveTag(el: HTMLElement, x: number, y: number): void { el.style.transform = `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px) translate(-50%, -100%)` }
 function updateHud(dt: number, slow: boolean): void {
   if (mode === 'title') return
   const m = player.mach
@@ -3304,12 +3311,12 @@ function updateHud(dt: number, slow: boolean): void {
   // then the fraction of light speed past 10,000 km/s (and CRUISE when cruising).
   {
     const v = player.speed, kmh = v * 3.6, kms = v / 1000
-    machNum.textContent = m < 100 ? m.toFixed(2) : Math.round(m).toLocaleString('en')
+    setText(machNum, m < 100 ? m.toFixed(2) : Math.round(m).toLocaleString('en'))
     if (machLab.textContent !== 'MACH') machLab.textContent = 'MACH'
     const sub = kmh < 10000 ? `${Math.round(kmh).toLocaleString('en')} KM/H`
       : kms < 10000 ? `${kms < 100 ? kms.toFixed(2) : Math.round(kms).toLocaleString('en')} KM/S`
         : `${(v / 2.998e8).toFixed(v < 2.998e7 ? 3 : 2)} × LIGHT SPEED`
-    kmsEl.textContent = mode === 'free' && flight.cruise > 0 ? `CRUISE · ${sub}` : sub
+    setText(kmsEl, mode === 'free' && flight.cruise > 0 ? `CRUISE · ${sub}` : sub)
   }
   for (let i = 0; i < 6; i++) {
     barCells[i].classList.toggle('on', m >= i + 0.5 || m > i + 1)
@@ -3332,15 +3339,15 @@ function updateHud(dt: number, slow: boolean): void {
   const load = player.gripLoad
   gg.style.opacity = mode === 'race' ? (player.airborne ? '0.35' : '1') : '0'
   ;(gg.querySelector('i') as HTMLElement).style.width = `${Math.min(100, (load / 1.6) * 100)}%`
-  gg.className = player.spin > 0 || player.recover > 0 ? 'spin' : player.spinRisk > 0.55 ? 'danger' : load > 1 ? 'slide' : load > 0.8 ? 'edge' : ''
-  ;(gg.querySelector('span') as HTMLElement).textContent = player.spin > 0 ? 'SPIN' : player.spinRisk > 0.55 ? 'CATCH IT' : load > 1 ? 'SLIDING' : 'GRIP'
+  // (With the burner's lock in the same string: set apart, it was wiped and re-added every frame.)
+  setCls(gg, (player.spin > 0 || player.recover > 0 ? 'spin' : player.spinRisk > 0.55 ? 'danger' : load > 1 ? 'slide' : load > 0.8 ? 'edge' : '') + (player.burning && mode === 'race' ? ' locked' : ''))
+  setText(gg.querySelector('span')!, player.spin > 0 ? 'SPIN' : player.spinRisk > 0.55 ? 'CATCH IT' : load > 1 ? 'SLIDING' : 'GRIP')
   // The afterburner: say plainly that the steering is locked, and say it louder if you try to turn.
   const bn = $('#burn')
   const fighting = player.burning && Math.abs(player.steerWant) > 0.3
   bn.style.display = player.burning && !(mode === 'free' && freeAir) ? 'block' : 'none'
-  bn.className = fighting ? 'fight' : ''
-  bn.innerHTML = fighting ? 'RELEASE <b>SHIFT</b> TO TURN' : 'AFTERBURNER · <b>STEERING LOCKED</b>'
-  $('#grip').classList.toggle('locked', player.burning && mode === 'race')
+  setCls(bn, fighting ? 'fight' : '')
+  setHtml(bn, fighting ? 'RELEASE <b>SHIFT</b> TO TURN' : 'AFTERBURNER · <b>STEERING LOCKED</b>')
   // In a wake: the camera shakes with it.
   if (player.wake > 0.15) cam.trauma = Math.max(cam.trauma, player.wake * 0.45)
   // Drift charge levels: felt, not read — a thunk, a rumble and a camera nudge at each level.
@@ -3420,7 +3427,7 @@ function updateHud(dt: number, slow: boolean): void {
         if (course.curv[i] > 1 / 1250) { if (player.mach > 3.2) warn('HAIRPIN', 'BRAKE · S'); pinUntil = i + 80; break }
       }
     }
-    $('#r-time').textContent = fmtLap(me.finished ? me.finishTime : race.clock + me.penalty)
+    setText($('#r-time'), fmtLap(me.finished ? me.finishTime : race.clock + me.penalty))
     const [tx, tz] = course.tangent(me.idx)
     const along = player.vel.x * tx + player.vel.z * tz
     wrongT = race.state === 'racing' && !player.crashing && player.ghost <= 0 && along < -0.3 * player.speed && player.speed > 100 ? wrongT + dt : 0
@@ -3437,7 +3444,7 @@ function updateHud(dt: number, slow: boolean): void {
       const dist = ghostP.pos.distanceTo(camera.position)
       const on = v.craft.root.visible && proj.z < 1 && Math.abs(proj.x) < 1 && Math.abs(proj.y) < 1 && dist > 25 && dist < 4000
       ghostTag.style.display = on ? 'block' : 'none'
-      if (on) { ghostTag.style.left = `${(proj.x * 0.5 + 0.5) * innerWidth}px`; ghostTag.style.top = `${(-proj.y * 0.5 + 0.5) * innerHeight}px` }
+      if (on) moveTag(ghostTag, (proj.x * 0.5 + 0.5) * innerWidth, (-proj.y * 0.5 + 0.5) * innerHeight)
     }
     for (const { r, d } of tagEls) {
       // (Racers out of this race show no tag.)
@@ -3447,15 +3454,14 @@ function updateHud(dt: number, slow: boolean): void {
       const on = !r.p.dead && proj.z < 1 && Math.abs(proj.x) < 1 && Math.abs(proj.y) < 1 && dist > 25 && dist < 4000
       d.style.display = on ? 'block' : 'none'
       if (on) {
-        d.style.left = `${(proj.x * 0.5 + 0.5) * innerWidth}px`
-        d.style.top = `${(-proj.y * 0.5 + 0.5) * innerHeight}px`
+        moveTag(d, (proj.x * 0.5 + 0.5) * innerWidth, (-proj.y * 0.5 + 0.5) * innerHeight)
         // Far ahead (you, well behind): just a small faint chevron — a row of names across the middle of
         // the view hid the spires you were about to meet. Near the centre of the screen, fainter still.
+        // (The class is set once, after the overlap pass below: set here too, it flipped twice a frame.)
         const far = dist > 1200
-        if (d.classList.contains('far') !== far) d.classList.toggle('far', far)
-        tagPlaced.push({ d, x: (proj.x * 0.5 + 0.5) * innerWidth, y: (-proj.y * 0.5 + 0.5) * innerHeight, dist })
+        tagPlaced.push({ d, x: (proj.x * 0.5 + 0.5) * innerWidth, y: (-proj.y * 0.5 + 0.5) * innerHeight, dist, far })
         const centre = Math.hypot(proj.x, proj.y * 1.6)
-        d.style.opacity = String(THREE.MathUtils.clamp(1.2 - dist / 8000, 0.45, 1) * (far ? 0.6 : 1) * THREE.MathUtils.lerp(0.45, 1, THREE.MathUtils.smoothstep(centre, 0.08, 0.3)))
+        d.style.opacity = (THREE.MathUtils.clamp(1.2 - dist / 8000, 0.45, 1) * (far ? 0.6 : 1) * THREE.MathUtils.lerp(0.45, 1, THREE.MathUtils.smoothstep(centre, 0.08, 0.3))).toFixed(2)
       }
     }
     // Bunched up (at a gate, in the pack far ahead): the nearest keeps its name, any tag overlapping a
@@ -3466,7 +3472,8 @@ function updateHud(dt: number, slow: boolean): void {
       let hidden = false
       for (let j = 0; j < i; j++) if (!tagPlaced[j].stacked && Math.abs(tagPlaced[j].x - t.x) < 70 && Math.abs(tagPlaced[j].y - t.y) < 18) { hidden = true; break }
       t.stacked = hidden
-      if (hidden && !t.d.classList.contains('far')) t.d.classList.add('far')
+      const far = t.far || hidden
+      if (t.d.classList.contains('far') !== far) t.d.classList.toggle('far', far)
     }
     const c = course.cps[Math.min(me.next, course.cps.length - 1)]
     // The next gate: a diamond on it when on screen (with distance), the edge arrow when not.
@@ -3485,7 +3492,7 @@ function updateHud(dt: number, slow: boolean): void {
     if (gon) {
       gm.style.transform = `translate(${(proj.x * 0.5 + 0.5) * innerWidth}px, ${(-proj.y * 0.5 + 0.5) * innerHeight}px)`
       gm.classList.toggle('fin', me.next === 0 || me.next === race.K - 1)
-      ;(gm.querySelector('.t') as HTMLElement).textContent = `${me.next === 0 ? 'START' : me.next === race.K - 1 ? 'FINISH' : 'GATE ' + me.next} · ${gd < 1000 ? Math.round(gd) + ' M' : (gd / 1000).toFixed(1) + ' KM'}`
+      setText(gm.querySelector('.t')!, `${me.next === 0 ? 'START' : me.next === race.K - 1 ? 'FINISH' : 'GATE ' + me.next} · ${gd < 1000 ? Math.round(gd) + ' M' : (gd / 1000).toFixed(1) + ' KM'}`)
     }
     arrowTo(proj, me.finished ? '' : `${me.next === 0 ? 'START' : me.next === race.K - 1 ? 'FINISH' : 'GATE ' + me.next} · ${(Math.hypot(c.x - player.pos.x, c.z - player.pos.z) / 1000).toFixed(1)} KM`)
     lockEl.style.display = 'none'
