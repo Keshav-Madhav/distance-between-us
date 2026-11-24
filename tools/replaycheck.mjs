@@ -24,6 +24,7 @@ await p1.waitForTimeout(300)
 const rep1 = await runTo(p1, 'replay')
 const p2 = await ctx.newPage()
 await p2.goto(`${URL}?course=${course}&fixed=1`); await p2.waitForFunction('window.__g && window.__g.ready', null, { timeout: 120000 })
+await p2.waitForTimeout(500) // (this course's recordings load from IndexedDB just after boot)
 const rep2 = await runTo(p2, 'replay')
 const f = (r) => typeof r === 'string' ? r : `${r.time.toFixed(4)} s (${r.steps} steps)`
 console.log('recorded       ', f(rec))

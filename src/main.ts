@@ -25,6 +25,7 @@ import { Input } from './input'
 import { Post } from './post'
 import { Scatter } from './scatter'
 import { LOD, drainSwaps } from './lod'
+import { idbGet, idbSet } from './store'
 import { BIOME, biomeOf, type Biome, DUST, GREEN, groundH, SUN_DIR, WORLD_FADE } from './terrain'
 import { PLANET_R, Space, SPACE_U } from './space'
 import { PLANETS, StarSystem, STAR_R } from './system'
@@ -1761,30 +1762,46 @@ let inputRec: number[] = []
 let replayIn: Float32Array | null = null
 const stepCtl: import('./player').Controls = { steer: 0, strafe: 0, boost: false, burner: false, brake: false, dodgeL: false, dodgeR: false }
 let replayAt = 0
-const b64 = (u8: Uint8Array) => { let bin = ''; for (let i = 0; i < u8.length; i += 0x8000) bin += String.fromCharCode(...u8.subarray(i, i + 0x8000)); return btoa(bin) }
 const unb64 = (s: string) => { const bin = atob(s), u8 = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i); return u8 }
-function saveInputs(): void { try { localStorage.setItem('dbu-inputs-' + course.def.id, b64(new Uint8Array(new Float32Array(inputRec).buffer))) } catch { /* full */ } }
-function loadInputs(): Float32Array | null { try { const s = localStorage.getItem('dbu-inputs-' + course.def.id); return s ? new Float32Array(unb64(s).buffer) : null } catch { return null } }
+// (Kept in IndexedDB — src/store.ts — and held in memory for this course from boot: loads and saves are
+// synchronous for the game, the disk catches up.)
+let inputsMem: Float32Array | null = null
+function saveInputs(): void { inputsMem = new Float32Array(inputRec); void idbSet('inputs-' + course.def.id, inputsMem.slice().buffer) }
+function loadInputs(): Float32Array | null { return inputsMem && inputsMem.length >= 3 && inputsMem.length % 3 === 0 ? inputsMem : null }
 let ghostPlay: Float32Array | null = null
 let ghostStep = 0
 const ghostKey = () => 'dbu-ghost-' + course.def.id
-function loadGhost(): Float32Array | null {
-  try {
-    const s = localStorage.getItem(ghostKey())
-    if (!s) return null
-    const bin = atob(s), u8 = new Uint8Array(bin.length)
-    for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i)
-    return new Float32Array(u8.buffer)
-  } catch { return null }
+let ghostMem: Float32Array | null = null
+/** A recording the ghost can be drawn from: whole samples, at least two, every number finite. (A short or
+ *  damaged one read past its ends: NaN positions, into the trails and the bloom — black frames, errors.) */
+function validGhost(a: Float32Array | null): Float32Array | null {
+  if (!a || a.length < GHOST_N * 2 || a.length % GHOST_N !== 0) return null
+  for (let i = 0; i < a.length; i++) if (!Number.isFinite(a[i])) return null
+  return a
 }
+function loadGhost(): Float32Array | null { return ghostMem }
 function saveGhost(): void {
-  try {
-    const u8 = new Uint8Array(new Float32Array(ghostRec).buffer)
-    let bin = ''
-    for (let i = 0; i < u8.length; i += 0x8000) bin += String.fromCharCode(...u8.subarray(i, i + 0x8000))
-    localStorage.setItem(ghostKey(), btoa(bin))
-  } catch { /* storage full or blocked */ }
+  const a = validGhost(new Float32Array(ghostRec))
+  if (!a) return
+  ghostMem = a
+  void idbSet(ghostKey(), a.slice().buffer)
 }
+// This course's recordings into memory at boot; any left in localStorage (older builds) moved across once
+// and removed — they had filled Zen's ~5 MB there, and every later save (best times too) failed.
+void (async () => {
+  try {
+    for (let i = localStorage.length - 1; i >= 0; i--) {
+      const k = localStorage.key(i)
+      if (!k || !(k.startsWith('dbu-ghost-') || k.startsWith('dbu-inputs-'))) continue
+      const v = localStorage.getItem(k)
+      if (v) { try { await idbSet(k.startsWith('dbu-ghost-') ? k : 'inputs-' + k.slice('dbu-inputs-'.length), unb64(v).buffer) } catch { /* bad */ } }
+      localStorage.removeItem(k)
+    }
+  } catch { /* storage blocked */ }
+  const g = await idbGet(ghostKey()), inp = await idbGet('inputs-' + course.def.id)
+  if (!ghostMem) ghostMem = g && g.byteLength % 4 === 0 ? validGhost(new Float32Array(g)) : null
+  if (!inputsMem && inp && inp.byteLength % 4 === 0) inputsMem = new Float32Array(inp)
+})()
 
 function startRace(): void {
   ;(document.activeElement as HTMLElement | null)?.blur?.() // (see Input: a focused START restarted the run on Space)
@@ -2815,8 +2832,9 @@ function drawRacer(p: Player, alpha: number, dt: number, isMe: boolean): void {
       v.vapour[i].strength = vap * 0.6
     }
   }
-  // Sand thrown up behind, laid along the path since last frame.
-  if (near && p.agl < 8) {
+  // Sand thrown up behind, laid along the path since last frame. (Not by the ghost: a see-through
+  // recording, never simulated — its height over the ground is never known, so it threw sand mid-air.)
+  if (near && p.agl < 8 && p !== ghostP) {
     const seg = v.lastDust.distanceTo(tmp)
     const n = Math.min(isMe ? 10 : 4, Math.ceil(seg / 14)) * (0.4 + p.boost * 0.8 + p.brake * 2)
     for (let i = 0; i < n; i++) {
@@ -2837,7 +2855,7 @@ function drawRacer(p: Player, alpha: number, dt: number, isMe: boolean): void {
     }
   }
   // Rivals far away: a hot engine glow sized to stay a few pixels wide at any range.
-  if (!isMe) {
+  if (!isMe && p !== ghostP) {
     const d = Math.sqrt(camera.position.distanceToSquared(tmp))
     if (d > 120) {
       nozzleW.copy(craft.nozzles[1]).applyMatrix4(craft.body.matrixWorld)
@@ -3027,6 +3045,33 @@ function paceAuto(delta: number, now: number): void {
   }
 }
 
+
+// ── ?prof=1: each part of a frame timed (CPU), for finding which one spikes (g.prof()) ──
+const PROF = params.has('prof')
+let profT = 0
+const profCur: Record<string, number> = {}
+const profLog: Record<string, number>[] = []
+function pm(name: string): void {
+  if (!PROF) return
+  const t = performance.now()
+  if (name) profCur[name] = (profCur[name] ?? 0) + (t - profT)
+  profT = t
+}
+function profEnd(): void {
+  if (!PROF) return
+  profLog.push({ ...profCur })
+  if (profLog.length > 20000) profLog.shift()
+  for (const k in profCur) delete profCur[k]
+}
+function profSummary(): string {
+  const keys = [...new Set(profLog.flatMap((r) => Object.keys(r)))]
+  const tot = profLog.map((r) => Object.values(r).reduce((a, b) => a + b, 0))
+  const q = (a: number[], f: number) => { const s = [...a].sort((x, y) => x - y); return s[Math.min(s.length - 1, Math.floor(s.length * f))] ?? 0 }
+  const lines = keys.map((k) => { const a = profLog.map((r) => r[k] ?? 0); return `${k.padEnd(16)} p50 ${q(a, 0.5).toFixed(2)}  p99 ${q(a, 0.99).toFixed(2)}  p99.9 ${q(a, 0.999).toFixed(2)}  max ${Math.max(...a).toFixed(1)}` })
+  const worst = profLog.map((r, i) => [tot[i], r] as const).sort((a, b) => b[0] - a[0]).slice(0, 6)
+  return `${profLog.length} frames · total p50 ${q(tot, 0.5).toFixed(2)} p99 ${q(tot, 0.99).toFixed(2)} max ${Math.max(...tot).toFixed(1)} ms\n` + lines.join('\n') +
+    '\nworst: ' + worst.map(([t, r]) => `${t.toFixed(1)}ms [${Object.entries(r).filter(([, v]) => v > 1).map(([k, v]) => `${k} ${v.toFixed(1)}`).join(', ')}]`).join('\n       ')
+}
 function frame(now: number): void {
   if (retired || frozen) return
   requestAnimationFrame(frame)
@@ -3047,6 +3092,7 @@ function frame(now: number): void {
   governor(lastMs)
   drainSwaps() // (one finished world shape swapped in a frame: src/lod.ts)
   renderer.info.reset()
+  pm('')
 
   let timeScale = 1
   if (hitstop > 0) { hitstop -= realDt; timeScale = 0.06 }
@@ -3082,7 +3128,10 @@ function frame(now: number): void {
       const L = (k: number) => G[a + k] + (G[b2 + k] - G[a + k]) * t
       gp.prev.copy(gp.pos); gp.pos.set(L(0), L(1), L(2))
       gp.prevHeading = gp.heading; gp.heading = L(3); gp.prevBank = gp.bank; gp.bank = L(4); gp.prevPitch = gp.pitch; gp.pitch = L(5)
+      const was = v.craft.root.visible
       v.craft.root.visible = f < n - 1
+      // (Appearing: its trail and dust start where it is, not from wherever it was last — the world's origin.)
+      if (v.craft.root.visible && !was) { v.lastDust.copy(gp.pos); for (const t of v.trail) t.reset() }
       if (v.craft.root.visible) drawRacer(gp, 1, dt, false)
     } else v.craft.root.visible = false
   }
@@ -3128,6 +3177,7 @@ function frame(now: number): void {
   }
   shadowMesh.count = ns
   shadowMesh.instanceMatrix.needsUpdate = true
+  pm('sim')
   renderPos.copy(myCraft.root.position)
   const heading = visuals.get(player)!.heading
   coneA = Math.max(0, coneA - realDt * 2.2)
@@ -3185,6 +3235,7 @@ function frame(now: number): void {
 
   if (mode === 'hunt') combat.render(alpha, realDt, time)
   combat.group.visible = mode === 'hunt'
+  pm('craft+cam')
   fx.update(dt)
   wreckage.update(dt)
   shock.update(dt)
@@ -3192,8 +3243,10 @@ function frame(now: number): void {
   sound.scrape(mode === 'title' ? 0 : Math.max(player.scrape, player.drifting || player.spin > 0 ? 0.25 + Math.abs(player.slip) * 0.35 : 0))
   sound.slide(mode === 'title' || player.airborne ? 0 : player.drifting ? 0.4 + Math.min(0.6, Math.abs(player.slip)) : 0, player.drift / 2.6, player.spin > 0 ? player.yawRate : 0)
 
+  pm('fx+trails')
   world.update(camera.position, time, camera, mode === 'title' ? undefined : player.vel)
   scatter.update(camera.position, !scatterForceOff && BIOME !== 'space' && WORLD_FADE.uWorldFade.value.y < 0.5 && camera.position.y - groundH(camera.position.x, camera.position.z) < 2500, mode === 'title' ? 0 : player.mach, ...viewCone())
+  pm('world+scatter')
   updateTips(realDt)
   const G = world.ground
   G.uCraft.value.copy(renderPos)
@@ -3352,9 +3405,12 @@ function frame(now: number): void {
   sunShadow.enabled = tier !== 'low' && settings.shadows && detailCut < 2
   // (Far map on odd frames, the minimap on even ones: both every other frame, never the same frame —
   // landing together made every second frame the heavy one.)
+  pm('uniforms+sound')
   sunShadow.update(renderer, scene, camera.position, tmp.set(camera.matrixWorld.elements[8] * -1, 0, camera.matrixWorld.elements[10] * -1), (frameNo & 1) === 1)
+  pm('shadow')
   updateSpace()
   post.render(realDt)
+  pm('render')
   if (freezeWanted) {
     freezeWanted = false
     const fz = $<HTMLCanvasElement>('#freeze'), src = renderer.domElement
@@ -3364,8 +3420,11 @@ function frame(now: number): void {
     frozen = true
   }
   renderMap()
+  pm('map')
   hudT -= realDt
   updateHud(realDt, hudT <= 0)
+  pm('hud')
+  profEnd()
   if (hudT <= 0) hudT = 0.1
   input.consume()
 }
@@ -4140,6 +4199,7 @@ const g = {
   /** Tests: a whole frame's drawing as the loop does it — the sun's shadow maps, then the scene and passes. */
   drawFrame: () => { sunShadow.update(renderer, scene, camera.position, new THREE.Vector3(-camera.matrixWorld.elements[8], 0, -camera.matrixWorld.elements[10])); post.render(0) },
   sunShadow, LOD,
+  prof: () => profSummary(), profReset: () => { profLog.length = 0 },
   snapCam: () => { cam.snap(player.heading) },
   /** Tests: run the simulation `sec` seconds as fast as it goes (no frames drawn). */
   fastSim: (sec: number) => {
