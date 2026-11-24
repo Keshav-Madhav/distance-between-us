@@ -4,12 +4,14 @@
 // is the GPU, the compositor or the machine. Builds interleaved, repeated.
 //   node tools/lowbench.mjs 4498,4495 [reps]     (C=sprint,greenway  D=30000 ms  Q=high  SPIKES=1 to list the worst)
 import { chromium } from 'playwright-core'
+import { calm } from './loadguard.mjs'
 const ports = (process.argv[2] ?? '4495').split(','), reps = +(process.argv[3] ?? 2)
 const COURSES = (process.env.C ?? 'sprint,frostline,caldera,greenway,mistriver').split(','), DUR = +(process.env.D ?? 30000), Q = process.env.Q ?? 'high'
 const b = await chromium.launch({ channel: 'chrome', headless: true, args: ['--mute-audio', '--use-gl=angle', '--disable-gpu-vsync', '--disable-frame-rate-limit', '--ignore-gpu-blocklist'] })
 const pct = (a, q) => a[Math.min(a.length - 1, Math.floor(a.length * q))]
 const res = {}
 for (let r = 0; r < reps; r++) for (const c of COURSES) for (const port of (r % 2 ? [...ports].reverse() : ports)) {
+  await calm()
   const ctx = await b.newContext({ viewport: { width: 1280, height: 720 }, deviceScaleFactor: 2 })
   const p = await ctx.newPage()
   await p.addInitScript(() => {

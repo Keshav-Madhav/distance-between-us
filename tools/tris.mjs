@@ -1,7 +1,9 @@
 // Triangles a frame, by owner (main pass and shadow passes), at a fixed race moment.  node tools/tris.mjs 4495 sprint  (Q=low…)
 import { chromium } from 'playwright-core'
+import { calm } from './loadguard.mjs'
 const port = process.argv[2] ?? '4495', c = process.argv[3] ?? 'sprint', Q = process.env.Q ?? 'high'
 const b = await chromium.launch({ channel: 'chrome', headless: true, args: ['--mute-audio', '--use-gl=angle'] })
+await calm()
 const p = await (await b.newContext({ viewport: { width: 1280, height: 720 } })).newPage()
 await p.goto(`http://localhost:${port}/?course=${c}&q=${Q}&fixed=1`)
 await p.waitForFunction('window.__g && window.__g.ready', null, { timeout: 120000 })

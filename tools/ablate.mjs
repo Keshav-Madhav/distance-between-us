@@ -2,12 +2,14 @@
 // switched off in turn and the frozen frame re-timed (GPU-synced, best of batches, toggled A-B-A).
 //   node tools/ablate.mjs 4495 sprint        (Q=low|medium|high  DPR=1  W=1920 H=1080)
 import { chromium } from 'playwright-core'
+import { calm } from './loadguard.mjs'
 const port = process.argv[2] ?? '4495', c = process.argv[3] ?? 'sprint'
 const Q = process.env.Q ?? 'high', DPR = +(process.env.DPR ?? 2), W = +(process.env.W ?? 1280), H = +(process.env.H ?? 720)
 // SW=1: SwiftShader (Chrome's software GPU) — a stand-in for a weak integrated GPU: its cost follows the
 // real vertex and pixel work, with no clock states hiding it. Timed by wall clock with a pixel-read sync.
 const SW = !!process.env.SW
 const b = await chromium.launch({ channel: 'chrome', headless: true, args: ['--mute-audio', '--disable-gpu-vsync', '--disable-frame-rate-limit', '--ignore-gpu-blocklist', ...(SW ? ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] : ['--use-gl=angle'])] })
+await calm()
 const ctx = await b.newContext({ viewport: { width: W, height: H }, deviceScaleFactor: DPR })
 const p = await ctx.newPage()
 await p.addInitScript(() => { const raf = window.requestAnimationFrame.bind(window); window.__freeze = false; window.requestAnimationFrame = (cb) => window.__freeze ? 0 : raf(cb) })

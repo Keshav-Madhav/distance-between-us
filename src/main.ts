@@ -44,7 +44,11 @@ const STEP = 1 / 60
 const params = new URLSearchParams(location.search)
 // Boot timing (tools read window.__boot): where the load spends its main-thread time.
 const BOOT: [string, number][] = [['start', performance.now()]]
-const bootMark = (name: string) => BOOT.push([name, performance.now()])
+const bootMark = (name: string) => {
+  BOOT.push([name, performance.now()])
+  // Booting in a swap frame: the host's loading bar follows these steps.
+  if (window.parent !== window) window.parent.postMessage({ type: 'dbu-progress', mark: name }, location.origin)
+}
 /** Booting behind a running world (a swap, in a frame): hand the main thread back between heavy steps
  *  so the world you are looking at keeps drawing. A no-op on a normal load. */
 const EMBED = window.parent !== window
@@ -92,6 +96,54 @@ function makeFrame(id: string, go: boolean | string, warm: boolean): HTMLIFrameE
   document.body.appendChild(f)
   return f
 }
+/**
+ * The loading card (host page, above every world frame) while a world boots for a switch. The booting
+ * frame reports its boot steps (dbu-progress); the long silent one — compiling its shaders — is eased
+ * through so the bar never sits still. Shown only past ~150 ms: a pre-booted world just cross-fades.
+ */
+const LOAD_AT: Record<string, number> = { course: 0.04, world: 0.16, 'heroes+env': 0.2, textures: 0.22, 'pre-race': 0.26, race: 0.27, models: 0.31, crafts: 0.35, mid: 0.36, 'pre-compile': 0.38, compile: 0.9, post1: 0.93, map: 0.95, warm: 0.97 }
+const WORLD_ACC: Record<string, string> = { desert: '#ff8a3d', ice: '#9fe8ff', lava: '#ff5a2a', forest: '#9be36b', jungle: '#5fd6a8', space: '#b9a6ff' }
+const loader = {
+  el: null as HTMLElement | null, frame: null as HTMLIFrameElement | null, at: 0, shown: 0, t0: 0, raf: 0, showT: 0,
+  begin(id: string, f: HTMLIFrameElement): void {
+    const el = (this.el ??= document.getElementById('loading'))
+    if (!el) return
+    this.frame = f; this.at = 0; this.shown = 0; this.t0 = performance.now()
+    const biome = id === 'orbit' ? 'space' : biomeOf(id)
+    document.getElementById('ld-world')!.textContent = WORLDS.find((w) => w.id === biome)?.name ?? ''
+    document.getElementById('ld-course')!.textContent = id === 'orbit' ? 'The star and its worlds' : COURSES.find((c) => c.id === id)?.name ?? ''
+    el.style.setProperty('--acc', WORLD_ACC[biome] ?? '#ff6a1a')
+    ;(document.getElementById('ld-bar') as HTMLElement).style.width = '0%'
+    clearTimeout(this.showT)
+    this.showT = window.setTimeout(() => el.classList.add('on'), 150)
+    cancelAnimationFrame(this.raf)
+    const tick = () => {
+      // Toward the last step reported; inside the shader compile, creeping toward its end.
+      let want = this.at
+      if (this.at >= LOAD_AT['pre-compile'] && this.at < LOAD_AT.compile) want = this.at + (0.86 - this.at) * (1 - Math.exp(-(performance.now() - this.tc) / 1600))
+      this.shown += (Math.max(this.shown, want) - this.shown) * 0.2
+      ;(document.getElementById('ld-bar') as HTMLElement).style.width = `${(this.shown * 100).toFixed(1)}%`
+      if (this.frame) this.raf = requestAnimationFrame(tick)
+    }
+    this.raf = requestAnimationFrame(tick)
+  },
+  tc: 0,
+  progress(src: MessageEventSource | null, mark: string): void {
+    if (!this.frame || src !== this.frame.contentWindow) return
+    const v = LOAD_AT[mark]
+    if (v === undefined || v <= this.at) return
+    this.at = v
+    if (mark === 'pre-compile') this.tc = performance.now()
+  },
+  end(): void {
+    if (!this.el) return
+    clearTimeout(this.showT)
+    ;(document.getElementById('ld-bar') as HTMLElement).style.width = '100%'
+    this.frame = null
+    cancelAnimationFrame(this.raf)
+    this.el.classList.remove('on')
+  },
+}
 /** One world booted ahead (the one you are pointing at on the menu), dormant until picked. */
 let warmSlot: { id: string; go: false | string; f: HTMLIFrameElement; ready: boolean; onReady?: () => void } | null = null
 /** A pointer resting ~250 ms on a world or course pre-boots it (sweeping across the tiles boots nothing). */
@@ -132,7 +184,10 @@ function hostSwap(id: string, go: boolean | string): void {
   // (A flying handover morphs slower: the two pictures of the planet blend rather than cut.)
   // (Menu switches 0.3 s: the world is already loaded by then — the fade was most of the wait.)
   const fadeMs = live ? 1400 : 300
+  // The loading card: a cold boot, or a pre-boot still under way (not a live handover — that keeps flying).
+  if (!live && !(warm && warm.ready)) loader.begin(id, f)
   const fadeIn = () => {
+    loader.end()
     f.style.zIndex = String(++frameZ) // (above a sleeping one: moving an iframe in the DOM reloads it)
     f.style.transition = `opacity ${fadeMs}ms ease`
     f.style.opacity = '1'
@@ -229,6 +284,7 @@ addEventListener('message', (e) => {
     else if (e.data.go === 'live-arrive' || e.data.go === 'live-sys') { menuMode = 'free'; showCourse(); applyHandoff({ alt: 1500000, speed: 2e5, pitch: -0.3, sx: 1, sy: 0.3, sz: 0, biome: 'desert', keys: [] }) }
   }
   if (e.data?.type === 'dbu-prewarm' && window.parent === window) prewarm(e.data.id, e.data.go ?? false)
+  if (e.data?.type === 'dbu-progress' && window.parent === window) loader.progress(e.source, e.data.mark)
 })
 const $ = <T extends HTMLElement = HTMLElement>(s: string) => document.querySelector(s) as T
 const loadBar = $('#loading .b i')
@@ -1641,6 +1697,8 @@ function renderResults(): void {
 function showResults(): void {
   if (mode !== 'race') return
   overlay = true
+  // NEXT COURSE boots now, behind the results: pressing it is a cross-fade, not a load.
+  { const nx = COURSES[(COURSES.indexOf(course.def) + 1) % COURSES.length]; if (nx && nx !== course.def) prewarm(nx.id) }
   // Best time per course.
   const me0 = race.racers[0]
   let newBest = false
@@ -4038,6 +4096,9 @@ const g = {
   scatterVis: (v: boolean) => { scatter.group.visible = v; scatterForceOff = !v },
   force: (c: import('./player').Controls | null) => { forced = c },
   /** Replay your saved best run's inputs from the grid (a fresh race in the current mode). */
+  /** Tests: switch course/world as the menu does (go: true starts the race there). */
+  swap: (id: string, go: boolean | string) => swapTo(id, go),
+  prewarm: (id: string) => prewarm(id),
   replayBest: () => { const r = loadInputs(); if (!r) return false; startRace(); replayIn = r; replayAt = 0; return true },
   inputCount: () => inputRec.length / 3,
   sound,

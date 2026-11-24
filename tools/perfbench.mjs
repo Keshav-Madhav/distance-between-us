@@ -3,11 +3,13 @@
 // a frame (rAF callback). Retina-sized, AUTO quality off (fixed 'high') so builds are compared like for like.
 //   node tools/perfbench.mjs 4494,4498 [reps]
 import { chromium } from 'playwright-core'
+import { calm } from './loadguard.mjs'
 const ports = (process.argv[2] ?? '4498').split(','), reps = +(process.argv[3] ?? 2)
 const COURSES = (process.env.C ?? 'sprint,frostline,caldera,greenway,mistriver').split(',')
 const b = await chromium.launch({ channel: 'chrome', headless: true, args: ['--mute-audio', '--use-gl=angle', '--disable-gpu-vsync', '--disable-frame-rate-limit', '--ignore-gpu-blocklist'] })
 const res = {}
 for (let rep = 0; rep < reps; rep++) for (const c of COURSES) for (const port of ports) {
+  await calm()
   const ctx = await b.newContext({ viewport: { width: 1280, height: 720 }, deviceScaleFactor: 2 })
   const p = await ctx.newPage()
   await p.addInitScript(() => {

@@ -1,8 +1,10 @@
 // The browser's own per-frame work around the game over 6 s of a race: script, style recalc, layout,
 // and the task total (CDP Performance metrics), per frame drawn.  node tools/domcost.mjs 4495 sprint
 import { chromium } from 'playwright-core'
+import { calm } from './loadguard.mjs'
 const port = process.argv[2] ?? '4495', c = process.argv[3] ?? 'sprint', Q = process.env.Q ?? 'high'
 const b = await chromium.launch({ channel: 'chrome', headless: true, args: ['--mute-audio', '--use-gl=angle'] })
+await calm()
 const ctx = await b.newContext({ viewport: { width: 1280, height: 720 }, deviceScaleFactor: 2 })
 const p = await ctx.newPage()
 await p.goto(`http://localhost:${port}/?course=${c}&q=${Q}&fixed=1`)

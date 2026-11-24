@@ -4,6 +4,7 @@
 // frames with what was happening. Writes OUT (json) as it goes; prints a table at the end.
 //   PORT=4497 OUT=/tmp/long.json node tools/longbench.mjs            (ONLY=race:sprint,hunt to pick)
 import { chromium } from 'playwright-core'
+import { calm } from './loadguard.mjs'
 import fs from 'node:fs'
 const PORT = process.env.PORT ?? '4497', OUT = process.env.OUT ?? '/tmp/longbench.json', Q = process.env.Q ?? 'high'
 const COURSES = ['sprint', 'dry-river', 'drag', 'circuit', 'oval', 'canyon', 'frostline', 'icefall', 'whiteout', 'icecave', 'caldera', 'faultline', 'obsidian', 'magma', 'greenway', 'riverrun', 'timberline', 'whitewater', 'mistriver', 'understory']
@@ -22,6 +23,7 @@ const b = await chromium.launch({ channel: 'chrome', headless: true, args: ['--m
 const pct = (a, q) => a[Math.min(a.length - 1, Math.floor(a.length * q))]
 const results = fs.existsSync(OUT) && process.env.APPEND ? JSON.parse(fs.readFileSync(OUT, 'utf8')) : {}
 for (const s of SC) {
+  await calm()
   const ctx = await b.newContext({ viewport: { width: 1280, height: 720 }, deviceScaleFactor: 2 })
   const p = await ctx.newPage()
   const errs = []
