@@ -4106,8 +4106,9 @@ async function compileAll(root: THREE.Object3D, target: THREE.WebGLRenderTarget 
   const ps = new THREE.Scene(), plane = new THREE.PlaneGeometry(1, 1)
   for (const m of post.materials()) ps.add(new THREE.Mesh(plane, m))
   const rt = new THREE.WebGLRenderTarget(4, 4, { type: THREE.HalfFloatType })
-  renderer.setRenderTarget(rt); await renderer.compileAsync(ps, camera)
-  renderer.setRenderTarget(null); await renderer.compileAsync(ps, camera)
+  // (Into a target only, in parallel: the one pass drawn to the screen — the last — is compiled for it
+  // by drawing the real chain once, below.)
+  renderer.setRenderTarget(rt); await renderer.compileAsync(ps, camera); renderer.setRenderTarget(null)
   rt.dispose()
 }
 // …and the real chain once, scaled below 1 and at 1: the upscale pass first runs when dynamic resolution
