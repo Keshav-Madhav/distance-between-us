@@ -3068,9 +3068,9 @@ function profSummary(): string {
   const tot = profLog.map((r) => Object.values(r).reduce((a, b) => a + b, 0))
   const q = (a: number[], f: number) => { const s = [...a].sort((x, y) => x - y); return s[Math.min(s.length - 1, Math.floor(s.length * f))] ?? 0 }
   const lines = keys.map((k) => { const a = profLog.map((r) => r[k] ?? 0); return `${k.padEnd(16)} p50 ${q(a, 0.5).toFixed(2)}  p99 ${q(a, 0.99).toFixed(2)}  p99.9 ${q(a, 0.999).toFixed(2)}  max ${Math.max(...a).toFixed(1)}` })
-  const worst = profLog.map((r, i) => [tot[i], r] as const).sort((a, b) => b[0] - a[0]).slice(0, 6)
+  const worst = profLog.map((r, i) => [tot[i], r, i] as const).sort((a, b) => b[0] - a[0]).slice(0, 6)
   return `${profLog.length} frames · total p50 ${q(tot, 0.5).toFixed(2)} p99 ${q(tot, 0.99).toFixed(2)} max ${Math.max(...tot).toFixed(1)} ms\n` + lines.join('\n') +
-    '\nworst: ' + worst.map(([t, r]) => `${t.toFixed(1)}ms [${Object.entries(r).filter(([, v]) => v > 1).map(([k, v]) => `${k} ${v.toFixed(1)}`).join(', ')}]`).join('\n       ')
+    '\nworst: ' + worst.map(([t, r, i]) => `#${i} ${t.toFixed(1)}ms [${Object.entries(r).filter(([, v]) => v > 1).map(([k, v]) => `${k} ${v.toFixed(1)}`).join(', ')}]`).join('\n       ')
 }
 function frame(now: number): void {
   if (retired || frozen) return
@@ -4091,7 +4091,8 @@ async function compileAll(root: THREE.Object3D, target: THREE.WebGLRenderTarget 
     renderer.setRenderTarget(null)
   }
 }
-await compileAll(scene, null)
+// (Not for the screen: the scene is only ever drawn into the chain's target or the map's — compiling
+// it for the screen too built ~40 programs no frame used, in every world's boot.)
 {
   // The scene and the space layer are drawn into the post chain's target (half float), not the screen.
   const rt = new THREE.WebGLRenderTarget(4, 4, { type: THREE.HalfFloatType })
@@ -4125,23 +4126,8 @@ bootMark('compile')
 }
 // First draws upload every buffer and texture: in a swap, a slice of the scene at a time (one full
 // frame of uploads stalled the world on screen for ~300 ms).
-if (EMBED) {
-  // Render units: the scene's children, with big groups (the world: terrain, sky, every rock mesh)
-  // split into their own children — the world group alone was a 190 ms first draw.
-  const units: THREE.Object3D[] = []
-  for (const o of scene.children) { if (o.children.length > 12) units.push(...o.children); else units.push(o) }
-  const all: THREE.Object3D[] = []
-  scene.traverse((o) => { if (o !== scene) all.push(o) })
-  const was = new Map(all.map((o) => [o, o.visible] as const))
-  for (let i = 0; i < units.length; i += 8) {
-    for (const o of all) o.visible = false
-    for (const u of units.slice(i, i + 8)) { u.traverse((o) => { o.visible = true }); let p = u.parent; while (p && p !== scene) { p.visible = true; p = p.parent } }
-    renderer.render(scene, camera)
-    await breathe()
-  }
-  for (const [o, v] of was) o.visible = v
-  bootMark('slices')
-}
+// (First draws used to be sliced here, behind a running world, by drawing the scene to the screen — which
+// compiled screen variants nothing else used. compileAll's slices above upload everything already.)
 post.render(0.016)
 bootMark('post1')
 renderer.setRenderTarget(mapRT); renderer.render(scene, mapCam); renderer.setRenderTarget(null)
