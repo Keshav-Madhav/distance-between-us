@@ -10,3 +10,7 @@ export function rand(): number {
   t ^= t + Math.imul(t ^ (t >>> 7), t | 61)
   return ((t ^ (t >>> 14)) >>> 0) / 4294967296
 }
+
+/** Tests (savestates, tools/rollout.mjs): the generator's state, read and put back. */
+export const rngState = (): number => s
+export const setRngState = (v: number): void => { s = v >>> 0 }

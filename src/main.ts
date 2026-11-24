@@ -25,6 +25,7 @@ import { Input } from './input'
 import { Post } from './post'
 import { Scatter } from './scatter'
 import { LOD, drainSwaps } from './lod'
+import { rngState, setRngState } from './rng'
 import { idbGet, idbSet } from './store'
 import { BIOME, biomeOf, type Biome, DUST, GREEN, groundH, SUN_DIR, WORLD_FADE } from './terrain'
 import { PLANET_R, Space, SPACE_U } from './space'
@@ -4267,6 +4268,28 @@ if (window.parent !== window) {
 }
 
 // Test hooks for tools/.
+// ── savestates (tests): every primitive, vector and plain sub-object of an object, copied and put back ──
+type SimSnap = { p: Record<string, unknown>; race: Record<string, unknown>; racers: { r: Record<string, unknown>; p: Record<string, unknown>; c: Record<string, unknown> }[]; rng: number; runTime: number; missedCount: number; time: number }
+function snapObj(o: object): Record<string, unknown> {
+  const out: Record<string, unknown> = {}
+  for (const [k, v] of Object.entries(o)) {
+    if (v === null || typeof v === 'number' || typeof v === 'boolean' || typeof v === 'string') out[k] = v
+    else if (v && typeof (v as { clone?: unknown }).clone === 'function' && ((v as THREE.Vector3).isVector3 || (v as THREE.Quaternion).isQuaternion || (v as THREE.Vector2).isVector2 || (v as THREE.Euler).isEuler)) out[k] = (v as THREE.Vector3).clone()
+    else if (v instanceof Float32Array || v instanceof Float64Array) out[k] = v.slice()
+    else if (Array.isArray(v) && v.every((x) => typeof x === 'number')) out[k] = v.slice()
+  }
+  return out
+}
+function restoreObj(o: object, st: Record<string, unknown>): void {
+  const t = o as Record<string, unknown>
+  for (const [k, v] of Object.entries(st)) {
+    const cur = t[k] as { copy?: (x: unknown) => void } | undefined
+    if (cur && typeof cur.copy === 'function' && v && typeof (v as { clone?: unknown }).clone === 'function') cur.copy(v)
+    else if (v instanceof Float32Array || v instanceof Float64Array) t[k] = v.slice()
+    else if (Array.isArray(v)) t[k] = v.slice()
+    else t[k] = v
+  }
+}
 const g = {
   ready: true,
   get mode() { return mode },
@@ -4285,6 +4308,10 @@ const g = {
   /** Tests: a whole frame's drawing as the loop does it — the sun's shadow maps, then the scene and passes. */
   drawFrame: () => { sunShadow.update(renderer, scene, camera.position, new THREE.Vector3(-camera.matrixWorld.elements[8], 0, -camera.matrixWorld.elements[10])); post.render(0) },
   sunShadow, LOD,
+  /** Tests (tools/rollout.mjs): a savestate of the simulation — the craft, the race and every racer, the RNG,
+   *  the run clock — taken and put back, so alternatives can be tried from the same moment. */
+  snap: () => ({ p: snapObj(player), race: snapObj(race), racers: race.all.map((r) => ({ r: snapObj(r), p: snapObj(r.p), c: { ...r.controls } })), rng: rngState(), runTime, missedCount, time }),
+  restore: (st: SimSnap) => { restoreObj(player, st.p); restoreObj(race, st.race); race.all.forEach((r, k) => { restoreObj(r, st.racers[k].r); restoreObj(r.p, st.racers[k].p); Object.assign(r.controls, st.racers[k].c) }); setRngState(st.rng); runTime = st.runTime; missedCount = st.missedCount; time = st.time; world.update(player.pos, 0, undefined, player.vel) },
   prof: () => profSummary(), profReset: () => { profLog.length = 0 },
   snapCam: () => { cam.snap(player.heading) },
   /** Tests: run the simulation `sec` seconds as fast as it goes (no frames drawn). */
