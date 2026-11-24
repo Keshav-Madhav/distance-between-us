@@ -2078,17 +2078,22 @@ function readFree(): void {
 }
 
 // ───────────────────────── quality ─────────────────────────
-type Tier = 'low' | 'medium' | 'high' | 'ultra'
+type Tier = 'low' | 'medium' | 'balanced' | 'high' | 'ultra'
 // lod: the LodPairs' score scale (lighter shapes nearer); up: their refined close-up form; scatter: the
 // ground clutter's reach (its instances go as the square); near: the scatter's refined near ring.
-const TIERS: Record<Tier, { pr: number; samples: number; bloom: boolean; density: number; lod?: number; up?: boolean; scatter?: number; near?: boolean; cut?: number }> = {
+const TIERS: Record<Tier, { pr: number; samples: number; bloom: boolean; density: number; lod?: number; up?: boolean; scatter?: number; near?: boolean; cut?: number; speedRes?: number }> = {
   low: { pr: 0.75, samples: 0, bloom: false, density: 0.5, lod: 0.55, up: false, scatter: 0.6, near: false, cut: 0.16 },
   medium: { pr: 1, samples: 2, bloom: true, density: 0.75, lod: 0.8, up: false, scatter: 0.8, near: false, cut: 0.08 },
   // (Full Retina now: at speed the scene drops to ~0.6 of it by itself — see dynScale — so the cost
   // lands only where the detail can actually be seen.)
+  // BALANCED: HIGH's detail at 1.5 drawn pixels per screen pixel (HIGH's 2 is 4× MEDIUM's pixels and halved
+  // the frame rate on a Retina screen; this sits between, sharp, for a high-refresh screen).
+  balanced: { pr: 1.5, samples: 2, bloom: true, density: 1 },
   high: { pr: 2, samples: 2, bloom: true, density: 1 },
   // (MSAA 4 at native Retina was the single biggest GPU cost: 12.4 → 8.4 ms without it.)
-  ultra: { pr: 2, samples: 2, bloom: true, density: 1 },
+  // ULTRA, the most it can show (it was HIGH again, line for line): 4× MSAA, the detailed shapes held further
+  // out (LOD 1.4), and the resolution kept nearly whole at speed (to 85%, not 60%). For a strong GPU.
+  ultra: { pr: 2, samples: 4, bloom: true, density: 1, lod: 1.4, speedRes: 0.85 },
 }
 let tierName = ((params.get('q') as Tier | null) ?? 'auto') as Tier | 'auto'
 /**
@@ -2467,7 +2472,7 @@ function governor(frameMs: number): void {
   if (govBad >= 3) scale = Math.max(0.6, scale - 0.1)
   else if (govGood >= 8 && scale < 1) scale = Math.min(1, scale + 0.08)
   if (scale !== (pendingScale >= 0 ? pendingScale : renderScale)) { pendingScale = scale; govLast = now; govBad = govGood = 0 }
-  if (over > 1.5 && scale <= 0.6 && tier !== 'low') { pendingTier = tier === 'ultra' ? 'high' : tier === 'high' ? 'medium' : 'low'; govLast = now }
+  if (over > 1.5 && scale <= 0.6 && tier !== 'low') { pendingTier = tier === 'ultra' ? 'high' : tier === 'high' ? 'balanced' : tier === 'balanced' ? 'medium' : 'low'; govLast = now }
   // Mid-race relief that costs nothing to switch: fewer particles.
   if (over > 1.3) { partCut = Math.max(0.35, partCut * 0.8); fx.smoke.density = Math.min(TIERS[tier].density, settings.part) * partCut; fx.glow.density = settings.part * partCut }
   if (mode === 'title') applyPending()
@@ -3361,7 +3366,7 @@ function frame(now: number): void {
   P.uTime.value = time
   P.uGrain.value = settings.grain ? CFG.post.grain * (1 - 0.75 * space.vac) : 0
   {
-    const speedS = play ? 1 - 0.4 * THREE.MathUtils.smoothstep(player.mach, 1.5, 6.5) : 1
+    const speedS = play ? 1 - (1 - (TIERS[tier].speedRes ?? 0.6)) * THREE.MathUtils.smoothstep(player.mach, 1.5, 6.5) : 1
     const want = tierName === 'auto' || settings.scale >= 1 ? speedS * dynPerf : 1
     dynScale += (want - dynScale) * Math.min(1, realDt * 2.5)
     post.setScale(dynScale)

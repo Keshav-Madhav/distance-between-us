@@ -176,7 +176,7 @@ await scenario('settings:live', async () => {
     const g = window.__g; g.start(); g.skipCountdown(); g.autopilot(true)
     const set = (id, v) => { const e = document.querySelector(id); if (!e) return; if (e.type === 'checkbox') e.checked = v; else e.value = v; e.dispatchEvent(new Event('change')); e.dispatchEvent(new Event('input')) }
     const wait = (ms) => new Promise((r) => setTimeout(r, ms))
-    for (const q of ['low', 'medium', 'high', 'ultra', 'auto']) { set('#q', q); await wait(1200) }
+    for (const q of ['low', 'medium', 'balanced', 'high', 'ultra', 'auto']) { set('#q', q); await wait(1200) }
     for (const f of ['60', '120', 'max', 'auto']) { set('#g-fps', f); await wait(500) }
     set('#shadows', false); await wait(800); set('#shadows', true)
     set('#ghoston', false); await wait(500); set('#ghoston', true)
