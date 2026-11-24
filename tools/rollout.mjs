@@ -28,7 +28,10 @@ const res = await p.evaluate(async ([craft, opts, DEC, H, SPEEDW]) => {
   const base = me.finished ? me.finishTime : null
   g.restore(s0); pd.setState(d0)
   const cands = [{}, { burner: true }, { burner: false }, { latShift: 45 }, { latShift: -45 }, { steerBias: 0.15 }, { steerBias: -0.15 }, { brake: true }, { noDodge: true }]
-  const score = (crashed) => { if (me.finished) return 1e12 - me.finishTime * 1000; return g.race.progress(me) + P.speed * SPEEDW - (crashed ? 1e6 : 0) }
+  // (A missed gate counts as passed in the race — it only costs 40% of the speed — so progress alone made
+  // skipping one look like free distance: a branch that misses a gate is ruled out like a crash.)
+  const missedNow = () => g.snap().missedCount
+  const score = (crashed, missed) => { if (me.finished) return 1e12 - me.finishTime * 1000 - (missed ? 1e9 : 0); return g.race.progress(me) + P.speed * SPEEDW - (crashed ? 1e6 : 0) - (missed ? 1e6 : 0) }
   const picks = new Array(cands.length).fill(0), decisions = []
   let steps = 0
   while (!me.finished && steps < 60 * 300) {
@@ -37,9 +40,10 @@ const res = await p.evaluate(async ([craft, opts, DEC, H, SPEEDW]) => {
     for (let k = 0; k < cands.length; k++) {
       g.restore(st); pd.setState(ds)
       let crashed = false
+      const m0 = missedNow()
       for (let j = 0; j < DEC && !me.finished; j++) { pd.control(cands[k]); g.fastSim(STEP); if (P.crashing) crashed = true }
       for (let j = 0; j < H && !me.finished; j++) { pd.control({}); g.fastSim(STEP); if (P.crashing) crashed = true }
-      const s = score(crashed)
+      const s = score(crashed, missedNow() > m0)
       if (s > bestS + 1e-6 || (k === 0 && s >= bestS)) { bestS = s; best = k }
     }
     g.restore(st); pd.setState(ds)
@@ -49,6 +53,8 @@ const res = await p.evaluate(async ([craft, opts, DEC, H, SPEEDW]) => {
   }
   const st = pd.state()
   const time = me.finished ? me.finishTime : null, missed = g.snap().missedCount
+  // (Kept only if it beats the driver alone over the whole run: the per-decision guarantee holds over the look-ahead.)
+  if (time === null || (base !== null && time >= base)) return { decisions: [], missedGates: missed, replay: base, base, time: base, kept: 'driver alone', crashes: st.crashes, picks: {} }
   // Replay: the same decisions from the start, nothing restored in between — must land on the same time.
   g.restore(s0); pd.setState(d0)
   let rs = 0
