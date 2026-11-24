@@ -755,6 +755,8 @@ export class Course {
   readonly pads: Pad[] = []
   /** Spires standing on the straights (collide; the AI steers round them). lat: offset to the right. */
   readonly rocks: { x: number; z: number; r: number; h: number; i: number; lat: number }[] = []
+  /** The jump ramps and whoops (x, z, height, radius, …), as laid: for tools (tools/perfectdrive.mjs). */
+  mounds: number[] = []
   readonly group = new THREE.Group()
   /** Polyline indices of the start and finish lines (the line runs on past both). */
   readonly startI: number
@@ -893,6 +895,7 @@ export class Course {
       }
     }
     setMounds(mounds)
+    this.mounds = mounds
 
     // Boost pads, every ~9 km, alternating sides.
     for (let k = 0, m = 4000; m < raceLen - 3000; k++, m += def.padEvery + ((k * 2711) % 2000)) {

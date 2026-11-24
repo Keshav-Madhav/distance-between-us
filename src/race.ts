@@ -382,6 +382,9 @@ export class Race {
 
   // ───────────────────────── AI ─────────────────────────
 
+  /** Tests (tools/optline.mjs): your autopilot driven by a searched policy — the lane at every `step`
+   *  points of the course, its level (how hard it corners and lights the burner) and a burner factor. */
+  playerPolicy: { lane: Float32Array; step: number; L: number; burn: number } | null = null
   drive(r: Racer, dt: number): void {
     const p = r.p
     const c = this.course
@@ -414,6 +417,9 @@ export class Race {
     // (Squeezed only in the last ~1 s before a gate: at Mach 6 the old 2 s + 600 m window held it for
     // 4.7 km, leaving no room beside spires near the edge — the field crossed through them instead.)
     const laneLim = toGate > 0 && toGate < p.speed * 1.0 + 300 ? 175 : 220
+    // (tools/optline.mjs: a searched racing line for your autopilot — the lane at points along the course.)
+    const pol = !r.ai ? this.playerPolicy : null
+    if (pol) { const f = THREE.MathUtils.clamp(r.idx / pol.step, 0, pol.lane.length - 1.001), k = Math.floor(f), u = f - k; lane = pol.lane[k] + (pol.lane[k + 1] - pol.lane[k]) * u }
     lane = THREE.MathUtils.clamp(lane, -laneLim, laneLim)
     const horizon = r.idx + Math.round((p.speed * 3.5 + 400) / 40)
     // Where it actually is across the line (right = +).
@@ -495,7 +501,7 @@ export class Race {
     // The course's AI level (1 = par; see CourseDef.aiLevel): how hard they corner, how readily they
     // light the burner, how strong their engines are. Never a speed cap — they race your physics.
     // (DUEL: the one rival a clear step up — formidable, still fair: it can wreck.)
-    const L = (c.def.aiLevel ?? 1) + this.aiBoost + (this.sub === 'duel' ? 1.2 : 0)
+    const L = pol ? pol.L : (c.def.aiLevel ?? 1) + this.aiBoost + (this.sub === 'duel' ? 1.2 : 0)
     // IMPOSSIBLE: never wreck (hits glance off), and racer-to-racer knocks never wreck them either.
     p.unwreckable = this.aiBoost >= 4
     const gripSafe = kap > H.gripQ ? (H.gripK / (kap - H.gripQ)) * (0.84 + r.skill * 0.08 + (L - 1) * 0.3) / MACH : 99
@@ -533,7 +539,7 @@ export class Race {
     // 64-91% of the time: on a straight-ish course at Mach 6 while you burned to 9.)
     const burnTurn = (p.burning ? p.turnMax * 10 : p.turnMax) * 0.1
     // (IMPOSSIBLE: spires glance off at full speed — nothing ahead holds them back.)
-    ctl.burner = ctl.boost && p.speed * kap < burnTurn * (0.45 + 0.4 * L) && Math.abs(err) < 0.12 && (p.unwreckable || (Math.abs(lane - myLat) < 25 && clearAhead)) && p.mach > 3.5
+    ctl.burner = ctl.boost && p.speed * kap < burnTurn * (0.45 + 0.4 * L) * (pol ? pol.burn : 1) && Math.abs(err) < 0.12 && (p.unwreckable || (Math.abs(lane - myLat) < 25 && clearAhead)) && p.mach > 3.5
     ctl.brake = p.mach > safe * 1.08
     // Drag race: they race their own race, flat out — the same physics as you, a skill spread of a few
     // per cent in the burner's soft limit, and the slipstream. Nobody waits for you: drop to Mach 4 and
