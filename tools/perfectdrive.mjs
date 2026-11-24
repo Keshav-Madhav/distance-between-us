@@ -2,7 +2,10 @@
 // (TIME TRIAL — deterministic, replayable). Pure pursuit on the line for the heading; the burner whenever
 // the line ahead is gentle enough for its locked stick; the air brake only if a bend needs it; spires
 // dodged on the side thrusters (strafe holds the sideways target, dodge taps for the big moves), never by
-// steering. Reports the real finish time against the computed floor.
+// steering; when no dodge is reachable at this speed it cuts the burner and brakes to buy the time. Every
+// obstacle the collision code sees is swept off the course first (spires, landform copies — the world
+// repeats every 72 km — trackside rocks), at its widest radius. Reports the real finish time.
+// SPRINT (2026-11-24): 71.9 s, no crashes — best human 79.1 s, computed floor 69.15 s.
 //   node tools/perfectdrive.mjs 4491 sprint [line.json]      (no line: the centre line)
 import { chromium } from 'playwright-core'
 import fs from 'node:fs'
@@ -33,19 +36,41 @@ const res = await p.evaluate(async ([line, craft, opts]) => {
   const wBurn = (v) => lerpTab(craft.turnBurn, v / MACH, 'yaw'), wMax = (v) => lerpTab(craft.turn, v / MACH, 'yaw')
   // Curvature of the line around index fi (over ±span points).
   const kappa = (fi, span) => { const a = ptAt(fi - span), m = ptAt(fi), z = ptAt(fi + span); const h1 = Math.atan2(m[0] - a[0], m[1] - a[1]), h2 = Math.atan2(z[0] - m[0], z[1] - m[1]); let d = h2 - h1; while (d > Math.PI) d -= 2 * Math.PI; while (d < -Math.PI) d += 2 * Math.PI; return Math.abs(d) / (span * 2 * 40) }
-  const rocks = c.rocks.slice().sort((a, b) => a.i - b.i)
+
   // Pads (+Mach 0.75) to drive through, ramps (a jump: half thrust, no dodge) to go round.
   const place = (x, z) => { let bi = 0, bd = Infinity; for (let k = 0; k < n; k++) { const d = (c.px[k] - x) ** 2 + (c.pz[k] - z) ** 2; if (d < bd) { bd = d; bi = k } } const [tx, tz] = c.tangent(bi); return { i: bi, lat: (x - c.px[bi]) * -tz + (z - c.pz[bi]) * tx } }
   const pads = c.pads.map((q) => place(q.x, q.z)).sort((a, b) => a.i - b.i)
-  const ramps = []; for (let k = 0; k < c.mounds.length; k += 4) if (c.mounds[k + 2] >= 20) ramps.push({ ...place(c.mounds[k], c.mounds[k + 1]), r: c.mounds[k + 3] })
+  // (Whoops too — the small bumps that hop the craft into the air, where its thrusters have half the push.)
+  const ramps = []; for (let k = 0; k < c.mounds.length; k += 4) ramps.push({ ...place(c.mounds[k], c.mounds[k + 1]), r: c.mounds[k + 3] * (c.mounds[k + 2] >= 20 ? 0.95 : 0.8) })
   ramps.sort((a, b) => a.i - b.i)
+  g.start(); g.skipCountdown(); g.hold(true)
+  // Every obstacle the collision code itself sees (world.near: course spires, landforms — the world repeats
+  // every 72 km, so copies of its mesas and spires stand on a 165 km course — trackside rocks), swept along the
+  // course once, each with its true radius at craft height, placed by course index and sideways offset.
+  const rocks = opts.sweep ? [] : c.rocks.map((r) => ({ i: r.i, lat: r.lat, r: r.r })).sort((a, b) => a.i - b.i)
+  if (opts.sweep) {
+    const seen = new Set(), out = [], cam = P.pos.clone()
+    for (let j = c.startI; j <= c.finishI; j += 3) {
+      cam.set(c.px[j], 0, c.pz[j]); g.world.update(cam, 0)
+      const y = (g.course.groundAt ? g.course.groundAt(c.px[j], c.pz[j]) : 0)
+      // (Asked far below every base: each one's widest radius — never smaller than what the craft can hit.)
+      const k = g.world.near(c.px[j], c.pz[j], -1e6, c.gateHalf + 120, out)
+      for (let q = 0; q < k; q++) { const o = out[q], key = Math.round(o.x / 8) + ',' + Math.round(o.z / 8); if (seen.has(key)) continue; seen.add(key)
+        let bi = j, bd = Infinity; for (let m = Math.max(0, j - 40); m < Math.min(n, j + 40); m++) { const d = (c.px[m] - o.x) ** 2 + (c.pz[m] - o.z) ** 2; if (d < bd) { bd = d; bi = m } }
+        const [tx, tz] = c.tangent(bi), lat = (o.x - c.px[bi]) * -tz + (o.z - c.pz[bi]) * tx
+        if (Math.abs(lat) < c.gateHalf + 80) rocks.push({ i: bi, lat, r: o.cr }) }
+      void y
+    }
+    rocks.sort((a, b) => a.i - b.i)
+  }
+  const sweptCount = rocks.length
   g.start(); g.skipCountdown(); g.autopilot(false); g.hold(true); P.noCollide = false
   const me = g.race.racers[0]
   const ctl = { steer: 0, strafe: 0, boost: true, burner: false, brake: false, dodgeL: false, dodgeR: false }
   g.force(ctl)
   let steps = 0, burnSteps = 0, dodges = 0, crashes = 0, wasCrash = false
   const crashLog = []
-  let lastTarget = 0
+  let lastTarget = 0, stuckSteps = 0
   const STEP = 1 / 60
   while (!me.finished && steps < 60 * 300) {
     const v = Math.max(P.speed, 30), i = me.idx
@@ -70,47 +95,79 @@ const res = await p.evaluate(async ([line, craft, opts]) => {
     // Spires: the sideways target clears the next one in reach; thrusters move us there.
     // Every spire within reach (~2 s), against the line AND where the craft actually is: the target is moved
     // clear of the nearest one that either is close to; in the air (half thrust) it is settled earlier.
-    // Lateral plan for the next stretch: every sideways position across the corridor (10 m apart), scored —
-    // inside any spire's or ramp's clearance in reach is ruled out, a pad in reach pulls, the racing line pulls
-    // gently, staying where it is pulls (no flip-flop). The best is the sideways target.
+    // Lateral plan: a shortest path through the obstacles ahead. Each spire, ramp or whoop in reach (~3 s) is a
+    // layer of clear sideways positions (every 12 m across the corridor); a step between layers is allowed only
+    // if the side thrusters can make the shift in the time between them (~opts.latV m/s held, half in the air);
+    // the cost is distance from the racing line, less a pull through any pad. Dynamic programming picks the
+    // path; the target is its first point. (One position for the whole stretch failed wherever two spires sat
+    // on opposite sides — the weave SPRINT is built round.)
     const reach = v * (P.airborne ? 3.4 : opts.reach), lim = c.gateHalf - 30
-    const obs = []
-    for (const r of rocks) { if (r.i < i - 2) continue; const ahead = (r.i - i) * 40; if (ahead > reach) break; obs.push([r.lat, r.r + opts.margin, ahead]) }
-    for (const q of ramps) { if (q.i < i - 4) continue; const ahead = (q.i - i) * 40; if (ahead > reach) break; obs.push([q.lat, q.r * 0.95 + 25, ahead]) }
-    let padLat = null
-    for (const q of pads) { if (q.i < i) continue; if ((q.i - i) * 40 > v * 1.4) break; padLat = q.lat; break }
-    const lineL = latAt(i + Math.min(60, reach / 40))
-    let target = lineL, bestC = Infinity, danger = 0
-    for (let L = -lim; L <= lim; L += 10) {
-      let cost = Math.abs(L - lineL) * 0.02 + Math.abs(L - lastTarget) * 0.01
-      if (padLat !== null) cost += Math.abs(L - padLat) * 0.05
-      let blocked = false
-      for (const [ol, cl] of obs) if (Math.abs(L - ol) < cl) { blocked = true; break }
-      if (blocked) continue
-      // Reaching it in time: the sideways distance from here, against the time to the nearest obstacle.
-      const near = obs.length ? Math.min(...obs.map((o) => o[2])) : reach
-      cost += Math.max(0, Math.abs(L - myLat) - 0.25 * (near / Math.max(v, 1)) * 200) * 0.05
-      if (cost < bestC) { bestC = cost; target = L }
+    const layers = []
+    for (const r of rocks) { if (r.i < i - 1) continue; const ahead = (r.i - i) * 40; if (ahead > reach) break; layers.push({ i: r.i, ahead, blocks: [[r.lat, r.r + opts.margin]] }) }
+    for (const q of ramps) { if (q.i < i - 3) continue; const ahead = (q.i - i) * 40; if (ahead > reach) break; layers.push({ i: q.i, ahead, blocks: [[q.lat, q.r + 20]] }) }
+    let padHere = null
+    for (const q of pads) { if (q.i < i) continue; const ahead = (q.i - i) * 40; if (ahead > reach) break; layers.push({ i: q.i, ahead, blocks: [], pad: q.lat }); if (padHere === null) padHere = q.lat }
+    layers.sort((a, b) => a.i - b.i)
+    // (Same place: merged into one layer.)
+    const L2 = []
+    for (const l of layers) { const last = L2[L2.length - 1]; if (last && Math.abs(last.i - l.i) <= 2) { last.blocks.push(...l.blocks); if (l.pad !== undefined) last.pad = l.pad } else L2.push({ ...l, blocks: [...l.blocks] }) }
+    const latV = opts.latV * (P.airborne ? 0.5 : 1)
+    const xs = []; for (let x = -lim; x <= lim; x += 12) xs.push(x)
+    let target = latAt(i + Math.min(60, reach / 40)), danger = 0, stuck = false
+    if (L2.length) {
+      danger = 1 - L2[0].ahead / reach
+      // cost[k][x]: best from layer k onward; built back to front.
+      const free = (l, x) => l.blocks.every(([o, cl]) => Math.abs(x - o) >= cl)
+      const nodeCost = (l, x) => Math.abs(x - latAt(l.i)) * 0.01 + (l.pad !== undefined ? (Math.abs(x - l.pad) < 28 ? -3 : 0) : 0)
+      let next = xs.map(() => 0)
+      const choice = []
+      for (let k = L2.length - 1; k >= 0; k--) {
+        const l = L2[k], cur = xs.map(() => Infinity), pick = xs.map(() => -1)
+        const dt = k + 1 < L2.length ? (L2[k + 1].i - l.i) * 40 / Math.max(v, 1) : 1
+        const maxD = latV * dt
+        for (let a = 0; a < xs.length; a++) {
+          if (!free(l, xs[a])) continue
+          if (k === L2.length - 1) { cur[a] = nodeCost(l, xs[a]); continue }
+          let best = Infinity, bj = -1
+          for (let b = 0; b < xs.length; b++) { if (next[b] === Infinity || Math.abs(xs[b] - xs[a]) > maxD) continue; if (next[b] < best) { best = next[b]; bj = b } }
+          if (bj >= 0) { cur[a] = nodeCost(l, xs[a]) + best; pick[a] = bj }
+        }
+        choice[k] = pick; next = cur
+      }
+      // The first layer's point we can reach from here in time, cheapest onward.
+      const dt0 = L2[0].ahead / Math.max(v, 1), reach0 = latV * dt0 + 10
+      let bestA = -1, bestC = Infinity
+      for (let a = 0; a < xs.length; a++) { if (next[a] === Infinity || Math.abs(xs[a] - myLat) > reach0) continue; const c2 = next[a] + Math.abs(xs[a] - lastTarget) * 0.002; if (c2 < bestC) { bestC = c2; bestA = a } }
+      // (No clear path reachable at this speed: aim for the nearest clear one, and slow down to buy the time.)
+      if (bestA < 0) { stuck = true; for (let a = 0; a < xs.length; a++) { if (next[a] === Infinity) continue; const c2 = Math.abs(xs[a] - myLat); if (c2 < bestC) { bestC = c2; bestA = a } } }
+      if (bestA >= 0) target = xs[bestA]
     }
-    if (obs.length) danger = 1 - Math.min(...obs.map((o) => o[2])) / reach
     lastTarget = target
     const e = target - myLat
     ctl.steer = Math.max(-1, Math.min(1, -yawWant / Math.max(0.15, P.turnMax)))
-    ctl.burner = burnOk && !brake
+    // In the air: the nose kept on the travel (land crooked and it spins). The thrusters keep working — the
+    // spin is from the slide (nose vs travel), not their sideways drift, and at Mach 9 it is airborne often.
+    if (P.airborne && opts.airAlign) {
+      const vh = Math.atan2(P.vel.x, P.vel.z)
+      let be = vh - P.heading; while (be > Math.PI) be -= 2 * Math.PI; while (be < -Math.PI) be += 2 * Math.PI
+      ctl.steer = Math.max(-1, Math.min(1, -be * 6))
+    }
+    if (stuck && opts.slow) { stuckSteps++; if (danger > opts.brakeAt) brake = true }
+    ctl.burner = burnOk && !brake && !(stuck && opts.slow)
     ctl.brake = brake
     ctl.boost = !brake
-    ctl.strafe = Math.max(-1, Math.min(1, e / 20 - P.side / 140))
-    const tap = danger > 0.4 ? 35 : 70
+    ctl.strafe = Math.max(-1, Math.min(1, e / opts.strafeK - P.side / 140))
+    const tap = danger > 0.4 ? opts.tapNear : opts.tapFar
     ctl.dodgeL = e < -tap && P.side > -180; ctl.dodgeR = e > tap && P.side < 180
     if (ctl.dodgeL || ctl.dodgeR) dodges++
     if (ctl.burner) burnSteps++
     g.fastSim(STEP); steps++
-    if (P.crashing && !wasCrash) { crashes++; const near = rocks.reduce((b, r) => Math.abs(r.i - i) < Math.abs(b.i - i) ? r : b, rocks[0]); crashLog.push({ t: +(steps / 60).toFixed(1), i, mach: +(v / MACH).toFixed(1), myLat: +myLat.toFixed(0), target: +target.toFixed(0), rock: near ? { di: near.i - i, lat: +near.lat.toFixed(0), r: +near.r.toFixed(0) } : null, air: P.airborne }) }
+    if (P.crashing && !wasCrash) { const obsN = []; const k = g.world.near(P.pos.x, P.pos.z, P.pos.y, 120, obsN); const hit = obsN.slice(0, k).map((o) => ({ d: +(Math.hypot(o.x - P.pos.x, o.z - P.pos.z) - o.cr).toFixed(0), cr: +o.cr.toFixed(0), big: o.big })).sort((a, b) => a.d - b.d).slice(0, 2); crashLog.push({ hitNear: hit }); crashes++; const near = rocks.reduce((b, r) => Math.abs(r.i - i) < Math.abs(b.i - i) ? r : b, rocks[0]); crashLog.push({ t: +(steps / 60).toFixed(1), i, mach: +(v / MACH).toFixed(1), myLat: +myLat.toFixed(0), target: +target.toFixed(0), rock: near ? { di: near.i - i, lat: +near.lat.toFixed(0), r: +near.r.toFixed(0) } : null, air: P.airborne, spin: P.spin > 0 }) }
     wasCrash = P.crashing
     if (steps % 600 === 0) await new Promise((r) => setTimeout(r, 0))
   }
   g.force(null); g.hold(false)
-  return { crashLog, finished: me.finished, time: me.finished ? me.finishTime : null, simSeconds: steps / 60, burnShare: burnSteps / steps, dodges, crashes, missed: g.race.racers[0].missed ?? null, progress: +(g.race.progress(me) / n).toFixed(3) }
-}, [line, craft, { look: +(process.env.LOOK ?? 1.2), margin: +(process.env.MARGIN ?? 34), reach: +(process.env.REACH ?? 3), burnK: +(process.env.BURNK ?? 0.95), burnErr: +(process.env.BURNERR ?? 0.05) }])
+  return { stuckSteps, obstacles: sweptCount, crashLog, finished: me.finished, time: me.finished ? me.finishTime : null, simSeconds: steps / 60, burnShare: burnSteps / steps, dodges, crashes, missed: g.race.racers[0].missed ?? null, progress: +(g.race.progress(me) / n).toFixed(3) }
+}, [line, craft, { look: +(process.env.LOOK ?? 1.2), margin: +(process.env.MARGIN ?? 34), reach: +(process.env.REACH ?? 3), burnK: +(process.env.BURNK ?? 1.2), burnErr: +(process.env.BURNERR ?? 0.1), latV: +(process.env.LATV ?? 150), airAlign: process.env.AIRALIGN !== '0', sweep: process.env.SWEEP !== '0', strafeK: +(process.env.STRAFEK ?? 20), slow: process.env.SLOW !== '0', brakeAt: +(process.env.BRAKEAT ?? 0.35), tapNear: +(process.env.TAPNEAR ?? 35), tapFar: +(process.env.TAPFAR ?? 70) }])
 console.log(`${course} ${line ? `line ${lineFile.split('/').pop()} (computed ${line.time.toFixed(2)} s)` : 'centre line'}: ${JSON.stringify(res)}`, errs.length ? errs : '')
 await b.close()
