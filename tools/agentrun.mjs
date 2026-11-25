@@ -5,6 +5,7 @@
 //   node tools/agentrun.mjs export <course> <rollout.json> <inputs.json>
 //        replay an optimiser run (tools/optruns/*-rollout*.json) and save its per-step inputs
 //   node tools/agentrun.mjs run <course> <inputs.json> [edits.json] [--save out.json]
+//        --taps out.json writes the run with held dodges turned into taps on the steps they fired (same run)
 //        LINE=public/lines/<course>.json also writes the game's racing-line file from the run (the ribbon);
 //        POSE=1 adds ROGUE's pose recording to it (DUEL at IMPOSSIBLE plays that back)
 //        play inputs (+ edits) and report; --save writes the edited per-step inputs
@@ -84,10 +85,21 @@ if (cmd === 'export') {
   })()
   // Human hands (the ROGUE-HUMAN rule): every control allowed — strafe, dodges, tricks — but at human
   // speed: every key (throttle, burner, brake, dodge L/R) held or released >= 6 steps (0.1 s), and steer /
-  // strafe moving no faster than full left to full right in 0.1 s (<= 0.34 a step).
+  // strafe moving no faster than full left to full right in 0.1 s (<= 0.34 a step). Dodges are taps (see below).
   const hands = (() => {
     const bad = []
-    for (const [bit, name] of [[1, 'throttle'], [2, 'burner'], [4, 'brake'], [8, 'dodge L'], [16, 'dodge R']]) {
+    // A dodge is a tap (the game sees it only on the step of a double-tap or a shoulder-button press): one-step
+    // pulses, at least 12 steps apart (a quick hand on a shoulder button) — never held.
+    for (const [bit, name] of [[8, 'dodge L'], [16, 'dodge R']]) {
+      let last = -99
+      for (let i = 3; i < steps.length; i++) {
+        if (!(steps[i][2] & bit)) continue
+        if (i + 1 < steps.length && steps[i + 1][2] & bit) { bad.push(`${name} held (not a tap) at step ${i}`); break }
+        if (i - last < 12) { bad.push(`${name} taps < 12 steps apart at step ${i}`); break }
+        last = i
+      }
+    }
+    for (const [bit, name] of [[1, 'throttle'], [2, 'burner'], [4, 'brake']]) {
       let run = 0
       for (let i = 3; i < steps.length; i++) {
         run++
@@ -110,12 +122,15 @@ if (cmd === 'export') {
     const me = g.race.racers[0], n = flat.length / 3
     const gates = [], events = [], trace = []
     const S = [], pose = []
+    const fired = []
     let passed = me.passed, wasAir = false, wasSpin = false, wasCrash = false, top = 0, st = 0
     const m0 = g.snap().missedCount
     let missed = m0
     while (st < n + 60 * 8 && st < 60 * 300) {
       if (st >= n) g.force({ steer: 0, strafe: 0, boost: true, burner: false, brake: false, dodgeL: false, dodgeR: false })
+      const dc0 = P.dodgeCool
       g.fastSim(STEP); st++
+      if (P.dodgeCool > dc0 + 0.1) fired.push(st - 1)
       const t = +(st / 60).toFixed(3), mach = +(P.speed / 343).toFixed(2)
       top = Math.max(top, mach)
       const mc = g.snap().missedCount
@@ -130,9 +145,15 @@ if (cmd === 'export') {
       if (me.finished) break
       if (st % YIELD === 0) await new Promise((r) => setTimeout(r, 0))
     }
-    return { line: { s: S, pose }, counted: me.finished, time: me.finished ? +me.finishTime.toFixed(3) : null, gatesTotal: g.race.K, passed: me.passed, missedGates: missed - m0, topMach: top, steps: st, gates, events: events.filter((e) => e.what !== 'airborne').concat(events.filter((e) => e.what === 'airborne').slice(0, 40)), trace }
+    return { fired, line: { s: S, pose }, counted: me.finished, time: me.finished ? +me.finishTime.toFixed(3) : null, gatesTotal: g.race.K, passed: me.passed, missedGates: missed - m0, topMach: top, steps: st, gates, events: events.filter((e) => e.what !== 'airborne').concat(events.filter((e) => e.what === 'airborne').slice(0, 40)), trace }
   }, [flat, +(process.env.YIELD ?? 2)])
-  const { line, ...out } = rep
+  const { line, fired, ...out } = rep
+  // --taps out.json: the same run with every held dodge turned into a tap on the step it fired.
+  const ti = process.argv.indexOf('--taps')
+  if (ti > 0) {
+    const fset = new Set(fired), t = steps.map((q, i) => [q[0], q[1], (q[2] & ~24) | (fset.has(i) ? q[2] & 24 : 0)])
+    fs.writeFileSync(process.argv[ti + 1], JSON.stringify({ course, from: a, steps: t }))
+  }
   out.human = human
   out.hands = hands
   if (process.env.LINE && rep.counted) fs.writeFileSync(process.env.LINE, JSON.stringify({ time: rep.time, ...(process.env.POSE ? { pose: line.pose } : {}), s: line.s }))
