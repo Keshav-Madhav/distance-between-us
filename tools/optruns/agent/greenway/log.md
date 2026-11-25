@@ -66,3 +66,15 @@ ctl.mjs gained `hands` (min hold, steps, on every bit 1/2/4/8/16) and a 0.33/ste
 Cost vs 36.033: +2.17 s. Held dodge already refires every 0.25 s (dodgeCool), so the 6-step hold barely limits
 dodge rate; the cost is the coarser burner duty cycle (burn share .62 -> .53), slower steer/strafe reversals and
 sloppier pad aiming (14 vs 15 pads), so top speed M14.3 vs M16.1.
+
+## NO-DODGE build (dodge removed from the game; controller never sets flags 8/16)
+| # | what | result |
+|---|------|--------|
+| nd1 | rogue, no strafe | ctl 43.35 |
+| nd1 | rogue, strafeK 20 / 100, la .17 | 41.35 / 40.97 (bench 40.967 counted) |
+| nd2 | rogue strafeK 100, la .16 | **40.883 counted, 0 missed, 15/15 pads, top M13.32** -> best-nododge.json |
+| nh1 | hands 6, strafeK 100, la .16 | 42.55 counted, hands ok |
+| nh2 | hands 6, strafeK 0 (baseline) | ctl 45.10 |
+| nh2 | hands 6, strafeK 100, la .165 | **42.517 counted, 0 missed, hands ok, top M12.63** -> rogue-human-nododge.json |
+Removing dodge cost +4.85 s (ROGUE 36.03 -> 40.88) and +4.32 s (ROGUE-HUMAN 38.20 -> 42.52).
+Strafe-into-turn alone still pays: ~2.4 s for ROGUE (43.35 -> 40.88), ~2.6 s at hand speed (45.10 -> 42.52).
