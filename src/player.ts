@@ -49,7 +49,8 @@ export class Player {
   /** Along-heading speed, m/s. */
   speed = 0
   lateral = 0
-  /** Strafe/dodge sideways velocity (decays on its own; never turned into forward speed). */
+  /** Strafe/dodge sideways velocity (decays on its own). Turning toward it folds part of it into forward
+   *  speed — strafing and dodging into a bend gains speed: a kept technique (found by an agent, worth seconds). */
   side = 0
   vy = 0
   airborne = false
@@ -380,7 +381,8 @@ export class Player {
       const track = H.yawDamp * 1.4 * (this.airborne ? 0.6 : 1) * (this.burning ? 1.6 : 1) * (unwind ? 1.8 : 1)
       this.yawRate += ((yawWant - this.yawRate) * track + align * (this.burning ? 0.4 : 1) + gustYaw) * dt
       this.heading += this.yawRate * dt
-      // Turning keeps the velocity: re-split it against the new heading (the slide is real).
+      // Turning keeps the velocity: re-split it against the new heading (the slide is real — and the strafe
+      // drift with it: strafing into a bend gains speed, a kept technique; see `side`).
       const lat0 = this.lateral + this.side
       const hvx = this.fwd.x * this.speed + this.right.x * lat0
       const hvz = this.fwd.z * this.speed + this.right.z * lat0

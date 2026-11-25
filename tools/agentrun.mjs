@@ -14,7 +14,8 @@
 // edits.json: [{ "from": step, "to": step (exclusive), set any of: "steer", "strafe" (−1…1), "throttle",
 //   "burner", "brake", "dodgeL", "dodgeR" (true/false), "steerAdd" (added, clamped), "tap": n (burner on
 //   every n-th step, off between — each press kicks) }, …] applied in order. Steps are 1/60 s.
-// Report (JSON): counted (finished through the finish gate), time, gates [{gate, t, mach, missed}],
+// Report (JSON): human {ok, bad} (the IDEAL input rule: WASD+Shift only, no strafe/dodge, keys held/released
+//   ≥ 6 steps), counted (finished through the finish gate), time, gates [{gate, t, mach, missed}],
 //   events [{t, step, what}] (crash, spin, missed gate, missed finish, airborne), trace (every 0.5 s:
 //   t, mach, lateral m from centre, burner/air), topMach. Port 4480 = the optimiser's build.
 import { chromium } from 'playwright-core'
@@ -62,6 +63,24 @@ if (cmd === 'export') {
   }
   if (saveTo) fs.writeFileSync(saveTo, JSON.stringify({ course, from: a, steps }))
   const flat = steps.flat()
+  // Within human reach (the IDEAL rule): WASD + Shift only — no strafe, no dodges — and every key held or
+  // released for at least 6 steps (0.1 s: ~5 presses a second at most). Steer may be analog (a stick).
+  const human = (() => {
+    const bad = []
+    const strafe = steps.findIndex((q) => q[1] !== 0); if (strafe >= 0) bad.push(`strafe at step ${strafe}`)
+    const dodge = steps.findIndex((q) => q[2] & 24); if (dodge >= 0) bad.push(`dodge at step ${dodge}`)
+    for (const [bit, name] of [[1, 'throttle'], [2, 'burner'], [4, 'brake']]) {
+      // (From step 3: steps 0–2 are the grid and the skipped countdown, not presses.)
+      let run = 0, short = -1
+      for (let i = 3; i <= steps.length; i++) {
+        const prev = steps[i - 1][2] & bit, cur = i < steps.length ? steps[i][2] & bit : -1
+        run++
+        if (cur !== prev) { if (run < 6 && i < steps.length && i - run > 2) { short = i - run; break } run = 0 }
+      }
+      if (short >= 0) bad.push(`${name} held/released < 6 steps at step ${short}`)
+    }
+    return { ok: bad.length === 0, bad }
+  })()
   // (The same warm-up a played race gets: the course's obstacles looked up end to end first — a cold
   // lookup mid-run changed collisions, so a fresh page replayed differently.)
   await page.addScriptTag({ content: fs.readFileSync('tools/pdcore.js', 'utf8') })
@@ -95,6 +114,7 @@ if (cmd === 'export') {
     return { line: { s: S, pose }, counted: me.finished, time: me.finished ? +me.finishTime.toFixed(3) : null, gatesTotal: g.race.K, passed: me.passed, missedGates: missed - m0, topMach: top, steps: st, gates, events: events.filter((e) => e.what !== 'airborne').concat(events.filter((e) => e.what === 'airborne').slice(0, 40)), trace }
   }, [flat, +(process.env.YIELD ?? 2)])
   const { line, ...out } = rep
+  out.human = human
   if (process.env.LINE && rep.counted) fs.writeFileSync(process.env.LINE, JSON.stringify({ time: rep.time, ...(process.env.POSE ? { pose: line.pose } : {}), s: line.s }))
   console.log(JSON.stringify(out))
 }
