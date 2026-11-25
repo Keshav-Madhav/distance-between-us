@@ -280,6 +280,8 @@ for (let ci = 0; ci < LIST.length; ci++) {
             steer = -wv * (prm.wSteer ?? 1); sf = wv > 0 ? -1 : 1
             fl = 1 | (prm.wBurn ? 2 : 0) | (prm.wDodge === false ? 0 : sf > 0 ? 16 : 8); nW++
           }
+          if (prm.slew && steps.length) { const pv = steps[steps.length - 1], sl = prm.slew; steer = Math.max(pv[0] - sl, Math.min(pv[0] + sl, steer)); sf = Math.max(pv[1] - sl, Math.min(pv[1] + sl, sf)) }
+          if (prm.dodge === false) fl &= ~24
           cc = [steer, sf, fl]
         }
         g.force({ steer: cc[0], strafe: cc[1], boost: !!(cc[2] & 1), burner: !!(cc[2] & 2), brake: !!(cc[2] & 4), dodgeL: !!(cc[2] & 8), dodgeR: !!(cc[2] & 16) })

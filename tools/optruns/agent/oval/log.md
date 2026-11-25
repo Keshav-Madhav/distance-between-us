@@ -45,3 +45,17 @@ Regenerate: `node tools/optruns/agent/oval/ctl.mjs oval tools/optruns/agent/oval
 - Hairpin min speed (M4.9 vs the M5.7 the limit allows: braking overshoot, brake ramps in over ~0.3 s) and a wider line (pads at hairpin exits pin it).
 - A controlled drift through each hairpin (+0.6/+1.1 Mach drift boost on release, IDEAL-legal) — needs a slide-aware controller; trail-brake attempt spun.
 - Pads: ideal collects 20/26.
+
+## No-dodge build (dodge flags 8/16 ignored), Nov 2026
+Old best.json (55.35, used dodge) no longer reproduces: crashes, uncounted. ideal.json re-verified: 56.767, human ok.
+ctl.mjs: `dodge: false` now strips flags 8/16; `slew` clamps steer/strafe change per step (0.34 = the hands rule).
+| # | what | result |
+|---|------|--------|
+| n1 | r4-1 params, dodge off (sideAware .6/.3, gf .9); rogue-human = same + slew .34 + minHold 6; ideal + strafe + slew | rogue 54.32-55.55; rogue-human 54.92 (hands ok) |
+| n2 | sideAware .15, dodgeThr .3 | no gain |
+| n3 | random la/kp/tp/gf perturbations | **rogue 53.917** (n3-1), **rogue-human 54.833** (n3-4) |
+## Final no-dodge (bench-verified)
+- best-nododge.json: **53.917 s** counted, 0 missed, top M11.29 (best-nododge-params.json).
+- rogue-human-nododge.json: **54.833 s** counted, 0 missed, hands.ok true (rogue-human-nododge-params.json).
+Removing dodge cost nothing: it was ~1.4 s FASTER than the old dodge ROGUE (55.35, 2 missed gates). The dodges pushed the craft
+off the line and out of gates; the strafe-into-the-turn gain is enough on its own.
