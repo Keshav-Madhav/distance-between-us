@@ -52,3 +52,17 @@ race, brake is never used, strafeK/dodgeThr are off. Per-step |lat| is measured 
 | h2 | kp 1.5, minHold 6, padT .4 | lost the line at the lap-2 mound (57-66 s) |
 | h3 | line-n guard 200, guardK 3 | **45.767 counted, 0 missed, human ok, per-step max |lat| 258** -> ideal-human.json |
 Without the side-thruster trick speed plateaus at ~M11.7 (turn bleed vs burner above M10); pads (15/15) are the main gain.
+
+## ROGUE-HUMAN (everything allowed, but hand speed: every button held/released >= 6 steps, steer/strafe slew <= 0.34/step)
+ctl.mjs gained `hands` (min hold, steps, on every bit 1/2/4/8/16) and a 0.33/step slew on steer and strafe.
+| # | what | result |
+|---|------|--------|
+| rh1 | best-rogue params + hands 7, padT .35 | **39.733 counted, hands ok** |
+| rh1 | padT .3 / dodgeThr .05 / latKeep 0 | lost the line at the lap-2 mound (47-51 s) |
+| rh2 | hands 6, la .17 | **38.683 counted, hands ok** |
+| rh2 | padT .4, dodgeThr .2, strafeK 40, line-o | 39.5-49.6 |
+| rh3 | hands 6, la .16 | **38.200 counted, 0 missed, hands ok, 14/15 pads, top M14.31** -> rogue-human.json |
+| rh3 | la .19, kff 1.1, padT .3, dodgeThr .07, line-j | 38.8-47.7 |
+Cost vs 36.033: +2.17 s. Held dodge already refires every 0.25 s (dodgeCool), so the 6-step hold barely limits
+dodge rate; the cost is the coarser burner duty cycle (burn share .62 -> .53), slower steer/strafe reversals and
+sloppier pad aiming (14 vs 15 pads), so top speed M14.3 vs M16.1.

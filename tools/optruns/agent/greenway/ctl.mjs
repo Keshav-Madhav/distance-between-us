@@ -40,7 +40,7 @@ for (let ci = 0; ci < LIST.length; ci++) {
     g.hold(true); g.replayWith([0, 0, 1]); g.skipCountdown(); g.hold(true)
     const me = race.racers[0]
     const steps = [], trace = [], evs = []
-    const pads = c.pads.map((p) => ({ x: p.x, z: p.z, tx: p.tx, tz: p.tz })); let lastBurn = false, held = 99, maxLatTr = 0, padI = 0, npad = 0, lastPC = 0, st = 0, acc = 0, wasCrash = false, wasSpin = false, wasAir = false, maxLat = 0, maxOff = 0, lastHull = 100, offSum = 0, burnN = 0
+    const pads = c.pads.map((p) => ({ x: p.x, z: p.z, tx: p.tx, tz: p.tz })); const hLast = { 1: 1, 2: 0, 4: 0, 8: 0, 16: 0 }, hHeld = { 1: 99, 2: 99, 4: 99, 8: 99, 16: 99 }; let hS = 0, hF = 0, lastBurn = false, held = 99, maxLatTr = 0, padI = 0, npad = 0, lastPC = 0, st = 0, acc = 0, wasCrash = false, wasSpin = false, wasAir = false, maxLat = 0, maxOff = 0, lastHull = 100, offSum = 0, burnN = 0
     const buf = []
     while (st < 60 * 90 && !me.finished) {
       const v = P.speed, m = v / MACH
@@ -101,6 +101,11 @@ for (let ci = 0; ci < LIST.length; ci++) {
       const yr = prm.strafeUse === 'yaw' ? P.yawRate : yawD
       if (prm.strafeK && !quiet) strafe = Math.max(-1, Math.min(1, -yr * prm.strafeK))
       if (prm.dodgeThr != null && !quiet && Math.abs(yr) > prm.dodgeThr) fl |= yr < 0 ? 16 : 8
+      if (prm.hands) {
+        // human hand speed: steer/strafe slew <= 0.33 a step, every button held or released >= hands steps
+        steer = Math.max(hS - 0.33, Math.min(hS + 0.33, steer)); strafe = Math.max(hF - 0.33, Math.min(hF + 0.33, strafe)); hS = steer; hF = strafe
+        for (const b of [1, 2, 4, 8, 16]) { const want = fl & b, last = hLast[b]; if (want !== last && hHeld[b] < prm.hands) { fl = (fl & ~b) | last } if ((fl & b) === last) hHeld[b]++; else { hHeld[b] = 1; hLast[b] = fl & b } }
+      }
       const cc = [+steer.toFixed(4), +strafe.toFixed(3), fl]
       g.force({ steer: cc[0], strafe: cc[1], boost: !!(fl & 1), burner: !!(fl & 2), brake: !!(fl & 4), dodgeL: !!(fl & 8), dodgeR: !!(fl & 16) })
       steps.push(cc); if (burn) burnN++
