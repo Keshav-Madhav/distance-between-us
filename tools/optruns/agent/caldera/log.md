@@ -57,3 +57,11 @@ so the duty-cycled burner's steer matches the held state.
 | — | the failures: right after the lap-2 pad at (-7074,-8888) (aimed at straight, padT .3) the craft must turn ~0.5 rad at M16.5 with slew-limited steering; it overshoots ~500 m right toward a rock field + big rock (-6411,-6121) | |
 | g6 | padSkip [-8888] (no pad aim there; the pad is still collected en route, 16/16) | **37.317 counted, 0 missed, hands ok** -> rogue-human.json (rogue-human-params.json) |
 | g7/g8 | random perturbations, dodgeThr, corridor 260-300, lam, mid | 37.5-46, no gain |
+
+## No dodge (game change: dodge removed; strafe kept) — controller with dodge false
+| # | what | result |
+|---|------|--------|
+| n1 | best-params, dodge off | 40.4-41.3 (stable now: the dodge chaos is gone) |
+| n2/n3 | no corridor, W 300, midW 600, sideAware 0 | **39.617 counted, 0 missed, 16/16 pads, top M14.6** -> best-nododge.json (best-nododge-params.json) |
+| n4 | same with strafe off | 42.6 / 42.9 -> strafe into turns alone still pays ~3 s |
+| n4/n5 | + hands 6, minHold 6, midW 300, smax .8 | **41.083 counted, 0 missed, hands ok** -> rogue-human-nododge.json (rogue-human-nododge-params.json) |
