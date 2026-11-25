@@ -15,7 +15,8 @@
 //   "burner", "brake", "dodgeL", "dodgeR" (true/false), "steerAdd" (added, clamped), "tap": n (burner on
 //   every n-th step, off between — each press kicks) }, …] applied in order. Steps are 1/60 s.
 // Report (JSON): human {ok, bad} (the IDEAL input rule: WASD+Shift only, no strafe/dodge, keys held/released
-//   ≥ 6 steps), counted (finished through the finish gate), time, gates [{gate, t, mach, missed}],
+//   ≥ 6 steps), hands {ok, bad} (the ROGUE-HUMAN rule: every control allowed, keys held/released ≥ 6 steps,
+//   steer/strafe ≤ 0.34 change a step), counted (finished through the finish gate), time, gates [{gate, t, mach, missed}],
 //   events [{t, step, what}] (crash, spin, missed gate, missed finish, airborne), trace (every 0.5 s:
 //   t, mach, lateral m from centre, burner/air), topMach. Port 4480 = the optimiser's build.
 import { chromium } from 'playwright-core'
@@ -81,6 +82,24 @@ if (cmd === 'export') {
     }
     return { ok: bad.length === 0, bad }
   })()
+  // Human hands (the ROGUE-HUMAN rule): every control allowed — strafe, dodges, tricks — but at human
+  // speed: every key (throttle, burner, brake, dodge L/R) held or released >= 6 steps (0.1 s), and steer /
+  // strafe moving no faster than full left to full right in 0.1 s (<= 0.34 a step).
+  const hands = (() => {
+    const bad = []
+    for (const [bit, name] of [[1, 'throttle'], [2, 'burner'], [4, 'brake'], [8, 'dodge L'], [16, 'dodge R']]) {
+      let run = 0
+      for (let i = 3; i < steps.length; i++) {
+        run++
+        if ((steps[i][2] & bit) !== (steps[i - 1][2] & bit)) { if (run < 6 && i - run > 2) { bad.push(`${name} held/released < 6 steps at step ${i - run}`); break } run = 0 }
+      }
+    }
+    for (const [k, name] of [[0, 'steer'], [1, 'strafe']]) {
+      const i = steps.findIndex((q, j) => j > 2 && Math.abs(q[k] - steps[j - 1][k]) > 0.34 + 1e-6)
+      if (i > 0) bad.push(`${name} moved ${Math.abs(steps[i][k] - steps[i - 1][k]).toFixed(2)} in one step at step ${i}`)
+    }
+    return { ok: bad.length === 0, bad }
+  })()
   // (The same warm-up a played race gets: the course's obstacles looked up end to end first — a cold
   // lookup mid-run changed collisions, so a fresh page replayed differently.)
   await page.addScriptTag({ content: fs.readFileSync('tools/pdcore.js', 'utf8') })
@@ -115,6 +134,7 @@ if (cmd === 'export') {
   }, [flat, +(process.env.YIELD ?? 2)])
   const { line, ...out } = rep
   out.human = human
+  out.hands = hands
   if (process.env.LINE && rep.counted) fs.writeFileSync(process.env.LINE, JSON.stringify({ time: rep.time, ...(process.env.POSE ? { pose: line.pose } : {}), s: line.s }))
   console.log(JSON.stringify(out))
 }
