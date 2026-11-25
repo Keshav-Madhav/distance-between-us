@@ -40,7 +40,7 @@ for (let ci = 0; ci < LIST.length; ci++) {
     g.hold(true); g.replayWith([0, 0, 1]); g.skipCountdown(); g.hold(true)
     const me = race.racers[0]
     const steps = [], trace = [], evs = []
-    const pads = c.pads.map((p) => ({ x: p.x, z: p.z, tx: p.tx, tz: p.tz })); let maxLatTr = 0, padI = 0, npad = 0, lastPC = 0, st = 0, acc = 0, wasCrash = false, wasSpin = false, wasAir = false, maxLat = 0, maxOff = 0, lastHull = 100, offSum = 0, burnN = 0
+    const pads = c.pads.map((p) => ({ x: p.x, z: p.z, tx: p.tx, tz: p.tz })); let lastBurn = false, held = 99, maxLatTr = 0, padI = 0, npad = 0, lastPC = 0, st = 0, acc = 0, wasCrash = false, wasSpin = false, wasAir = false, maxLat = 0, maxOff = 0, lastHull = 100, offSum = 0, burnN = 0
     const buf = []
     while (st < 60 * 90 && !me.finished) {
       const v = P.speed, m = v / MACH
@@ -91,6 +91,7 @@ for (let ci = 0; ci < LIST.length; ci++) {
         steer = -yawD / (T * (1 - 0.9 * d))
       }
       if (v > vlim) burn = false
+      if (prm.minHold) { if (burn !== lastBurn && held < prm.minHold) burn = lastBurn; if (burn === lastBurn) held++; else { held = 1; lastBurn = burn } }
       steer = Math.max(-1, Math.min(1, steer))
       let fl = 1 | (burn ? 2 : 0)
       if (prm.brakeK && v > vlim * prm.brakeK) fl = 4

@@ -40,3 +40,15 @@ Stopped: budget (~75 config runs + 10 bench verifications).
   so every pad (+0.75) and gain above 12 is kept. Pads are worth ~1 s each early on: 0 pads 41.7, 8 pads 38.4, 15 pads 36-37.
 - Mounds launch only through the crest region (|offset| < ~0.76 r); pass both GREENWAY mounds on the same side.
 - The bench replays the game's own recorded inputs; record with g.inputs() (forcing your own copy diverges at steps 0-1).
+
+## IDEAL-HUMAN (new rule: no strafe/dodge, throttle/burner/brake held or released >= 6 steps, |lat| <= 265 every step)
+ctl.mjs gained `minHold` (the burner may only change state after it has been held that many steps); throttle is held all
+race, brake is never used, strafeK/dodgeThr are off. Per-step |lat| is measured in ctl with the bench's formula (maxLat).
+| # | what | result |
+|---|------|--------|
+| h1 | line-o (W205), minHold 7, guard 170/guardK 2, pad aiming .3 s | **45.800 counted, 0 missed, human ok, max |lat| 194 every step** -> ideal-human-safe.json |
+| h1 | minHold 10 / la .25 no pad aim | lost line (66 s) / 47.4 (7 pads) |
+| h2 | line-n (W255) guard 225-235 | 45.03-45.18 but per-step |lat| 270-282: fails |
+| h2 | kp 1.5, minHold 6, padT .4 | lost the line at the lap-2 mound (57-66 s) |
+| h3 | line-n guard 200, guardK 3 | **45.767 counted, 0 missed, human ok, per-step max |lat| 258** -> ideal-human.json |
+Without the side-thruster trick speed plateaus at ~M11.7 (turn bleed vs burner above M10); pads (15/15) are the main gain.
