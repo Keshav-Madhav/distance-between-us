@@ -4352,6 +4352,9 @@ const g = {
   prewarm: (id: string) => prewarm(id),
   replayBest: () => { const r = loadInputs(); if (!r) return false; startRace(); replayIn = r; replayAt = 0; return true },
   inputCount: () => inputRec.length / 3,
+  /** Tests: this run's inputs so far (3 a step), and a fresh race replaying given ones (tools/rendrun.mjs). */
+  inputs: () => Array.from(inputRec),
+  replayWith: (a: number[]) => { startRace(); replayIn = new Float32Array(a); replayAt = 0 },
   sound,
   renderer,
   /** Put the player just before jump k, at Mach m. */

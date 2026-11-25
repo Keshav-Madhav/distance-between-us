@@ -19,6 +19,8 @@ const DEC = +(process.env.DEC ?? 30), H = +(process.env.H ?? 180), SPEEDW = +(pr
 const MODE = process.env.MODE ?? 'gates', BOUND = +(process.env.BOUND ?? 260), TOL = +(process.env.TOL ?? 10), OUTW = +(process.env.OUTW ?? 20)
 const V1 = [{}, { burner: true }, { burner: false }, { latShift: 45 }, { latShift: -45 }, { steerBias: 0.15 }, { steerBias: -0.15 }, { brake: true }, { noDodge: true }]
 let seed = null
+// LINE: a racing line for the driver to follow (tools/mincurv.mjs) instead of the centreline.
+const LINEF = process.env.LINE ?? '', line = LINEF && fs.existsSync(LINEF) ? JSON.parse(fs.readFileSync(LINEF, 'utf8')) : null
 if (process.env.SEED && fs.existsSync(process.env.SEED)) { const r = JSON.parse(fs.readFileSync(process.env.SEED, 'utf8')); if (r.decisions?.length) seed = { cands: r.cands ?? V1, decisions: r.decisions } }
 const craft = JSON.parse(fs.readFileSync('tools/optruns/craft-model.json', 'utf8'))
 const opts = { look: 1.2, margin: 34, reach: 3, burnK: 1.2, burnErr: 0.1, latV: 150, airAlign: true, sweep: true, strafeK: 20, slow: true, brakeAt: 0.35, tapNear: 35, tapFar: 70 }
@@ -28,9 +30,9 @@ await p.goto(`http://localhost:${port}/?course=${course}&fixed=1`)
 await p.waitForFunction('window.__g && window.__g.ready', null, { timeout: 120000 })
 await p.evaluate(() => { localStorage.setItem('dbu-sub', 'trial'); document.querySelector('#submodes button[data-sub=trial]').click() })
 await p.addScriptTag({ content: fs.readFileSync('tools/pdcore.js', 'utf8') })
-const res = await p.evaluate(async ([craft, opts, DEC, H, SPEEDW, PASSES, MODE, BOUND, seed, TOL, OUTW]) => {
+const res = await p.evaluate(async ([craft, opts, DEC, H, SPEEDW, PASSES, MODE, BOUND, seed, TOL, OUTW, line]) => {
   const g = window.__g, STEP = 1 / 60
-  const pd = window.makePD(null, craft, MODE === 'bounded' ? { ...opts, bound: BOUND } : opts)
+  const pd = window.makePD(line ? { lane: line.lane, i0: line.i0, SEG: line.SEG } : null, craft, MODE === 'bounded' ? { ...opts, bound: BOUND } : opts)
   const me = pd.me, P = pd.P, c = g.course
   // Metres outside the track this step (bounded mode's cost).
   const outside = () => { const i = me.idx, [tx, tz] = c.tangent(i); return Math.max(0, Math.abs((P.pos.x - c.px[i]) * -tz + (P.pos.z - c.pz[i]) * tx) - BOUND) }
@@ -96,8 +98,8 @@ const res = await p.evaluate(async ([craft, opts, DEC, H, SPEEDW, PASSES, MODE, 
   else { let n2 = 0; while (!me.finished && n2 < 60 * 300) { pd.control({}); g.fastSim(STEP); n2++ } }
   const replay = me.finished ? me.finishTime : null
   return { mode: MODE, bound: BOUND, tol: TOL, cands, decisions, passes: passLog, bestPass: bestRun.pass, missedGates: missedNow(), replay, base, time: bestRun.time === Infinity ? null : bestRun.time, crashes: pd.state().crashes, picks: Object.fromEntries(cands.map((c, k) => [JSON.stringify(c), picks[k]])) }
-}, [craft, opts, DEC, H, SPEEDW, PASSES, MODE, BOUND, seed, TOL, OUTW])
-fs.writeFileSync(`tools/optruns/${course}-rollout${MODE === 'gates' ? '' : '-' + MODE}.json`, JSON.stringify({ course, DEC, H, SPEEDW, PASSES, ...res }))
+}, [craft, opts, DEC, H, SPEEDW, PASSES, MODE, BOUND, seed, TOL, OUTW, line])
+fs.writeFileSync(`tools/optruns/${course}-rollout${MODE === 'gates' ? '' : '-' + MODE}${process.env.TAG ? '-' + process.env.TAG : ''}.json`, JSON.stringify({ course, DEC, H, SPEEDW, PASSES, line: LINEF || null, ...res }))
 const { decisions, ...show } = res
 console.log(`${course} rollout ${MODE} (DEC ${DEC}, H ${H}): ${JSON.stringify(show)}`)
 await b.close()

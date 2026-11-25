@@ -24,9 +24,10 @@ await p.goto(`http://localhost:${port}/?course=${course}&fixed=1`)
 await p.waitForFunction('window.__g && window.__g.ready', null, { timeout: 120000 })
 await p.evaluate(() => { localStorage.setItem('dbu-sub', 'trial'); document.querySelector('#submodes button[data-sub=trial]').click() })
 await p.addScriptTag({ content: fs.readFileSync('tools/pdcore.js', 'utf8') })
-const out = await p.evaluate(async ([craft, opts, cands, decisions, DEC]) => {
+const out = await p.evaluate(async ([craft, opts, cands, decisions, DEC, L]) => {
+  const line = L ? { lane: L.lane, i0: L.i0, SEG: L.SEG } : null
   const g = window.__g, c = g.course, STEP = 1 / 60
-  const pd = window.makePD(null, craft, opts), me = pd.me, P = pd.P
+  const pd = window.makePD(line, craft, opts), me = pd.me, P = pd.P
   const S = []
   let st = 0
   const rec = () => {
@@ -42,7 +43,7 @@ const out = await p.evaluate(async ([craft, opts, cands, decisions, DEC]) => {
   if (decisions && decisions.length) { for (const d of decisions) { for (let j = 0; j < DEC && !me.finished; j++) step(cands[d]); await new Promise((r) => setTimeout(r, 0)) } }
   else while (!me.finished && st < 60 * 300) { step({}); if (st % 900 === 0) await new Promise((r) => setTimeout(r, 0)) }
   return { pose, time: me.finished ? me.finishTime : null, samples: S, gateHalf: c.gateHalf, n: c.n, px: Array.from(c.px), pz: Array.from(c.pz), startI: c.startI, finishI: c.finishI, gates: c.cps.map((q) => q.i) }
-}, [craft, opts, cands, run.decisions, run.DEC ?? 30])
+}, [craft, opts, cands, run.decisions, run.DEC ?? 30, run.line ? JSON.parse(fs.readFileSync(run.line, 'utf8')) : null])
 const WORN = 260, CORR = out.gateHalf + 60
 // Stretches outside each bound: contiguous samples, with where (km along), how long, how far out, which side.
 function stretches(limit) {
