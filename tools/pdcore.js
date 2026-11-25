@@ -48,7 +48,7 @@ window.makePD = function (line, craft, opts) {
   const sweptCount = rocks.length
   g.start(); g.skipCountdown(); g.autopilot(false); g.hold(true); P.noCollide = false
   const me = g.race.racers[0]
-  const ctl = { steer: 0, strafe: 0, boost: true, burner: false, brake: false, dodgeL: false, dodgeR: false }
+  const ctl = { steer: 0, strafe: 0, boost: true, burner: false, brake: false }
   g.force(ctl)
   let steps = 0, burnSteps = 0, dodges = 0, crashes = 0, wasCrash = false
   const crashLog = []
@@ -142,18 +142,17 @@ window.makePD = function (line, craft, opts) {
     ctl.boost = !brake
     ctl.strafe = Math.max(-1, Math.min(1, e / opts.strafeK - P.side / 140))
     const tap = danger > 0.4 ? opts.tapNear : opts.tapFar
-    ctl.dodgeL = e < -tap && P.side > -180; ctl.dodgeR = e > tap && P.side < 180
+    // (No dodge: removed from the game 2026-11-25 — strafe alone moves the craft across.)
+    void tap
     // calm: the same aim with less fuss — the steer eased toward its new value instead of snapping, small
     // sideways corrections left to drift out, no dodge taps (each wobble of the nose costs speed).
-    if (ov.calm) { ctl.steer = lastSteer + (ctl.steer - lastSteer) * 0.25; if (Math.abs(e) < 25) ctl.strafe = 0; ctl.dodgeL = ctl.dodgeR = false }
+    if (ov.calm) { ctl.steer = lastSteer + (ctl.steer - lastSteer) * 0.25; if (Math.abs(e) < 25) ctl.strafe = 0 }
     if (ov.steerBias) ctl.steer = Math.max(-1, Math.min(1, ctl.steer + ov.steerBias))
     if (ov.burner !== undefined) ctl.burner = ov.burner
     // tap: the burner pulsed (on one step, off the next — each press kicks: the hidden technique). Steering
     // is free while it is off, so it also turns better than a held burner.
     if (ov.tap) ctl.burner = steps % ov.tap === 0
     if (ov.brake) { ctl.brake = true; ctl.boost = false; ctl.burner = false }
-    if (ov.noDodge) { ctl.dodgeL = false; ctl.dodgeR = false }
-    if (ctl.dodgeL || ctl.dodgeR) dodges++
     lastSteer = ctl.steer
     if (ctl.burner) burnSteps++
   }

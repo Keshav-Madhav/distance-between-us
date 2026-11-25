@@ -17,7 +17,7 @@ const port = process.argv[2] ?? '4491', course = process.argv[3] ?? 'sprint'
 const DEC = +(process.env.DEC ?? 30), H = +(process.env.H ?? 180), SPEEDW = +(process.env.SPEEDW ?? 1.0), PASSES = +(process.env.PASSES ?? 3)
 // TOL: how far the craft's centre may stray past the edge and still count (its wings still over the track).
 const MODE = process.env.MODE ?? 'gates', BOUND = +(process.env.BOUND ?? 260), TOL = +(process.env.TOL ?? 10), OUTW = +(process.env.OUTW ?? 20)
-const V1 = [{}, { burner: true }, { burner: false }, { latShift: 45 }, { latShift: -45 }, { steerBias: 0.15 }, { steerBias: -0.15 }, { brake: true }, { noDodge: true }]
+const V1 = [{}, { burner: true }, { burner: false }, { latShift: 45 }, { latShift: -45 }, { steerBias: 0.15 }, { steerBias: -0.15 }, { brake: true }]
 let seed = null
 // LINE: a racing line for the driver to follow (tools/mincurv.mjs) instead of the centreline.
 const LINEF = process.env.LINE ?? '', line = LINEF && fs.existsSync(LINEF) ? JSON.parse(fs.readFileSync(LINEF, 'utf8')) : null
@@ -41,7 +41,7 @@ const res = await p.evaluate(async ([craft, opts, DEC, H, SPEEDW, PASSES, MODE, 
   let n = 0; while (!me.finished && n < 60 * 300) { pd.control({}); g.fastSim(STEP); n++; if (n % 900 === 0) await new Promise((r) => setTimeout(r, 0)) }
   const base = me.finished ? me.finishTime : null
   g.restore(s0); pd.setState(d0)
-  const cands = [{}, { burner: true }, { burner: false }, { latShift: 45 }, { latShift: -45 }, { latShift: 90 }, { latShift: -90 }, { steerBias: 0.15 }, { steerBias: -0.15 }, { steerBias: 0.3 }, { steerBias: -0.3 }, { brake: true }, { noDodge: true }, { burner: true, latShift: 45 }, { burner: true, latShift: -45 }]
+  const cands = [{}, { burner: true }, { burner: false }, { latShift: 45 }, { latShift: -45 }, { latShift: 90 }, { latShift: -90 }, { steerBias: 0.15 }, { steerBias: -0.15 }, { steerBias: 0.3 }, { steerBias: -0.3 }, { brake: true }, { burner: true, latShift: 45 }, { burner: true, latShift: -45 }]
   cands.push({ calm: true }, { calm: true, burner: true }, { calm: true, burner: false }, { tap: 2 }, { tap: 3 }, { tap: 2, calm: true })
   if (MODE === 'rogue') cands.push({ latShift: 200 }, { latShift: -200 }, { latShift: 400 }, { latShift: -400 }, { burner: true, latShift: 200 }, { burner: true, latShift: -200 })
   const ckey = (o) => JSON.stringify(Object.keys(o).sort().map((k) => [k, o[k]]))
