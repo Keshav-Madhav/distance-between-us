@@ -124,7 +124,8 @@ export class Player {
   onCrash: ((severity: number, big: boolean, x: number, y: number, z: number, nx: number, nz: number) => void) | null = null
   onLand: ((impact: number, airTime: number) => void) | null = null
   onLaunch: ((vy: number) => void) | null = null
-  onBoostStart: (() => void) | null = null
+  /** The burner lit; k = how much of its start kick it had (0–1: it refills over 1.5 s off the burner). */
+  onBoostStart: ((k: number) => void) | null = null
   private wasBurn = false
   /** Seconds since the burner last burned (its start kick refills over 1.5 s of that). */
   private burnOff = 9
@@ -248,8 +249,9 @@ export class Player {
     // every press: tapping the burner on and off stacked +Mach 0.3 kicks every other step — an agent rode
     // it to Mach 39 and a 9 s MISTRIVER. A press now feels the same; spamming it gains nothing.)
     if (burning && !this.wasBurn) {
-      this.speed += S.boostKick * Math.min(1, this.burnOff / 1.5)
-      this.onBoostStart?.()
+      const k = Math.min(1, this.burnOff / 1.5)
+      this.speed += S.boostKick * k
+      this.onBoostStart?.(k)
     }
     this.burnOff = burning ? 0 : this.burnOff + dt
     this.wasBurn = burning

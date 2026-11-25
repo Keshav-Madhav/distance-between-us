@@ -1149,7 +1149,12 @@ player.onBarrier = (ph) => {
     fx.dust(player.pos.x, groundH(player.pos.x, player.pos.z), player.pos.z, player.vel.x * 0.4, player.vel.z * 0.4, 30, 22, 50)
   }
 }
-player.onBoostStart = () => { shock.air(player.pos, player.fwd, player.vel, 0.7, 1.1); sound.boostKick(); shake(0.15); cam.punch += 2; input.rumble(0.6, 0.3, 160) }
+// The burner's start kick, shown as big as it was: a fresh burner the full shockwave, a quick re-press
+// (almost no kick left) nothing — feathering the burner through a bend fired a bubble every flick.
+player.onBoostStart = (k) => {
+  if (k < 0.35) return
+  shock.air(player.pos, player.fwd, player.vel, 0.7 * k, 1.1 * k); sound.boostKick(); shake(0.15 * k); cam.punch += 2 * k; input.rumble(0.6 * k, 0.3, 160)
+}
 player.onLaunch = (vy) => { sound.launch(Math.min(1, vy / 70)); cam.punch += 2 }
 player.onLand = (impact, air) => {
   landDust(player, impact)
@@ -2654,6 +2659,21 @@ function fpsBox(ms: number, dt: number): void {
   setHtml(fpsBoxEl, `<b>${Math.round(fps)}</b>FPS<small>${ms.toFixed(1)} MS</small><small>1% LOW ${Math.round(1000 / p99)}</small>`)
 }
 const fpsBoxEl = document.getElementById('fpsbox') as HTMLElement
+/** Replays: the inputs being played (stepCtl, the last step's controls), drawn bottom right. */
+const inpEl = document.getElementById('inpview') as HTMLElement
+const inpK = Object.fromEntries(['up', 'lt', 'rt', 'dn', 'dl', 'dr', 'sf', 'bn'].map((c) => [c, inpEl.querySelector('.' + c) as HTMLElement & { _v?: string }]))
+let inpOn = false
+function inputView(): void {
+  const on = mode === 'race' && !!replayIn && !overlay
+  if (on !== inpOn) { inpOn = on; inpEl.classList.toggle('on', on) }
+  if (!on) return
+  const c = stepCtl
+  const set = (k: string, v: number) => { const el = inpK[k], t = v.toFixed(2); if (el._v !== t) { el._v = t; el.style.setProperty('--v', t) } }
+  set('up', c.boost ? 1 : 0); set('dn', c.brake ? 1 : 0)
+  set('lt', Math.max(0, -c.steer)); set('rt', Math.max(0, c.steer))
+  set('dl', c.dodgeL ? 1 : 0); set('dr', c.dodgeR ? 1 : 0); set('bn', c.burner ? 1 : 0)
+  set('sf', Math.abs(c.strafe)); inpK.sf.classList.toggle('neg', c.strafe < 0)
+}
 /** Frames drawn: the every-other-frame jobs split by its parity (the minimap even, the far shadow map odd). */
 let frameNo = 0
 
@@ -3529,6 +3549,7 @@ function frame(now: number): void {
   renderMap()
   pm('map')
   fpsBox(lastMs, realDt)
+  inputView()
   raceLine.update(settings.line && mode === 'race' && !overlay, race.racers[0].idx, time)
   hudT -= realDt
   updateHud(realDt, hudT <= 0)
