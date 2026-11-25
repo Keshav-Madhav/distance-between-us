@@ -195,7 +195,7 @@ for (let ci = 0; ci < LIST.length; ci++) {
       g.hold(true); g.replayWith([0, 0, 1]); g.skipCountdown(); g.hold(true)
       const me = race.racers[0]
       const steps = [], log = [], evs = []
-      let st = 0, dAcc = 0, tapPh = 0, wasCrash = false, wasSpin = false, lastHull = 100, maxLat = 0, maxLat30 = 0, pads = 0
+      let st = 0, dAcc = 0, lastBurn = false, burnChg = -99, tapPh = 0, wasCrash = false, wasSpin = false, lastHull = 100, maxLat = 0, maxLat30 = 0, pads = 0
       const op = race.ev.pad; race.ev.pad = (r) => { if (r === me) pads++; op && op.call(race.ev, r) }
       while (st < 60 * 90 && !me.finished) {
         let cc, latNow = 0, latSgn = 0
@@ -212,6 +212,8 @@ for (let ci = 0; ci < LIST.length; ci++) {
           sCur = proj(P.pos.x, P.pos.z); const s = proj(ppx, ppz), L = Math.max(prm.laMin ?? 150, v * la)
           let tgt = at(s + L), padNear = false
           if (prm.padT) for (const [sp, pp] of padS) { const d = sp - s; if (d > 0 && d < v * prm.padT) { padNear = true; if (d > (prm.padAimMin ?? 120)) tgt = pp; break } }
+          if (prm.guard) { const gi = c.nearest(tgt[0], tgt[1], me.idx), [gx, gz] = c.tangent(gi), gl = (tgt[0] - c.px[gi]) * -gz + (tgt[1] - c.pz[gi]) * gx
+            if (Math.abs(gl) > prm.guard) { const d = gl - Math.sign(gl) * prm.guard; tgt = [tgt[0] - (-gz) * d, tgt[1] - gx * d] } }
           const err = wrap(Math.atan2(tgt[0] - ppx, tgt[1] - ppz) - vh)
           const yawD = v * Math.sin(err) / L * kp
           const tm = Math.max(0.05, P.turnMax / (P.burning ? 0.1 : 1)) * (prm.brk ? 1 + 0.35 * P.brake : 1)
@@ -229,6 +231,15 @@ for (let ci = 0; ci < LIST.length; ci++) {
               dAcc += f; if (dAcc >= 1) { dAcc -= 1; burn = true; steer = sg } else steer = sg * Math.min(1, Math.max(0, (need - 0.1 * f) / Math.max(1e-3, 1 - f)))
             }
           } else if (m < vmax && !padNear && need < (prm.burnNeed ?? 0.5) && (!prm.burnErr || pErr < prm.burnErr)) { burn = (tapPh % tap) === 0; tapPh++ } else tapPh = 0
+          if (prm.minHold) {
+            if (burn !== lastBurn) { if (st - burnChg < prm.minHold) burn = lastBurn; else { burnChg = st; lastBurn = burn } }
+            if (prm.duty) {
+              const smax = prm.smax ?? 0.95, sg = Math.sign(-yawD) || 1
+              const f = Math.max(0, Math.min(1, (smax - need) / (smax - 0.1)))
+              if (burn) steer = need <= 0.1 * smax ? Math.max(-1, Math.min(1, -yawD / (tm * 0.1))) : sg
+              else steer = sg * Math.min(1, Math.max(0, need >= 1 ? 1 : (need - 0.1 * f) / Math.max(1e-3, 1 - f)))
+            }
+          }
           let fl = 1 | (burn ? 2 : 0)
           if (prm.brakeOver != null && m > vmax + prm.brakeOver) fl = 4
           // side thrusters INTO the turn: while the nose yaws, the side velocity is re-split into forward speed

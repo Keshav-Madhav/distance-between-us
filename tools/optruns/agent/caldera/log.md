@@ -32,3 +32,16 @@ Regenerate: `node tools/optruns/agent/caldera/ctl.mjs caldera tools/optruns/agen
 - Shared ctl.mjs bug: global projection onto the 2-lap route snapped to the finish leg's extension at the lap-2 start (craft flew NE into a rock at (956,3945)). Windowed projection fixes it (caldera/ctl.mjs).
 - Lava is cosmetic. No rivals in the bench (solo), so no slipstream. Missed gates (x0.6 speed) never pay here: cutting the loop inside the 2500 m gate-plane limit saves ~0.9 km/gate but costs ~4-6 Mach each.
 - Where time remains: control at M16+ (pads 13-15 of 16 collected; lap-2 crash spot near (-6.4k,-6.3k)); a line planner that knows the side-thrust crab; weaving to pump speed at low Mach (gain side*|w| > bleed 0.05*v*|w| while v < 20*side).
+
+## IDEAL-HUMAN (new rule: throttle/brake/steer/burner only, no strafe/dodge, every key press/release >= 6 steps)
+caldera/ctl.mjs additions: `minHold` (burner state held >= n steps; in duty mode the steer is recomputed for the
+state actually held), `guard` (pursuit target clamped to within `guard` m of the centreline).
+Gotcha: step 1 must stay [0,0,0] (throttle off) — setting it to throttle-on made the bench replay diverge
+(missed gates, crash) although the driver ran fine; steps 0-2 are exempt from the human check anyway.
+| # | what | result |
+|---|------|--------|
+| h1/h2 | ideal params minus strafe/dodge, duty + minHold 6, la .15 smax .8 | **44.917 counted, human ok**, maxLat 257 |
+| h3/h4 | tp/kp/Rc/padT/lam/smax sweeps: lam 6000 gives lateral headroom | 44.4-45.2, most overshoot 265 |
+| h5 | + guard 180, corr 220 W 240 | 44.433 human ok, maxLat 264 |
+| h6 | brake held (+35% turn) / minHold 7 | no gain (44.5-45.6) |
+| h7 | random perturbation: la .17 kp 1.8 tp .13 Rc 3500 smax .75 guard 190 | **44.083 counted, 0 missed, human ok, 16/16 pads, maxLat 244 every step** -> ideal-human.json (ideal-human-params.json) |
