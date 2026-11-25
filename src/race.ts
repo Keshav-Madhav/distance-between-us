@@ -144,7 +144,7 @@ export class Race {
     return {
       name, color, p, ai, idx: 0, passed: 0, next: 0, finished: false, finishTime: 0, lapStart: 0, lastLap: 0, bestLap: 0,
       penalty: 0, place: 0, prog: 0, skill, lane: 0, laneT: 0, stuck: 0,
-      controls: { steer: 0, boost: false, burner: false, brake: false, strafe: 0, dodgeL: false, dodgeR: false }, padCool: 0, respawnT: 0,
+      controls: { steer: 0, boost: false, burner: false, brake: false, strafe: 0 }, padCool: 0, respawnT: 0,
     }
   }
 
@@ -608,7 +608,6 @@ export class Race {
       }
       ctl.strafe = THREE.MathUtils.clamp(push, -1, 1)
     }
-    ctl.dodgeL = ctl.dodgeR = false
     // Stuck on something: back on the line. (Rivals only: flying you, the autopilot must not move your craft
     // by anything but its inputs — a replay could not reproduce the teleport.)
     if (r.ai && this.state === 'racing' && !r.finished) {

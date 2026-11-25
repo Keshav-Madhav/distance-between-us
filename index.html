@@ -410,7 +410,7 @@
   /* SHOW FPS (settings): frames a second, the frame's time, and the 1% low of the last few seconds. */
   /* Replays (your best, a recorded run): the inputs as they were pressed, bottom right — like a replay's
      input display. Arrows fill with how much: steer left/right, throttle up, brake down; the strafe bar
-     under them; BURN and the two dodges light when held. */
+     under them; BURNER lights when held. */
   #inpview { position: fixed; right: 3vw; bottom: calc(3.5vh + 46px); z-index: 6; display: none; pointer-events: none; font-size: 9px; letter-spacing: 0.14em; color: var(--ink); text-shadow: 0 1px 3px rgba(0,0,0,0.8); }
   #inpview.on { display: grid; grid-template-columns: 34px 34px 34px; grid-template-rows: 26px 26px 26px 10px 18px; gap: 3px; }
   #inpview .k { position: relative; background: rgba(8,10,14,0.55); border: 1px solid rgba(255,247,238,0.18); border-radius: 3px; overflow: hidden; }
@@ -421,8 +421,6 @@
   #inpview .mid { grid-area: 2 / 2; background: none; border: none; display: grid; place-items: center; opacity: 0.5; font-size: 8px; }
   #inpview .rt { grid-area: 2 / 3; }
   #inpview .dn { grid-area: 3 / 2; } #inpview .dn i { transform-origin: top; transform: scaleY(var(--v, 0)); background: var(--red); }
-  #inpview .dl { grid-area: 3 / 1; } #inpview .dr { grid-area: 3 / 3; }
-  #inpview .dl i, #inpview .dr i { transform: none; opacity: var(--v, 0); background: #ffd23a; }
   #inpview .sf { grid-area: 4 / 1 / 5 / 4; } #inpview .sf i { left: 50%; right: auto; width: 50%; transform-origin: left; background: #c58bff; }
   #inpview .sf.neg i { left: 0; transform-origin: right; }
   #inpview .bn { grid-area: 5 / 1 / 6 / 4; } #inpview .bn i { transform: none; opacity: var(--v, 0); background: var(--hot); }
@@ -500,7 +498,7 @@
 <canvas id="game"></canvas>
 <canvas id="freeze"></canvas>
 <div id="fpsbox" aria-hidden="true"></div>
-<div id="inpview" aria-hidden="true"><div class="k up"><i></i><b>▲</b></div><div class="k lt"><i></i><b>◀</b></div><div class="k mid">INPUT</div><div class="k rt"><i></i><b>▶</b></div><div class="k dl"><i></i><b>«</b></div><div class="k dn"><i></i><b>▼</b></div><div class="k dr"><i></i><b>»</b></div><div class="k sf"><i></i></div><div class="k bn"><i></i><b>BURNER</b></div></div>
+<div id="inpview" aria-hidden="true"><div class="k up"><i></i><b>▲</b></div><div class="k lt"><i></i><b>◀</b></div><div class="k mid">INPUT</div><div class="k rt"><i></i><b>▶</b></div><div class="k dn"><i></i><b>▼</b></div><div class="k sf"><i></i></div><div class="k bn"><i></i><b>BURNER</b></div></div>
 <div id="swapcard" aria-live="polite"><small>Loading</small><b id="ld-world"></b><span id="ld-course"></span><i><em id="ld-bar"></em></i></div>
 <div id="hud" class="layer">
   <div id="reticle"></div>
@@ -511,7 +509,7 @@
     <div><b>W</b>THROTTLE (OFF IT, YOU COAST)</div>
     <div><b>SHIFT</b>AFTERBURNER: NO TOP SPEED · STEERING LOCKS</div>
     <div><b>A D</b>STEER</div>
-    <div><b>Q E</b>STRAFE · TAP TWICE: DODGE</div>
+    <div><b>Q E</b>STRAFE</div>
     <div><b>S + STEER</b>BREAK TRACTION: DRIFT · STRAIGHTEN TO BOOST</div>
     <div><b>GRIP GAUGE</b>PAST THE LINE YOU SLIDE · RED: COUNTERSTEER</div>
     <div><b>COUNTERSTEER</b>CATCH A SLIDE · STEER IN THE AIR TO LAND STRAIGHT</div>

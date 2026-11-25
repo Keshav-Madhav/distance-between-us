@@ -1828,7 +1828,7 @@ let ghostRec: number[] = []
 /** The run's inputs (3 floats a step, from the grid) — saved with your best; a replay feeds them back. */
 let inputRec: number[] = []
 let replayIn: Float32Array | null = null
-const stepCtl: import('./player').Controls = { steer: 0, strafe: 0, boost: false, burner: false, brake: false, dodgeL: false, dodgeR: false }
+const stepCtl: import('./player').Controls = { steer: 0, strafe: 0, boost: false, burner: false, brake: false }
 let replayAt = 0
 const unb64 = (s: string) => { const bin = atob(s), u8 = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i); return u8 }
 // (Kept in IndexedDB — src/store.ts — and held in memory for this course from boot: loads and saves are
@@ -2661,7 +2661,7 @@ function fpsBox(ms: number, dt: number): void {
 const fpsBoxEl = document.getElementById('fpsbox') as HTMLElement
 /** Replays: the inputs being played (stepCtl, the last step's controls), drawn bottom right. */
 const inpEl = document.getElementById('inpview') as HTMLElement
-const inpK = Object.fromEntries(['up', 'lt', 'rt', 'dn', 'dl', 'dr', 'sf', 'bn'].map((c) => [c, inpEl.querySelector('.' + c) as HTMLElement & { _v?: string }]))
+const inpK = Object.fromEntries(['up', 'lt', 'rt', 'dn', 'sf', 'bn'].map((c) => [c, inpEl.querySelector('.' + c) as HTMLElement & { _v?: string }]))
 let inpOn = false
 function inputView(): void {
   const on = mode === 'race' && !!replayIn && !overlay
@@ -2671,7 +2671,7 @@ function inputView(): void {
   const set = (k: string, v: number) => { const el = inpK[k], t = v.toFixed(2); if (el._v !== t) { el._v = t; el.style.setProperty('--v', t) } }
   set('up', c.boost ? 1 : 0); set('dn', c.brake ? 1 : 0)
   set('lt', Math.max(0, -c.steer)); set('rt', Math.max(0, c.steer))
-  set('dl', c.dodgeL ? 1 : 0); set('dr', c.dodgeR ? 1 : 0); set('bn', c.burner ? 1 : 0)
+  set('bn', c.burner ? 1 : 0)
   set('sf', Math.abs(c.strafe)); inpK.sf.classList.toggle('neg', c.strafe < 0)
 }
 /** Frames drawn: the every-other-frame jobs split by its parity (the minimap even, the far shadow map odd). */
@@ -2727,7 +2727,7 @@ function titleStep(): void {
   player.step(STEP, titleCtl, world)
 }
 let titleRev = false
-const titleCtl = { steer: 0, boost: true, burner: false, brake: false, strafe: 0, dodgeL: false, dodgeR: false }
+const titleCtl = { steer: 0, boost: true, burner: false, brake: false, strafe: 0 }
 function simStep(): void {
   if (mode === 'title') { titleStep(); return }
   if (mode === 'race') {
@@ -2737,16 +2737,16 @@ function simStep(): void {
     // Replaying a recorded run: its inputs, step by step (see recordInputs).
     if (replayIn && replayAt < replayIn.length / 3) {
       const o = replayAt++ * 3, f = replayIn[o + 2]
-      forced = { steer: replayIn[o], strafe: replayIn[o + 1], boost: !!(f & 1), burner: !!(f & 2), brake: !!(f & 4), dodgeL: !!(f & 8), dodgeR: !!(f & 16) }
+      forced = { steer: replayIn[o], strafe: replayIn[o + 1], boost: !!(f & 1), burner: !!(f & 2), brake: !!(f & 4) }
     } else if (replayIn) { replayIn = null; forced = null }
     // The controls this step, as the physics gets them: steer and strafe at float32 precision — exactly
     // what the recording stores, so a replay feeds the physics the very same numbers (a float64 steer
     // stored as float32 differed by 1e-8 and the run split after 9 s).
     const c0 = forced ?? (auto ? me.controls : input.c)
     stepCtl.steer = Math.fround(c0.steer); stepCtl.strafe = Math.fround(c0.strafe)
-    stepCtl.boost = c0.boost; stepCtl.burner = c0.burner; stepCtl.brake = c0.brake; stepCtl.dodgeL = c0.dodgeL; stepCtl.dodgeR = c0.dodgeR
+    stepCtl.boost = c0.boost; stepCtl.burner = c0.burner; stepCtl.brake = c0.brake
     // Every input of the run, every step from the grid on: steer, strafe, buttons.
-    if (race.state !== 'done' && !me.finished) inputRec.push(stepCtl.steer, stepCtl.strafe, (stepCtl.boost ? 1 : 0) | (stepCtl.burner ? 2 : 0) | (stepCtl.brake ? 4 : 0) | (stepCtl.dodgeL ? 8 : 0) | (stepCtl.dodgeR ? 16 : 0))
+    if (race.state !== 'done' && !me.finished) inputRec.push(stepCtl.steer, stepCtl.strafe, (stepCtl.boost ? 1 : 0) | (stepCtl.burner ? 2 : 0) | (stepCtl.brake ? 4 : 0))
     race.step(STEP, stepCtl, world)
     if (race.state === 'racing' && !me.finished) {
       if ((ghostStep & 1) === 0) ghostRec.push(player.pos.x, player.pos.y, player.pos.z, player.heading, player.bank, player.pitch)
@@ -3085,8 +3085,8 @@ function drawRacer(p: Player, alpha: number, dt: number, isMe: boolean): void {
   }
   // Rubbing rock: a stream of sparks at the contact.
   if (p.scrape > 0.05 && near) sparks(p.scrapeAt.x, p.scrapeAt.y, p.scrapeAt.z, p.vel, Math.ceil(p.scrape * 6), 0.6)
-  if (isMe && (Math.abs(input.c.strafe) > 0.2 || input.c.dodgeL || input.c.dodgeR)) {
-    const side = input.c.strafe > 0 || input.c.dodgeR ? 0 : 1
+  if (isMe && Math.abs(input.c.strafe) > 0.2) {
+    const side = input.c.strafe > 0 ? 0 : 1
     nozzleW.copy(craft.sidePuffs[side]).applyMatrix4(craft.body.matrixWorld)
     const e = resetE()
     e.x = nozzleW.x; e.y = nozzleW.y; e.z = nozzleW.z

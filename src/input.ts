@@ -6,15 +6,12 @@ const THREE_clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b,
 export class Input {
   readonly down = new Set<string>()
   private readonly queue: [number, string, boolean][] = []
-  /** Keys that went down within the current sim step (dodge taps), from the queue. */
-  private readonly stepPressed = new Set<string>()
   /** Apply every queued key event up to real time tMs (performance.now() clock). */
   advance(tMs: number): void {
-    this.stepPressed.clear()
     let k = 0
     while (k < this.queue.length && this.queue[k][0] <= tMs) {
       const [, code, dn] = this.queue[k++]
-      if (dn) { this.down.add(code); this.stepPressed.add(code) } else this.down.delete(code)
+      if (dn) this.down.add(code); else this.down.delete(code)
     }
     if (k) this.queue.splice(0, k)
   }
@@ -23,11 +20,9 @@ export class Input {
   /** Keys held over a world handover (the new instance never saw them pressed). */
   hold(codes: string[]): void { for (const c of codes) this.down.add(c) }
   private readonly pressed = new Set<string>()
-  readonly c: Controls = { steer: 0, boost: false, burner: false, brake: false, strafe: 0, dodgeL: false, dodgeR: false }
+  readonly c: Controls = { steer: 0, boost: false, burner: false, brake: false, strafe: 0 }
   fire = false
   private steerS = 0
-  /** Double-tap Q/E (or a quick tap of a shoulder) dodges. */
-  private lastTap: Record<string, number> = {}
   usingPad = false
   /** The cursor (HUNT steers toward it): position in px, and when it last moved (s). */
   mouseX = 0
@@ -60,7 +55,7 @@ export class Input {
   consume(): void { this.pressed.clear() }
   isDown(code: string): boolean { return this.down.has(code) }
 
-  read(dt: number, now: number): void {
+  read(dt: number, _now: number): void {
     const k = (a: string) => this.down.has(a)
     let steer = (k('KeyD') || k('ArrowRight') ? 1 : 0) - (k('KeyA') || k('ArrowLeft') ? 1 : 0)
     let strafe = (k('KeyE') ? 1 : 0) - (k('KeyQ') ? 1 : 0)
@@ -68,14 +63,6 @@ export class Input {
     let burner = k('ShiftLeft') || k('ShiftRight')
     let brake = k('KeyS') || k('ArrowDown')
     let fire = k('Space') || k('Mouse0') || k('KeyJ')
-    let dodgeL = false
-    let dodgeR = false
-    for (const [code, dir] of [['KeyQ', -1], ['KeyE', 1]] as const) {
-      if (this.stepPressed.has(code)) {
-        if (now - (this.lastTap[code] ?? -9) < 0.28) { if (dir < 0) dodgeL = true; else dodgeR = true }
-        this.lastTap[code] = now
-      }
-    }
     // Keyboard steering ramps in over ~0.4 s (a tap is part-lock, a hold is full lock) and lets go
     // fast — so steering can be modulated against the grip gauge.
     const rate = steer === 0 || Math.sign(steer) !== Math.sign(this.steerS) ? 9 : 3.6
@@ -97,18 +84,12 @@ export class Input {
       if (p.buttons[0]?.pressed || p.buttons[5]?.pressed) fire = true
       const rx = dz(p.axes[2] ?? 0)
       if (rx !== 0) strafe = rx
-      if (p.buttons[4]?.pressed && !this.lastTap.padLB) dodgeL = true
-      if (p.buttons[1]?.pressed && !this.lastTap.padB) dodgeR = true
-      this.lastTap.padLB = p.buttons[4]?.pressed ? 1 : 0
-      this.lastTap.padB = p.buttons[1]?.pressed ? 1 : 0
     }
     this.c.steer = steer
     this.c.strafe = strafe
     this.c.boost = boost
     this.c.burner = burner
     this.c.brake = brake
-    this.c.dodgeL = dodgeL
-    this.c.dodgeR = dodgeR
     this.fire = fire
   }
 

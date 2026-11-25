@@ -64,8 +64,6 @@ export const CFG = {
     airControl: 0.4,
     /** Side-thruster strafe acceleration (m/s²). */
     strafe: 340,
-    /** Lateral m/s added by a strafe tap (the dodge). */
-    dodge: 170,
     hover: 3.1,
     /** Hover spring natural frequency (rad/s). */
     hoverW: 11,

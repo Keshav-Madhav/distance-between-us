@@ -1,5 +1,5 @@
 // A craft's simulation (the player's and every AI racer's): the speed model (no brakes to zero;
-// violent boost; the Mach 6 barrier), handling (twitchy yaw, drift, strafe/dodge), ground effect
+// violent boost; the Mach 6 barrier), handling (twitchy yaw, drift, strafe), ground effect
 // and flight, and collisions. Fixed 60 Hz; the renderer interpolates prev → pos.
 //
 // Ground and air:
@@ -27,8 +27,6 @@ export interface Controls {
   burner?: boolean
   brake: boolean
   strafe: number // -1 … 1
-  dodgeL: boolean // edge
-  dodgeR: boolean
 }
 
 export type BarrierPhase = 'none' | 'silence' | 'boom'
@@ -49,8 +47,8 @@ export class Player {
   /** Along-heading speed, m/s. */
   speed = 0
   lateral = 0
-  /** Strafe/dodge sideways velocity (decays on its own). Turning toward it folds part of it into forward
-   *  speed — strafing and dodging into a bend gains speed: a kept technique (found by an agent, worth seconds). */
+  /** Strafe sideways velocity (decays on its own). Turning toward it folds part of it into forward
+   *  speed — strafing into a bend gains speed: a kept technique (found by an agent, worth seconds). */
   side = 0
   vy = 0
   airborne = false
@@ -150,7 +148,6 @@ export class Player {
   onBounce: ((impact: number) => void) | null = null
   private lastMach = 0
   private readonly obs: Obstacle[] = []
-  private dodgeCool = 0
 
   reset(x = 0, z = 0, heading = 0, mach = CFG.speed.launchMach): void {
     this.heading = this.prevHeading = heading
@@ -177,7 +174,7 @@ export class Player {
     // (Everything that carries state between steps, back to a fresh craft: a restarted race must run exactly
     // as the first one did — a replay of its inputs in the same page drifted on boost/steer smoothing.)
     this.agl = 0; this.boost = 0; this.brake = 0; this.accel = 0; this.sinceHurt = 10; this.steerIn = 0
-    this.gripLoad = 0; this.wake = 0; this.turnMax = 1; this.steerWant = 0; this.dodgeCool = 0
+    this.gripLoad = 0; this.wake = 0; this.turnMax = 1; this.steerWant = 0
     this.drift = 0
     this.wasBurn = false; this.burnOff = 9
     this.bankV = this.pitchV = 0
@@ -389,11 +386,9 @@ export class Player {
       this.updateAxes()
       this.setHorizontal(hvx, hvz)
 
-      this.dodgeCool -= dt
-      if (this.dodgeCool <= 0 && (c.dodgeL || c.dodgeR) && this.spin <= 0) {
-        this.side += (c.dodgeR ? 1 : -1) * H.dodge
-        this.dodgeCool = 0.25
-      }
+      // (There was a dodge — double-tap Q/E for an instant 170 m/s sideways kick, one every 0.25 s. Removed
+      // 2026-11-25: barely discoverable, and its best use — tapped 4 times a second through a bend — was out of
+      // a human's reach. Strafe is the sideways control.)
       this.side += (this.spin > 0 ? 0 : c.strafe) * H.strafe * (this.airborne ? 0.5 : 1) * dt
       this.side *= Math.exp(-3.2 * dt)
 
