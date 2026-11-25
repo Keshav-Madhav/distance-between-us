@@ -35,6 +35,7 @@ const SHADOW_Y = Math.max(SUN_DIR[1], 0.3)
 import { loadTextures } from './textures'
 import { centerline, Course, COURSES, LAPS, medals } from './course'
 import { Race, type Racer } from './race'
+import { RaceLine } from './raceline'
 import { ChaseCam } from './camera'
 import { Debris } from './debris'
 import { Shock } from './shock'
@@ -569,6 +570,9 @@ function viewCone(): [number, number, number] {
 let scatterForceOff = false
 scene.add(scatter.group)
 scene.add(course.group)
+/** RACING LINE (settings): the fastest line found for this course, on the ground ahead. */
+const raceLine = new RaceLine()
+scene.add(raceLine.mesh)
 const env = world.makeEnv(renderer)
 bootMark('heroes+env')
 await breathe()
@@ -626,7 +630,7 @@ let spectate = false
 /** Graphics settings (the Esc panel). */
 // (Declared up here: restoring saved settings at boot runs their handlers before the HUNT code below.)
 let invertPitch = false
-const settings = { ghost: true, shadows: !params.has('noshadow'), fps: 'auto' as 'auto' | '60' | '120' | 'max', map: true, scale: 1, dist: 20, part: 1, bloom: true, blur: 1, sharp: 0.4, grain: true, cloud: true }
+const settings = { ghost: true, line: false, shadows: !params.has('noshadow'), fps: 'auto' as 'auto' | '60' | '120' | 'max', map: true, scale: 1, dist: 20, part: 1, bloom: true, blur: 1, sharp: 0.4, grain: true, cloud: true }
 let crashBreak = 0
 const rivalVoices: import('./audio').RivalVoice[] = []
 const camRight = new THREE.Vector3()
@@ -1876,6 +1880,7 @@ function startRace(): void {
   resetVisuals()
   ghostRec = []; ghostStep = 0; inputRec = []; replayAt = 0
   ghostPlay = settings.ghost ? loadGhost() : null
+  if (settings.line) raceLine.load(course.def.id)
   { const v = visuals.get(ghostP)!; v.craft.root.visible = false; for (const t of v.trail) t.reset() }
   for (const r of race.racers) visuals.get(r.p)!.lastDust.copy(r.p.pos)
   cam.snap(player.heading)
@@ -2552,6 +2557,12 @@ $<HTMLSelectElement>('#as').onchange = (e) => { player.assist = +(e.target as HT
 
 $<HTMLInputElement>('#ghoston').onchange = (e) => { settings.ghost = (e.target as HTMLInputElement).checked }
 // (The box's own class is the switch: the saved settings are restored before the frame code below is set up.)
+{
+  const el = $<HTMLInputElement>('#lineon')
+  try { el.checked = localStorage.getItem('dbu-line') === '1' } catch { /* blocked */ }
+  settings.line = el.checked
+  el.onchange = () => { settings.line = el.checked; if (el.checked) raceLine.load(course.def.id); try { localStorage.setItem('dbu-line', el.checked ? '1' : '0') } catch { /* blocked */ } }
+}
 $<HTMLInputElement>('#fpson').onchange = (e) => { $('#fpsbox').classList.toggle('on', (e.target as HTMLInputElement).checked) }
 $<HTMLInputElement>('#fov').oninput = (e) => { fovMax = +(e.target as HTMLInputElement).value }
 try {
@@ -3500,6 +3511,7 @@ function frame(now: number): void {
   renderMap()
   pm('map')
   fpsBox(lastMs, realDt)
+  raceLine.update(settings.line && mode === 'race' && !overlay, race.racers[0].idx, time)
   hudT -= realDt
   updateHud(realDt, hudT <= 0)
   pm('hud')
@@ -4297,7 +4309,7 @@ const g = {
   startHunt: () => startHunt(),
   autopilot: (on: boolean) => { autopilot = on },
   flyForce: (on: boolean) => { flyForced = on },
-  rings, darts, cannon, missiles, rounds,
+  rings, darts, cannon, missiles, rounds, raceLine,
   autoFire: (on: boolean) => { autoFire = on },
   director: (on: boolean) => { directorOn = on },
   setMach: (m: number) => { player.speed = m * MACH },
