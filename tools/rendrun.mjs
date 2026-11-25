@@ -8,7 +8,9 @@ import fs from 'node:fs'
 import { execFileSync } from 'node:child_process'
 const [port, course, MODE, outFile] = [process.argv[2] ?? '5417', process.argv[3] ?? 'canyon', process.argv[4] ?? 'rogue', process.argv[5] ?? 'run.mp4']
 const W = +(process.env.W ?? 1280), H = +(process.env.H ?? 720), TAG = process.env.TAG ? '-' + process.env.TAG : ''
-const run = JSON.parse(fs.readFileSync(`tools/optruns/${course}-rollout${MODE === 'gates' ? '' : '-' + MODE}${TAG}.json`, 'utf8'))
+// INPUTS=<inputs.json> (tools/agentrun.mjs format): play that run instead of an optimiser's decisions.
+const INPUTS = process.env.INPUTS
+const run = INPUTS ? {} : JSON.parse(fs.readFileSync(`tools/optruns/${course}-rollout${MODE === 'gates' ? '' : '-' + MODE}${TAG}.json`, 'utf8'))
 const V1 = [{}, { burner: true }, { burner: false }, { latShift: 45 }, { latShift: -45 }, { steerBias: 0.15 }, { steerBias: -0.15 }, { brake: true }, { noDodge: true }]
 const cands = run.cands ?? V1
 const craft = JSON.parse(fs.readFileSync('tools/optruns/craft-model.json', 'utf8'))
@@ -17,18 +19,22 @@ const opts = run.mode === 'bounded' ? { ...opts0, bound: run.bound } : opts0
 const line = run.line ? JSON.parse(fs.readFileSync(run.line, 'utf8')) : null
 const b = await chromium.launch({ channel: 'chrome', headless: true, args: ['--mute-audio', '--use-gl=angle', '--ignore-gpu-blocklist'] })
 // 1) The inputs.
+let A
+if (INPUTS) A = { time: JSON.parse(fs.readFileSync(INPUTS, 'utf8')).time ?? null, inputs: JSON.parse(fs.readFileSync(INPUTS, 'utf8')).steps.flat() }
+else {
 const pa = await (await b.newContext({ viewport: { width: 320, height: 180 } })).newPage()
 await pa.addInitScript(() => localStorage.setItem('dbu-sub', 'trial'))
 await pa.goto(`http://localhost:${port}/?course=${course}&fixed=1`)
 await pa.waitForFunction('window.__g && window.__g.ready', null, { timeout: 180000 })
 await pa.addScriptTag({ content: fs.readFileSync('tools/pdcore.js', 'utf8') })
-const A = await pa.evaluate(async ([craft, opts, cands, decisions, DEC, L]) => {
+A = await pa.evaluate(async ([craft, opts, cands, decisions, DEC, L]) => {
   const g = window.__g, STEP = 1 / 60
   const pd = window.makePD(L ? { lane: L.lane, i0: L.i0, SEG: L.SEG } : null, craft, opts), me = pd.me
   for (const d of decisions) { for (let j = 0; j < DEC && !me.finished; j++) { pd.control(cands[d]); g.fastSim(STEP) } await new Promise((r) => setTimeout(r, 0)) }
   return { time: me.finished ? me.finishTime : null, inputs: g.inputs() }
 }, [craft, opts, cands, run.decisions, run.DEC ?? 30, line])
 await pa.context().close()
+}
 console.log(`${course} ${MODE}: optimiser ${run.time?.toFixed(2)} s, replayed ${A.time?.toFixed(2)} s, ${A.inputs.length / 3} steps of inputs`)
 // 2) The rendered run: rAF driven by hand (virtual time), one capture per 1/30 s.
 const dir = fs.mkdtempSync('/private/tmp/claude-502/-Users-keshavmadhav-verbaflo-Repositories-portfolio-website/e18b0817-8173-4e62-8348-b75848d93f42/scratchpad/frames-')
