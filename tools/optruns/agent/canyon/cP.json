@@ -1,0 +1,3 @@
+[{"name":"q1","line":"Lr_k0.055.json"},
+ {"name":"q2","line":"Lr_k0.055.json","H":90,"aims":[-80,-30,0,30,80]},
+ {"name":"q3","line":"Li_k0.055.json","latLim":250}]

@@ -5,6 +5,8 @@
 //   node tools/agentrun.mjs export <course> <rollout.json> <inputs.json>
 //        replay an optimiser run (tools/optruns/*-rollout*.json) and save its per-step inputs
 //   node tools/agentrun.mjs run <course> <inputs.json> [edits.json] [--save out.json]
+//        LINE=public/lines/<course>.json also writes the game's racing-line file from the run (the ribbon);
+//        POSE=1 adds ROGUE's pose recording to it (DUEL at IMPOSSIBLE plays that back)
 //        play inputs (+ edits) and report; --save writes the edited per-step inputs
 //
 // inputs.json: { "steps": [[steer, strafe, flags], …] } one per 1/60 s from the start, flags = 1 throttle,
@@ -69,6 +71,7 @@ if (cmd === 'export') {
     g.hold(true); g.replayWith(flat); g.skipCountdown(); g.hold(true)
     const me = g.race.racers[0], n = flat.length / 3
     const gates = [], events = [], trace = []
+    const S = [], pose = []
     let passed = me.passed, wasAir = false, wasSpin = false, wasCrash = false, top = 0, st = 0
     const m0 = g.snap().missedCount
     let missed = m0
@@ -84,11 +87,15 @@ if (cmd === 'export') {
       if (P.crashing && !wasCrash) events.push({ t, step: st, what: 'crash' }); wasCrash = P.crashing
       if (P.airborne !== wasAir && P.airborne) events.push({ t, step: st, what: 'airborne' }); wasAir = P.airborne
       if (st % 30 === 0) { const i = me.idx, [tx, tz] = c.tangent(i); trace.push([t, mach, Math.round((P.pos.x - c.px[i]) * -tz + (P.pos.z - c.pz[i]) * tx), (P.burning ? 'B' : '') + (P.airborne ? 'A' : '')]) }
+      if (st % 3 === 0) S.push(Math.round(P.pos.x), Math.round(P.pos.y - P.agl), Math.round(P.pos.z), P.brake > 0.5 ? 0 : P.burning ? 3 : P.throttle > 0.5 ? 2 : 1, P.airborne ? 1 : 0, me.idx)
+      if (g.race.state === 'racing' && !me.finished) { const k = Math.round(g.race.clock / (2 / 60)); if (k * 6 === pose.length) pose.push(+P.pos.x.toFixed(2), +P.pos.y.toFixed(2), +P.pos.z.toFixed(2), +P.heading.toFixed(4), +P.bank.toFixed(4), +P.pitch.toFixed(4)) }
       if (me.finished) break
       if (st % YIELD === 0) await new Promise((r) => setTimeout(r, 0))
     }
-    return { counted: me.finished, time: me.finished ? +me.finishTime.toFixed(3) : null, gatesTotal: g.race.K, passed: me.passed, missedGates: missed - m0, topMach: top, steps: st, gates, events: events.filter((e) => e.what !== 'airborne').concat(events.filter((e) => e.what === 'airborne').slice(0, 40)), trace }
+    return { line: { s: S, pose }, counted: me.finished, time: me.finished ? +me.finishTime.toFixed(3) : null, gatesTotal: g.race.K, passed: me.passed, missedGates: missed - m0, topMach: top, steps: st, gates, events: events.filter((e) => e.what !== 'airborne').concat(events.filter((e) => e.what === 'airborne').slice(0, 40)), trace }
   }, [flat, +(process.env.YIELD ?? 2)])
-  console.log(JSON.stringify(rep))
+  const { line, ...out } = rep
+  if (process.env.LINE && rep.counted) fs.writeFileSync(process.env.LINE, JSON.stringify({ time: rep.time, ...(process.env.POSE ? { pose: line.pose } : {}), s: line.s }))
+  console.log(JSON.stringify(out))
 }
 await browser.close()

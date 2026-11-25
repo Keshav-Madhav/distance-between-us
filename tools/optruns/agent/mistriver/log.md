@@ -27,3 +27,22 @@ until capMach 40. Baseline rogue run barely taps (31 presses).
 Stopped: budget used (~36 browser runs incl. sweeps) and machine load rose to 125 (other jobs).
 Regenerate best: `node tools/optruns/agent/mistriver/ctl.mjs tools/optruns/agent/mistriver/best-params.json out.json`
 then verify with `node tools/agentrun.mjs run mistriver out.json`.
+
+## New physics (burner kick recharges over 1.5 s off; tapping no longer pays)
+Old 9.35 s run moved to oldphysics/best-9.35.json. Baseline rogue inputs under new physics: not counted (6 missed, crash).
+Controller generalised: tools/optruns/agent/ctl.mjs <course> <params> <out> (pads as route nodes, corridor option).
+
+| # | what | verified result |
+|---|------|-----------------|
+| N1 | hold burner when turn need < 0.1-0.35, no pads | ~29.6 (driver) |
+| N2 | + boost pads as DP route nodes (±20 m), uLim removed; 9 of 11 pads hit | **26.867 counted, 0 missed** (maxLat 527) -> best.json |
+| N3 | lam1 (linear bend cost), padW 28, burnNeed .1, Rc 12000 | 26.72 best (driver), others worse / no path |
+| N4 | burner gated by path error / Mach cap | worse (27.2-30.6): fewer pads hit |
+| N5 | pad window / corner-cut limits at pads | no gain (27.0-34) |
+| D | drift experiments (exp2.mjs, from t=8 s, Mach 8.2): slides charge drift ~0.3 at most before speed loss; no boost fired | drift not useful at Mach 8+ |
+| I1 | IDEAL: corridor + centreline mid-nodes every 25/40 course points; arcs overlapping -> clamp arc radius to 0.48 of legs | |
+| I2 | IDEAL: mid 30, midW 180, lam 10000, corr 200, W 220, Rc 6000, pads | **28.900 counted, 0 missed, max |lat| 239 m** -> ideal.json |
+| N6/N7 | look-ahead / gain / prediction sweeps | 26.70-43 (chaotic); kp 2.5 best |
+| N8 | pad approach: from padT·v metres before a planned pad, burner off and aim straight at the pad point (padT .5) | **26.483 counted, 0 missed, 9 pads** -> best.json (params best-params.json) |
+| I3 | ideal + pad approach (padT .3): 11/11 pads but strays to 345 m | 26.62 (rogue-valid only) |
+| I4 | ideal: corr 180, midW 160, W 200, padT .15 | **28.083 counted, 0 missed, trace max |lat| 226 m** -> ideal.json (between 0.5 s samples it reached 296 m; ideal-strict-candidate.json = 28.417 in the driver, <=265 m every step, not bench-verified) |

@@ -1,0 +1,4 @@
+[{"line":"line-i1.json","kff":1,"la":0.15,"laMin":100,"strafeK":20},
+ {"line":"line-i1.json","kff":1,"la":0.15,"laMin":100,"strafeK":20,"dodgeThr":0.1},
+ {"line":"line-i1.json","kff":1,"la":0.15,"laMin":100,"strafeK":20,"dodgeThr":0.02},
+ {"line":"line-i1.json","kff":1,"la":0.15,"laMin":100,"strafeK":20,"dodgeThr":0.02,"strafeUse":"yaw"}]

@@ -1,0 +1,4 @@
+[{"name":"a1","line":"Lr_m-1.json"},
+ {"name":"a2","line":"Lr_m-1.json","ks":0.02,"kd":0.01},
+ {"name":"a3","line":"Lr_m-1.json","bk":0.7,"minOff":6},
+ {"name":"a4","line":"Li_m-1.json","ks":0.02,"kd":0.01,"holdOff":true}]

@@ -1,0 +1,8 @@
+[
+ {"name":"hold burn","n":90,"code":"return [0,0,3]"},
+ {"name":"throttle","n":90,"code":"return [0,0,1]"},
+ {"name":"slide R brake 20 then counter","n":90,"tr":1,"code":"if(i<20)return[1,0,5]; if(Math.abs(P.slip)>0.08&&i<60)return[-1,0,1]; return [0,0,3]"},
+ {"name":"slide R brake 35 then counter","n":90,"tr":1,"code":"if(i<35)return[1,0,5]; if(Math.abs(P.slip)>0.08&&i<70)return[-1,0,1]; return [0,0,3]"},
+ {"name":"flick R 8 then L brake 30, counter","n":90,"tr":1,"code":"if(i<8)return[1,0,1]; if(i<38)return[-1,0,5]; if(Math.abs(P.slip)>0.08&&i<75)return[1,0,1]; return [0,0,3]"},
+ {"name":"dodge R spam","n":90,"tr":1,"code":"return [0,0,3|(i%16==0?16:0)]"}
+]

@@ -1,0 +1,2 @@
+{"name":"s1","iters":40,"seed":7,"base":{"line":"line_mc.json","vcap":30,"kr":2.0,"db":1.0,"lmin":300,"tl":0.25,"kp":1.0,"ff":1.0,"hyst":0.03,"tapSteer":0.7,"tap3":0.4,"airBrake":true,"bt":0.7,"pred":0.1,"react":0.2,"win":6},
+ "ranges":{"vcap":[16,40],"kr":[1.5,2.6],"db":[0.3,2.5],"lmin":[150,600],"tl":[0.1,0.5],"kp":[0.5,2],"ff":[0,1.5],"hyst":[0,0.1],"tapSteer":[0.3,1.01],"tap3":[0.1,1],"bt":[0.3,1.01],"pred":[0,0.3],"react":[0,0.6],"win":[1,15]}}

@@ -1,0 +1,5 @@
+[{"line":"line-i1.json","kff":1},
+ {"line":"line-i1.json","kff":1,"la":0.15,"laMin":100},
+ {"line":"line-i1.json","kff":1,"la":0.15,"laMin":100,"kp":3},
+ {"line":"line-i1.json","kff":1,"la":0.1,"laMin":80,"kp":2,"tp":0.08},
+ {"line":"line-i0.json","kff":1,"la":0.15,"laMin":100}]

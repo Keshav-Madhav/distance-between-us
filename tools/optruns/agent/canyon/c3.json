@@ -1,0 +1,5 @@
+[{"name":"c1","line":"line_t8.json","vcap":18,"kr":1.8,"db":1.0,"lmin":300,"tl":0.3,"kp":1.0,"ff":1.0,"hyst":0.03,"tapSteer":0.6,"airBrake":true},
+ {"name":"c2","line":"line_t8.json","vcap":24,"kr":1.8,"db":1.0,"lmin":300,"tl":0.3,"kp":1.0,"ff":1.0,"hyst":0.03,"tapSteer":0.6,"airBrake":true},
+ {"name":"c3","line":"line_t8.json","vcap":24,"kr":2.1,"db":1.0,"lmin":300,"tl":0.3,"kp":1.0,"ff":1.0,"hyst":0.03,"tapSteer":0.6,"airBrake":true},
+ {"name":"c4","line":"line_t8.json","vcap":30,"kr":2.4,"db":1.0,"lmin":300,"tl":0.3,"kp":1.0,"ff":1.0,"hyst":0.03,"tapSteer":0.6,"airBrake":true},
+ {"name":"c5","line":"line_t9.json","vcap":24,"kr":2.1,"db":1.0,"lmin":300,"tl":0.3,"kp":1.0,"ff":1.0,"hyst":0.03,"tapSteer":0.6,"airBrake":true}]

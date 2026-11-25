@@ -1,44 +1,16 @@
 {
  "la": 0.25,
- "kp": 2,
+ "kp": 2.5,
  "tp": 0.12,
- "tap": 2,
- "smallMin": 0,
+ "tap": 1,
  "mgSmall": 50,
  "mgPlan": 100,
- "brakeOver": 2,
- "vmax": 36,
  "Rc": 9000,
- "uLim": {
-  "7": [
-   -280,
-   0
-  ],
-  "17": [
-   -100,
-   280
-  ]
- },
- "vmaxG": [
-  null,
-  null,
-  null,
-  null,
-  null,
-  null,
-  null,
-  null,
-  null,
-  39,
-  39,
-  39,
-  39,
-  39,
-  39,
-  39,
-  39,
-  39,
-  39
- ],
- "burnNeed": 0.5
+ "pads": true,
+ "burnNeed": 0.2,
+ "padW": 28,
+ "lam": 3000,
+ "lam1": 3000,
+ "padT": 0.5,
+ "padAimMin": 120
 }

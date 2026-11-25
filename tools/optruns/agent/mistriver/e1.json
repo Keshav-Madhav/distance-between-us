@@ -1,0 +1,9 @@
+[
+ {"name":"hold burn","n":120,"code":"return [0,1,0]"},
+ {"name":"throttle only","n":120,"code":"return [0,0,0]"},
+ {"name":"tap2","n":120,"code":"return [0,i%2==0,0]"},
+ {"name":"wiggle .3s full lock + brake","n":120,"tr":1,"code":"return [Math.floor(i/18)%2?1:-1,0,1]"},
+ {"name":"wiggle .5s full lock brake","n":120,"tr":1,"code":"return [Math.floor(i/30)%2?1:-1,0,1]"},
+ {"name":"wiggle .3s full lock nobrake","n":120,"tr":1,"code":"return [Math.floor(i/18)%2?1:-1,0,0]"},
+ {"name":"brake slide L then straighten","n":120,"tr":1,"code":"return i<40?[1,0,1]:(i<55?[-1,0,0]:[0,1,0])"}
+]

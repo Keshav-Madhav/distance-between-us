@@ -1,0 +1,6 @@
+[{"name":"e0","line":"line_mc.json","vcap":30,"kr":2.2,"db":1.0,"lmin":300,"tl":0.3,"kp":1.0,"ff":1.0,"hyst":0.03,"tapSteer":0.6,"airBrake":true},
+ {"name":"e1","line":"line_mc.json","vcap":30,"kr":2.2,"db":1.0,"lmin":300,"tl":0.3,"kp":1.0,"ff":1.0,"hyst":0.03,"tapSteer":0.6,"airBrake":true,"bt":0.7},
+ {"name":"e2","line":"line_mc.json","vcap":30,"kr":2.2,"db":1.0,"lmin":300,"tl":0.3,"kp":1.0,"ff":1.0,"hyst":0.03,"tapSteer":0.7,"tap3":0.4,"airBrake":true,"bt":0.7},
+ {"name":"e3","line":"line_mc.json","vcap":30,"kr":2.2,"db":1.0,"lmin":300,"tl":0.3,"kp":1.0,"ff":1.0,"hyst":0.03,"tapSteer":0.6,"airBrake":true,"pred":0.1},
+ {"name":"e4","line":"line_mc.json","vcap":30,"kr":2.4,"db":1.0,"lmin":300,"tl":0.3,"kp":1.0,"ff":1.0,"hyst":0.03,"tapSteer":0.7,"tap3":0.4,"airBrake":true,"bt":0.7,"pred":0.1},
+ {"name":"e5","line":"line_mc.json","vcap":30,"kr":2.0,"db":1.0,"lmin":300,"tl":0.25,"kp":1.0,"ff":1.0,"hyst":0.03,"tapSteer":0.7,"tap3":0.4,"airBrake":true,"bt":0.7,"pred":0.1}]

@@ -1,0 +1,4 @@
+[{"line":"line-i1.json","kff":1,"la":0.15,"laMin":100,"strafeK":20,"dodgeThr":0.1,"vlimK":0.9,"vlimT":1.2,"brakeK":1.02},
+ {"line":"line-i1.json","kff":1,"la":0.15,"laMin":100,"strafeK":20,"dodgeThr":0.1,"vlimK":0.8,"vlimT":1.2,"brakeK":1.02},
+ {"line":"line-i1.json","kff":1,"la":0.15,"laMin":100,"strafeK":20,"dodgeThr":0.1,"vlimK":0.7,"vlimT":1.5,"brakeK":1.02},
+ {"line":"line-i1.json","kff":1,"la":0.15,"laMin":100,"strafeK":20,"vlimK":0.8,"vlimT":1.2,"brakeK":1.02}]
