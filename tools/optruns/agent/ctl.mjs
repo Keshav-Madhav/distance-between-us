@@ -30,7 +30,8 @@
 // this many metres of the route), mid (add centreline nodes every `mid` course points between gates —
 // needed with corr, since straight legs leave the corridor), midW 200, midCut, minHold (burner held or
 // released at least this many steps — the bench's human rule needs 6). ROGUE only: strafeTurn (0..1:
-// strafe into the turn while |asked yaw| > turnThr), dodgeTurn (also hold the dodge into the turn), intoSign.
+// strafe into the turn while |asked yaw| > turnThr), dodgeTurn (dodge — REMOVED from the game, ignored), intoSign.
+// slew: max change of steer and strafe per step (the bench's ROGUE-HUMAN 'hands' rule: 0.34; use 0.33).
 // Output line: time, missed, pads collected, maxLat (every step) / maxLat30 (at the bench's 0.5 s
 // samples) metres from the centreline, top Mach, events (hurt/crash/spin), the chosen offsets.
 // Physics notes (MISTRIVER, Nov 2026): the burner kick now recharges (1.5 s off for a full one), so hold
@@ -228,7 +229,9 @@ for (let ci = 0; ci < LIST.length; ci++) {
             strafe = into * prm.strafeTurn
             if (prm.dodgeTurn) fl |= into > 0 ? 16 : 8
           }
-          cc = [steer, strafe, fl]
+          let sv = steer
+          if (prm.slew && steps.length) { const pq = steps[steps.length - 1], sl = prm.slew; sv = Math.max(pq[0] - sl, Math.min(pq[0] + sl, sv)); strafe = Math.max(pq[1] - sl, Math.min(pq[1] + sl, strafe)) }
+          cc = [sv, strafe, fl]
         }
         g.force({ steer: cc[0], strafe: cc[1], boost: !!(cc[2] & 1), burner: !!(cc[2] & 2), brake: !!(cc[2] & 4), dodgeL: !!(cc[2] & 8), dodgeR: !!(cc[2] & 16) })
         steps.push(cc)

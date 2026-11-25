@@ -50,3 +50,11 @@ Controller generalised: tools/optruns/agent/ctl.mjs <course> <params> <out> (pad
 | R3 | ROGUE: strafe + hold dodge INTO the turn whenever |asked yaw| > 0.08 rad/s (ctl strafeTurn/dodgeTurn/turnThr) | **25.517 counted, 0 missed** -> best2.json (best.json 26.483 kept as the DUEL run) |
 | H2 | human-ideal sweeps (padT .5, corr 110-130, kp 2.5, burnNeed .3, lam 5000) | no gain (28.58-29.23); ideal-human stays 28.200 |
 | R4 | turnThr 0.10 | **25.500 counted, 0 missed** -> best2.json (params best2-params.json); turnThr .12 26.6; weaving (sinusoidal yaw + dodge) 26.3-28.9, loses pads |
+
+## Dodge removed from the game
+| # | what | verified result |
+|---|------|-----------------|
+| D1 | best2 params without dodge (strafeTurn only), turnThr .08/.10 | 25.767 counted (rogue); same with minHold 6 + slew .33 -> hands ok |
+| D2 | + hands rule (minHold 6, slew .33), burnNeed 0.3, turnThr .08 | **25.600 counted, 0 missed, hands.ok** -> best-nododge.json AND rogue-human-nododge.json (params best-nododge-params.json) |
+| D3 | burnNeed .25-.4, turnThr .06/.1, constraints off | no gain (25.6-36.6) |
+Removing dodge cost 0.10 s (25.50 -> 25.60); the human-hands limits cost nothing here.
