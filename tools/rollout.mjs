@@ -42,6 +42,7 @@ const res = await p.evaluate(async ([craft, opts, DEC, H, SPEEDW, PASSES, MODE, 
   const base = me.finished ? me.finishTime : null
   g.restore(s0); pd.setState(d0)
   const cands = [{}, { burner: true }, { burner: false }, { latShift: 45 }, { latShift: -45 }, { latShift: 90 }, { latShift: -90 }, { steerBias: 0.15 }, { steerBias: -0.15 }, { steerBias: 0.3 }, { steerBias: -0.3 }, { brake: true }, { noDodge: true }, { burner: true, latShift: 45 }, { burner: true, latShift: -45 }]
+  cands.push({ calm: true }, { calm: true, burner: true }, { calm: true, burner: false })
   if (MODE === 'rogue') cands.push({ latShift: 200 }, { latShift: -200 }, { latShift: 400 }, { latShift: -400 }, { burner: true, latShift: 200 }, { burner: true, latShift: -200 })
   const ckey = (o) => JSON.stringify(Object.keys(o).sort().map((k) => [k, o[k]]))
   const seedDec = seed ? seed.decisions.map((d) => Math.max(0, cands.findIndex((o) => ckey(o) === ckey(seed.cands[d])))) : null

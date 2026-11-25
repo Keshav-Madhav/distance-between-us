@@ -52,7 +52,7 @@ window.makePD = function (line, craft, opts) {
   g.force(ctl)
   let steps = 0, burnSteps = 0, dodges = 0, crashes = 0, wasCrash = false
   const crashLog = []
-  let lastTarget = 0, stuckSteps = 0
+  let lastTarget = 0, stuckSteps = 0, lastSteer = 0
   function control(ov = {}) {
     const v = Math.max(P.speed, 30), i = me.idx
     const [tx, tz] = tan(i)
@@ -142,12 +142,16 @@ window.makePD = function (line, craft, opts) {
     ctl.strafe = Math.max(-1, Math.min(1, e / opts.strafeK - P.side / 140))
     const tap = danger > 0.4 ? opts.tapNear : opts.tapFar
     ctl.dodgeL = e < -tap && P.side > -180; ctl.dodgeR = e > tap && P.side < 180
+    // calm: the same aim with less fuss — the steer eased toward its new value instead of snapping, small
+    // sideways corrections left to drift out, no dodge taps (each wobble of the nose costs speed).
+    if (ov.calm) { ctl.steer = lastSteer + (ctl.steer - lastSteer) * 0.25; if (Math.abs(e) < 25) ctl.strafe = 0; ctl.dodgeL = ctl.dodgeR = false }
     if (ov.steerBias) ctl.steer = Math.max(-1, Math.min(1, ctl.steer + ov.steerBias))
     if (ov.burner !== undefined) ctl.burner = ov.burner
     if (ov.brake) { ctl.brake = true; ctl.boost = false; ctl.burner = false }
     if (ov.noDodge) { ctl.dodgeL = false; ctl.dodgeR = false }
     if (ctl.dodgeL || ctl.dodgeR) dodges++
+    lastSteer = ctl.steer
     if (ctl.burner) burnSteps++
   }
-  return { control, ctl, me, P, sweptCount, rocks, state: () => ({ lastTarget, stuckSteps, steps, burnSteps, dodges, crashes, wasCrash }), setState: (s) => { ({ lastTarget, stuckSteps, steps, burnSteps, dodges, crashes, wasCrash } = s) } }
+  return { control, ctl, me, P, sweptCount, rocks, state: () => ({ lastTarget, stuckSteps, steps, burnSteps, dodges, crashes, wasCrash, lastSteer }), setState: (s) => { ({ lastTarget, stuckSteps, steps, burnSteps, dodges, crashes, wasCrash, lastSteer } = s); lastSteer ??= 0 } }
 }
