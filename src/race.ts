@@ -40,7 +40,12 @@ export interface Racer {
   respawnT: number
   /** Debug: the lane the AI last aimed at. */
   aimLane?: number
+  /** DUEL at IMPOSSIBLE: ROGUE — this racer replays the no-rules optimal run instead of driving. */
+  replay?: Float32Array | null
 }
+
+/** ROGUE's recording: from the start (race clock 0), every 2 sim steps: x, y, z, heading, bank, pitch. */
+export const ROGUE_N = 6, ROGUE_DT = 2 / 60
 
 export type RaceState = 'grid' | 'racing' | 'done'
 
@@ -94,6 +99,10 @@ export class Race {
     const keep = sub === 'race' ? this.all : sub === 'duel' ? [this.all[0], best] : [this.all[0]]
     this.racers.length = 0
     this.racers.push(...keep)
+    // ROGUE: DUEL at IMPOSSIBLE, on a course with a ROGUE run — the rival is that run, replayed (a phantom:
+    // it passes through you, and nothing you do touches it).
+    for (const r of this.all) if (r.replay) { r.replay = null; r.p.noCollide = false; r.name = this.rogueWas }
+    if (sub === 'duel' && this.aiBoost >= 4 && this.rogue && best) { this.rogueWas = best.name; best.name = 'ROGUE'; best.replay = this.rogue; best.p.noCollide = true }
     // The others out of the world (not simulated, not drawn — far away).
     for (const r of this.all) if (!keep.includes(r)) { r.p.reset(1e7 + r.skill * 1e4, 1e7, 0, 0); r.finished = false }
   }
@@ -103,6 +112,10 @@ export class Race {
   /** The player's rivals setting (Settings → RIVALS), added to every course's AI level: NORMAL 0 is the
    *  calibrated field; HARD and up for someone who has played a lot. */
   aiBoost = 0
+  /** This course's ROGUE run (public/lines/<course>-rogue.json), if it has one: DUEL's IMPOSSIBLE rival. */
+  rogue: Float32Array | null = null
+  /** The rival's own name, while it is ROGUE. */
+  private rogueWas = ''
   clock = 0
   /** Seconds left on the countdown (3 … 0). */
   countdown = 0
@@ -201,7 +214,7 @@ export class Race {
       const n = Math.ceil(this.countdown)
       if (n !== this.lastCount && n >= 1 && n <= 3) { this.ev.countdown(n); this.lastCount = n }
       if (playerControls.boost) { if (this.boostHeldSince < 0) this.boostHeldSince = this.countdown } else this.boostHeldSince = -1
-      for (const r of this.racers) r.p.step(dt, r.ai ? r.controls : playerControls, world, true)
+      for (const r of this.racers) if (r.replay) this.playback(r, 0); else r.p.step(dt, r.ai ? r.controls : playerControls, world, true)
       const sorted0 = [...this.racers].sort((a, b) => this.progress(b) - this.progress(a))
       sorted0.forEach((r, i) => (r.place = i + 1))
       if (this.countdown <= 0) {
@@ -220,6 +233,7 @@ export class Race {
     }
     this.clock += dt
     for (const r of this.racers) {
+      if (r.replay) { if (!r.finished) { this.playback(r, this.clock); r.idx = this.course.nearest(r.p.pos.x, r.p.pos.z, r.idx); this.gates(r) } continue }
       if (r.ai) this.drive(r, dt)
       if (r.respawnT > 0) {
         r.respawnT -= dt
@@ -260,7 +274,7 @@ export class Race {
     }
     for (let i = 0; i < this.racers.length; i++)
       for (let j = i + 1; j < this.racers.length; j++)
-        bump(this.racers[i].p, this.racers[j].p, (a, b, sev, x, y, z) => this.ev.bumped(this.find(a), this.find(b), sev, x, y, z))
+        if (!this.racers[i].replay && !this.racers[j].replay) bump(this.racers[i].p, this.racers[j].p, (a, b, sev, x, y, z) => this.ev.bumped(this.find(a), this.find(b), sev, x, y, z))
     // Places (a reused array: no garbage at 60 Hz).
     this.order.length = 0
     for (const r of this.racers) { r.prog = this.progress(r); this.order.push(r) }
@@ -385,6 +399,21 @@ export class Race {
   /** Tests (tools/optline.mjs): your autopilot driven by a searched policy — the lane at every `step`
    *  points of the course, its level (how hard it corners and lights the burner) and a burner factor. */
   playerPolicy: { lane: Float32Array; step: number; L: number; burn: number } | null = null
+  /** ROGUE at race time t: placed from its recording (between two samples), its speed from the motion. */
+  private playback(r: Racer, t: number): void {
+    const R = r.replay!, n = R.length / ROGUE_N, f = Math.min(n - 1, t / ROGUE_DT), i0 = Math.floor(f), i1 = Math.min(n - 1, i0 + 1), u = f - i0
+    const a = i0 * ROGUE_N, b = i1 * ROGUE_N, L = (k: number) => R[a + k] + (R[b + k] - R[a + k]) * u
+    const p = r.p
+    p.prev.copy(p.pos); p.prevHeading = p.heading; p.prevBank = p.bank; p.prevPitch = p.pitch
+    p.pos.set(L(0), L(1), L(2))
+    // (Headings wrap: the short way round between the two samples.)
+    let dh = R[b + 3] - R[a + 3]; while (dh > Math.PI) dh -= 2 * Math.PI; while (dh < -Math.PI) dh += 2 * Math.PI
+    p.heading = R[a + 3] + dh * u; p.bank = L(4); p.pitch = L(5)
+    const sp = Math.hypot(R[b] - R[a], R[b + 2] - R[a + 2]) / ROGUE_DT
+    p.speed = i1 > i0 ? sp : 0
+    p.vel.set(Math.sin(p.heading) * p.speed, 0, Math.cos(p.heading) * p.speed)
+  }
+
   drive(r: Racer, dt: number): void {
     const p = r.p
     const c = this.course

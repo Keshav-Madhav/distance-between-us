@@ -35,10 +35,13 @@ const out = await p.evaluate(async ([craft, opts, cands, decisions, DEC]) => {
     const a = pd.ctl.brake ? 0 : pd.ctl.burner ? 3 : pd.ctl.boost ? 2 : 1
     S.push([+P.pos.x.toFixed(1), +(P.pos.y - P.agl).toFixed(1), +P.pos.z.toFixed(1), +(P.speed / 343).toFixed(2), a, P.airborne ? 1 : 0, i, +lat.toFixed(1)])
   }
-  const step = (ov) => { pd.control(ov); g.fastSim(STEP); if (st++ % 3 === 0) rec() }
+  // (ROGUE's recording for DUEL: every 2 sim steps of race time, from the start — src/race.ts playback.)
+  const pose = []
+  const recPose = () => { if (g.race.state !== 'racing' || me.finished) return; const k = Math.round(g.race.clock / (2 / 60)); if (k * 6 !== pose.length) return; pose.push(+P.pos.x.toFixed(2), +P.pos.y.toFixed(2), +P.pos.z.toFixed(2), +P.heading.toFixed(4), +P.bank.toFixed(4), +P.pitch.toFixed(4)) }
+  const step = (ov) => { pd.control(ov); g.fastSim(STEP); recPose(); if (st++ % 3 === 0) rec() }
   if (decisions && decisions.length) { for (const d of decisions) { for (let j = 0; j < DEC && !me.finished; j++) step(cands[d]); await new Promise((r) => setTimeout(r, 0)) } }
   else while (!me.finished && st < 60 * 300) { step({}); if (st % 900 === 0) await new Promise((r) => setTimeout(r, 0)) }
-  return { time: me.finished ? me.finishTime : null, samples: S, gateHalf: c.gateHalf, n: c.n, px: Array.from(c.px), pz: Array.from(c.pz), startI: c.startI, finishI: c.finishI, gates: c.cps.map((q) => q.i) }
+  return { pose, time: me.finished ? me.finishTime : null, samples: S, gateHalf: c.gateHalf, n: c.n, px: Array.from(c.px), pz: Array.from(c.pz), startI: c.startI, finishI: c.finishI, gates: c.cps.map((q) => q.i) }
 }, [craft, opts, cands, run.decisions, run.DEC ?? 30])
 const WORN = 260, CORR = out.gateHalf + 60
 // Stretches outside each bound: contiguous samples, with where (km along), how long, how far out, which side.
@@ -58,7 +61,7 @@ const tag = MODE === 'rogue' ? '-rogue' : ''
 fs.writeFileSync(`tools/optruns/${course}${tag}-line.json`, JSON.stringify({ course, time: out.time, fields: ['x', 'groundY', 'z', 'mach', 'action(0 brake,1 lift,2 throttle,3 burner)', 'air', 'courseIndex', 'lateral'], samples: out.samples }))
 // The game's copy: x, ground y, z, action, air, course index — whole numbers (the ribbon is drawn 12 m wide).
 fs.mkdirSync('public/lines', { recursive: true })
-fs.writeFileSync(`public/lines/${course}${tag}.json`, JSON.stringify({ time: out.time, s: out.samples.flatMap((q) => [Math.round(q[0]), Math.round(q[1]), Math.round(q[2]), q[4], q[5], q[6]]) }))
+fs.writeFileSync(`public/lines/${course}${tag}.json`, JSON.stringify({ time: out.time, ...(MODE === 'rogue' ? { pose: out.pose } : {}), s: out.samples.flatMap((q) => [Math.round(q[0]), Math.round(q[1]), Math.round(q[2]), q[4], q[5], q[6]]) }))
 console.log(`${course}: line from the ${run.time?.toFixed?.(2) ?? 'driver'} s run → replayed ${out.time?.toFixed(2)} s, ${out.samples.length} samples`)
 console.log(`  outside the worn surface (±${WORN} m): ${share(WORN)}% of the run, ${worn.length} stretches`, JSON.stringify(worn.slice(0, 12)))
 console.log(`  outside the corridor (±${CORR} m): ${share(CORR)}% of the run, ${corr.length} stretches`, JSON.stringify(corr.slice(0, 12)))

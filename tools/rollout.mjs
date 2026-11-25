@@ -15,7 +15,8 @@ import { chromium } from 'playwright-core'
 import fs from 'node:fs'
 const port = process.argv[2] ?? '4491', course = process.argv[3] ?? 'sprint'
 const DEC = +(process.env.DEC ?? 30), H = +(process.env.H ?? 180), SPEEDW = +(process.env.SPEEDW ?? 1.0), PASSES = +(process.env.PASSES ?? 3)
-const MODE = process.env.MODE ?? 'gates', BOUND = +(process.env.BOUND ?? 260)
+// TOL: how far the craft's centre may stray past the edge and still count (its wings still over the track).
+const MODE = process.env.MODE ?? 'gates', BOUND = +(process.env.BOUND ?? 260), TOL = +(process.env.TOL ?? 10), OUTW = +(process.env.OUTW ?? 20)
 const V1 = [{}, { burner: true }, { burner: false }, { latShift: 45 }, { latShift: -45 }, { steerBias: 0.15 }, { steerBias: -0.15 }, { brake: true }, { noDodge: true }]
 let seed = null
 if (process.env.SEED && fs.existsSync(process.env.SEED)) { const r = JSON.parse(fs.readFileSync(process.env.SEED, 'utf8')); if (r.decisions?.length) seed = { cands: r.cands ?? V1, decisions: r.decisions } }
@@ -27,7 +28,7 @@ await p.goto(`http://localhost:${port}/?course=${course}&fixed=1`)
 await p.waitForFunction('window.__g && window.__g.ready', null, { timeout: 120000 })
 await p.evaluate(() => { localStorage.setItem('dbu-sub', 'trial'); document.querySelector('#submodes button[data-sub=trial]').click() })
 await p.addScriptTag({ content: fs.readFileSync('tools/pdcore.js', 'utf8') })
-const res = await p.evaluate(async ([craft, opts, DEC, H, SPEEDW, PASSES, MODE, BOUND, seed]) => {
+const res = await p.evaluate(async ([craft, opts, DEC, H, SPEEDW, PASSES, MODE, BOUND, seed, TOL, OUTW]) => {
   const g = window.__g, STEP = 1 / 60
   const pd = window.makePD(null, craft, MODE === 'bounded' ? { ...opts, bound: BOUND } : opts)
   const me = pd.me, P = pd.P, c = g.course
@@ -46,7 +47,6 @@ const res = await p.evaluate(async ([craft, opts, DEC, H, SPEEDW, PASSES, MODE, 
   // skipping one look like free distance: a branch that misses a gate is ruled out like a crash.)
   const missedNow = () => g.snap().missedCount
   // (rogue: a miss is just its own speed cost, already in the physics; bounded: each metre-step outside costs.)
-  const OUTW = 3
   const score = (crashed, missed, out) => {
     if (MODE === 'rogue') missed = false
     if (me.finished) return 1e12 - me.finishTime * 1000 - (missed ? 1e9 : 0) - out * OUTW * 10
@@ -83,7 +83,7 @@ const res = await p.evaluate(async ([craft, opts, DEC, H, SPEEDW, PASSES, MODE, 
       await new Promise((r) => setTimeout(r, 0))
     }
     // (A pass counts only if it kept the rules: no gate missed unless rogue; never off the track if bounded.)
-    const ok = me.finished && (MODE === 'rogue' || missedNow() === 0) && (MODE !== 'bounded' || runOut === 0)
+    const ok = me.finished && (MODE === 'rogue' || missedNow() === 0) && (MODE !== 'bounded' || runOut <= TOL)
     const t = ok ? me.finishTime : Infinity
     passLog.push({ t: me.finished ? +me.finishTime.toFixed(3) : null, ok, missed: missedNow(), maxOut: Math.round(runOut) })
     if (t < bestRun.time) bestRun = { time: t, decisions, pass }
@@ -95,8 +95,8 @@ const res = await p.evaluate(async ([craft, opts, DEC, H, SPEEDW, PASSES, MODE, 
   if (decisions.length) { let rs = 0; for (const d of decisions) { for (let j = 0; j < DEC && !me.finished; j++) { pd.control(cands[d]); g.fastSim(STEP); rs++ } if (rs % 900 < DEC) await new Promise((r) => setTimeout(r, 0)) } }
   else { let n2 = 0; while (!me.finished && n2 < 60 * 300) { pd.control({}); g.fastSim(STEP); n2++ } }
   const replay = me.finished ? me.finishTime : null
-  return { mode: MODE, bound: BOUND, cands, decisions, passes: passLog, bestPass: bestRun.pass, missedGates: missedNow(), replay, base, time: bestRun.time === Infinity ? null : bestRun.time, crashes: pd.state().crashes, picks: Object.fromEntries(cands.map((c, k) => [JSON.stringify(c), picks[k]])) }
-}, [craft, opts, DEC, H, SPEEDW, PASSES, MODE, BOUND, seed])
+  return { mode: MODE, bound: BOUND, tol: TOL, cands, decisions, passes: passLog, bestPass: bestRun.pass, missedGates: missedNow(), replay, base, time: bestRun.time === Infinity ? null : bestRun.time, crashes: pd.state().crashes, picks: Object.fromEntries(cands.map((c, k) => [JSON.stringify(c), picks[k]])) }
+}, [craft, opts, DEC, H, SPEEDW, PASSES, MODE, BOUND, seed, TOL, OUTW])
 fs.writeFileSync(`tools/optruns/${course}-rollout${MODE === 'gates' ? '' : '-' + MODE}.json`, JSON.stringify({ course, DEC, H, SPEEDW, PASSES, ...res }))
 const { decisions, ...show } = res
 console.log(`${course} rollout ${MODE} (DEC ${DEC}, H ${H}): ${JSON.stringify(show)}`)

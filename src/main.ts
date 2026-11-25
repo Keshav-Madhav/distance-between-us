@@ -572,7 +572,6 @@ scene.add(scatter.group)
 scene.add(course.group)
 /** RACING LINE (settings): the fastest line found for this course, on the ground ahead. */
 const raceLine = new RaceLine()
-const lineFile = () => course.def.id + (settings.line === 'rogue' ? '-rogue' : '')
 scene.add(raceLine.mesh)
 const env = world.makeEnv(renderer)
 bootMark('heroes+env')
@@ -631,7 +630,7 @@ let spectate = false
 /** Graphics settings (the Esc panel). */
 // (Declared up here: restoring saved settings at boot runs their handlers before the HUNT code below.)
 let invertPitch = false
-const settings = { ghost: true, line: 'off' as 'off' | 'ideal' | 'rogue', shadows: !params.has('noshadow'), fps: 'auto' as 'auto' | '60' | '120' | 'max', map: true, scale: 1, dist: 20, part: 1, bloom: true, blur: 1, sharp: 0.4, grain: true, cloud: true }
+const settings = { ghost: true, line: false, shadows: !params.has('noshadow'), fps: 'auto' as 'auto' | '60' | '120' | 'max', map: true, scale: 1, dist: 20, part: 1, bloom: true, blur: 1, sharp: 0.4, grain: true, cloud: true }
 let crashBreak = 0
 const rivalVoices: import('./audio').RivalVoice[] = []
 const camRight = new THREE.Vector3()
@@ -1800,7 +1799,18 @@ for (const b of $('#title').querySelectorAll<HTMLButtonElement>('#submodes butto
   for (const b of btns) b.onclick = () => { pick(b.dataset.v!); try { localStorage.setItem('dbu-rivals', b.dataset.v!) } catch { /* blocked */ } }
   pick(v)
 }
-function syncRivals(): void { for (const e of $('#title').querySelectorAll<HTMLElement>('.rivals-only')) e.style.display = subMode === 'trial' ? 'none' : '' }
+function syncRivals(): void { for (const e of $('#title').querySelectorAll<HTMLElement>('.rivals-only')) e.style.display = subMode === 'trial' ? 'none' : ''; primeRogue() }
+/** DUEL at IMPOSSIBLE races ROGUE — the no-rules optimal run (tools/rollout.mjs MODE=rogue), replayed —
+ *  on courses that have one: fetched ahead, when DUEL is picked (it only counts if here by the start). */
+let rogueFor = ''
+function primeRogue(): void {
+  if (subMode !== 'duel' || rogueFor === course.def.id) return
+  const id = rogueFor = course.def.id
+  race.rogue = null
+  void fetch(`${import.meta.env.BASE_URL}lines/${id}-rogue.json`).then((r) => (r.ok ? r.json() : null)).then((j: { pose?: number[] } | null) => {
+    if (rogueFor === id && j?.pose && j.pose.length >= 12 && j.pose.every(Number.isFinite)) race.rogue = new Float32Array(j.pose)
+  }).catch(() => { /* none: the usual IMPOSSIBLE rival */ })
+}
 syncRivals()
 /** Your best run's ghost on this course (every race mode): every other sim step (x, y, z, heading, bank, pitch). */
 const GHOST_N = 6
@@ -1874,6 +1884,7 @@ function startRace(): void {
   overlay = false
   combat.enabled = false
   combat.reset()
+  primeRogue()
   race.setMode(subMode)
   // The racers left out of this race: their crafts hidden (nothing draws them any more).
   for (const r of race.all) if (!race.racers.includes(r)) { const v = visuals.get(r.p)!; v.craft.root.visible = false; for (const t of v.trail) t.reset() }
@@ -1881,7 +1892,7 @@ function startRace(): void {
   resetVisuals()
   ghostRec = []; ghostStep = 0; inputRec = []; replayAt = 0
   ghostPlay = settings.ghost ? loadGhost() : null
-  if (settings.line !== 'off') raceLine.load(lineFile())
+  if (settings.line) raceLine.load(course.def.id)
   { const v = visuals.get(ghostP)!; v.craft.root.visible = false; for (const t of v.trail) t.reset() }
   for (const r of race.racers) visuals.get(r.p)!.lastDust.copy(r.p.pos)
   cam.snap(player.heading)
@@ -2559,12 +2570,11 @@ $<HTMLSelectElement>('#as').onchange = (e) => { player.assist = +(e.target as HT
 $<HTMLInputElement>('#ghoston').onchange = (e) => { settings.ghost = (e.target as HTMLInputElement).checked }
 // (The box's own class is the switch: the saved settings are restored before the frame code below is set up.)
 {
-  // OFF, IDEAL (the fastest line that never leaves the track and takes every gate) or ROGUE (the fastest
-  // finish with no rules: cuts and skipped gates wherever they pay).
-  const el = $<HTMLSelectElement>('#lineon')
-  try { const v = localStorage.getItem('dbu-line'); if (v === 'ideal' || v === 'rogue') el.value = v } catch { /* blocked */ }
-  settings.line = el.value as typeof settings.line
-  el.onchange = () => { settings.line = el.value as typeof settings.line; if (settings.line !== 'off') raceLine.load(lineFile()); try { localStorage.setItem('dbu-line', settings.line) } catch { /* blocked */ } }
+  // The fastest line that keeps to the track and takes every gate (tools/rollout.mjs MODE=bounded).
+  const el = $<HTMLInputElement>('#lineon')
+  try { el.checked = localStorage.getItem('dbu-line') === '1' } catch { /* blocked */ }
+  settings.line = el.checked
+  el.onchange = () => { settings.line = el.checked; if (el.checked) raceLine.load(course.def.id); try { localStorage.setItem('dbu-line', el.checked ? '1' : '0') } catch { /* blocked */ } }
 }
 $<HTMLInputElement>('#fpson').onchange = (e) => { $('#fpsbox').classList.toggle('on', (e.target as HTMLInputElement).checked) }
 $<HTMLInputElement>('#fov').oninput = (e) => { fovMax = +(e.target as HTMLInputElement).value }
@@ -3514,7 +3524,7 @@ function frame(now: number): void {
   renderMap()
   pm('map')
   fpsBox(lastMs, realDt)
-  raceLine.update(settings.line !== 'off' && mode === 'race' && !overlay, race.racers[0].idx, time)
+  raceLine.update(settings.line && mode === 'race' && !overlay, race.racers[0].idx, time)
   hudT -= realDt
   updateHud(realDt, hudT <= 0)
   pm('hud')
