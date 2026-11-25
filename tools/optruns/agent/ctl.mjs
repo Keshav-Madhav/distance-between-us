@@ -28,7 +28,9 @@
 // arc may cut at a pad node), padT (from padT·v metres before a planned pad: burner off, aim straight at
 // the pad — this is what actually collects pads; .15-.5), padAimMin 120, burnErr (burn only while within
 // this many metres of the route), mid (add centreline nodes every `mid` course points between gates —
-// needed with corr, since straight legs leave the corridor), midW 200, midCut.
+// needed with corr, since straight legs leave the corridor), midW 200, midCut, minHold (burner held or
+// released at least this many steps — the bench's human rule needs 6). ROGUE only: strafeTurn (0..1:
+// strafe into the turn while |asked yaw| > turnThr), dodgeTurn (also hold the dodge into the turn), intoSign.
 // Output line: time, missed, pads collected, maxLat (every step) / maxLat30 (at the bench's 0.5 s
 // samples) metres from the centreline, top Mach, events (hurt/crash/spin), the chosen offsets.
 // Physics notes (MISTRIVER, Nov 2026): the burner kick now recharges (1.5 s off for a full one), so hold
@@ -192,7 +194,7 @@ for (let ci = 0; ci < LIST.length; ci++) {
       g.hold(true); g.replayWith([0, 0, 1]); g.skipCountdown(); g.hold(true)
       const me = race.racers[0]
       const steps = [], log = [], evs = []
-      let st = 0, tapPh = 0, wasCrash = false, wasSpin = false, lastHull = 100, maxLat = 0, maxLat30 = 0, pads = 0
+      let lastBurn = false, burnChg = -99; let st = 0, tapPh = 0, wasCrash = false, wasSpin = false, lastHull = 100, maxLat = 0, maxLat30 = 0, pads = 0
       const op = race.ev.pad; race.ev.pad = (r) => { if (r === me) pads++; op && op.call(race.ev, r) }
       while (st < 60 * 90 && !me.finished) {
         let cc
@@ -209,18 +211,26 @@ for (let ci = 0; ci < LIST.length; ci++) {
           let tgt = at(s + L), padNear = false
           if (prm.padT) for (const [sp, pp] of padS) { const d = sp - s; if (d > 0 && d < v * prm.padT) { padNear = true; if (d > (prm.padAimMin ?? 120)) tgt = pp; break } }
           const err = wrap(Math.atan2(tgt[0] - ppx, tgt[1] - ppz) - vh)
-          const yawD = v * Math.sin(err) / L * kp
+          let yawD = v * Math.sin(err) / L * kp
+          if (prm.weave && m > (prm.weaveM ?? 0)) yawD += prm.weave * Math.sin(2 * Math.PI * st / 60 / (prm.weaveT ?? 1))
           const tm = Math.max(0.05, P.turnMax / (P.burning ? 0.1 : 1))
           const steer = Math.max(-1, Math.min(1, -yawD / tm))
           const need = Math.abs(yawD) / tm
           let burn = false
           let pErr = 0; if (prm.burnErr) { const q = at(proj(P.pos.x, P.pos.z)); pErr = Math.hypot(q[0] - P.pos.x, q[1] - P.pos.z) }
           if (m < vmax && !padNear && need < (prm.burnNeed ?? 0.5) && (!prm.burnErr || pErr < prm.burnErr)) { burn = (tapPh % tap) === 0; tapPh++ } else tapPh = 0
+          if (prm.minHold) { if (burn !== lastBurn) { if (st - burnChg < prm.minHold) burn = lastBurn; else { burnChg = st; lastBurn = burn } } }
           let fl = 1 | (burn ? 2 : 0)
           if (prm.brakeOver != null && m > vmax + prm.brakeOver) fl = 4
-          cc = [steer, 0, fl]
+          let strafe = 0
+          if (prm.strafeTurn && Math.abs(yawD) > (prm.turnThr ?? 0.05)) {
+            const into = -Math.sign(yawD) * (prm.intoSign ?? 1) // +: along the craft's right vector
+            strafe = into * prm.strafeTurn
+            if (prm.dodgeTurn) fl |= into > 0 ? 16 : 8
+          }
+          cc = [steer, strafe, fl]
         }
-        g.force({ steer: cc[0], strafe: cc[1], boost: !!(cc[2] & 1), burner: !!(cc[2] & 2), brake: !!(cc[2] & 4), dodgeL: false, dodgeR: false })
+        g.force({ steer: cc[0], strafe: cc[1], boost: !!(cc[2] & 1), burner: !!(cc[2] & 2), brake: !!(cc[2] & 4), dodgeL: !!(cc[2] & 8), dodgeR: !!(cc[2] & 16) })
         steps.push(cc)
         g.fastSim(1 / 60); st++
         // the bench's lateral (signed metres from the centreline at the racer's index)

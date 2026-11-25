@@ -46,3 +46,7 @@ Controller generalised: tools/optruns/agent/ctl.mjs <course> <params> <out> (pad
 | N8 | pad approach: from padT·v metres before a planned pad, burner off and aim straight at the pad point (padT .5) | **26.483 counted, 0 missed, 9 pads** -> best.json (params best-params.json) |
 | I3 | ideal + pad approach (padT .3): 11/11 pads but strays to 345 m | 26.62 (rogue-valid only) |
 | I4 | ideal: corr 180, midW 160, W 200, padT .15 | **28.083 counted, 0 missed, trace max |lat| 226 m** -> ideal.json (between 0.5 s samples it reached 296 m; ideal-strict-candidate.json = 28.417 in the driver, <=265 m every step, not bench-verified) |
+| H1 | HUMAN ideal: burner min-hold 6 steps (ctl minHold), corr 120, padT .3 | **28.200 counted, 0 missed, human ok, every-step max |lat| 220 m** -> ideal-human.json |
+| R3 | ROGUE: strafe + hold dodge INTO the turn whenever |asked yaw| > 0.08 rad/s (ctl strafeTurn/dodgeTurn/turnThr) | **25.517 counted, 0 missed** -> best2.json (best.json 26.483 kept as the DUEL run) |
+| H2 | human-ideal sweeps (padT .5, corr 110-130, kp 2.5, burnNeed .3, lam 5000) | no gain (28.58-29.23); ideal-human stays 28.200 |
+| R4 | turnThr 0.10 | **25.500 counted, 0 missed** -> best2.json (params best2-params.json); turnThr .12 26.6; weaving (sinusoidal yaw + dodge) 26.3-28.9, loses pads |
