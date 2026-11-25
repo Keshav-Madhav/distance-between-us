@@ -43,3 +43,16 @@ Where time remains: the spires the craft keeps hitting (45552, 88130, 136657) â€
 while burning (10% steering) or after pad approaches and jumps; a planner that keeps a larger hard clearance from big
 spires (hardBig 40 had no path with corr 220; needs per-spire choice of side) would make the fast dodge settings
 reliable. ROGUE never cut S-bends wider than ~280 m; a corridor-free plan with dodge (corr 300 gave 47.6 with a miss) is untested at scale.
+
+## Dodge removed (game change): redo without dodge
+ctl: `noDodge` (never sets 8/16), `slew` (steer/strafe change per step capped, 0.33) + `minHold` 6 for the ROGUE-HUMAN hands rule.
+| # | what | result |
+|---|------|--------|
+| n1 | 41.7 config, dodge off | 45.967 counted (strafe-only), hands version (slew .33, minHold 6) 46.05 hands ok |
+| n2 | random perturbations | **45.433 counted** (kp 1.82, la .265, padT .26, burnNeed .267) -> best-nododge.json |
+| n3/n4 | new crash spires (-4851,58565), (-1218,97452) inflated; hands variants | **45.533 counted, hands ok** (kp 2.0) -> rogue-human-nododge.json |
+| n5/n6 | random perturbations, pad window/aim, vmax cap, small-rock margin | best 45.533 again; no gain |
+
+Final (bench-verified): best-nododge.json **45.433 counted** (hands not ok); rogue-human-nododge.json **45.533 counted, hands ok**.
+Removing dodge cost 3.7 s on ROGUE (41.717 -> 45.433); top Mach 15.6 -> 14.1. Strafe-only still beats no-strafe (~49.2) by ~3.8 s.
+IDEAL unchanged: ideal.json 49.667 (human ok).

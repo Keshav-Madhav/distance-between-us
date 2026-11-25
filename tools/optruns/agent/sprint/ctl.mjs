@@ -237,7 +237,10 @@ for (let ci = 0; ci < LIST.length; ci++) {
           if (prm.brakeOver != null && m > vmax + prm.brakeOver) fl = 4
           let sf = 0
           if (prm.strafe && !(prm.noStrafeG && prm.noStrafeG.includes(me.next)) && Math.abs(yawD) > (prm.dodgeThr ?? 0.05)) { sf = yawD > 0 ? -1 : 1; if (prm.dodge) fl |= sf > 0 ? 16 : 8 }
-          cc = [steer, sf, fl]
+          if (prm.noDodge) fl &= ~24
+          let st0 = steer
+          if (prm.slew && steps.length) { const pv = steps[steps.length - 1]; st0 = Math.max(pv[0] - prm.slew, Math.min(pv[0] + prm.slew, st0)); sf = Math.max(pv[1] - prm.slew, Math.min(pv[1] + prm.slew, sf)) }
+          cc = [st0, sf, fl]
         }
         g.force({ steer: cc[0], strafe: cc[1], boost: !!(cc[2] & 1), burner: !!(cc[2] & 2), brake: !!(cc[2] & 4), dodgeL: !!(cc[2] & 8), dodgeR: !!(cc[2] & 16) })
         steps.push(cc)
