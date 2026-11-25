@@ -706,6 +706,11 @@ const race = new Race(course, player, {
     cam.punch -= 8
     input.rumble(1, 0.6, 400)
   },
+  missedFinish(r) {
+    if (r.p !== player) return
+    warn('MISSED THE FINISH', 'BACK THROUGH THE GATE · R TO RETURN')
+    sound.missed()
+  },
   countdown(n) {
     sound.start()
     sound.beep(false)

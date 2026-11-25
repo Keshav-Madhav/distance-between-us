@@ -82,6 +82,8 @@ export interface RaceEvents {
   go(perfect: boolean): void
   /** `wide`: through the gate's line but outside its towers (it counts, at a price); else a gate skipped. */
   missedGate?(r: Racer, wide: boolean): void
+  /** Crossed the finish line beside the finish gate: it does not count — back through it. */
+  missedFinish?(r: Racer): void
 }
 
 
@@ -302,6 +304,9 @@ export class Race {
       if (lat > 2500) continue
       // Through the gate, beside it, or past it having skipped one: every skipped or missed gate costs speed (60% kept).
       const wide = lat > this.course.gateHalf + 15
+      // The finish is the one gate that must be flown through, by everyone (ROGUE too): beside it, or
+      // reached by skipping the one before it wide, nothing counts — turn back through it (or R).
+      if (k === this.K - 1 && wide) { if (ahead === 0) this.ev.missedFinish?.(r); continue }
       const missed = wide || ahead === 1
       const count = ahead + 1
       for (let q = 0; q < count; q++) {
@@ -330,7 +335,7 @@ export class Race {
     }
     // An AI racer well past its next gate without crossing it (thrown kilometres wide, or two gates
     // skipped in one tick) counted it as missed; before, it raced on uncounted for the rest of the race.
-    while (r.ai && r.next < this.K && r.idx > this.course.cps[r.next].i + 40 && r.idx < this.course.cps[r.next].i + 200) {
+    while (r.ai && r.next < this.K - 1 && r.idx > this.course.cps[r.next].i + 40 && r.idx < this.course.cps[r.next].i + 200) {
       r.passed++
       r.next++
       if (r.passed === 1) r.lapStart = this.clock + r.penalty

@@ -126,6 +126,8 @@ export class Player {
   onLaunch: ((vy: number) => void) | null = null
   onBoostStart: (() => void) | null = null
   private wasBurn = false
+  /** Seconds since the burner last burned (its start kick refills over 1.5 s of that). */
+  private burnOff = 9
   /** The afterburner is lit this step (steering mostly locked). */
   burning = false
   /** What the stick asked for (the HUD flags steering against a lit afterburner). */
@@ -175,6 +177,7 @@ export class Player {
     this.agl = 0; this.boost = 0; this.brake = 0; this.accel = 0; this.sinceHurt = 10; this.steerIn = 0
     this.gripLoad = 0; this.wake = 0; this.turnMax = 1; this.steerWant = 0; this.dodgeCool = 0
     this.drift = 0
+    this.burnOff = 9; this.wasBurn = false
     this.bankV = this.pitchV = 0
     this.bank = this.pitch = this.prevBank = this.prevPitch = 0
     this.hull = 100
@@ -241,10 +244,14 @@ export class Player {
     // 'restarted' at the boom and kicked again.)
     const burning = !!c.burner
     const thrust = burning && this.barrier !== 'silence'
+    // The start kick is a charge: full after 1.5 s off the burner, a fraction of it sooner. (It was full on
+    // every press: tapping the burner on and off stacked +Mach 0.3 kicks every few steps — the optimiser
+    // reached Mach 9 in 2 s that way, where holding it makes Mach 5; a fast hand on Shift got some too.)
     if (burning && !this.wasBurn) {
-      this.speed += S.boostKick
+      this.speed += S.boostKick * Math.min(1, this.burnOff / 1.5)
       this.onBoostStart?.()
     }
+    this.burnOff = burning ? 0 : this.burnOff + dt
     this.wasBurn = burning
     this.burning = burning
     const boosting = !!c.boost || burning
@@ -371,12 +378,16 @@ export class Player {
       const track = H.yawDamp * 1.4 * (this.airborne ? 0.6 : 1) * (this.burning ? 1.6 : 1) * (unwind ? 1.8 : 1)
       this.yawRate += ((yawWant - this.yawRate) * track + align * (this.burning ? 0.4 : 1) + gustYaw) * dt
       this.heading += this.yawRate * dt
-      // Turning keeps the velocity: re-split it against the new heading (the slide is real).
-      const lat0 = this.lateral + this.side
-      const hvx = this.fwd.x * this.speed + this.right.x * lat0
-      const hvz = this.fwd.z * this.speed + this.right.z * lat0
+      // Turning keeps the velocity: re-split it against the new heading (the slide is real). The strafe/dodge
+      // drift (side) is the craft's own sideways thrust: it turns WITH the craft and stays out of the split.
+      // (It was split too: turning toward your own strafe folded it into forward speed while side kept its
+      // value — free speed from snaking strafe against steer. The optimiser found it: Mach 9 in 2 s, where a
+      // held burner makes Mach 5.)
+      const hvx = this.fwd.x * this.speed + this.right.x * this.lateral
+      const hvz = this.fwd.z * this.speed + this.right.z * this.lateral
       this.updateAxes()
-      this.setHorizontal(hvx, hvz)
+      this.speed = Math.max(0, hvx * this.fwd.x + hvz * this.fwd.z)
+      this.lateral = hvx * this.right.x + hvz * this.right.z
 
       this.dodgeCool -= dt
       if (this.dodgeCool <= 0 && (c.dodgeL || c.dodgeR) && this.spin <= 0) {
