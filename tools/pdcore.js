@@ -54,6 +54,7 @@ window.makePD = function (line, craft, opts) {
   const crashLog = []
   let lastTarget = 0, stuckSteps = 0, lastSteer = 0
   function control(ov = {}) {
+    steps++
     const v = Math.max(P.speed, 30), i = me.idx
     const [tx, tz] = tan(i)
     const myLat = (P.pos.x - c.px[i]) * -tz + (P.pos.z - c.pz[i]) * tx
@@ -147,6 +148,9 @@ window.makePD = function (line, craft, opts) {
     if (ov.calm) { ctl.steer = lastSteer + (ctl.steer - lastSteer) * 0.25; if (Math.abs(e) < 25) ctl.strafe = 0; ctl.dodgeL = ctl.dodgeR = false }
     if (ov.steerBias) ctl.steer = Math.max(-1, Math.min(1, ctl.steer + ov.steerBias))
     if (ov.burner !== undefined) ctl.burner = ov.burner
+    // tap: the burner pulsed (on one step, off the next — each press kicks: the hidden technique). Steering
+    // is free while it is off, so it also turns better than a held burner.
+    if (ov.tap) ctl.burner = steps % ov.tap === 0
     if (ov.brake) { ctl.brake = true; ctl.boost = false; ctl.burner = false }
     if (ov.noDodge) { ctl.dodgeL = false; ctl.dodgeR = false }
     if (ctl.dodgeL || ctl.dodgeR) dodges++
