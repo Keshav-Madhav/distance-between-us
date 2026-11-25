@@ -1,0 +1,45 @@
+[9s] plain cal {"time":62.367,"missed":4,"maxLat":1727.1,"pads":21,"crashes":1,"hurt":65,"dropped":0,"ms":1097,"valid":false}
+[11s] plain oval {"time":57.317,"missed":0,"maxLat":247.5,"pads":19,"crashes":0,"hurt":0,"dropped":0,"ms":1731,"valid":true}
+[38s] plain spr {"time":null,"missed":3,"maxLat":2051.6,"pads":19,"crashes":0,"hurt":0,"dropped":0,"ms":1185,"valid":false}
+[66s] plain mis {"time":null,"missed":3,"maxLat":2051.9,"pads":18,"crashes":0,"hurt":0,"dropped":0,"ms":1183,"valid":false}
+[78s] plain cal-95 {"time":56.183,"missed":5,"maxLat":601.3,"pads":21,"crashes":0,"hurt":0,"dropped":0,"ms":1070,"valid":false}
+[80s] plain oval-95 {"time":63.117,"missed":1,"maxLat":917.1,"pads":19,"crashes":0,"hurt":0,"dropped":0,"ms":1934,"valid":false}
+[92s] plain cal-omg {"time":60.783,"missed":0,"maxLat":716.9,"pads":22,"crashes":0,"hurt":0,"dropped":0,"ms":1088,"valid":false}
+[102s] plain narrow {"time":55.517,"missed":5,"maxLat":654.6,"pads":22,"crashes":0,"hurt":0,"dropped":0,"ms":1059,"valid":false}
+[114s] plain safe {"time":80.65,"missed":4,"maxLat":3566.9,"pads":23,"crashes":3,"hurt":262,"dropped":0,"ms":1073,"valid":false}
+[116s] jitter oval~0 {"time":57.1,"missed":0,"maxLat":238.9,"pads":21,"crashes":0,"hurt":0,"dropped":0,"ms":2237,"valid":true}
+[119s] jitter oval~1 {"time":56.917,"missed":0,"maxLat":263.5,"pads":20,"crashes":0,"hurt":0,"dropped":0,"ms":2543,"valid":false}
+[122s] jitter oval~2 {"time":57.717,"missed":0,"maxLat":233.1,"pads":20,"crashes":0,"hurt":0,"dropped":0,"ms":2461,"valid":true}
+[124s] jitter oval~3 {"time":57.717,"missed":0,"maxLat":245.7,"pads":20,"crashes":0,"hurt":0,"dropped":0,"ms":2271,"valid":true}
+[126s] jitter oval~4 {"time":57.533,"missed":0,"maxLat":244.4,"pads":19,"crashes":0,"hurt":0,"dropped":0,"ms":2430,"valid":true}
+[129s] jitter oval~5 {"time":56.867,"missed":0,"maxLat":224.4,"pads":19,"crashes":0,"hurt":0,"dropped":0,"ms":2334,"valid":true}
+[131s] jitter oval~6 {"time":57.583,"missed":0,"maxLat":245.9,"pads":20,"crashes":0,"hurt":0,"dropped":0,"ms":2137,"valid":true}
+[133s] jitter oval~7 {"time":58.267,"missed":0,"maxLat":207.8,"pads":20,"crashes":0,"hurt":0,"dropped":0,"ms":1999,"valid":true}
+[135s] jitter oval~8 {"time":59.7,"missed":0,"maxLat":834.8,"pads":18,"crashes":0,"hurt":0,"dropped":0,"ms":2002,"valid":false}
+[137s] jitter oval~9 {"time":56.833,"missed":0,"maxLat":238.1,"pads":21,"crashes":0,"hurt":0,"dropped":0,"ms":2409,"valid":true}
+[140s] jitter oval~10 {"time":57.683,"missed":0,"maxLat":234.9,"pads":20,"crashes":0,"hurt":0,"dropped":0,"ms":2501,"valid":true}
+[142s] jitter oval~11 {"time":56.65,"missed":0,"maxLat":237.1,"pads":22,"crashes":0,"hurt":0,"dropped":0,"ms":2060,"valid":true}
+[144s] jitter oval~12 {"time":56.833,"missed":0,"maxLat":240.6,"pads":22,"crashes":0,"hurt":0,"dropped":0,"ms":1861,"valid":true}
+[146s] jitter oval~13 {"time":57.75,"missed":0,"maxLat":212,"pads":21,"crashes":0,"hurt":0,"dropped":0,"ms":1919,"valid":true}
+[149s] jitter oval~14 {"time":57.633,"missed":0,"maxLat":233.1,"pads":21,"crashes":0,"hurt":0,"dropped":0,"ms":2746,"valid":true}
+[152s] jitter oval~15 {"time":57.833,"missed":0,"maxLat":223.7,"pads":20,"crashes":0,"hurt":0,"dropped":0,"ms":2824,"valid":true}
+[154s] jitter oval~16 {"time":56.85,"missed":0,"maxLat":231.7,"pads":19,"crashes":0,"hurt":0,"dropped":0,"ms":2050,"valid":true}
+[156s] jitter oval~17 {"time":57.65,"missed":0,"maxLat":232.2,"pads":22,"crashes":0,"hurt":0,"dropped":0,"ms":2119,"valid":true}
+[158s] jitter oval~18 {"time":58.05,"missed":0,"maxLat":224.8,"pads":22,"crashes":0,"hurt":0,"dropped":0,"ms":2405,"valid":true}
+[161s] jitter oval~19 {"time":57.967,"missed":0,"maxLat":228.5,"pads":20,"crashes":0,"hurt":0,"dropped":0,"ms":2375,"valid":true}
+[163s] jitter oval~20 {"time":57.583,"missed":0,"maxLat":221.2,"pads":20,"crashes":0,"hurt":0,"dropped":0,"ms":2056,"valid":true}
+[165s] jitter oval~21 {"time":56.483,"missed":0,"maxLat":232,"pads":21,"crashes":0,"hurt":0,"dropped":0,"ms":1747,"valid":true}
+[167s] jitter oval~22 {"time":57.85,"missed":0,"maxLat":233.7,"pads":20,"crashes":0,"hurt":0,"dropped":0,"ms":2465,"valid":true}
+[170s] jitter oval~23 {"time":56.917,"missed":0,"maxLat":238.8,"pads":20,"crashes":0,"hurt":0,"dropped":0,"ms":2538,"valid":true}
+[173s] jitter oval~24 {"time":58.767,"missed":0,"maxLat":223,"pads":20,"crashes":0,"hurt":0,"dropped":0,"ms":2867,"valid":true}
+[175s] jitter oval~25 {"time":56.517,"missed":0,"maxLat":235,"pads":22,"crashes":0,"hurt":0,"dropped":0,"ms":2122,"valid":true}
+[177s] jitter oval~26 {"time":56.117,"missed":0,"maxLat":234.9,"pads":21,"crashes":0,"hurt":0,"dropped":0,"ms":1787,"valid":true}
+[179s] jitter oval~27 {"time":57.3,"missed":0,"maxLat":234.4,"pads":22,"crashes":0,"hurt":0,"dropped":0,"ms":1999,"valid":true}
+[181s] jitter oval~28 {"time":57.967,"missed":0,"maxLat":237.5,"pads":20,"crashes":0,"hurt":0,"dropped":0,"ms":2296,"valid":true}
+[252s] mpc oval~26+mpc {"time":55.117,"missed":0,"maxLat":198.8,"pads":24,"crashes":0,"hurt":0,"dropped":0,"ms":71006,"valid":true}
+[325s] mpc oval~26+mpcH {"time":55.433,"missed":0,"maxLat":208,"pads":23,"crashes":0,"hurt":0,"dropped":0,"ms":73076,"valid":true}
+[409s] mpc oval~21+mpc {"time":55.75,"missed":0,"maxLat":202.6,"pads":23,"crashes":0,"hurt":0,"dropped":0,"ms":83475,"valid":true}
+[409s] skip mpc (budget) oval~21 {"D":6,"H":90,"aims":[-40,0,40],"burns":[-1,1,0]}
+[409s] skip mpc (budget) oval~25 {"D":6,"H":60,"aims":[-60,-20,20,60],"burns":[-1,1,0]}
+[409s] skip mpc (budget) oval~25 {"D":6,"H":90,"aims":[-40,0,40],"burns":[-1,1,0]}
+[420s] bench oval~26+mpc in-page 55.117 bench 55.117 counted true missed 0 human true VALID

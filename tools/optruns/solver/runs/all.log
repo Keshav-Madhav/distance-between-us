@@ -1,0 +1,9 @@
+{"course":"oval","mode":"ideal","valid":true,"time":55.117,"missed":0,"maxLat":198.8,"benchTraceLat":199,"humanOk":true,"counted":true,"variant":"oval~26+mpc","sec":420,"written":true}
+{"course":"caldera","mode":"rogue","valid":true,"time":39.367,"missed":0,"maxLat":402.6,"benchTraceLat":401,"humanOk":false,"counted":true,"variant":"cal-r25~24+mpc","sec":306,"written":true}
+{"course":"caldera","mode":"ideal","valid":true,"time":43.883,"missed":0,"maxLat":202.6,"benchTraceLat":199,"humanOk":true,"counted":true,"variant":"oval-95~18+mpc","sec":260,"written":true}
+{"course":"sprint","mode":"rogue","valid":true,"time":40.033,"missed":0,"maxLat":417.6,"benchTraceLat":361,"humanOk":false,"counted":true,"variant":"cal-sa~49+mpcH","sec":410,"written":true}
+{"course":"sprint","mode":"ideal","valid":true,"time":45.667,"missed":0,"maxLat":183,"benchTraceLat":167,"humanOk":true,"counted":true,"variant":"safe~53+mpc","sec":408,"written":true}
+{"course":"greenway","mode":"rogue","valid":true,"time":39.033,"missed":0,"maxLat":407.4,"benchTraceLat":407,"humanOk":false,"counted":true,"variant":"safe~51+mpcH","sec":464,"written":true}
+{"course":"greenway","mode":"ideal","valid":true,"time":43.65,"missed":0,"maxLat":200.6,"benchTraceLat":193,"humanOk":true,"counted":true,"variant":"cal-95+mpcH","sec":539,"written":true}
+{"course":"mistriver","mode":"rogue","valid":true,"time":24.75,"missed":0,"maxLat":696.3,"benchTraceLat":648,"humanOk":false,"counted":true,"variant":"mis~21+mpcH","sec":511,"written":true}
+{"course":"mistriver","mode":"ideal","valid":true,"time":26.917,"missed":0,"maxLat":214.2,"benchTraceLat":210,"humanOk":true,"counted":true,"variant":"cal-omg~24+mpcH","sec":405,"written":true}

@@ -1,0 +1,35 @@
+[3s] plain cal {"time":44.95,"missed":0,"maxLat":340.6,"pads":16,"crashes":0,"hurt":0,"dropped":2,"ms":1579,"valid":false}
+[8s] plain oval {"time":46.067,"missed":0,"maxLat":232.9,"pads":14,"crashes":0,"hurt":0,"dropped":2,"ms":5520,"valid":true}
+[11s] plain spr {"time":46.517,"missed":0,"maxLat":525.7,"pads":15,"crashes":0,"hurt":0,"dropped":2,"ms":2041,"valid":false}
+[13s] plain mis {"time":55.333,"missed":0,"maxLat":1369.7,"pads":15,"crashes":0,"hurt":86,"dropped":4,"ms":2227,"valid":false}
+[15s] plain cal-95 {"time":46.167,"missed":0,"maxLat":356.5,"pads":15,"crashes":0,"hurt":0,"dropped":2,"ms":2041,"valid":false}
+[22s] plain oval-95 {"time":45.717,"missed":0,"maxLat":216.4,"pads":15,"crashes":0,"hurt":0,"dropped":2,"ms":6835,"valid":true}
+[24s] plain cal-omg {"time":55.45,"missed":0,"maxLat":208.4,"pads":17,"crashes":0,"hurt":0,"dropped":2,"ms":2028,"valid":true}
+[25s] plain narrow {"time":45.25,"missed":0,"maxLat":322.3,"pads":16,"crashes":0,"hurt":0,"dropped":2,"ms":1328,"valid":false}
+[26s] plain safe {"time":46.167,"missed":0,"maxLat":367.6,"pads":15,"crashes":0,"hurt":0,"dropped":2,"ms":969,"valid":false}
+[33s] jitter oval-95~0 {"time":46.15,"missed":0,"maxLat":231.2,"pads":13,"crashes":0,"hurt":0,"dropped":2,"ms":6524,"valid":true}
+[39s] jitter oval~1 {"time":46.533,"missed":0,"maxLat":246.9,"pads":13,"crashes":0,"hurt":0,"dropped":2,"ms":6276,"valid":true}
+[46s] jitter oval-95~2 {"time":46.75,"missed":0,"maxLat":232.9,"pads":15,"crashes":0,"hurt":0,"dropped":2,"ms":7254,"valid":true}
+[54s] jitter oval-95~3 {"time":46.167,"missed":0,"maxLat":223.4,"pads":16,"crashes":0,"hurt":0,"dropped":2,"ms":7490,"valid":true}
+[60s] jitter oval~4 {"time":46.183,"missed":0,"maxLat":214.5,"pads":14,"crashes":0,"hurt":0,"dropped":2,"ms":6598,"valid":true}
+[68s] jitter oval-95~5 {"time":46.3,"missed":0,"maxLat":236.5,"pads":13,"crashes":0,"hurt":0,"dropped":2,"ms":7688,"valid":true}
+[76s] jitter oval-95~6 {"time":45.55,"missed":0,"maxLat":202.5,"pads":16,"crashes":0,"hurt":0,"dropped":2,"ms":7733,"valid":true}
+[84s] jitter oval-95~7 {"time":46.817,"missed":0,"maxLat":260.3,"pads":14,"crashes":0,"hurt":0,"dropped":2,"ms":8271,"valid":true}
+[92s] jitter oval~8 {"time":46.6,"missed":0,"maxLat":214.5,"pads":14,"crashes":0,"hurt":0,"dropped":2,"ms":7260,"valid":true}
+[99s] jitter oval-95~9 {"time":46.8,"missed":0,"maxLat":214.8,"pads":13,"crashes":0,"hurt":0,"dropped":2,"ms":7235,"valid":true}
+[106s] jitter oval-95~10 {"time":45.717,"missed":0,"maxLat":207,"pads":16,"crashes":0,"hurt":0,"dropped":2,"ms":7491,"valid":true}
+[115s] jitter oval-95~11 {"time":45.733,"missed":0,"maxLat":188.4,"pads":16,"crashes":0,"hurt":0,"dropped":2,"ms":8728,"valid":true}
+[126s] jitter oval-95~12 {"time":46.45,"missed":0,"maxLat":199.4,"pads":16,"crashes":0,"hurt":0,"dropped":2,"ms":10834,"valid":true}
+[134s] jitter oval-95~13 {"time":46.333,"missed":0,"maxLat":289.7,"pads":13,"crashes":0,"hurt":0,"dropped":2,"ms":8416,"valid":false}
+[144s] jitter oval-95~14 {"time":46.133,"missed":0,"maxLat":215,"pads":14,"crashes":0,"hurt":0,"dropped":2,"ms":9705,"valid":true}
+[153s] jitter oval-95~15 {"time":45.55,"missed":0,"maxLat":202.9,"pads":16,"crashes":0,"hurt":0,"dropped":2,"ms":9187,"valid":true}
+[162s] jitter oval-95~16 {"time":46.133,"missed":0,"maxLat":203.1,"pads":14,"crashes":0,"hurt":0,"dropped":2,"ms":8412,"valid":true}
+[174s] jitter oval-95~17 {"time":45.267,"missed":0,"maxLat":224.9,"pads":16,"crashes":0,"hurt":0,"dropped":2,"ms":11855,"valid":true}
+[188s] jitter oval-95~18 {"time":45.217,"missed":0,"maxLat":216.3,"pads":16,"crashes":0,"hurt":0,"dropped":2,"ms":14198,"valid":true}
+[250s] mpc oval-95~18+mpc {"time":43.883,"missed":0,"maxLat":202.6,"pads":16,"crashes":0,"hurt":0,"dropped":2,"ms":62131,"valid":true}
+[250s] skip mpc (budget) oval-95~18 {"D":6,"H":90,"aims":[-40,0,40],"burns":[-1,1,0]}
+[250s] skip mpc (budget) oval-95~17 {"D":6,"H":60,"aims":[-60,-20,20,60],"burns":[-1,1,0]}
+[250s] skip mpc (budget) oval-95~17 {"D":6,"H":90,"aims":[-40,0,40],"burns":[-1,1,0]}
+[250s] skip mpc (budget) oval-95~6 {"D":6,"H":60,"aims":[-60,-20,20,60],"burns":[-1,1,0]}
+[250s] skip mpc (budget) oval-95~6 {"D":6,"H":90,"aims":[-40,0,40],"burns":[-1,1,0]}
+[260s] bench oval-95~18+mpc in-page 43.883 bench 43.883 counted true missed 0 human true VALID
