@@ -82,7 +82,7 @@ window.makePD = function (line, craft, opts) {
     // the cost is distance from the racing line, less a pull through any pad. Dynamic programming picks the
     // path; the target is its first point. (One position for the whole stretch failed wherever two spires sat
     // on opposite sides — the weave SPRINT is built round.)
-    const reach = v * (P.airborne ? 3.4 : opts.reach), lim = c.gateHalf - 30
+    const reach = v * (P.airborne ? 3.4 : opts.reach), lim = opts.bound ? Math.min(c.gateHalf - 30, opts.bound - 60) : c.gateHalf - 30
     const layers = []
     for (const r of rocks) { if (r.i < i - 1) continue; const ahead = (r.i - i) * 40; if (ahead > reach) break; layers.push({ i: r.i, ahead, blocks: [[r.lat, r.r + opts.margin]] }) }
     for (const q of ramps) { if (q.i < i - 3) continue; const ahead = (q.i - i) * 40; if (ahead > reach) break; layers.push({ i: q.i, ahead, blocks: [[q.lat, q.r + 20]] }) }
@@ -125,6 +125,7 @@ window.makePD = function (line, craft, opts) {
     }
     lastTarget = target
     if (ov.latShift) target += ov.latShift
+    if (opts.bound) target = Math.max(-(opts.bound - 40), Math.min(opts.bound - 40, target))
     const e = target - myLat
     ctl.steer = Math.max(-1, Math.min(1, -yawWant / Math.max(0.15, P.turnMax)))
     // In the air: the nose kept on the travel (land crooked and it spins). The thrusters keep working — the

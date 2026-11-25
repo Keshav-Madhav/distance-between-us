@@ -3,18 +3,21 @@
 // against the track's bounds: the worn racing surface (±260 m, the packed lane the course is drawn with) and
 // the corridor (gate half-width + 60 m). Writes tools/optruns/<course>-line.json and a top-down map
 // (tools/optruns/<course>-line.png): the line coloured by action, every stretch outside the bounds marked.
-//   node tools/raceline.mjs 4491 greenway
+//   node tools/raceline.mjs 4491 greenway        (MODE=bounded → public/lines/<course>.json, the IDEAL line;
+//                                                 MODE=rogue → public/lines/<course>-rogue.json, the ROGUE line)
 import { chromium } from 'playwright-core'
 import fs from 'node:fs'
 const port = process.argv[2] ?? '4491', course = process.argv[3] ?? 'sprint'
-const rf = `tools/optruns/${course}-rollout.json`
+const MODE = process.env.MODE ?? 'gates'
+const rf = `tools/optruns/${course}-rollout${MODE === 'gates' ? '' : '-' + MODE}.json`
 // (No optimised run yet: the perfect driver's own line.)
 const run = fs.existsSync(rf) ? JSON.parse(fs.readFileSync(rf, 'utf8')) : { decisions: [], time: null }
 const V1 = [{}, { burner: true }, { burner: false }, { latShift: 45 }, { latShift: -45 }, { steerBias: 0.15 }, { steerBias: -0.15 }, { brake: true }, { noDodge: true }]
 const V2 = [{}, { burner: true }, { burner: false }, { latShift: 45 }, { latShift: -45 }, { latShift: 90 }, { latShift: -90 }, { steerBias: 0.15 }, { steerBias: -0.15 }, { steerBias: 0.3 }, { steerBias: -0.3 }, { brake: true }, { noDodge: true }, { burner: true, latShift: 45 }, { burner: true, latShift: -45 }]
 const cands = run.cands ?? (run.PASSES ? V2 : V1)
 const craft = JSON.parse(fs.readFileSync('tools/optruns/craft-model.json', 'utf8'))
-const opts = { look: 1.2, margin: 34, reach: 3, burnK: 1.2, burnErr: 0.1, latV: 150, airAlign: true, sweep: true, strafeK: 20, slow: true, brakeAt: 0.35, tapNear: 35, tapFar: 70 }
+const opts0 = { look: 1.2, margin: 34, reach: 3, burnK: 1.2, burnErr: 0.1, latV: 150, airAlign: true, sweep: true, strafeK: 20, slow: true, brakeAt: 0.35, tapNear: 35, tapFar: 70 }
+const opts = run.mode === 'bounded' ? { ...opts0, bound: run.bound } : opts0
 const b = await chromium.launch({ channel: 'chrome', headless: true, args: ['--mute-audio', '--use-gl=angle'] })
 const p = await (await b.newContext({ viewport: { width: 320, height: 180 } })).newPage()
 await p.goto(`http://localhost:${port}/?course=${course}&fixed=1`)
@@ -51,10 +54,11 @@ function stretches(limit) {
 }
 const worn = stretches(WORN), corr = stretches(CORR)
 const share = (lim) => +(100 * out.samples.filter((s) => Math.abs(s[7]) > lim).length / out.samples.length).toFixed(1)
-fs.writeFileSync(`tools/optruns/${course}-line.json`, JSON.stringify({ course, time: out.time, fields: ['x', 'groundY', 'z', 'mach', 'action(0 brake,1 lift,2 throttle,3 burner)', 'air', 'courseIndex', 'lateral'], samples: out.samples }))
+const tag = MODE === 'rogue' ? '-rogue' : ''
+fs.writeFileSync(`tools/optruns/${course}${tag}-line.json`, JSON.stringify({ course, time: out.time, fields: ['x', 'groundY', 'z', 'mach', 'action(0 brake,1 lift,2 throttle,3 burner)', 'air', 'courseIndex', 'lateral'], samples: out.samples }))
 // The game's copy: x, ground y, z, action, air, course index — whole numbers (the ribbon is drawn 12 m wide).
 fs.mkdirSync('public/lines', { recursive: true })
-fs.writeFileSync(`public/lines/${course}.json`, JSON.stringify({ time: out.time, s: out.samples.flatMap((q) => [Math.round(q[0]), Math.round(q[1]), Math.round(q[2]), q[4], q[5], q[6]]) }))
+fs.writeFileSync(`public/lines/${course}${tag}.json`, JSON.stringify({ time: out.time, s: out.samples.flatMap((q) => [Math.round(q[0]), Math.round(q[1]), Math.round(q[2]), q[4], q[5], q[6]]) }))
 console.log(`${course}: line from the ${run.time?.toFixed?.(2) ?? 'driver'} s run → replayed ${out.time?.toFixed(2)} s, ${out.samples.length} samples`)
 console.log(`  outside the worn surface (±${WORN} m): ${share(WORN)}% of the run, ${worn.length} stretches`, JSON.stringify(worn.slice(0, 12)))
 console.log(`  outside the corridor (±${CORR} m): ${share(CORR)}% of the run, ${corr.length} stretches`, JSON.stringify(corr.slice(0, 12)))
@@ -70,8 +74,8 @@ let segs = ''
 for (let j = 1; j < out.samples.length; j++) { const a = out.samples[j - 1], s = out.samples[j]; segs += `<line x1="${X(a[0])}" y1="${Z(a[2])}" x2="${X(s[0])}" y2="${Z(s[2])}" stroke="${s[5] ? '#c58bff' : col[s[4]]}" stroke-width="2.2"/>` }
 let rings = ''
 for (const s of out.samples) if (Math.abs(s[7]) > CORR) rings += `<circle cx="${X(s[0])}" cy="${Z(s[2])}" r="5" fill="none" stroke="#ff2d55" stroke-width="1.2"/>`
-const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${Hh}" style="background:#15120f"><polyline points="${centre.join(' ')}" fill="none" stroke="#3a3128" stroke-width="${(2 * CORR * k).toFixed(1)}" stroke-linejoin="round"/><polyline points="${centre.join(' ')}" fill="none" stroke="#5a4a3a" stroke-width="${(2 * WORN * k).toFixed(1)}" stroke-linejoin="round"/><polyline points="${centre.join(' ')}" fill="none" stroke="#8a7a68" stroke-width="1" stroke-dasharray="4 4"/>${segs}${rings}<text x="16" y="28" fill="#eee" font-family="sans-serif" font-size="18">${course.toUpperCase()} · ${out.time?.toFixed(2)} s · blue burner · green throttle · yellow lift · red brake · violet airborne · rings: outside the corridor</text></svg>`
+const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${Hh}" style="background:#15120f"><polyline points="${centre.join(' ')}" fill="none" stroke="#3a3128" stroke-width="${(2 * CORR * k).toFixed(1)}" stroke-linejoin="round"/><polyline points="${centre.join(' ')}" fill="none" stroke="#5a4a3a" stroke-width="${(2 * WORN * k).toFixed(1)}" stroke-linejoin="round"/><polyline points="${centre.join(' ')}" fill="none" stroke="#8a7a68" stroke-width="1" stroke-dasharray="4 4"/>${segs}${rings}<text x="16" y="28" fill="#eee" font-family="sans-serif" font-size="18">${course.toUpperCase()} ${MODE.toUpperCase()} · ${out.time?.toFixed(2)} s · blue burner · green throttle · yellow lift · red brake · violet airborne · rings: outside the corridor</text></svg>`
 const pg = await (await b.newContext({ viewport: { width: W, height: Math.min(4000, Hh) } })).newPage()
 await pg.setContent(`<html><body style="margin:0;background:#15120f">${svg}</body></html>`)
-await pg.screenshot({ path: `tools/optruns/${course}-line.png`, fullPage: true })
+await pg.screenshot({ path: `tools/optruns/${course}${tag}-line.png`, fullPage: true })
 await b.close()

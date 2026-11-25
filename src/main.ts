@@ -572,6 +572,7 @@ scene.add(scatter.group)
 scene.add(course.group)
 /** RACING LINE (settings): the fastest line found for this course, on the ground ahead. */
 const raceLine = new RaceLine()
+const lineFile = () => course.def.id + (settings.line === 'rogue' ? '-rogue' : '')
 scene.add(raceLine.mesh)
 const env = world.makeEnv(renderer)
 bootMark('heroes+env')
@@ -630,7 +631,7 @@ let spectate = false
 /** Graphics settings (the Esc panel). */
 // (Declared up here: restoring saved settings at boot runs their handlers before the HUNT code below.)
 let invertPitch = false
-const settings = { ghost: true, line: false, shadows: !params.has('noshadow'), fps: 'auto' as 'auto' | '60' | '120' | 'max', map: true, scale: 1, dist: 20, part: 1, bloom: true, blur: 1, sharp: 0.4, grain: true, cloud: true }
+const settings = { ghost: true, line: 'off' as 'off' | 'ideal' | 'rogue', shadows: !params.has('noshadow'), fps: 'auto' as 'auto' | '60' | '120' | 'max', map: true, scale: 1, dist: 20, part: 1, bloom: true, blur: 1, sharp: 0.4, grain: true, cloud: true }
 let crashBreak = 0
 const rivalVoices: import('./audio').RivalVoice[] = []
 const camRight = new THREE.Vector3()
@@ -1880,7 +1881,7 @@ function startRace(): void {
   resetVisuals()
   ghostRec = []; ghostStep = 0; inputRec = []; replayAt = 0
   ghostPlay = settings.ghost ? loadGhost() : null
-  if (settings.line) raceLine.load(course.def.id)
+  if (settings.line !== 'off') raceLine.load(lineFile())
   { const v = visuals.get(ghostP)!; v.craft.root.visible = false; for (const t of v.trail) t.reset() }
   for (const r of race.racers) visuals.get(r.p)!.lastDust.copy(r.p.pos)
   cam.snap(player.heading)
@@ -2558,10 +2559,12 @@ $<HTMLSelectElement>('#as').onchange = (e) => { player.assist = +(e.target as HT
 $<HTMLInputElement>('#ghoston').onchange = (e) => { settings.ghost = (e.target as HTMLInputElement).checked }
 // (The box's own class is the switch: the saved settings are restored before the frame code below is set up.)
 {
-  const el = $<HTMLInputElement>('#lineon')
-  try { el.checked = localStorage.getItem('dbu-line') === '1' } catch { /* blocked */ }
-  settings.line = el.checked
-  el.onchange = () => { settings.line = el.checked; if (el.checked) raceLine.load(course.def.id); try { localStorage.setItem('dbu-line', el.checked ? '1' : '0') } catch { /* blocked */ } }
+  // OFF, IDEAL (the fastest line that never leaves the track and takes every gate) or ROGUE (the fastest
+  // finish with no rules: cuts and skipped gates wherever they pay).
+  const el = $<HTMLSelectElement>('#lineon')
+  try { const v = localStorage.getItem('dbu-line'); if (v === 'ideal' || v === 'rogue') el.value = v } catch { /* blocked */ }
+  settings.line = el.value as typeof settings.line
+  el.onchange = () => { settings.line = el.value as typeof settings.line; if (settings.line !== 'off') raceLine.load(lineFile()); try { localStorage.setItem('dbu-line', settings.line) } catch { /* blocked */ } }
 }
 $<HTMLInputElement>('#fpson').onchange = (e) => { $('#fpsbox').classList.toggle('on', (e.target as HTMLInputElement).checked) }
 $<HTMLInputElement>('#fov').oninput = (e) => { fovMax = +(e.target as HTMLInputElement).value }
@@ -3511,7 +3514,7 @@ function frame(now: number): void {
   renderMap()
   pm('map')
   fpsBox(lastMs, realDt)
-  raceLine.update(settings.line && mode === 'race' && !overlay, race.racers[0].idx, time)
+  raceLine.update(settings.line !== 'off' && mode === 'race' && !overlay, race.racers[0].idx, time)
   hudT -= realDt
   updateHud(realDt, hudT <= 0)
   pm('hud')
