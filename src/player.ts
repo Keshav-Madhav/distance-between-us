@@ -126,6 +126,8 @@ export class Player {
   onLaunch: ((vy: number) => void) | null = null
   onBoostStart: (() => void) | null = null
   private wasBurn = false
+  /** Seconds since the burner last burned (its start kick refills over 1.5 s of that). */
+  private burnOff = 9
   /** The afterburner is lit this step (steering mostly locked). */
   burning = false
   /** What the stick asked for (the HUD flags steering against a lit afterburner). */
@@ -175,7 +177,7 @@ export class Player {
     this.agl = 0; this.boost = 0; this.brake = 0; this.accel = 0; this.sinceHurt = 10; this.steerIn = 0
     this.gripLoad = 0; this.wake = 0; this.turnMax = 1; this.steerWant = 0; this.dodgeCool = 0
     this.drift = 0
-    this.wasBurn = false
+    this.wasBurn = false; this.burnOff = 9
     this.bankV = this.pitchV = 0
     this.bank = this.pitch = this.prevBank = this.prevPitch = 0
     this.hull = 100
@@ -242,12 +244,14 @@ export class Player {
     // 'restarted' at the boom and kicked again.)
     const burning = !!c.burner
     const thrust = burning && this.barrier !== 'silence'
-    // The start kick lands on every press of the burner — tap it fast and the kicks stack. (Found by the
-    // optimiser, kept on purpose: a hidden technique a quick hand can use too.)
+    // The start kick is a charge: full after 1.5 s off the burner, a fraction of it sooner. (It was full on
+    // every press: tapping the burner on and off stacked +Mach 0.3 kicks every other step — an agent rode
+    // it to Mach 39 and a 9 s MISTRIVER. A press now feels the same; spamming it gains nothing.)
     if (burning && !this.wasBurn) {
-      this.speed += S.boostKick
+      this.speed += S.boostKick * Math.min(1, this.burnOff / 1.5)
       this.onBoostStart?.()
     }
+    this.burnOff = burning ? 0 : this.burnOff + dt
     this.wasBurn = burning
     this.burning = burning
     const boosting = !!c.boost || burning
