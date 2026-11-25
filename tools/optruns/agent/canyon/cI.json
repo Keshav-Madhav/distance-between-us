@@ -1,0 +1,2 @@
+[{"name":"i1","line":"Li_k0.055.json","latLim":250,"ks":0,"kd":0,"aims":[-40,0,40]},
+ {"name":"i2","line":"Li_k0.055.json","latLim":245,"ks":0,"kd":0,"aims":[-60,-20,20,60],"minOn":8,"minOff":2}]
