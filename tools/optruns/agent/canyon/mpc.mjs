@@ -14,7 +14,7 @@ await page.waitForFunction('window.__g && window.__g.ready', null, { timeout: 18
 const root = here + '../../../../'
 await page.addScriptTag({ content: fs.readFileSync(root + 'tools/pdcore.js', 'utf8') })
 await page.evaluate((craft) => { window.makePD(null, craft, { look: 1.2, margin: 34, reach: 3, burnK: 1.2, burnErr: 0.1, latV: 150, airAlign: true, sweep: true, strafeK: 20, slow: true, brakeAt: 0.35, tapNear: 35, tapFar: 70 }) }, JSON.parse(fs.readFileSync(root + 'tools/optruns/craft-model.json', 'utf8')))
-const D0 = { pred: 0.1, ffa: 0.1, kp: 1, ff: 1, lmin: 300, tl: 0.25, bk: 8, minOff: 4, minOn: 4, ks: 0.02, kd: 0.01, D: 6, H: 60, Wv: 1.0, aims: [-60, 0, 60], burns: [1, 0], latLim: 0, latPen: 50, startOff: 0, maxT: 40 }
+const D0 = { pred: 0.1, ffa: 0.1, kp: 1, ff: 1, lmin: 300, tl: 0.25, bk: 8, minOff: 4, minOn: 4, ks: 0.02, kd: 0.01, D: 6, H: 60, Wv: 1.0, aims: [-60, 0, 60], burns: [1, 0], latLim: 0, latPen: 50, startOff: 0, maxT: 40, sb: 0, sbw: 0.05, sbt: 0, rl: 0 }
 async function run(cfg) {
   const line = JSON.parse(fs.readFileSync(here + cfg.line, 'utf8'))
   return await page.evaluate(async ([line, cfg]) => {
@@ -56,7 +56,12 @@ async function run(cfg) {
       const e = (P.pos.x - lx) * tz - (P.pos.z - lz) * tx - mode.aim, ev = P.vel.x * tz - P.vel.z * tx
       const rr = P.right.x * tz - P.right.z * tx
       const strafe = cfg.ks ? Math.max(-1, Math.min(1, -(cfg.ks * e + cfg.kd * ev) * Math.sign(rr || 1))) : 0
-      return { steer: Math.fround(steer), strafe: Math.fround(strafe), boost: true, burner: burn, brake: false, dodgeL: false, dodgeR: false }
+      let st2 = strafe
+      if (cfg.sb) st2 = Math.max(-1, Math.min(1, -cfg.sb * Math.sign(P.yawRate) * Math.min(1, Math.abs(P.yawRate) / cfg.sbw) + (cfg.sbt ? strafe : 0)))
+      let sr = steer
+      if (cfg.rl) { sr = cs.ps + Math.max(-cfg.rl, Math.min(cfg.rl, steer - cs.ps)); st2 = cs.pst + Math.max(-cfg.rl, Math.min(cfg.rl, st2 - cs.pst)) }
+      sr = Math.fround(sr); st2 = Math.fround(st2); cs.ps = sr; cs.pst = st2
+      return { steer: sr, strafe: st2, boost: true, burner: burn, brake: false, dodgeL: false, dodgeR: false }
     }
     const latOf = () => { const i = me().idx, [tx, tz] = c.tangent(i); return (P.pos.x - c.px[i]) * -tz + (P.pos.z - c.pz[i]) * tx }
     // one step; returns flags of trouble
@@ -66,7 +71,7 @@ async function run(cfg) {
       if (rec) rec.push(ct.steer, ct.strafe, 1 | (ct.burner ? 2 : 0))
     }
     g.hold(true); g.replayWith([0, 0, 1]); g.skipCountdown(); g.hold(true)
-    const cs = { j: 0, offN: 99, onN: 0, st: 0 }
+    const cs = { j: 0, offN: 99, onN: 0, st: 0, ps: 0, pst: 0 }
     { let best = 1e18; for (let k = 0; k < m; k++) { const dd = (X[k] - P.pos.x) ** 2 + (Z[k] - P.pos.z) ** 2; if (dd < best) { best = dd; cs.j = k } } }
     const rec = []
     const cands = []; for (const b of cfg.burns) for (const a of cfg.aims) cands.push({ burn: b, aim: a })

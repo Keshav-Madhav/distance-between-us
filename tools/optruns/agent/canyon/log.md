@@ -43,3 +43,11 @@ Final: ROGUE best.json 23.067 (m-v1), IDEAL ideal.json 24.150 (m-i2, human.ok). 
 (configs are inside each m-*.json `cfg`), lines from mkline2.mjs (PADZ/mound/CREST zones above).
 Where the time is: speed tops out ~Mach 11.8. Turn bleed (5%/rad × ~9.3 rad of nose yaw) roughly matches burner thrust +
 8 pads; the burner is on ~70% (its 10% steering can't hold the ring's curvature). Start to Mach 6 takes ~3 s.
+
+## Dodge removed (f03e6ee); strafe-into-bend kept
+| # | attempt | result |
+|---|---------|--------|
+| 20 | re-bench old best.json (never used dodge: flags only 1/2) | 23.067 counted, reproduces |
+| 21 | strafe into the bend: strafe = −sign(yawRate) full (mpc `sb 1`, `sbw .01`); sb −1 (wrong way) costs 2.4 s | **22.783 counted** (bench) → best.json + best-nododge.json (m-s3) |
+| 22 | ROGUE-HUMAN: same planner with steer/strafe rate-limited to 0.34/step (`rl .34`), burner in 6-step blocks, 5 aims, minOn 8 | **23.000 counted**, hands.ok true → rogue-human-nododge.json (m-h4); without sb 23.18 |
+| 23 | IDEAL re-bench on the new build | 24.150, human.ok true (unchanged) |

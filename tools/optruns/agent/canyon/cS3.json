@@ -1,0 +1,3 @@
+[{"name":"s5","line":"Lr_k0.055.json","aims":[-80,-30,0,30,80],"minOn":8,"minOff":2,"sb":1,"sbw":0.01},
+ {"name":"h3","line":"Lr_k0.055.json","aims":[-40,0,40],"sb":1,"sbw":0.01,"rl":0.34},
+ {"name":"h4","line":"Lr_k0.055.json","aims":[-80,-30,0,30,80],"minOn":8,"minOff":2,"sb":1,"sbw":0.01,"rl":0.34}]

@@ -1,0 +1,4 @@
+[{"name":"s3","line":"Lr_k0.055.json","aims":[-40,0,40],"sb":1,"sbw":0.01},
+ {"name":"s4","line":"Lr_k0.055.json","aims":[-40,0,40],"sb":1,"sbt":1},
+ {"name":"h1","line":"Lr_k0.055.json","aims":[-40,0,40],"sb":1,"rl":0.34},
+ {"name":"h2","line":"Lr_k0.055.json","aims":[-40,0,40],"rl":0.34}]
