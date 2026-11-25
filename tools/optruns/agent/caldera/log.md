@@ -45,3 +45,15 @@ Gotcha: step 1 must stay [0,0,0] (throttle off) — setting it to throttle-on ma
 | h5 | + guard 180, corr 220 W 240 | 44.433 human ok, maxLat 264 |
 | h6 | brake held (+35% turn) / minHold 7 | no gain (44.5-45.6) |
 | h7 | random perturbation: la .17 kp 1.8 tp .13 Rc 3500 smax .75 guard 190 | **44.083 counted, 0 missed, human ok, 16/16 pads, maxLat 244 every step** -> ideal-human.json (ideal-human-params.json) |
+
+## ROGUE-HUMAN (everything allowed, but human hand speed: every key bit held/released >= 6 steps, steer/strafe slew <= 0.34/step)
+caldera/ctl.mjs: `hands` n = every key bit (throttle, burner, brake, dodge L/R) keeps its state >= n steps (a change
+sooner is refused); steer and strafe slew-limited to `slew` (default 0.33) per step from step 2 on. Used with minHold 6
+so the duty-cycled burner's steer matches the held state.
+| # | what | result |
+|---|------|--------|
+| g1 | best-params + hands 6 + minHold 6: same params 39.93; la .22 | **37.417 counted, hands ok** |
+| g2-g5 | la/tp/kp/Rc/smax/sideAware, bigger obstacle margins, dodgeMaxLat | 37.4-50; margins changed nothing (the route was not the problem) |
+| — | the failures: right after the lap-2 pad at (-7074,-8888) (aimed at straight, padT .3) the craft must turn ~0.5 rad at M16.5 with slew-limited steering; it overshoots ~500 m right toward a rock field + big rock (-6411,-6121) | |
+| g6 | padSkip [-8888] (no pad aim there; the pad is still collected en route, 16/16) | **37.317 counted, 0 missed, hands ok** -> rogue-human.json (rogue-human-params.json) |
+| g7/g8 | random perturbations, dodgeThr, corridor 260-300, lam, mid | 37.5-46, no gain |

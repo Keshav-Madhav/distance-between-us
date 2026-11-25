@@ -195,7 +195,7 @@ for (let ci = 0; ci < LIST.length; ci++) {
       g.hold(true); g.replayWith([0, 0, 1]); g.skipCountdown(); g.hold(true)
       const me = race.racers[0]
       const steps = [], log = [], evs = []
-      let st = 0, dAcc = 0, lastBurn = false, burnChg = -99, tapPh = 0, wasCrash = false, wasSpin = false, lastHull = 100, maxLat = 0, maxLat30 = 0, pads = 0
+      const kChg = {}; let st = 0, dAcc = 0, lastBurn = false, burnChg = -99, tapPh = 0, wasCrash = false, wasSpin = false, lastHull = 100, maxLat = 0, maxLat30 = 0, pads = 0
       const op = race.ev.pad; race.ev.pad = (r) => { if (r === me) pads++; op && op.call(race.ev, r) }
       while (st < 60 * 90 && !me.finished) {
         let cc, latNow = 0, latSgn = 0
@@ -252,6 +252,17 @@ for (let ci = 0; ci < LIST.length; ci++) {
           }
           if (prm.brk && (fl & 1) && m > (prm.brkMin ?? 3)) fl |= 4
           cc = [steer, sf, fl]
+        }
+        if (prm.hands && st >= 2) {
+          // human hand speed: each key bit held/released >= hands steps; steer/strafe slew <= slew per step
+          const H = prm.hands, prevc = steps[steps.length - 1]
+          for (const bit of [1, 2, 4, 8, 16]) {
+            const want = cc[2] & bit, was = prevc[2] & bit
+            if (want !== was) { if (st - (kChg[bit] ?? -99) < H) cc[2] = (cc[2] & ~bit) | was; else kChg[bit] = st }
+          }
+          const sl = prm.slew ?? 0.33
+          cc[0] = Math.max(prevc[0] - sl, Math.min(prevc[0] + sl, cc[0]))
+          cc[1] = Math.max(prevc[1] - sl, Math.min(prevc[1] + sl, cc[1]))
         }
         g.force({ steer: cc[0], strafe: cc[1], boost: !!(cc[2] & 1), burner: !!(cc[2] & 2), brake: !!(cc[2] & 4), dodgeL: !!(cc[2] & 8), dodgeR: !!(cc[2] & 16) })
         steps.push(cc)
