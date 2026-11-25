@@ -1742,18 +1742,19 @@ function showResults(): void {
   // Best time per course.
   const me0 = race.racers[0]
   let newBest = false
-  if (me0.finished) {
+  if (me0.finished && !runIsReplay) {
     const b = bestOf(course.def.id)
     if (b === null || me0.finishTime < b) { newBest = true; try { localStorage.setItem(bestKey(course.def.id), String(me0.finishTime)) } catch { /* blocked */ } }
     // Your best run is the ghost from the next race on (any mode).
     if (newBest || !loadGhost()) { saveGhost(); saveInputs() }
   }
-  $('#over-h').textContent = `${ord(race.racers[0].place)} PLACE`
+  $('#over-h').textContent = runIsReplay ? 'REPLAY' : `${ord(race.racers[0].place)} PLACE`
   const md = me0.finished ? medalOf(course.def, me0.finishTime) : 0, [mg, ms, mb] = medals(course.def)
   const next = md === 3 ? '' : ` · NEXT: ${['BRONZE', 'SILVER', 'GOLD'][md]} ${fmtLap([mb, ms, mg][md])}`
   $('#over-stats').innerHTML = `${course.def.name} · ${course.def.km} KM IN ${fmtLap(race.racers[0].finishTime)}${newBest ? ' · <b style="color:#ffb070">NEW BEST</b>' : ''} · TOP SPEED MACH ${Math.max(runTop, player.topMach).toFixed(2)}<br/>${md ? `<span class="medalbig">${medalSvg(md, 44)}<b>${['', 'BRONZE', 'SILVER', 'GOLD'][md]} TIME</b><small style="opacity:.7;margin-left:10px;letter-spacing:.12em">UNDER ${fmtLap([0, mb, ms, mg][md])}</small></span>` : 'NO MEDAL TIME'}${next}`
   resultsOpen = true
   renderResults()
+  ;($('#dl-inputs') as HTMLAnchorElement).hidden = !me0.finished || inputRec.length < 3
   $('#over .go').textContent = 'R TO RACE AGAIN · H FOR HUNT · ESC TO KEEP FLYING'
   $('#over').classList.remove('hide')
 }
@@ -1767,6 +1768,7 @@ function showHuntOver(won = false): void {
   $('#over-h').textContent = won ? 'HUNT COMPLETE' : 'SIGNAL LOST'
   $('#over-stats').innerHTML = `SCORE ${score}${newBest ? ' · <b style="color:#ffb070">NEW BEST</b>' : ` · BEST ${Math.max(best, score)}`}<br/>WAVE ${Math.min(huntWave, HUNT_WAVES.length)} / ${HUNT_WAVES.length} · ${kills} DOWN<br/>TOP SPEED MACH ${Math.max(runTop, flight.topMach).toFixed(2)} · TIME ${fmtTime(runTime)}`
   $('#res').innerHTML = ''; resHtml = ''; resultsOpen = false
+  ;($('#dl-inputs') as HTMLAnchorElement).hidden = true
   $('#over .go').textContent = 'R TO RUN IT AGAIN · ENTER FOR A RACE'
   $('#over').classList.remove('hide')
 }
@@ -1828,6 +1830,50 @@ let ghostRec: number[] = []
 /** The run's inputs (3 floats a step, from the grid) — saved with your best; a replay feeds them back. */
 let inputRec: number[] = []
 let replayIn: Float32Array | null = null
+// ── replay files: save a finished run's inputs; load any run's inputs (yours, a friend's, an optimiser's)
+//    and watch it played back — the input display (bottom right) shows every press ──
+/** Steps this run's recording spent on the grid (a normal start ~180; a skipped countdown 1–2). */
+let gridRec = 0
+/** This race is a replay (a loaded file, your best, a test): watched, not raced — it sets no best time, ghost or medal. */
+let runIsReplay = false
+type ReplayFile = { game?: string; v?: number; course: string; sub?: 'race' | 'trial' | 'duel'; rivals?: string; countdown?: boolean; time?: number | null; steps: number[][] }
+function downloadRun(): void {
+  const steps: number[][] = []
+  for (let i = 0; i + 2 < inputRec.length; i += 3) steps.push([inputRec[i], inputRec[i + 1], inputRec[i + 2]])
+  const me = race.racers[0]
+  const file: ReplayFile = { game: 'dbu-inputs', v: 1, course: course.def.id, sub: subMode, rivals: String(race.aiBoost), countdown: gridRec > 30, time: me.finished ? +me.finishTime.toFixed(3) : null, steps }
+  const a = document.createElement('a')
+  a.href = URL.createObjectURL(new Blob([JSON.stringify(file)], { type: 'application/json' }))
+  a.download = `dbu-${course.def.id}-${me.finished ? me.finishTime.toFixed(2).replace('.', '_') + 's' : 'run'}.json`
+  document.body.appendChild(a); a.click(); a.remove()
+  setTimeout(() => URL.revokeObjectURL(a.href), 4000)
+}
+/** A short line under the LOAD FILE button (the settings screen is where the file was picked). */
+function replayNote(t: string): void { const b = $('#replayload'); b.textContent = t; setTimeout(() => { b.textContent = 'LOAD FILE' }, 2500) }
+/** A file that can be played: a known course and whole steps of three finite numbers. */
+function readReplay(j: unknown): ReplayFile | null {
+  const r = j as ReplayFile
+  if (!r || typeof r.course !== 'string' || !COURSES.some((c) => c.id === r.course) || !Array.isArray(r.steps) || r.steps.length < 2) return null
+  if (!r.steps.every((q) => Array.isArray(q) && q.length === 3 && q.every(Number.isFinite))) return null
+  return r
+}
+function startReplay(r: ReplayFile): void {
+  if (paused) setPaused(false)
+  // As it was recorded: the same mode and rivals (other racers change the race), from the grid — or, for an
+  // optimiser's file (no countdown), from the start straight away.
+  subMode = r.sub === 'race' || r.sub === 'duel' ? r.sub : 'trial'
+  if (r.rivals !== undefined && Number.isFinite(+r.rivals)) race.aiBoost = +r.rivals
+  startRace()
+  replayIn = new Float32Array(r.steps.flat()); replayAt = 0; runIsReplay = true
+  if (r.countdown === false || (r.game !== 'dbu-inputs' && r.countdown === undefined)) race.countdown = 0.01
+}
+/** Load a replay: on this course it starts now; on another, the game switches course and starts it there. */
+function playReplay(r: ReplayFile): void {
+  if (r.course === course.def.id) { startReplay(r); return }
+  try { sessionStorage.setItem('dbu-replay', JSON.stringify(r)) } catch { replayNote('TOO LARGE TO CARRY TO ITS COURSE'); return }
+  if (paused) setPaused(false)
+  swapTo(r.course, false)
+}
 const stepCtl: import('./player').Controls = { steer: 0, strafe: 0, boost: false, burner: false, brake: false }
 let replayAt = 0
 const unb64 = (s: string) => { const bin = atob(s), u8 = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i); return u8 }
@@ -1900,7 +1946,7 @@ function startRace(): void {
   for (const r of race.all) if (!race.racers.includes(r)) { const v = visuals.get(r.p)!; v.craft.root.visible = false; for (const t of v.trail) t.reset() }
   race.reset()
   resetVisuals()
-  ghostRec = []; ghostStep = 0; inputRec = []; replayAt = 0
+  ghostRec = []; ghostStep = 0; inputRec = []; gridRec = 0; replayAt = 0; runIsReplay = false
   ghostPlay = settings.ghost ? loadGhost() : null
   if (settings.line) raceLine.load(course.def.id)
   { const v = visuals.get(ghostP)!; v.craft.root.visible = false; for (const t of v.trail) t.reset() }
@@ -2586,6 +2632,17 @@ $<HTMLInputElement>('#ghoston').onchange = (e) => { settings.ghost = (e.target a
   settings.line = el.checked
   el.onchange = () => { settings.line = el.checked; if (el.checked) raceLine.load(course.def.id); try { localStorage.setItem('dbu-line', el.checked ? '1' : '0') } catch { /* blocked */ } }
 }
+$('#dl-inputs').onclick = (e) => { e.preventDefault(); downloadRun() }
+$('#replayload').onclick = () => $<HTMLInputElement>('#replayfile').click()
+$<HTMLInputElement>('#replayfile').onchange = async (e) => {
+  const inp = e.target as HTMLInputElement, f = inp.files?.[0]
+  inp.value = ''
+  if (!f) return
+  let r: ReplayFile | null = null
+  try { r = readReplay(JSON.parse(await f.text())) } catch { r = null }
+  if (!r) { replayNote('NOT A REPLAY FILE'); return }
+  playReplay(r)
+}
 $<HTMLInputElement>('#fpson').onchange = (e) => { $('#fpsbox').classList.toggle('on', (e.target as HTMLInputElement).checked) }
 $<HTMLInputElement>('#fov').oninput = (e) => { fovMax = +(e.target as HTMLInputElement).value }
 try {
@@ -2746,6 +2803,7 @@ function simStep(): void {
     stepCtl.steer = Math.fround(c0.steer); stepCtl.strafe = Math.fround(c0.strafe)
     stepCtl.boost = c0.boost; stepCtl.burner = c0.burner; stepCtl.brake = c0.brake
     // Every input of the run, every step from the grid on: steer, strafe, buttons.
+    if (race.state === 'grid') gridRec++
     if (race.state !== 'done' && !me.finished) inputRec.push(stepCtl.steer, stepCtl.strafe, (stepCtl.boost ? 1 : 0) | (stepCtl.burner ? 2 : 0) | (stepCtl.brake ? 4 : 0))
     race.step(STEP, stepCtl, world)
     if (race.state === 'racing' && !me.finished) {
@@ -4302,6 +4360,11 @@ if (IN_SYSTEM) {
 showCourse()
 // Picked a different course on the title: it has loaded — straight into the race.
 try { if (sessionStorage.getItem('dbu-go')) { sessionStorage.removeItem('dbu-go'); startRace() } } catch { /* blocked */ }
+// A replay loaded on another course: this is its course — play it.
+try {
+  const pend = sessionStorage.getItem('dbu-replay')
+  if (pend && !WARM) { const r = readReplay(JSON.parse(pend)); if (r && r.course === course.def.id) { sessionStorage.removeItem('dbu-replay'); startReplay(r) } }
+} catch { /* blocked */ }
 // Booted inside a swap frame: tell the host once two frames have drawn (shaders compiled, warm).
 if (window.parent !== window) {
   requestAnimationFrame(() => requestAnimationFrame(() => {
@@ -4376,11 +4439,11 @@ const g = {
   /** Tests: switch course/world as the menu does (go: true starts the race there). */
   swap: (id: string, go: boolean | string) => swapTo(id, go),
   prewarm: (id: string) => prewarm(id),
-  replayBest: () => { const r = loadInputs(); if (!r) return false; startRace(); replayIn = r; replayAt = 0; return true },
+  replayBest: () => { const r = loadInputs(); if (!r) return false; startRace(); replayIn = r; replayAt = 0; runIsReplay = true; return true },
   inputCount: () => inputRec.length / 3,
   /** Tests: this run's inputs so far (3 a step), and a fresh race replaying given ones (tools/rendrun.mjs). */
   inputs: () => Array.from(inputRec),
-  replayWith: (a: number[]) => { startRace(); replayIn = new Float32Array(a); replayAt = 0 },
+  replayWith: (a: number[]) => { startRace(); replayIn = new Float32Array(a); replayAt = 0; runIsReplay = true },
   sound,
   renderer,
   /** Put the player just before jump k, at Mach m. */

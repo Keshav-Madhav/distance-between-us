@@ -182,6 +182,12 @@
   #over .card { display: flex; flex-direction: column; align-items: center; max-height: 92vh; padding: 26px 40px 22px; background: rgba(8,10,14,0.82); border: 1px solid rgba(255,255,255,0.14); border-radius: 8px; backdrop-filter: blur(6px); }
   #over h2 { margin: 0; font-size: 44px; letter-spacing: 0.3em; }
   #over .stats { margin-top: 16px; font-size: 15px; letter-spacing: 0.18em; line-height: 1.9; text-align: center; }
+  /* After a race: save this run's inputs (a file you can load back from SETTINGS · REPLAY A RUN). Kept small
+     and quiet in the card's corner — for the curious, out of everyone else's way. */
+  #over .card { position: relative; }
+  #dl-inputs { position: absolute; right: 12px; bottom: 9px; font-size: 9px; letter-spacing: 0.16em; color: var(--ink); opacity: 0.38; text-decoration: none; cursor: pointer; }
+  #dl-inputs:hover, #dl-inputs:focus-visible { opacity: 0.9; text-decoration: underline; }
+  #dl-inputs[hidden] { display: none; }
   #over .go { margin-top: 18px; font-size: 12px; letter-spacing: 0.4em; opacity: 0.7; animation: blink 1.4s infinite; }
   #res tr.gap td { padding: 0 16px; opacity: 0.4; line-height: 1; }
   /* The race HUD steps aside behind the results and the pause screen. */
@@ -575,6 +581,7 @@
   <table id="res"></table>
   <div class="btns"><button id="b-again" class="big">RACE AGAIN</button><button id="b-next">NEXT COURSE</button><button id="b-menu">MENU</button></div>
   <div class="go">R AGAIN · ESC KEEP FLYING</div>
+  <a id="dl-inputs" href="#" hidden>⤓ SAVE INPUTS</a>
   </div>
 </div>
 <div id="pause" class="screen hide">
@@ -594,6 +601,7 @@
   <div class="sub">RACE</div>
   <label>GHOST OF YOUR BEST <input id="ghoston" type="checkbox" checked /></label>
   <label>RACING LINE <input id="lineon" type="checkbox" /></label>
+  <label>REPLAY A RUN <button id="replayload" type="button">LOAD FILE</button><input id="replayfile" type="file" accept=".json,application/json" hidden /></label>
   <label>SHOW FPS <input id="fpson" type="checkbox" /></label>
   <div class="sub">COMFORT &amp; TIPS</div>
   <label>REDUCE SHAKE <input id="rs" type="checkbox" /></label>
