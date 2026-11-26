@@ -107,15 +107,15 @@ const LAVA_LV = [0, 180, 360, 520, 640, 760]
 export const ICE_LV = [0, 125, 330, 560, 790]
 
 interface World {
-  /** How far the land reaches out (m from the floor's edge) at a point. */
-  reach: (x: number, z: number) => number
+  /** How far out the land reaches (m from the floor's edge) at a point: its rim, then all the way down. */
+  extent: (x: number, z: number) => number
   /** The land's potential (m above the ground) before the side canyons. */
   potential: (x: number, z: number, df: number, inner: boolean, roofTop: number) => number
   /** The surface over a potential (strata, flow fronts…). */
   surface: (E: number, x: number, z: number, df: number) => number
-  /** Side canyons: their walls' rise per metre, half-widths (branch, trunk; way in at mouth, far out), the
-   *  plateau they climb to, the ways in (u round the loop), the seed. */
-  canyonK: number
+  /** Side canyons: their walls' rise per metre (range), half-widths (branch, trunk; way in), the plateau they
+   *  climb to, the ways in (u round the loop), the seed. */
+  canyonK: [number, number]
   wTrunk: [number, number]
   wWay: [number, number]
   top: number
@@ -126,126 +126,156 @@ interface World {
   apron: number
 }
 
-const reachOf = (x: number, z: number, base: number, a: number, b: number, sd: number) => base + a * warp(x / 9000, z / 9000, sd, 1.1, 2) + b * warp(x / 2800, z / 2800, sd + 1, 0.9, 2)
+// ── the regional land ──
+// The loop's middle (set by useLoop): noise round the loop is taken by angle about it, closed on itself.
+let CX = 0, CZ = 0
+export function useLoop(L: { cx: number; cz: number }): void { CX = L.cx; CZ = L.cz }
+/** Noise by angle about the loop's middle (k bumps round it), −1…1. */
+function cn(x: number, z: number, k: number, sd: number): number {
+  const th = Math.atan2(x - CX, z - CZ)
+  return vn(Math.cos(th) * k + 7.3, Math.sin(th) * k - 2.1, sd)
+}
+/** Tilt across the loop's middle (m per km along a seeded direction). */
+function tilt(x: number, z: number, sd: number): number {
+  const a = sd * 2.39996
+  return ((x - CX) * Math.sin(a) + (z - CZ) * Math.cos(a)) / 1000
+}
+/** The outer land: its rim's width (varying ~4× round the loop and by place) and the long fall beyond it
+ *  into the world's ground. 0 on the rim … 1 down. (A band of the same width all round read as a ring.) */
+function rimW(x: number, z: number, b: number, sd: number): number {
+  const s = Math.min(1, Math.max(0, 0.5 + 0.65 * (0.7 * cn(x, z, 2.3, sd) + 0.3 * cn(x, z, 6.1, sd + 1))))
+  return b * (0.2 + 2.0 * s * s) + 0.25 * b * warp(x / 2600, z / 2600, sd + 2, 0.9, 2)
+}
+function fallL(x: number, z: number, F: number, sd: number): number { return F * (0.65 + 0.7 * (0.5 + 0.5 * cn(x, z, 3.7, sd + 3))) }
+/** Massifs of their own out on the outer land, wherever they fall — not round the loop: plateaus and
+ *  uplands standing km off the rim (0…1). */
+function massif(x: number, z: number, sd: number): number { return sst(0.22, 0.55, warp(x / 7000, z / 7000, sd + 7, 1.1, 2)) }
+function fall(x: number, z: number, dd: number, b: number, F: number, sd: number): number {
+  return Math.min(1, Math.max(0, (dd - rimW(x, z, b, sd)) / fallL(x, z, F, sd)))
+}
+const ext = (b: number, F: number, sd: number) => (x: number, z: number) => rimW(x, z, b, sd) + fallL(x, z, F, sd) + 900 + (massif(x, z, sd) > 0.02 ? 1e9 : 0)
 
 const WORLDS: Record<LandStyle, World> = {
-  // CANYON RUN: the Grand Canyon's plateau — strata in flat caprock levels, an escarpment in lobes and bays
-  // with a debris apron below it, buttes and mesas standing off it.
+  // CANYON RUN: the Grand Canyon's plateau — strata in flat caprock levels, each bed its own thickness; the
+  // rim wide here and narrow there, the land falling away over km in benches, debris slopes and buttes to
+  // the plain; inside, a massif of its own height, tilted.
   desert: {
-    reach: (x, z) => reachOf(x, z, 3600, 2400, 1200, 304),
+    extent: ext(3400, 7500, 311),
     potential: (x, z, df, inner) => {
-      const T = 880 + 160 * fbmR(x / 9000, z / 9000, 2, 301) + 70 * fbmR(x / 2600, z / 2600, 2, 302) + (inner ? 220 * sst(600, 4500, df) : 0)
-      const lam = 260 + 190 * (0.5 + 0.5 * warp(x / 3500, z / 3500, 303, 0.8, 2))
-      let E = T * (1 - Math.exp(-Math.max(0, df) / lam))
+      const T = inner
+        ? 1000 + Math.max(-220, Math.min(260, 26 * tilt(x, z, 3))) + 140 * fbmR(x / 8000, z / 8000, 2, 301) + 70 * fbmR(x / 2600, z / 2600, 2, 302) + 160 * sst(600, 4500, df)
+        : 800 + 180 * cn(x, z, 3, 312) + 70 * fbmR(x / 2600, z / 2600, 2, 302)
+      // (The walls' set-back wanders: as a function of the distance alone, the benches ran round the loop
+      //  like contour lines.)
+      const dd = Math.max(0, df) + 520 * warp(x / 1400, z / 1400, 306, 0.9, 2) * sst(0, 500, df)
+      const lam = 230 + 220 * (0.5 + 0.5 * warp(x / 3500, z / 3500, 303, 0.8, 2))
+      let E = T * (1 - Math.exp(-Math.max(0, dd) / lam))
+      // Gullies and alcoves every few hundred metres: the benches broken, the rims notched.
+      const g = 1 - Math.abs(warp(x / 650, z / 650, 309, 1.0, 2))
+      E -= 300 * g ** 7 * sst(120, 500, df)
       if (!inner) {
-        const reach = reachOf(x, z, 3600, 2400, 1200, 304)
-        const dd = df + 500 * warp(x / 900, z / 900, 306, 0.9, 2)
-        const m = sst(reach + 500, reach - 500, dd)
-        const ped = 160 * sst(reach + 2600, reach, dd)
-        E = Math.max(E * m, ped * (1 - m) + E * m)
-        const bt = sst(0.5, 0.68, warp(x / 1400, z / 1400, 307, 1.0, 2)) * sst(reach + 4200, reach + 600, dd) * sst(reach - 200, reach + 500, dd)
-        E = Math.max(E, bt * (T * (0.55 + 0.3 * (0.5 + 0.5 * vn(x / 3000, z / 3000, 308)))))
+        const t = fall(x, z, dd, 3400, 7500, 311)
+        E = E * (1 - t) ** 1.3 + 50 * fbmR(x / 5000, z / 5000, 2, 313) * (1 - t) * t
+        E = Math.max(E, T * 0.9 * massif(x, z, 311))
+        // Buttes and mesas breaking off on the way down.
+        const bt = sst(0.48, 0.66, warp(x / 1500, z / 1500, 307, 1.0, 2)) * sst(0.08, 0.25, t) * sst(0.85, 0.6, t)
+        E = Math.max(E, bt * T * (0.35 + 0.35 * (0.5 + 0.5 * vn(x / 3000, z / 3000, 308))) * (1 - 0.6 * t))
       }
-      return E
+      return Math.max(0, E)
     },
-    surface: (E, x, z) => terrace(E, DESERT_LV, 0.9, 0.08, (j) => (j < 2 ? 0 : 45 * fbmR(x / 2600, z / 2600, 2, 320 + j * 13)), 0.4),
-    canyonK: 2.2, wTrunk: [70, 130], wWay: [190, 260], top: 900, ways: [0.14, 0.4, 0.62, 0.86], seed: 7193,
-    erode: [3, 1.3, 0.25], apron: 0.45,
+    // (Below the first bed the land is smooth — pediments and debris slopes: stepped, everything under it
+    //  was ground, and the land ended at the first cliff in a ring.)
+    surface: (E, x, z) => { const T = terrace(E, DESERT_LV, 0.9, 0.08, (j) => (j < 2 ? 0 : 95 * fbmR(x / (1500 + 350 * j), z / (1500 + 350 * j), 2, 320 + j * 13)), 0.45); return E + (T - E) * sst(120, 300, E) },
+    canyonK: [1.8, 3.4], wTrunk: [60, 120], wWay: [180, 260], top: 900, ways: [0.14, 0.4, 0.62, 0.86], seed: 7193,
+    erode: [3, 1.3, 0.25], apron: 0.5,
   },
-  // MAGMA GORGE: a basalt plateau — benches near the gorge (one to four, pinching out), its outer edge the
-  // lobes of the last flows stepping down in low fronts, shield swells on top, tumuli.
+  // MAGMA GORGE: a basalt plateau — benches near the gorge (one to four, pinching out), shield swells, its
+  // land falling away over km as lobe on lobe of the last flows, low fronts, tumuli; the island its own height.
   lava: {
-    reach: (x, z) => 3000 + 2000 * warp(x / 9000, z / 9000, 404, 1.1, 2) + 1500 * Math.abs(warp(x / 2200, z / 2200, 405, 1.0, 2)),
+    extent: ext(2600, 7000, 411),
     potential: (x, z, df, inner) => {
       const shield = 170 * Math.max(0, warp(x / 6000, z / 6000, 401, 0.9, 2)) ** 1.5
-      const T = 600 + 70 * fbmR(x / 8000, z / 8000, 2, 402) + shield + (inner ? 120 * sst(600, 4000, df) : 0)
-      const lam = 220 + 160 * (0.5 + 0.5 * warp(x / 3200, z / 3200, 403, 0.8, 2))
-      let E = T * (1 - Math.exp(-Math.max(0, df) / lam))
+      const T = inner
+        ? 680 + Math.max(-160, Math.min(200, 20 * tilt(x, z, 7))) + 70 * fbmR(x / 8000, z / 8000, 2, 402) + shield + 120 * sst(600, 4000, df)
+        : 560 + 130 * cn(x, z, 3, 412) + shield
+      const dd = Math.max(0, df) + 650 * Math.abs(warp(x / 1100, z / 1100, 406, 1.0, 2)) * sst(0, 500, df)
+      const lam = 220 + 180 * (0.5 + 0.5 * warp(x / 3200, z / 3200, 403, 0.8, 2))
+      let E = T * (1 - Math.exp(-Math.max(0, dd) / lam))
       if (!inner) {
-        // Lobate: the edge is where the last flows stopped — |warp| makes lobes, not a smooth outline.
-        const reach = 3000 + 2000 * warp(x / 9000, z / 9000, 404, 1.1, 2) + 1500 * Math.abs(warp(x / 2200, z / 2200, 405, 1.0, 2))
-        // (Down over km, flow on flow: dropping over a few hundred metres it ended in one tall scarp.)
-        const dd = df + 700 * Math.abs(warp(x / 1100, z / 1100, 406, 1.0, 2))
-        const m = sst(reach + 2200, reach - 500, dd) ** 1.4
-        // Thin flows reaching out past it, lobe on lobe, 20–80 m.
-        const lobes = (30 + 50 * (0.5 + 0.5 * warp(x / 1300, z / 1300, 407, 1.0, 2))) * sst(reach + 3200, reach + 200, dd + 600 * warp(x / 1800, z / 1800, 408, 0.9, 2))
-        E = Math.max(E * m, lobes)
+        const t = fall(x, z, dd, 2600, 7000, 411)
+        // Lobes: the flows' fronts are where |warp| says, not a smooth outline.
+        E = E * (1 - t) ** 1.7 + (25 + 45 * (0.5 + 0.5 * warp(x / 1300, z / 1300, 407, 1.0, 2))) * sst(0, 0.2, t) * sst(1, 0.7, t + 0.25 * Math.abs(warp(x / 1800, z / 1800, 408, 0.9, 2)))
+        // (Flows piled into uplands of their own out on the plain.)
+        E = Math.max(E, (T * 0.75) * massif(x, z, 411))
       }
-      // Tumuli: blisters of crust a few tens of metres.
       E += 16 * Math.max(0, vn(x / 170, z / 170, 409)) ** 2 * sst(0, 300, df)
-      return E
+      return Math.max(0, E)
     },
     surface: (E, x, z, df) => {
-      const big = terrace(E, LAVA_LV, 0.88, 0.06, (j) => (j < 2 ? 0 : 80 * fbmR(x / 2400, z / 2400, 2, 420 + j * 13)), 0.35)
+      const big = terrace(E, LAVA_LV, 0.88, 0.06, (j) => (j < 2 ? 0 : 85 * fbmR(x / (1600 + 400 * j), z / (1600 + 400 * j), 2, 420 + j * 13)), 0.35)
       const fine = fronts(E, 9 + 9 * (0.5 + 0.5 * vn(x / 1200, z / 1200, 421)))
-      // Benches near the gorge; low fronts everywhere else (never one tall cliff out on the flows).
       const w = sst(2200, 900, df)
       return Math.max(0, big * w + fine * (1 - w))
     },
-    canyonK: 2.0, wTrunk: [60, 120], wWay: [200, 280], top: 620, ways: [0.12, 0.37, 0.66, 0.9], seed: 8317,
+    canyonK: [1.6, 2.8], wTrunk: [55, 110], wWay: [190, 270], top: 620, ways: [0.12, 0.37, 0.66, 0.9], seed: 8317,
     erode: [3, 1.3, 0.2], apron: 0.3,
   },
-  // BLUE HOLLOW: a glacier — its surface rising inward (the ice flows out from the middle), ice cliffs at the
-  // gorge, seracs where it steepens toward its margin, which ramps down onto the snowfield. Over the cave
-  // sections it runs across the gorge (the roof's ice is part of it).
+  // BLUE HOLLOW: an ice sheet — rising toward the middle (tilted, its own height), ice cliffs at the gorge,
+  // rolling ice out to a wide convex margin that ramps down onto the snowfield over km; seracs where it
+  // steepens. Over the cave sections it runs across the gorge (the roof's ice is part of it).
   ice: {
-    reach: (x, z) => reachOf(x, z, 2600, 1800, 700, 504),
+    extent: ext(2400, 5500, 511),
     potential: (x, z, df, inner, roofTop) => {
-      const G = 380 + 120 * fbmR(x / 7000, z / 7000, 2, 501) + 40 * fbmR(x / 2000, z / 2000, 2, 502) + (inner ? 0.03 * Math.min(df, 6000) : 0)
-      const lam = 160 + 120 * (0.5 + 0.5 * warp(x / 3000, z / 3000, 503, 0.8, 2))
-      let E = G * (1 - Math.exp(-Math.max(0, df) / lam))
+      const G = inner
+        ? 440 + Math.max(-120, Math.min(160, 14 * tilt(x, z, 11))) + 110 * fbmR(x / 7000, z / 7000, 2, 501) + 0.03 * Math.min(df, 6000)
+        : 360 + 110 * cn(x, z, 3, 512) + 60 * fbmR(x / 7000, z / 7000, 2, 501)
+      const lam = 160 + 140 * (0.5 + 0.5 * warp(x / 3000, z / 3000, 503, 0.8, 2))
+      const dd = Math.max(0, df) + 250 * warp(x / 1500, z / 1500, 506, 0.9, 2) * sst(0, 400, df)
+      let E = (G + 30 * fbmR(x / 1800, z / 1800, 2, 502)) * (1 - Math.exp(-Math.max(0, dd) / lam))
       if (!inner) {
-        const reach = reachOf(x, z, 2600, 1800, 700, 504)
-        const W = 1400 + 500 * vn(x / 4000, z / 4000, 505)
-        const dd = df + 300 * warp(x / 800, z / 800, 506, 0.9, 2)
-        const t = Math.min(1, Math.max(0, (dd - reach) / W))
-        // A convex snout, then the snowfield's ramp below it.
-        E = Math.max(E * (1 - t * t), 55 * sst(reach + W + 1500, reach + W - 200, dd))
-        // Seracs where it steepens: broken blocks across the margin.
-        E += 4 * t * (1 - t) * 45 * sst(0.1, 0.6, warp(x / 210, z / 210, 507, 1.0, 2))
+        const t = Math.min(fall(x, z, dd, 2400, 5500, 511), 1 - 0.85 * massif(x, z, 511))
+        // Convex: the ice thins slowly, then rolls over at its margin onto the snowfield.
+        E = E * (1 - t * t) + 30 * sst(1.2, 0.9, t) * sst(0.5, 0.9, t)
+        E += 4 * t * (1 - t) * 35 * sst(0.2, 0.65, warp(x / 650, z / 650, 507, 1.0, 2))
       }
-      // Over the cave sections: the glacier's surface at the roof's ice, falling gently away from it.
       if (roofTop > 0) E = Math.max(E, (roofTop - 0.12 * Math.max(0, df - 300)) * sst(2400, 900, df))
-      return E
+      return Math.max(0, E)
     },
-    // (No strata on a glacier: flat sheets of terrace read as cardboard.)
     surface: (E) => Math.max(0, E),
-    canyonK: 1.0, wTrunk: [70, 120], wWay: [200, 260], top: 420, ways: [0.07, 0.31, 0.58, 0.95], seed: 9431,
+    canyonK: [0.8, 1.3], wTrunk: [70, 120], wWay: [200, 260], top: 420, ways: [0.07, 0.31, 0.58, 0.95], seed: 9431,
     erode: [0, 1, 0], apron: 0,
   },
-  // WHITEWATER: the river cut deep — granite bluffs at the water, steep wooded sides up to the shoulders,
-  // the core inside the loop well above the outer bank, ridges and side valleys outside falling away to the
-  // land around over km.
+  // WHITEWATER: the river cut deep — bluffs at the water from nothing to three times as tall, steep wooded
+  // sides to the shoulders, the core inside well above the outer bank; outside, an upland of ridges and side
+  // valleys falling over many km to the land around.
   forest: {
-    reach: (x, z) => reachOf(x, z, 2200, 1400, 800, 604),
+    extent: ext(2400, 7500, 611),
     potential: (x, z, df, inner) => {
       const d = Math.max(0, df)
-      // (Tall, for a river 1.4 km wide: walls of 100 m beside it read as a lawn's low banks round a lake.)
-      const Bb = 70 + 80 * (0.5 + 0.5 * warp(x / 1700, z / 1700, 601, 0.8, 2)) + 20 * fbmR(x / 220, z / 220, 2, 602)
-      const bw = 30 + 40 * (0.5 + 0.5 * vn(x / 900, z / 900, 603))
-      const S = 240 + 160 * (0.5 + 0.5 * warp(x / 4200, z / 4200, 604, 0.8, 2))
-      const Ws = 260 + 260 * (0.5 + 0.5 * fbmR(x / 2500, z / 2500, 2, 605))
+      const Bb = 15 + 150 * sst(-0.45, 0.9, warp(x / 1700, z / 1700, 601, 0.8, 2)) ** 1.6 + 15 * fbmR(x / 220, z / 220, 2, 602)
+      const bw = 25 + 45 * (0.5 + 0.5 * vn(x / 900, z / 900, 603))
+      const S = 230 + 170 * (0.5 + 0.5 * warp(x / 4200, z / 4200, 604, 0.8, 2)) + (inner ? 60 : 60 * cn(x, z, 3, 612))
+      const Ws = 240 + 300 * (0.5 + 0.5 * fbmR(x / 2500, z / 2500, 2, 605))
       const u = Math.min(1, Math.max(0, (d - bw) / Ws))
       let E = Bb * Math.pow(sst(0, bw, d), 0.5) + Math.max(0, S - Bb) * (1 - (1 - u) ** 2.4)
       const hills = 70 * fbmR(x / 2800, z / 2800, 3, 606) + 40 * fbmR(x / 800, z / 800, 2, 607)
-      if (inner) E += sst(0, 1, (d - bw - Ws) / 900) * (160 + 300 * sst(1200, 5000, d) + hills)
+      if (inner) E += sst(0, 1, (d - bw - Ws) / 900) * (200 + 300 * sst(1200, 5000, d) + Math.max(-150, Math.min(150, 16 * tilt(x, z, 5))) + hills)
       else {
         const rid = 1 - Math.abs(warp(x / 1700, z / 1700, 608, 0.9, 2))
-        const reach = reachOf(x, z, 2200, 1400, 800, 604)
-        const t = Math.min(1, Math.max(0, (d + 300 * warp(x / 900, z / 900, 609, 0.9, 2) - reach) / 2600))
-        E += sst(0, 1, (d - bw - Ws) / 700) * (150 * rid ** 3 - 40 + hills)
-        E = E * (1 - t) ** 1.5
+        const t = Math.min(fall(x, z, d, 2400, 7500, 611), 1 - 0.8 * massif(x, z, 611))
+        E += sst(0, 1, (d - bw - Ws) / 700) * (170 * rid ** 3 - 40 + hills)
+        E = E * (1 - t) ** 1.4
       }
       return Math.max(0, E)
     },
     surface: (E) => Math.max(0, E),
-    canyonK: 0.6, wTrunk: [30, 70], wWay: [150, 220], top: 380, ways: [0.16, 0.42, 0.69, 0.92], seed: 6151,
+    canyonK: [0.5, 0.8], wTrunk: [30, 70], wWay: [150, 230], top: 380, ways: [0.16, 0.42, 0.69, 0.92], seed: 6151,
     erode: [8, 0.75, 0.25], apron: 0,
   },
 }
 
 /** How far out the land can reach at a point (m from the floor's edge), with its edge zone. */
-export function landReach(style: LandStyle, x: number, z: number): number { return WORLDS[style].reach(x, z) + 3000 }
+export function landReach(style: LandStyle, x: number, z: number): number { return WORLDS[style].extent(x, z) }
 /** The land's potential (m above the ground) at a point, before the side canyons. */
 export function landPotential(style: LandStyle, x: number, z: number, df: number, inner: boolean, roofTop = 0): number { return WORLDS[style].potential(x, z, df, inner, roofTop) }
 /** Its world's surface over a potential. */
@@ -261,7 +291,7 @@ export function landAt(style: LandStyle, x: number, z: number, df: number, inner
 export function landSpec(L: LandLoop, style: LandStyle): LandSpec {
   let xa = Infinity, xb = -Infinity, za = Infinity, zb = -Infinity
   for (let i = 0; i < L.rx.length; i++) { xa = Math.min(xa, L.rx[i]); xb = Math.max(xb, L.rx[i]); za = Math.min(za, L.rz[i]); zb = Math.max(zb, L.rz[i]) }
-  const MARGIN = 11500, step = LAND_STEP
+  const MARGIN = 13000, step = LAND_STEP
   const x0 = Math.floor((xa - MARGIN) / (2 * step)) * 2 * step, z0 = Math.floor((za - MARGIN) / (2 * step)) * 2 * step
   return { style, x0, z0, step, nx: Math.ceil((xb + MARGIN - x0) / step) + 1, nz: Math.ceil((zb + MARGIN - z0) / step) + 1, wallTo: WALL_TO }
 }
@@ -281,65 +311,125 @@ export function lineAt(L: LandLoop, x: number, z: number, cand: ArrayLike<number
 }
 
 /** The side canyons, for one world (seeded): trunks off the gorge's edges at irregular spacing and angles
- *  (out across the outer land, or into the inner one), meandering, with branches that join them; the ways in
- *  keep their floor at the plain's level all the way out. Each: [x, z, floor, half-width] every 120 m. */
-export function landNetwork(L: LandLoop, style: LandStyle): { lines: number[][]; open: LandOpen[] } {
-  const W = WORLDS[style], m = L.rx.length, lines: number[][] = [], open: LandOpen[] = []
+ *  (out across the outer land, or into the inner one), winding, with branches that join them — narrow and
+ *  shallow at their heads, widening toward the gorge; the ways in keep their floor at the plain's level all
+ *  the way out and open onto it in a fan. Each line: [x, z, floor, half-width] every 120 m; k its walls'
+ *  rise per metre. */
+export function landNetwork(L: LandLoop, style: LandStyle): { lines: number[][]; k: number[]; open: LandOpen[] } {
+  useLoop(L)
+  const W = WORLDS[style], m = L.rx.length, lines: number[][] = [], ks: number[] = [], open: LandOpen[] = []
   let sd = W.seed >>> 0
   const rnd = () => { sd = (sd * 1664525 + 1013904223) >>> 0; return sd / 4294967296 }
-  const walk = (x: number, z: number, a: number, len: number, e0: number, e1: number, w0: number, w1: number, wig: number) => {
-    const out: number[] = [], n = Math.max(2, Math.round(len / 120)), ph = rnd() * 9
+  const walk = (x: number, z: number, a: number, len: number, e0: number, e1: number, w: (f: number) => number, wig: number, out_ = false) => {
+    const out: number[] = [], n = Math.max(2, Math.round(len / 120)), ph = rnd() * 9, ph2 = rnd() * 9
     for (let i = 0; i <= n; i++) {
       const f = i / n
-      out.push(x, z, e0 + (e1 - e0) * f ** 0.8, w0 + (w1 - w0) * f)
-      a += wig * (0.5 * Math.sin(f * 7 + ph) + 0.35 * Math.sin(f * 19 + ph * 2)) * 0.12
+      out.push(x, z, e0 + (e1 - e0) * f ** 0.8, w(f))
+      a += wig * (0.5 * Math.sin(f * 7 + ph) + 0.35 * Math.sin(f * 19 + ph2) + 0.25 * Math.sin(f * 41 + ph)) * 0.13
+      if (out_) {
+        // (A way in winds, but always outward: free, one wandered back along the gorge and onto its floor.)
+        const rad = Math.atan2(x - L.cx, z - L.cz)
+        let da = Math.atan2(Math.sin(a - rad), Math.cos(a - rad))
+        da = Math.max(-0.75, Math.min(0.75, da))
+        a = rad + da
+      }
       x += Math.sin(a) * 120; z += Math.cos(a) * 120
     }
     return out
   }
+  const kOf = () => W.canyonK[0] + (W.canyonK[1] - W.canyonK[0]) * rnd()
   for (const sg of [L.sgIn, -L.sgIn]) {
     const inner = sg === L.sgIn
     const todo = inner ? [] : W.ways.slice()
     let u = rnd() * 0.05
     while (u < 1 || todo.length) {
-      // The next way in, when the walk round the loop reaches it.
       const way = todo.length && (todo[0] <= u + 0.02 || u >= 1) ? todo.shift() : undefined
       const uu = way ?? u, r = Math.floor(uu * m) % m
       const fx = L.rx[r] + L.tz[r] * sg * (L.half[r] - 40), fz = L.rz[r] - L.tx[r] * sg * (L.half[r] - 40)
-      const a0 = Math.atan2(L.tz[r] * sg, -L.tx[r] * sg) + (way !== undefined ? 0.25 : 0.85) * (rnd() - 0.5) * 2
-      const len = way !== undefined ? W.reach(fx, fz) + 5200 : (inner ? 1800 + rnd() * 3800 : 1500 + rnd() * 3200)
-      const line = way !== undefined
-        ? walk(fx, fz, a0, len, 0, 0, W.wWay[0], W.wWay[1], 0.6)
-        : walk(fx, fz, a0, len, 30 + rnd() * 80, W.top * (0.7 + 0.25 * rnd()), W.wTrunk[1] - rnd() * 40, 25, 1.4)
-      lines.push(line)
+      const a0 = Math.atan2(L.tz[r] * sg, -L.tx[r] * sg) + (way !== undefined ? 0.3 : 0.85) * (rnd() - 0.5) * 2
+      let line: number[]
+      if (way !== undefined) {
+        // A way in: as wide as a road at least, wandering in width, out past where the land ends (through any
+        // massif in its way) and into a fan on the plain.
+        const ph = rnd() * 6, [w0, w1] = W.wWay
+        const long = walk(fx, fz, a0, 26000, 0, 0, () => w0, 1.25, true)
+        let cut = long.length / 4, flat = 0
+        for (let i = 8; i < long.length / 4; i++) {
+          const x = long[i * 4], z = long[i * 4 + 1], l = lineAt(L, x, z, null)
+          flat = W.potential(x, z, l.df, l.side === L.sgIn, 0) < 6 ? flat + 1 : 0
+          if (flat >= 8) { cut = Math.min(long.length / 4, i + 20); break }
+        }
+        line = long.slice(0, cut * 4)
+        const n = cut - 1
+        for (let i = 0; i < cut; i++) { const f = i / n; line[i * 4 + 3] = (w0 + (w1 - w0) * (0.5 + 0.5 * Math.sin(f * 11 + ph))) * (1 + 2.2 * sst(0.8, 1, f)) }
+      } else {
+        const len = inner ? 1800 + rnd() * 3800 : 1500 + rnd() * 3200, wt = W.wTrunk[1] - rnd() * 40
+        line = walk(fx, fz, a0, len, 30 + rnd() * 80, W.top * (0.7 + 0.25 * rnd()), (f) => 18 + (wt - 18) * (1 - f) ** 1.3, 1.5)
+      }
+      lines.push(line); ks.push(kOf())
       if (way !== undefined) {
         const axis: number[] = []
         for (let i = 0; i < line.length; i += 4) axis.push(line[i], line[i + 1], (i / 4) * 120)
         open.push({ row: r, side: sg, x: fx, z: fz, axis })
       }
-      const nb = way !== undefined ? 2 + Math.floor(rnd() * 2) : Math.floor(rnd() * 3)
+      const nb = way !== undefined ? 2 + Math.floor(rnd() * 3) : Math.floor(rnd() * 3)
       for (let b = 0; b < nb; b++) {
-        const q = 4 * Math.floor((line.length / 4 - 1) * (0.25 + 0.6 * rnd()))
-        const ha = Math.atan2(line[q + 4] - line[q], line[q + 5] - line[q + 1]) + (rnd() < 0.5 ? -1 : 1) * (0.6 + 0.6 * rnd())
-        lines.push(walk(line[q], line[q + 1], ha, 900 + rnd() * 2200, line[q + 2] + 15, W.top * (0.8 + 0.2 * rnd()), W.wTrunk[0] - rnd() * 20, 18, 1.6))
+        const q = 4 * Math.floor((line.length / 4 - 1) * (0.15 + 0.6 * rnd()))
+        const ha = Math.atan2(line[q + 4] - line[q], line[q + 5] - line[q + 1]) + (rnd() < 0.5 ? -1 : 1) * (0.5 + 0.7 * rnd())
+        const wb = W.wTrunk[0] - rnd() * 20
+        lines.push(walk(line[q], line[q + 1], ha, 900 + rnd() * 2600, line[q + 2] + 15, W.top * (0.8 + 0.2 * rnd()), (f) => 14 + (wb - 14) * (1 - f), 1.7)); ks.push(kOf())
       }
-      // (Past a way in: the next trunk a fair way on, so the way's mouth stays clear.)
       if (way !== undefined) u = Math.max(u, way + 0.03)
-      else u += 0.04 + rnd() * 0.05
+      else u += 0.035 + rnd() * 0.06
     }
   }
-  return { lines, open }
+  return { lines, k: ks, open }
+}
+
+/** The side canyons' carve at single points (the walls' mesh): their segments hashed in 600 m cells. */
+export class CarveAt {
+  private readonly cells = new Map<number, number[]>()
+  private readonly net: { lines: number[][]; k: number[] }
+  constructor(net: { lines: number[][]; k: number[] }) {
+    this.net = net
+    net.lines.forEach((P, li) => {
+      for (let i = 0; i + 4 < P.length; i += 4) {
+        const x0 = Math.min(P[i], P[i + 4]) - 1200, x1 = Math.max(P[i], P[i + 4]) + 1200, z0 = Math.min(P[i + 1], P[i + 5]) - 1200, z1 = Math.max(P[i + 1], P[i + 5]) + 1200
+        for (let cx = Math.floor(x0 / 600); cx <= Math.floor(x1 / 600); cx++) for (let cz = Math.floor(z0 / 600); cz <= Math.floor(z1 / 600); cz++) {
+          const key = cx * 100003 + cz
+          let a = this.cells.get(key)
+          if (!a) this.cells.set(key, (a = []))
+          a.push(li, i)
+        }
+      }
+    })
+  }
+  at(x: number, z: number): number {
+    const a = this.cells.get(Math.floor(x / 600) * 100003 + Math.floor(z / 600))
+    let best = 1e5
+    if (!a) return best
+    for (let n = 0; n < a.length; n += 2) {
+      const P = this.net.lines[a[n]], i = a[n + 1], k = this.net.k[a[n]]
+      const ax = P[i], az = P[i + 1], ex = P[i + 4] - ax, ez = P[i + 5] - az, l2 = ex * ex + ez * ez || 1
+      const t = Math.max(0, Math.min(1, ((x - ax) * ex + (z - az) * ez) / l2))
+      const d = Math.hypot(x - ax - ex * t, z - az - ez * t)
+      const v = P[i + 2] + (P[i + 6] - P[i + 2]) * t + Math.max(0, d - (P[i + 3] + (P[i + 7] - P[i + 3]) * t)) * k
+      if (v < best) best = v
+    }
+    return best
+  }
 }
 
 /** Build rows [j0, j1) of a tile: the land's potential, cut by the side canyons, as its world's surface;
  *  and each cell's distance beyond the floor's edge (for the finish). */
 export function landRows(L: LandLoop, spec: LandSpec, j0: number, j1: number): { h: Float32Array; df: Float32Array; c: Float32Array } {
   const { style, x0, z0, step, nx, nz } = spec, W = WORLDS[style], m = L.rx.length
+  useLoop(L)
   const rows = j1 - j0, h = new Float32Array(rows * nx), df = new Float32Array(rows * nx), C = new Float32Array(rows * nx).fill(1e5)
   const net = landNetwork(L, style)
   // The canyons' carve, painted segment by segment into these rows.
-  const reach = 1200, k = W.canyonK
-  for (const P of net.lines) for (let i = 0; i + 4 < P.length; i += 4) {
+  const reach = 1200
+  for (let li = 0; li < net.lines.length; li++) for (let i = 0, P = net.lines[li], k = net.k[li]; i + 4 < P.length; i += 4) {
     const ax = P[i], az = P[i + 1], bx = P[i + 4], bz = P[i + 5]
     const ex = bx - ax, ez = bz - az, l2 = ex * ex + ez * ez || 1
     const ja = Math.max(j0, Math.floor((Math.min(az, bz) - reach - z0) / step)), jb = Math.min(j1 - 1, Math.ceil((Math.max(az, bz) + reach - z0) / step))
@@ -384,7 +474,8 @@ export function landRows(L: LandLoop, spec: LandSpec, j0: number, j1: number): {
       const inner = side === L.sgIn
       let E = Math.min(W.potential(x, z, d, inner, far ? 0 : L.roofTop[row]), C[q])
       const bd = Math.min(kk, nx - 1 - kk, j, nz - 1 - j) * step
-      E *= sst(0, 3000, bd - 600)
+      // (Down to the world's own ground over the tile's last km: the land fades into it, no edge.)
+      E *= sst(0, 4500, bd - 300)
       h[q] = Math.max(0, W.surface(E, x, z, d))
     }
   }

@@ -388,7 +388,7 @@ const bestOf = (id: string): number | null => { try { const v = localStorage.get
 const GORGE = COURSES.find((c) => c.gorge && c.loop && biomeOf(c.id) === BIOME)
 const canyon = GORGE ? new Canyon(GORGE.loop!, GORGE.gorge) : null
 // Its land (src/land.ts), built in workers while the rest boots; given to it before the first frame.
-const landJob = canyon ? startLand(canyon.land, canyon.style) : null
+const landJob = canyon ? startLand(canyon.land, canyon.style, canyon.wallsIn()) : null
 const clearAt = (x: number, z: number, r: number) => {
   // (Nothing stands in the world's gorge or on its rim, on any of its courses: in the open world it is there.)
   if (canyon && canyon.covers(x, z, r)) return false
@@ -443,10 +443,12 @@ function gorgeWall(base: number, glow: [number, number, number], emissive = 0x00
 }
 // (The basalt with a little light of its own — the lava's glow bouncing about the gorge: faces turned from
 // the sun were pure black.)
-const wallMat = !canyon ? null : canyon.style === 'ice' ? gorgeWall(0x5b86b8, [0.3, 0.7, 1.4], 0x0a1c33) : canyon.style === 'lava' ? gorgeWall(0x2a221e, [4.5, 1.4, 0.25], 0x2e2019) : world.mesaMat!
+const wallMat = !canyon ? null : canyon.style === 'ice' ? gorgeWall(0x5b86b8, [0.3, 0.7, 1.4], 0x0a1c33) : canyon.style === 'lava' ? gorgeWall(0x3c3029, [4.5, 1.4, 0.25], 0x3a281e) : world.mesaMat!
 // The land's gentlest faces in the world's own rock — the glacier's top in its snow, the lava plateau's flats
 // in its ash — smooth-shaded (the world's landforms are faceted: across km of ground, facets read as card);
 // the roof's ice from above in the world's own; the glacier's cliffs outside the cave in a paler ice.
+/** BLUE HOLLOW's roof from above: the glacier's own snow, coloured per vertex (polished ice, crevasses). */
+function roofTop(): THREE.Material { const m = smoothTop() as THREE.MeshStandardMaterial; m.vertexColors = true; return m }
 function smoothTop(): THREE.Material {
   const m = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: BIOME === 'ice' ? 0.3 : 0.92, metalness: 0 })
   patchStandard(m, BIOME === 'ice' ? { ice: true, shadow: true, detail: true } : BIOME === 'lava' ? { lava: true, shadow: true, detail: true } : { strata: true, shadow: true, detail: true })
@@ -456,7 +458,7 @@ let canyonMesh: THREE.Group | null = null
 // (BLUE HOLLOW: the roof's ice from above in the same snow as the glacier's tops round it — in the world's
 //  faceted ice it read as grey slabs laid across the gorge.)
 const iceTop = BIOME === 'ice' ? smoothTop() : null
-const buildCanyonMesh = (cv: Canyon): THREE.Group => cv.style === 'ice' ? cv.build(wallMat!, { roofMat: caveRoof, topMat: iceTop!, roofTopMat: iceTop!, cliffMat: gorgeWall(0xa9c6e2, [0.25, 0.6, 1.2], 0x24466e) })
+const buildCanyonMesh = (cv: Canyon): THREE.Group => cv.style === 'ice' ? cv.build(wallMat!, { roofMat: caveRoof, topMat: iceTop!, roofTopMat: roofTop(), cliffMat: gorgeWall(0x7d9cc0, [0.25, 0.6, 1.2], 0x10243e) })
   // (The plateau's own cliffs in a basalt a shade lighter than the gorge's: black against the ash they read
   //  as cut-out wedges.)
   : cv.build(wallMat!, cv.style === 'lava' ? { topMat: lavaCrust(), cliffMat: gorgeWall(0x4f3e35, [4.5, 1.4, 0.25], 0x3a2920) } : cv.style === 'desert' ? { topMat: smoothTop() } : {})
@@ -2876,11 +2878,14 @@ const sunShadow = new SunShadow()
 // The gorge's land, from its workers: the walls shaped on it, and it made the world's ground (on while the
 // gorge stands — see the frame).
 if (canyon && landJob) {
-  canyon.attachLand(await landJob)
+  const lw = await landJob
+  canyon.attachLand(lw.tile, lw.walls)
   canyonMesh = buildCanyonMesh(canyon)
   world.canyon = canyon
   world.group.add(canyonMesh)
   setLand(canyon.tile)
+  world.addLandMesh(canyon.tile!)
+  world.revetoAll()
 }
 const markAllCasters = () => { markCasters(world.group); markCasters(course.group); for (const v of visuals.values()) markCasters(v.craft.root); markCasters(darts.mesh) }
 markAllCasters()

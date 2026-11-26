@@ -366,9 +366,14 @@ export interface GroundUniforms {
   uTrackOn: { value: number }
 }
 
-function terrainMaterial(shared: GroundUniforms, snap: { value: THREE.Vector2 }, drop: number): THREE.ShaderMaterial {
+/** The middle ring's centre (the gorge's land mesh draws only past it — see World.landMesh). */
+const RING2_C = { value: new THREE.Vector2() }
+/** mode: 0 the ground; 1 a far ring, where the gorge's land is not (its 400 m cells drew the land's edges as
+ *  staircases from the air); 2 the land's own mesh, past the middle ring. */
+function terrainMaterial(shared: GroundUniforms, snap: { value: THREE.Vector2 }, drop: number, mode = 0): THREE.ShaderMaterial {
   return new THREE.ShaderMaterial({
-    uniforms: { ...shared, ...MOUND_U, ...SHADOW_U, ...WORLD_FADE, ...SPACE_U, uSnap: snap, uDrop: { value: drop }, tRock: TEX.tRock },
+    defines: mode ? { LAND_MODE: mode } : {},
+    uniforms: { ...shared, ...MOUND_U, ...SHADOW_U, ...WORLD_FADE, ...SPACE_U, uSnap: snap, uDrop: { value: drop }, tRock: TEX.tRock, uRing2C: RING2_C },
     vertexShader: /* glsl */ `
       ${WORLD_GLSL}
       uniform vec2 uSnap;
@@ -422,9 +427,15 @@ function terrainMaterial(shared: GroundUniforms, snap: { value: THREE.Vector2 },
       varying float vRiver;
       varying float vLand;
       uniform sampler2D tRock;
+      uniform vec2 uRing2C;
       ${SPACE_FN}
       void main() {
         if (worldCutGround(vW, gl_FragCoord.xy)) discard;
+        #if defined(LAND_MODE) && LAND_MODE == 1
+        if (vLand > 12.0 && uLandBox.w > 0.5) discard;
+        #elif defined(LAND_MODE) && LAND_MODE == 2
+        { vec2 rq = abs(vW.xz - uRing2C); if (vLand < 4.0 || max(rq.x, rq.y) < 11800.0) discard; }
+        #endif
         vec2 p = vW.xz;
         vec3 n = normalize(vN);
         float h0 = vH;
@@ -590,29 +601,34 @@ function terrainMaterial(shared: GroundUniforms, snap: { value: THREE.Vector2 },
         float nearG = 1.0 - smoothstep(25.0, 150.0, length(vW - cameraPosition));
         if (nearG > 0.0) alb *= 1.0 + (dot(texture2D(tSand, p / 5.0, bias).rgb, vec3(0.333)) - 0.45) * 0.4 * nearG;
         // The gorge's land (src/land.ts) is this ground: on its steep faces, its own rock — never the ground's
-        // sand or snow or grass stretched up a cliff. (By slope; gentle land keeps the ground's own cover.)
+        // sand or snow or grass stretched up a cliff; on its moderate slopes scree (rounded slopes in strata
+        // read as zebra stripes); gentle land keeps the ground's own cover.
         if (vLand > 1.0) {
           vec3 gn = normalize(vN);
-          float steep = smoothstep(0.86, 0.6, gn.y) * smoothstep(1.0, 25.0, vLand);
-          if (steep > 0.0) {
+          float onL = smoothstep(1.0, 25.0, vLand);
+          float steep = smoothstep(0.66, 0.48, gn.y) * onL;
+          float scree = smoothstep(0.9, 0.7, gn.y) * onL * (1.0 - steep);
+          if (steep + scree > 0.0) {
+            // (One plane's texture at a time, mostly: two blended evenly crossed their streaks into smudges.)
             vec3 an = abs(gn);
-            vec2 wxz = an.xz / max(an.x + an.z, 1e-3);
+            vec2 wq = an.xz * an.xz * an.xz * an.xz;
+            vec2 wxz = wq / max(wq.x + wq.y, 1e-6);
             float wy = vW.y + 7.0 * fbmT(p * 0.003);
             #if defined(BIOME_ICE)
-            // Blue glacier ice: dense ice in the faces, layered, paler streaks running down.
-            float lay = fract(wy / (14.0 + 8.0 * fbmT(p * 0.0005)));
+            // Blue glacier ice: dense ice in the faces, paler and darker by noise, streaks running down.
             vec3 rk = mix(vec3(0.16, 0.36, 0.62), vec3(0.42, 0.66, 0.88), 0.5 + 0.5 * fbmT(vec2(dot(p, wxz.yx) * 0.01, wy * 0.004)));
-            rk = mix(rk, vec3(0.75, 0.88, 0.98), smoothstep(0.85, 0.95, lay) * 0.5);
+            vec3 sc = alb * vec3(0.9, 0.95, 1.05);
             #elif defined(BIOME_LAVA)
-            // Basalt: dark, in flows (beds of a few metres), jointed in columns, rust here and there.
-            float bed = fract(wy / (9.0 + 6.0 * fbmT(p * 0.0007)));
-            float col = fbmT(vec2(dot(p, wxz.yx) * 0.09, wy * 0.004));
-            vec3 rk = vec3(0.16, 0.13, 0.12) * (0.8 + 0.45 * col) * (0.85 + 0.2 * smoothstep(0.7, 0.9, bed));
+            // Basalt: dark, jointed in columns (vertical streaks), rust here and there.
+            float colj = fbmT(vec2(dot(p, wxz.yx) * 0.09, wy * 0.002));
+            vec3 rk = vec3(0.17, 0.14, 0.13) * (0.8 + 0.45 * colj);
             rk = mix(rk, vec3(0.34, 0.16, 0.08), smoothstep(0.62, 0.8, fbmT(p * 0.0021 + 3.0)) * 0.4);
+            vec3 sc = vec3(0.2, 0.17, 0.15) * (0.8 + 0.4 * fbmT(p * 0.02));
             #elif defined(BIOME_FOREST)
             // Granite: grey, streaked, lichen on it.
             vec3 rk = vec3(0.46, 0.45, 0.42) * (0.78 + 0.35 * fbmT(vec2(dot(p, wxz.yx) * 0.03, wy * 0.006)));
             rk = mix(rk, vec3(0.3, 0.34, 0.2), smoothstep(0.55, 0.8, fbmT(p * 0.004 + 6.0)) * 0.35);
+            vec3 sc = alb;
             #else
             // Sandstone, the mesas' own rock on the two vertical planes, its beds level to the world: the
             // texture's beds spread to the walls' own scale (it repeated every 110 m: fine candy stripes),
@@ -620,11 +636,13 @@ function terrainMaterial(shared: GroundUniforms, snap: { value: THREE.Vector2 },
             float wyb = wy + 30.0 * fbmT(vec2(dot(p, wxz.yx) * 0.0008, 1.0));
             vec3 rk = texture2D(tRock, vec2(vW.z / 140.0, wyb / 220.0)).rgb * wxz.x + texture2D(tRock, vec2(vW.x / 140.0, wyb / 220.0)).rgb * wxz.y;
             float band = fract(wyb / (70.0 + 40.0 * fbmT(p * 0.0004)));
-            // (Duller beds: darker and browner, never the texture's pale violet — it read as candy stripes.)
             rk *= 1.0 - 0.3 * smoothstep(0.55, 0.7, band) * (1.0 - smoothstep(0.85, 0.95, band));
             rk = mix(vec3(dot(rk, vec3(0.333))), rk, 0.6) * vec3(1.05, 0.86, 0.72) * mix(vec3(1.0), vec3(1.05, 0.92, 0.85), smoothstep(0.3, 0.7, fbmT(p * 0.0006 + 4.0)));
             rk *= 0.9;
+            // Scree: the sand darkened with fallen rock, streaked down the slope.
+            vec3 sc = mix(alb, vec3(dot(alb, vec3(0.333))) * vec3(0.95, 0.75, 0.6), 0.45) * (0.85 + 0.2 * fbmT(p * 0.03));
             #endif
+            alb = mix(alb, sc, scree);
             alb = mix(alb, rk, steep);
           }
         }
@@ -683,7 +701,8 @@ function terrainMaterial(shared: GroundUniforms, snap: { value: THREE.Vector2 },
         {
           vec2 tl2 = (p - uTrackBox.xy) / uTrackBox.zw;
           float road = (uTrackOn > 0.01 && tl2.x > 0.0 && tl2.y > 0.0 && tl2.x < 1.0 && tl2.y < 1.0) ? smoothstep(0.2, 0.6, texture2D(tTrack, tl2, 1.5).b) : 0.0;
-          col += vec3(3.0, 0.8, 0.12) * lavaCrack * (1.0 - road) * (1.0 - smoothstep(600.0, 3500.0, length(vW - cameraPosition)));
+          // (Not up on the gorge's land: on its slopes the seams ran along the mesh's edges.)
+          col += vec3(3.0, 0.8, 0.12) * lavaCrack * (1.0 - road) * (1.0 - smoothstep(600.0, 3500.0, length(vW - cameraPosition))) * (1.0 - smoothstep(1.0, 10.0, vLand));
         }
         // The lava: flowing, glowing, crusting over in plates; and its glow on the sand beside it.
         col += alb * vec3(0.16, 0.12, 0.12) + alb * vec3(0.35, 0.12, 0.04) * 0.6; // the orange sky's light on the ground
@@ -1342,6 +1361,36 @@ export class World {
   readonly sunLight: THREE.DirectionalLight
   /** The far ring for the gorge's land (on only with it). */
   private farLand: THREE.Mesh | null = null
+  /** The gorge's land past the middle ring, at 120 m (the far rings' 400 m cells drew its edges as
+   *  staircases from the air): chunks, each culled on its own; on only with the land. */
+  private landMesh: THREE.Group | null = null
+  /** Ask every wrapped item's veto again (the gorge's land has arrived: what may stand where has changed). */
+  revetoAll(): void { for (const w of this.wrapped) for (const it of w.items) (it as { vx?: number }).vx = NaN }
+  addLandMesh(t: { x0: number; z0: number; step: number; nx: number; nz: number; h: Float32Array }): void {
+    const S = 120, C = 48, nx = Math.floor(((t.nx - 1) * t.step) / S), nz = Math.floor(((t.nz - 1) * t.step) / S)
+    const g = new THREE.Group(), mat = terrainMaterial(this.ground, { value: new THREE.Vector2() }, 3, 2)
+    const hAt = (x: number, z: number) => { const k = Math.round((x - t.x0) / t.step), j = Math.round((z - t.z0) / t.step); return t.h[Math.min(t.nz - 1, j) * t.nx + Math.min(t.nx - 1, k)] }
+    for (let cz = 0; cz < nz; cz += C) for (let cx = 0; cx < nx; cx += C) {
+      const ex = Math.min(nx, cx + C), ez = Math.min(nz, cz + C)
+      let top = 0
+      for (let j = cz; j <= ez; j += 2) for (let k = cx; k <= ex; k += 2) top = Math.max(top, hAt(t.x0 + k * S, t.z0 + j * S))
+      if (top < 4) continue
+      const w = ex - cx + 1, pos = new Float32Array(w * (ez - cz + 1) * 3), idx: number[] = []
+      for (let j = cz; j <= ez; j++) for (let k = cx; k <= ex; k++) { const o = ((j - cz) * w + (k - cx)) * 3; pos[o] = t.x0 + k * S; pos[o + 2] = t.z0 + j * S }
+      for (let j = 0; j < ez - cz; j++) for (let k = 0; k < ex - cx; k++) { const a = j * w + k; idx.push(a, a + w, a + 1, a + 1, a + w, a + w + 1) }
+      const geo = new THREE.BufferGeometry()
+      geo.setAttribute('position', new THREE.BufferAttribute(pos, 3))
+      geo.setIndex(idx)
+      const mx = t.x0 + ((cx + ex) / 2) * S, mz = t.z0 + ((cz + ez) / 2) * S
+      geo.boundingSphere = new THREE.Sphere(new THREE.Vector3(mx, top / 2, mz), Math.hypot((ex - cx) * S, (ez - cz) * S) / 2 + top + 200)
+      const m = new THREE.Mesh(geo, mat)
+      m.userData.box = [t.x0 + cx * S, t.z0 + cz * S, t.x0 + ex * S, t.z0 + ez * S]
+      g.add(m)
+    }
+    g.visible = false
+    this.landMesh = g
+    this.group.add(g)
+  }
   envTexture: THREE.Texture | null = null
 
   /**
@@ -1362,8 +1411,8 @@ export class World {
       [400, 120, 11600, 6],
     ]
     for (const [step, cells, hole, drop] of specs) {
-      const snap = { value: new THREE.Vector2() }
-      const mesh = new THREE.Mesh(ringGeometry(step, cells, hole), terrainMaterial(this.ground, snap, drop))
+      const snap = step === 60 ? RING2_C : { value: new THREE.Vector2() }
+      const mesh = new THREE.Mesh(ringGeometry(step, cells, hole), terrainMaterial(this.ground, snap, drop, step === 400 ? 1 : 0))
       mesh.frustumCulled = false
       this.rings.push({ mesh, snap, step: step * 2 })
       this.group.add(mesh)
@@ -1373,7 +1422,7 @@ export class World {
     // and from high up it was cut off along a square.
     {
       const snap = { value: new THREE.Vector2() }
-      const mesh = new THREE.Mesh(ringGeometry(1200, 100, 22200), terrainMaterial(this.ground, snap, 12))
+      const mesh = new THREE.Mesh(ringGeometry(1200, 100, 22200), terrainMaterial(this.ground, snap, 12, 1))
       mesh.frustumCulled = false
       this.farLand = mesh
       mesh.visible = false
@@ -1430,7 +1479,9 @@ export class World {
         }
         let placed = 0, tries = 0
         while (placed < count && tries++ < count * 80) {
-          if ((tries & 511) === 0) await pause()
+          // (A pause every 2,048 tries: a gorge's land covers much of its world, most tries there fail fast, and
+          //  pausing every 512 was most of the world's boot.)
+          if ((tries & 2047) === 0) await pause()
           const ox = r() * REBASE
           const oz = r() * REBASE
           const sx = ((ox + REBASE / 2) % REBASE) - REBASE / 2
@@ -1753,6 +1804,16 @@ export class World {
     sm.uniforms.uCloudOff.value.set(time * 14, time * 5)
     for (const r of this.rings) r.snap.value.set(Math.round(cam.x / r.step) * r.step, Math.round(cam.z / r.step) * r.step)
     if (this.farLand) this.farLand.visible = MOUND_U.uLandBox.value.w > 0.5
+    if (this.landMesh) {
+      this.landMesh.visible = MOUND_U.uLandBox.value.w > 0.5
+      // (Chunks wholly inside the middle ring are never drawn there — every pixel discarded — but their
+      //  vertices were still shaded: off.)
+      const c = RING2_C.value
+      for (const ch of this.landMesh.children) {
+        const b = ch.userData.box as number[]
+        ch.visible = !(b[0] > c.x - 11800 && b[2] < c.x + 11800 && b[1] > c.y - 11800 && b[3] < c.y + 11800)
+      }
+    }
     let fx = 0, fz = 0, cosHalf = -2
     if (view) {
       // A horizontal cone round the look direction: half the horizontal FOV plus a margin (camera shake, banking).
