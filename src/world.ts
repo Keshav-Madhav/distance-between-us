@@ -3,7 +3,7 @@
 // boulders and mesas (both collide, against their true lumpy profile), the env map.
 import * as THREE from 'three'
 import { REBASE } from './config'
-import { BIOME, groundH, LIGHT, MOUND_U, SUN_DIR, WORLD_FADE } from './terrain'
+import { BIOME, groundBase, groundH, LIGHT, MOUND_U, SUN_DIR, WORLD_FADE } from './terrain'
 import { ICE_VARIANTS, iceGeometry } from './ice'
 import { LAVA_VARIANTS, lavaGeometry } from './lava'
 import { FOREST_VARIANTS, forestGeometry } from './forest'
@@ -43,7 +43,7 @@ export async function prebuildLand(pause: () => Promise<void>): Promise<void> {
   }
   for (const kind of ['butte', 'spire'] as const) for (let v = 0; v < 3; v++) { landGeometry(kind, kind.length * 31 + 7 + v * 101, v); await pause() }
 }
-import { FBMT_GLSL, NOISE_TEX, patchStandard, WORLD_GLSL } from './shaders'
+import { FBMT_GLSL, NOISE_TEX, patchStandard, TEX, WORLD_GLSL } from './shaders'
 import { SHADOW_GLSL, SHADOW_U } from './shadow'
 import { LodPair, lodFade, patchLodDither, type LodView } from './lod'
 import type { Canyon } from './canyon'
@@ -368,7 +368,7 @@ export interface GroundUniforms {
 
 function terrainMaterial(shared: GroundUniforms, snap: { value: THREE.Vector2 }, drop: number): THREE.ShaderMaterial {
   return new THREE.ShaderMaterial({
-    uniforms: { ...shared, ...MOUND_U, ...SHADOW_U, ...WORLD_FADE, ...SPACE_U, uSnap: snap, uDrop: { value: drop } },
+    uniforms: { ...shared, ...MOUND_U, ...SHADOW_U, ...WORLD_FADE, ...SPACE_U, uSnap: snap, uDrop: { value: drop }, tRock: TEX.tRock },
     vertexShader: /* glsl */ `
       ${WORLD_GLSL}
       uniform vec2 uSnap;
@@ -377,8 +377,10 @@ function terrainMaterial(shared: GroundUniforms, snap: { value: THREE.Vector2 },
       varying vec3 vN;
       varying float vH;
       varying float vRiver;
+      varying float vLand;
       void main() {
         vec2 xz = position.xz + uSnap;
+        vLand = landH(xz);
         float d = length(xz - cameraPosition.xz);
         float h = groundH(xz);
         // (Normals per vertex, not per pixel: three height samples per pixel, each looping the
@@ -386,7 +388,8 @@ function terrainMaterial(shared: GroundUniforms, snap: { value: THREE.Vector2 },
         float e = 3.0 + d * 0.004;
         vN = normalize(vec3(h - groundH(xz + vec2(e, 0.0)), e, h - groundH(xz + vec2(0.0, e))));
         vH = h;
-        vRiver = riverAt(xz);
+        // (Not up on the gorge's land: the world's rivers ran over its plateaus and down its cliffs.)
+        vRiver = riverAt(xz) * (1.0 - smoothstep(1.0, 12.0, vLand));
         vec3 w = vec3(xz.x, h - uDrop * smoothstep(0.0, 400.0, d), xz.y);
         // Climbing (src/space.ts): the ground bends away to the planet's curvature, so its edge meets
         // the planet drawn behind it. (Zero on the ground: nothing changes there.)
@@ -417,6 +420,8 @@ function terrainMaterial(shared: GroundUniforms, snap: { value: THREE.Vector2 },
       varying vec3 vN;
       varying float vH;
       varying float vRiver;
+      varying float vLand;
+      uniform sampler2D tRock;
       ${SPACE_FN}
       void main() {
         if (worldCutGround(vW, gl_FragCoord.xy)) discard;
@@ -584,6 +589,45 @@ function terrainMaterial(shared: GroundUniforms, snap: { value: THREE.Vector2 },
         // speed blur has something to smear, and the ground reads as rushing past.
         float nearG = 1.0 - smoothstep(25.0, 150.0, length(vW - cameraPosition));
         if (nearG > 0.0) alb *= 1.0 + (dot(texture2D(tSand, p / 5.0, bias).rgb, vec3(0.333)) - 0.45) * 0.4 * nearG;
+        // The gorge's land (src/land.ts) is this ground: on its steep faces, its own rock — never the ground's
+        // sand or snow or grass stretched up a cliff. (By slope; gentle land keeps the ground's own cover.)
+        if (vLand > 1.0) {
+          vec3 gn = normalize(vN);
+          float steep = smoothstep(0.86, 0.6, gn.y) * smoothstep(1.0, 25.0, vLand);
+          if (steep > 0.0) {
+            vec3 an = abs(gn);
+            vec2 wxz = an.xz / max(an.x + an.z, 1e-3);
+            float wy = vW.y + 7.0 * fbmT(p * 0.003);
+            #if defined(BIOME_ICE)
+            // Blue glacier ice: dense ice in the faces, layered, paler streaks running down.
+            float lay = fract(wy / (14.0 + 8.0 * fbmT(p * 0.0005)));
+            vec3 rk = mix(vec3(0.16, 0.36, 0.62), vec3(0.42, 0.66, 0.88), 0.5 + 0.5 * fbmT(vec2(dot(p, wxz.yx) * 0.01, wy * 0.004)));
+            rk = mix(rk, vec3(0.75, 0.88, 0.98), smoothstep(0.85, 0.95, lay) * 0.5);
+            #elif defined(BIOME_LAVA)
+            // Basalt: dark, in flows (beds of a few metres), jointed in columns, rust here and there.
+            float bed = fract(wy / (9.0 + 6.0 * fbmT(p * 0.0007)));
+            float col = fbmT(vec2(dot(p, wxz.yx) * 0.09, wy * 0.004));
+            vec3 rk = vec3(0.16, 0.13, 0.12) * (0.8 + 0.45 * col) * (0.85 + 0.2 * smoothstep(0.7, 0.9, bed));
+            rk = mix(rk, vec3(0.34, 0.16, 0.08), smoothstep(0.62, 0.8, fbmT(p * 0.0021 + 3.0)) * 0.4);
+            #elif defined(BIOME_FOREST)
+            // Granite: grey, streaked, lichen on it.
+            vec3 rk = vec3(0.46, 0.45, 0.42) * (0.78 + 0.35 * fbmT(vec2(dot(p, wxz.yx) * 0.03, wy * 0.006)));
+            rk = mix(rk, vec3(0.3, 0.34, 0.2), smoothstep(0.55, 0.8, fbmT(p * 0.004 + 6.0)) * 0.35);
+            #else
+            // Sandstone, the mesas' own rock on the two vertical planes, its beds level to the world: the
+            // texture's beds spread to the walls' own scale (it repeated every 110 m: fine candy stripes),
+            // beds thicker and thinner (the level wanders through them), and a few duller ones.
+            float wyb = wy + 30.0 * fbmT(vec2(dot(p, wxz.yx) * 0.0008, 1.0));
+            vec3 rk = texture2D(tRock, vec2(vW.z / 140.0, wyb / 220.0)).rgb * wxz.x + texture2D(tRock, vec2(vW.x / 140.0, wyb / 220.0)).rgb * wxz.y;
+            float band = fract(wyb / (70.0 + 40.0 * fbmT(p * 0.0004)));
+            // (Duller beds: darker and browner, never the texture's pale violet — it read as candy stripes.)
+            rk *= 1.0 - 0.3 * smoothstep(0.55, 0.7, band) * (1.0 - smoothstep(0.85, 0.95, band));
+            rk = mix(vec3(dot(rk, vec3(0.333))), rk, 0.6) * vec3(1.05, 0.86, 0.72) * mix(vec3(1.0), vec3(1.05, 0.92, 0.85), smoothstep(0.3, 0.7, fbmT(p * 0.0006 + 4.0)));
+            rk *= 0.9;
+            #endif
+            alb = mix(alb, rk, steep);
+          }
+        }
         alb *= 0.72;
         float sun = max(dot(n, SUN_DIR), 0.0);
         // Cloud shadows: the same coverage the sky draws, projected down along the sun, drifting.
@@ -1296,6 +1340,8 @@ export class World {
   private spireGeo: THREE.BufferGeometry | null = null
   mesaMat: THREE.Material | null = null
   readonly sunLight: THREE.DirectionalLight
+  /** The far ring for the gorge's land (on only with it). */
+  private farLand: THREE.Mesh | null = null
   envTexture: THREE.Texture | null = null
 
   /**
@@ -1323,6 +1369,17 @@ export class World {
       this.group.add(mesh)
     }
 
+    // A far ring for the gorge's land (src/land.ts), only while it is on: the land reaches past the last ring,
+    // and from high up it was cut off along a square.
+    {
+      const snap = { value: new THREE.Vector2() }
+      const mesh = new THREE.Mesh(ringGeometry(1200, 100, 22200), terrainMaterial(this.ground, snap, 12))
+      mesh.frustumCulled = false
+      this.farLand = mesh
+      mesh.visible = false
+      this.rings.push({ mesh, snap, step: 2400 })
+      this.group.add(mesh)
+    }
     this.group.add(pebbles(1800, 1500))
     this.deck = cloudDeck((this.sky.material as THREE.ShaderMaterial).uniforms.uCloudOff as { value: THREE.Vector2 })
     this.group.add(this.deck)
@@ -1572,7 +1629,9 @@ export class World {
    * a wall is a steep ramp you can drive up, not a cliff you stop against.
    */
   surfaceAt(x: number, z: number, y = Infinity): number {
-    let top = groundH(x, z)
+    // (With the gorge's land on, the world's own ground under it: the land's cliffs are not ramps — the
+    //  gorge's surface below gives them their feet.)
+    let top = this.canyon && this.canyonOn ? groundBase(x, z) : groundH(x, z)
     // The gorge's land (src/canyon.ts): its own ground — a cliff's foot, not a ramp; `y` the asker's height
     // (BLUE HOLLOW: over its roof, the roof's ice is ground).
     if (this.canyon && this.canyonOn) top = Math.max(top, this.canyon.surface(x, z, y))
@@ -1693,6 +1752,7 @@ export class World {
     sm.uniforms.uTime.value = time
     sm.uniforms.uCloudOff.value.set(time * 14, time * 5)
     for (const r of this.rings) r.snap.value.set(Math.round(cam.x / r.step) * r.step, Math.round(cam.z / r.step) * r.step)
+    if (this.farLand) this.farLand.visible = MOUND_U.uLandBox.value.w > 0.5
     let fx = 0, fz = 0, cosHalf = -2
     if (view) {
       // A horizontal cone round the look direction: half the horizontal FOV plus a margin (camera shake, banking).

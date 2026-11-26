@@ -1,71 +1,35 @@
-// The gorge courses: a gorge cut into a landmass that follows a whole loop. The race runs down its floor
-// between two walls; round it the land is real land — not a ring of tableland with a trench in it (the
-// owner: "a donut inside a donut, flat top like it was cut by a straight knife"):
-//   desert  CANYON RUN — Grand Canyon strata stepping up from the floor; inside the loop a high eroded
-//           massif (side canyons, mesas on it); outside, the plateau breaks down to the plain in spurs and
-//           buttes.
-//   ice     BLUE HOLLOW — a glacier: lamplit cave sections roofed in ice, open ice gorge between them; on top
-//           an ice cap with crevasse fields; its edge falls to the plain in ice cliffs and seracs.
-//   lava    MAGMA GORGE — a basalt ravine in a lava plateau, lava at the walls' feet and in the plateau's
-//           collapse pits; its broken flow fronts step down to the lava plains.
-//   forest  WHITEWATER — a river gorge: granite banks, then wooded hills rolling away on both sides.
-// Each has a few side canyons ("breaches") from the floor out to the open world at ground level, so FREE
-// ROAM finds the gorge from outside and drives in. They lead outward only: no shortcut.
+// The gorge courses: a gorge cut into a landmass. The race runs down its floor between two walls; round it
+// the land is real land — the gorge's land is the world's own ground (src/land.ts: a height tile added to
+// groundH, built in world space), not a ring of tableland round a trench:
+//   desert  CANYON RUN — Grand Canyon strata; a lobed plateau with side canyons, mesas and buttes off it.
+//   ice     BLUE HOLLOW — a glacier: lamplit cave sections under the ice, the open gorge between them,
+//           crevasse fields on the ice, its margin ramping down onto the snowfield.
+//   lava    MAGMA GORGE — a basalt plateau with lava at the walls' feet, its edge the lobes of the last
+//           flows stepping down to the lava plains.
+//   forest  WHITEWATER — a river cut deep between granite bluffs, wooded valley sides, hills behind.
+// Its side canyons include a few ways in from the open world at the floor's level, so FREE ROAM finds the
+// gorge from outside and drives in. They lead outward only: no shortcut.
 //
-// Shape: each side of the floor is a grid — rows round the loop every ~100 m, columns out from the wall's
-// foot along the ray from the loop's middle (every loop is star-shaped about it, so no two rays cross: the
-// old profile, swept along the walls' normals, folded over itself at CANYON RUN's tight bends). Heights
-// come from one function per world (noise at several scales, strata terraced in), so no two
-// cross-sections are alike. The inner grid runs all the way to the middle: the loop's inside is filled.
+// This file: the walls beside the floor (their own fine mesh — crisp for the race — out to WALL_TO, the
+// land's own surface at finer spacing, tucked under the tile at its edge), the cave's roof, lamps, the
+// river; and asking the land (heightAt: the walls' mesh, then the tile).
 //
 // Solid: World.near asks wallsNear. Beside the floor it is the wall as it always was (a huge round "rock"
-// whose surface is the foot, so racing is unchanged); everywhere else it is the drawn grid itself —
-// inside the land by more than a step is rock, pushed out toward its contour at your height. FREE ROAM
-// rides the same grid (surface): gentle ground is ground; a cliff is not a ramp (its foot is the ground).
+// whose surface is the foot, so racing is unchanged); everywhere else it is the land itself — inside it by
+// more than a step is rock, pushed out toward its contour at your height. FREE ROAM rides it (surface):
+// gentle ground is ground; a cliff is not a ramp (its foot is the ground).
 import * as THREE from 'three'
-import { groundH } from './terrain'
+import { groundBase as groundH } from './terrain'
+import { fbmR, ICE_LV, vn, landNetwork, landPotential, landReach, landSurface, lineAt, sst, terrace, WALL_TO, type LandLoop, type LandTile } from './land'
 import { patchStandard } from './shaders'
 
 export type GorgeStyle = 'desert' | 'ice' | 'lava' | 'forest'
-
-/** One vertex being shaped (reused). */
-interface Ctx {
-  inner: boolean
-  /** Out from the foot along the ray (m). */
-  d: number
-  x: number
-  z: number
-  /** Along the loop (m), and the loop's length. */
-  s: number
-  L: number
-  /** BLUE HOLLOW: how roofed this row is (0 open gorge … 1 cave), and the wall's top under the roof (m). */
-  roof: number
-  edgeH: number
-  /** …the top of the ice over the cave's middle there, and how near a cave section is (smoothed along
-   *  the loop, 0…1). */
-  apex: number
-  roofS: number
-  /** Out from a breach's floor edge (m; ≤ 0 on its floor, Infinity with none near). */
-  chan: number
-  /** The vertex's aCrev (the shape may set it: lava's glow). */
-  crev: number
-  /** CANYON RUN's island: out from its canyons' floor edge (m; Infinity none near), and that floor's level. */
-  ich: number
-  ichE: number
-  /** The loop's middle. */
-  cx: number
-  cz: number
-  /** Where the outer land must be down at its foot (m from the foot). */
-  lim: number
-}
 
 interface Style {
   /** Floor half-width (m) round the loop (u in 0…1). */
   half: (u: number) => number
   /** Height above the floor (m) under which the wall beside the floor is in the way. */
   rim: number
-  /** How far out the land reaches (m from the foot, the outer side). */
-  outer: number
   /** How much the cave walls' height wanders along the loop (±). */
   hk: number
   /** A roof over the floor in the cave sections (BLUE HOLLOW). */
@@ -73,107 +37,11 @@ interface Style {
   /** Along the loop (u): the cave walls' height scale, the roof's rise above the walls' tops (m), and
    *  how flat the roof is (0 an arch, 1 a flat ceiling) — the cave changes shape as it goes. */
   vary?: (u: number) => { wall: number; rise: number; flat: number }
-  /** The first columns out from the foot (m): finest where the walls stand. */
+  /** The walls' first columns out from the foot (m): finest where they are steepest. */
   near: number[]
-  /** Breaches: the floor's half-width (m: far out, and extra at the mouth). */
-  chanW: [number, number]
-  /** Breaches round the loop (u) — where the races keep off the outer wall. */
-  breachU: number[]
-  /** The farthest out (m from the foot) the outer land can stand: past it, ground. */
-  reach: number
-  /** The land's height above the ground (m) at one vertex. */
-  shape: (c: Ctx) => number
   /** Faces flatter than this go to the top material, when one is given (the glacier's snow). */
   topY?: number
 }
-
-// ── noise: value noise on a hashed lattice, summed in octaves ──
-function hash(ix: number, iz: number, sd: number): number {
-  let h = Math.imul(ix, 374761393) ^ Math.imul(iz, 668265263) ^ Math.imul(sd, 1442695041)
-  h = Math.imul(h ^ (h >>> 13), 1274126177)
-  return ((h ^ (h >>> 16)) >>> 0) / 4294967296
-}
-/** −1…1, smooth. */
-function vn(x: number, z: number, sd: number): number {
-  const ix = Math.floor(x), iz = Math.floor(z), fx = x - ix, fz = z - iz
-  const u = fx * fx * (3 - 2 * fx), v = fz * fz * (3 - 2 * fz)
-  const a = hash(ix, iz, sd), b = hash(ix + 1, iz, sd), c = hash(ix, iz + 1, sd), d = hash(ix + 1, iz + 1, sd)
-  return (a + (b - a) * u + (c - a) * v + (a - b - c + d) * u * v) * 2 - 1
-}
-function fbm(x: number, z: number, oct: number, sd: number): number {
-  let s = 0, a = 1, n = 0
-  for (let o = 0; o < oct; o++) { s += a * vn(x, z, sd + o * 17); n += a; a *= 0.5; x = x * 2.03 + 1.7; z = z * 2.03 - 3.1 }
-  return s / n
-}
-/** fbm with each octave turned (value noise's lattice shows: a threshold on it drew square pits and
- *  edges along the axes). */
-const RC = Math.cos(0.61), RS = Math.sin(0.61)
-function fbmR(x: number, z: number, oct: number, sd: number): number {
-  let s = 0, a = 1, n = 0
-  for (let o = 0; o < oct; o++) {
-    const rx = x * RC - z * RS, rz = x * RS + z * RC
-    s += a * vn(rx, rz, sd + o * 17); n += a; a *= 0.5; x = rx * 2.03 + 1.7; z = rz * 2.03 - 3.1
-  }
-  return s / n
-}
-/** Domain-warped fbmR (k: how far it is pushed, in the noise's own units): lobed, wandering shapes —
- *  flow fronts, pit rims, serac fields — never blobs on a lattice. */
-function warp(x: number, z: number, sd: number, k: number): number {
-  // (One octave each for the push: two cost a fifth of the land's whole build, for nothing visible.)
-  const wx = vn(x * 0.6 + 3.1, z * 0.6 - 1.7, sd + 101), wz = vn(x * 0.6 - 4.3, z * 0.6 + 2.9, sd + 202)
-  return fbmR(x + k * wx, z + k * wz, 3, sd)
-}
-/** Noise along the loop (scale m, b a second coordinate): taken round a circle, so it closes on itself —
- *  as a plain function of the distance along, it jumped where the loop starts, and the step ran out from
- *  there as a straight crease to the middle. */
-function va(c: Ctx, scale: number, b: number, sd: number): number {
-  const R = c.L / (2 * Math.PI * scale), th = (c.s / c.L) * Math.PI * 2
-  return vn(R * Math.cos(th) + b, R * Math.sin(th) - 0.7 * b + 50, sd)
-}
-/** k × f(), f only asked when k is not 0 (the warped noise is most of the land's build time). */
-const w0 = (k: number, f: () => number) => (k === 0 ? 0 : k * f())
-const sst = (a: number, b: number, x: number) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t) }
-
-/** Strata: the potential E stepped into levels — a cliff (the riser) at the top of each band, a near-flat
- *  ledge (the tread, rising `g` of the band) below it, and at each cliff's foot a talus apron (`tal` of the
- *  band, concave: no hard line where cliff meets ground). Level j (past the first) is lifted by ofs[j] —
- *  the strata dip and swell, and where one level reaches the next its bench pinches out. */
-function terrace(E: number, L: readonly number[], a: number, g: number, ofs: readonly number[] | number = 0, tal = 0): number {
-  if (E <= L[0]) return L[0]
-  let T: number | null = null, lo = L[0]
-  for (let j = 0; j < L.length - 1 && T === null; j++) {
-    const hi = L[j + 1] + (typeof ofs === 'number' ? ofs : ofs[j + 1])
-    if (hi <= lo + 4) continue
-    if (E < hi) {
-      const D = hi - lo, f = (E - lo) / D, ta = tal * (1 - g) * sst(a - 0.3, a, f) ** 2
-      T = lo + D * (g * f + ta + (1 - g - ta) * sst(a, 1, f))
-    }
-    lo = Math.max(lo, hi)
-  }
-  if (T === null) T = lo + (E - lo) * g * 2
-  // (Deep inside the loop the grid's rows close in on the middle: a stepped cliff drawn across them came
-  //  out as a sunburst of slivers. There the land rolls instead — TK, set per vertex, 0 smooth … 1 strata.)
-  return E + (T - E) * TK
-}
-/** How stepped the strata are at the vertex being shaped (see terrace). */
-let TK = 1
-/** Per-level lifts for terrace (reused). */
-const OFS = new Array<number>(12).fill(0)
-/** The strata's lifts at (x, z): a dip of ~1° across the land (from its middle), and each level swelling on
- *  its own (`amp` m) — so benches come and go, merge and pinch out (never the same count all the way). */
-function strata(x: number, z: number, cx: number, cz: number, n: number, amp: number, sd: number): number[] {
-  const dip = 0.017 * ((x - cx) * 0.8 + (z - cz) * 0.6)
-  OFS[0] = 0; OFS[1] = 0.25 * amp * fbmR(x / 3000, z / 3000, 2, sd)
-  for (let j = 2; j < n; j++) OFS[j] = Math.max(-220, Math.min(220, dip)) + amp * fbmR(x / 2600, z / 2600, 2, sd + j * 13)
-  return OFS
-}
-/** Fine steps (lava flow fronts, `step` m high), each front sharp, the flow behind it near-flat. */
-const fronts = (E: number, step: number) => { const k = Math.floor(E / step), f = E / step - k; return (k + 0.25 * f + 0.75 * sst(0.7, 1, f)) * step }
-
-const DESERT_LV = [-6, 220, 450, 690, 840, 1000, 1170, 1320]
-// (Few, tall ice cliffs: with a level every ~110 m the gorge's sides broke into a scree of small blocks.)
-const ICE_LV = [-6, 125, 330, 560, 790]
-const LAVA_LV = [-6, 190, 400, 600, 700, 810, 930]
 
 /** The cave's roof: its edges stand on the walls `ROOF_D` out from the foot, at `ROOF_H` (× the row's
  *  height scale); its ice is `ROOF_T` thick (the glacier over the cave is that much higher). */
@@ -182,67 +50,17 @@ const ROOF_D = 260, ROOF_H = 290, ROOF_T = 70
  *  scaled to the row's own). */
 const CAVE_WALL: [number, number][] = [[0, -4], [30, 60], [70, 150], [140, 230], [ROOF_D, ROOF_H]]
 
-/** The outer rim: a plateau 1–3 km wide (wandering along the loop, its outline ragged), then the way down
- *  to the surrounding land over another 2–4 km. 0 on the rim … 1 down on the plain. (The rim was one mesa
- *  thick: from anywhere it read as a fence round the track.) */
-function rimDown(c: Ctx, sd: number, dMin = 2000, dAmp = 900, rimB = 2000): number {
-  const { x, z, d } = c
-  const rimW = rimB + 800 * va(c, 5000, 7, sd) + 450 * warp(x / 1800, z / 1800, sd + 1, 0.8)
-  const D = dMin + dAmp * fbmR(x / 6000, z / 6000, 2, sd + 2)
-  const dd = d + 380 * warp(x / 900, z / 900, sd + 3, 0.9)
-  // (Down by the grid's end whatever the noise says: land still standing there ended in a wall along it.)
-  return Math.max(Math.min(1, Math.max(0, (dd - rimW) / D)), Math.min(1, Math.max(0, (d - c.lim + 1800) / 1500)))
-}
-
 const STYLES: Record<GorgeStyle, Style> = {
   desert: {
     half: (u) => { const a = u * Math.PI * 2; return 1320 + 240 * Math.sin(a * 3 + 1.1) + 130 * Math.sin(a * 11 + 2.3) + 60 * Math.sin(a * 23 + 0.4) },
-    rim: 900, outer: 8600, reach: 8400, hk: 0.15,
+    rim: 900, hk: 0.15,
     near: [0, 8, 14, 22, 32],
-    chanW: [230, 330],
-    breachU: [0.14, 0.4, 0.62, 0.86],
-    // (Its tops and ledges smooth-shaded, cap rock and sand: faceted, the massif's long thin triangles near
-    // the middle shone as a starburst.)
+    // (Its tops and ledges smooth-shaded, cap rock and sand.)
     topY: 0.8,
-    shape: (c) => {
-      const { x, z, d } = c
-      // (The outer rim lower than the inner and wandering more: one side of a canyon is rarely the other's
-      // mirror, and an even ring of rim read as a donut.)
-      const A = c.inner ? 1020 + 150 * va(c, 9000, 1, 3) : 760 + 260 * va(c, 6000, 5, 3)
-      const lam = 330 + 170 * va(c, 5200, 2, 4)
-      let E = 150 + A * (1 - Math.exp(-d / lam))
-      E += sst(0, 90, d) * (130 * fbm(x / 1700, z / 1700, 3, 11) + 55 * fbm(x / 430, z / 430, 2, 12))
-      // Gullies: side canyons cut back into the rim every km or two, a few hundred m wide — the rim
-      // notched and stepped back, never one line.
-      const gl = 1 - Math.abs(va(c, 650, d / 2600 + 7 + (c.inner ? 0 : 40), 5))
-      E -= 620 * gl ** 8 * sst(20, 160, d) * sst(2800, 900, d)
-      if (c.inner) {
-        // The massif: higher inward, mesas standing on it — and split into mesas by its own canyons, which
-        // branch down toward the gorge (see island).
-        E += sst(500, 2600, d) * (200 + 170 * fbm(x / 3600, z / 3600, 3, 13))
-        E += 330 * sst(0.45, 0.7, vn(x / 1300, z / 1300, 21)) * sst(1200, 2400, d)
-        if (c.ich < 1e8) E = Math.min(E, c.ichE + Math.max(0, c.ich) * 2.4)
-      } else {
-        // The rim, then down over km of benches and debris slopes to the plain; buttes break off on the way.
-        const t = rimDown(c, 90, 2900, 1000, 2300)
-        E = -80 + (E + 80) * (1 - t) ** 1.15
-        // Outward the cliffs give way to benches and debris slopes (cliffs only face the gorge).
-        TK *= 1 - 0.6 * sst(0.05, 0.55, t)
-        E += w0(sst(0.08, 0.3, t) * sst(1, 0.65, t), () => 420 * sst(0.45, 0.72, warp(x / 900, z / 900, 94, 0.9)))
-      }
-      // (Always a cliff at the foot — the race's wall is there: a gully notches the rim, never the foot.)
-      E = Math.max(E, 236 * sst(4, 18, d) * sst(70, 40, d))
-      if (c.chan < 1e8) E = Math.min(E, -80 + Math.max(0, c.chan) * 3)
-      let h = terrace(E, DESERT_LV, 0.92, 0.1, strata(x, z, c.cx, c.cz, DESERT_LV.length, 60, 20), 0.35)
-      // Shallow drainages across the tops (a few metres to ~20, branching).
-      h -= w0(sst(40, 200, d), () => 18 * (1 - Math.abs(fbmR(x / 700, z / 700, 3, 24))) ** 6)
-      return h
-    },
   },
-  // A glacier: cave sections roofed in ice (the walls lean out under the roof), open ice gorge between.
   ice: {
     half: (u) => { const a = u * Math.PI * 2; return 780 + 340 * Math.sin(a * 5 + 0.7) + 120 * Math.sin(a * 11 + 1.7) },
-    rim: 450, outer: 6800, reach: 6600, hk: 0.08, roof: 330,
+    rim: 450, hk: 0.08, roof: 330,
     // Low passages (a ceiling just over the walls, flat), tall arched halls, wide flat-roofed chambers.
     vary: (u) => {
       const a = u * Math.PI * 2
@@ -250,147 +68,23 @@ const STYLES: Record<GorgeStyle, Style> = {
       return { wall: 0.55 + 0.9 * big, rise: 20 + 380 * big * (0.6 + 0.4 * wob), flat: 0.5 + 0.5 * Math.sin(a * 7 + 1.3) }
     },
     near: [0, 10, 20, 30, 45, 70, 100, 140, 190, 230, 260, 280, 310],
-    chanW: [200, 260],
-    breachU: [0.07, 0.31, 0.58, 0.95],
     topY: 0.62,
-    shape: (c) => {
-      const { x, z, d } = c
-      // The ice cap: higher toward the middle, swelling and sagging at every scale — no strata on it (flat
-      // sheets of terrace there read as cardboard).
-      const G = 430 + 95 * fbmR(x / 2600, z / 2600, 3, 31) + 45 * warp(x / 900, z / 900, 32, 0.7) + w0(14 * sst(500, 900, d), () => fbmR(x / 240, z / 240, 2, 42)) + (c.inner ? 0.035 * Math.min(d, 5000) : 0)
-      const lam = 170 + 120 * va(c, 4000, 3, 33)
-      let E = 110 + (G + 40) * (1 - Math.exp(-d / lam)) + sst(0, 80, d) * 60 * fbm(x / 900, z / 900, 2, 34)
-      const gl = 1 - Math.abs(va(c, 520, d / 2000 + 3 + (c.inner ? 0 : 30), 35))
-      E -= 380 * gl ** 8 * sst(20, 140, d) * sst(2000, 700, d)
-      if (!c.inner) {
-        // Outward the ice thins over its rim, then ends in a convex margin 100–300 m high spread over 1–2 km
-        // — a glacier's snout, no wall.
-        E *= 1 - (0.5 + 0.15 * fbmR(x / 3000, z / 3000, 2, 45)) * sst(500, 1600, d)
-        const t = rimDown(c, 36, 1500, 500)
-        E = -80 + (E + 80) * (1 - t * t)
-      }
-      E = Math.max(E, 125 * sst(4, 22, d) * sst(80, 50, d))
-      let chanTK = 0
-      // (A breach: a broad valley through the ice, its sides rolling — steep, they were the rim's cut ends.)
-      if (c.chan < 1e8) { E = Math.min(E, -80 + Math.max(0, c.chan) * 0.55); chanTK = 0 }
-      // Ice cliffs only by the gorge's walls; elsewhere the ice rolls (a breach's sides too: stepped, they
-      // were cut ends of the rim, square, their undersides dark).
-      TK = Math.max(1 - sst(450, 900, d), chanTK) * (c.chan < 600 ? sst(150, 600, c.chan) : 1)
-      let h = TK === 0 || E <= ICE_LV[1] - 60 ? Math.max(ICE_LV[0], E) : terrace(E, ICE_LV, 0.92, 0.08, 25 * vn(x / 5000, z / 5000, 41) + 30 * fbmR(x / 700, z / 700, 2, 44), 0.3)
-      if (c.roofS > 0 && d > ROOF_D - 40) {
-        // Over the cave sections the glacier swells to the ice over the roof and falls away from it gently:
-        // the cave is inside the glacier, not under a road laid across the gorge.
-        // (Falling away faster past ~700 m: at an even slope the swell ran out km past the rim as flat plates.)
-        const dd = Math.max(0, d - ROOF_D), dome = c.apex - 0.22 * dd - 0.5 * Math.max(0, dd - 700) - 10 + 25 * fbmR(x / 600, z / 600, 2, 46)
-        h = Math.max(h, h + (dome - h) * c.roofS * sst(ROOF_D - 40, ROOF_D + 60, d))
-      }
-      if (c.roof > 0) {
-        // Under the roof: the cave wall leaning out to the roof's edge, then up over the roof's ice into
-        // the glacier.
-        let w: number
-        if (d <= ROOF_D) {
-          const P = CAVE_WALL
-          w = P[P.length - 1][1]
-          for (let k = 0; k < P.length - 1; k++) if (d <= P[k + 1][0]) { const t = (d - P[k][0]) / (P[k + 1][0] - P[k][0]); w = P[k][1] + (P[k + 1][1] - P[k][1]) * t; break }
-          if (w > 0) w *= c.edgeH / ROOF_H
-        // (Past the roof's edge the glacier falls away from it — held at the roof's height all the way out, the
-        //  cave sections' outer land stood as flat plates ending in walls.)
-        } else w = Math.max(c.edgeH + ROOF_T * sst(ROOF_D, ROOF_D + 40, d) - 0.6 * Math.max(0, d - ROOF_D - 60), h)
-        h = h + (w - h) * c.roof
-      }
-      return h
-    },
   },
-  // Basalt: sheer columnar cliffs in flows, lava pooled along both walls' feet (aCrev: its glow).
   lava: {
     half: (u) => { const a = u * Math.PI * 2; return 900 + 180 * Math.sin(a * 4 + 0.9) + 90 * Math.sin(a * 13 + 2.0) },
-    rim: 700, outer: 8200, reach: 8000, hk: 0.12,
+    rim: 700, hk: 0.12,
     near: [0, 6, 12, 18, 26, 36],
-    chanW: [210, 300],
-    breachU: [0.12, 0.37, 0.66, 0.9],
-    // (Its flats: the flows' own rough dark surface — see main.ts.)
+    // (Its flats: the flows' own rough dark crust — see main.ts.)
     topY: 0.45,
-    shape: (c) => {
-      const { x, z, d } = c
-      // (The glow only on the foot's own narrow faces: across a 200 m face it read as a band of yellow paint.)
-      if (d <= 12 && !(c.chan <= 0)) { c.crev = d <= 6 ? 1 : 0; return d <= 0 ? -6 : d <= 6 ? 2 : 8 }
-      const A = (c.inner ? 700 : 600) + 90 * va(c, 8000, 1, 51)
-      const lam = 230 + 120 * va(c, 5000, 2, 52)
-      let E = 140 + A * (1 - Math.exp(-Math.max(0, d - 12) / lam)) + 80 * warp(x / 1500, z / 1500, 53, 0.6) * sst(12, 70, d) + w0(55 * sst(12, 70, d) * sst(900, 500, d), () => warp(x / 350, z / 350, 54, 0.8))
-      const gl = 1 - Math.abs(va(c, 700, d / 2400 + 5 + (c.inner ? 0 : 50), 55))
-      E -= 480 * gl ** 8 * sst(30, 180, d) * sst(2400, 800, d)
-      let t = 0
-      if (c.inner) {
-        // The plateau: flow on flow, collapse pits with lava standing in them.
-        // (Flows of their own shape across it: their fronts are the plateau's steps, wandering — not out in
-        // the middle, where the grid is too coarse across the rays for them and they came out as spokes.)
-        E += w0(sst(600, 3000, d), () => 70 + 110 * fbmR(x / 4000, z / 4000, 3, 56)) + w0(110 * sst(250, 800, d) * sst(4500, 2600, d), () => warp(x / 650, z / 650, 64, 0.9))
-        // (Inside the grid's fine part: further in, its rows close on the middle and a pit's walls came out as
-        // black slivers raying from it.)
-        const pit = w0(sst(900, 1500, d) * sst(2350, 2000, d), () => sst(0.3, 0.6, warp(x / 1700, z / 1700, 57, 0.9)))
-        E -= 760 * pit
-        // (Lava only on a pit's floor: on its walls too, the pits read as yellow paint from the air.)
-        if (pit > 0.8 && E < 150) c.crev = 1
-      } else {
-        // The rim, then down to the lava plain over lobe on lobe of the last flows — each front 5–20 m, never
-        // one tall cliff — with tumuli (blisters of crust) on them.
-        t = rimDown(c, 58, 2700, 1000, 2200)
-        // (Running out onto the plain at a slant that eases off: ending at a slope, the dark flows met the
-        // bright plain in one hard line.)
-        E = -10 + (E + 10) * (1 - t) ** 2
-        E += w0(sst(0, 0.15, t) * sst(1, 0.8, t), () => 70 * warp(x / 650, z / 650, 59, 0.9) + 22 * Math.max(0, vn(x / 160, z / 160, 60)) ** 2)
-      }
-      E = Math.max(E, 200 * sst(12, 22, d) * sst(70, 40, d))
-      if (c.chan < 1e8) E = Math.min(E, -80 + Math.max(0, c.chan) * 3)
-      // (A breach's sides one sheer face: stepped, their ledges came out as slivers of ash up the black.)
-      if (c.chan < 400) TK = Math.min(TK, 0.15 + 0.85 * sst(150, 400, c.chan))
-      // (Away from the gorge the risers widen: knife-thin, they fell between the grid's lines and were drawn
-      // along them — straight slabs, long black wedges of shadow.) Benches 1–4, coming and going.
-      const big = E <= LAVA_LV[1] - 60 ? Math.max(LAVA_LV[0], E + (LAVA_LV[0] + (E - LAVA_LV[0]) * 0.06 - E) * TK)
-        : terrace(E, LAVA_LV, 0.94 - 0.14 * sst(250, 900, d), 0.06, strata(x, z, c.cx, c.cz, LAVA_LV.length, 95, 65), 0.3)
-      const fine = sst(0, 0.12, t)
-      return fine > 0 ? big + (Math.max(-6, fronts(E, 9 + 9 * (0.5 + 0.5 * vn(x / 1200, z / 1200, 66)))) - big) * fine : big
-    },
   },
-  // A river valley: the river down a deep V widening to a U, bluffs of granite at the water, forested slopes
-  // up to the shoulders; inside the loop a higher wooded upland; outside a range of ridges and side valleys
-  // falling to the surrounding land. (aCrev 0: grey rock — and green wherever it is gentle.)
   forest: {
     half: (u) => { const a = u * Math.PI * 2; return 700 + 140 * Math.sin(a * 3 + 2.2) + 70 * Math.sin(a * 8 + 0.3) },
-    rim: 270, outer: 6900, reach: 6700, hk: 0.15,
+    rim: 270, hk: 0.15,
     near: [0, 10, 20, 32, 46, 62, 80],
-    chanW: [150, 230],
-    breachU: [0.16, 0.42, 0.69, 0.92],
-    shape: (c) => {
-      const { x, z, d } = c
-      // Bluffs at the water, 20–80 m (high at the bends, broken into outcrops), then the valley side: steep
-      // near the river, easing toward the shoulders 80–250 m above it.
-      const Bb = 22 + 55 * sst(-0.2, 0.7, va(c, 1700, 1, 71)) + 18 * fbmR(x / 220, z / 220, 2, 72)
-      const bw = 28 + 30 * (0.5 + 0.5 * va(c, 900, 3, 73))
-      const S = 140 + 120 * (0.5 + 0.5 * va(c, 4200, 5, 74)) + 40 * fbmR(x / 1500, z / 1500, 2, 75)
-      const Ws = 240 + 260 * (0.5 + 0.5 * fbmR(x / 2500, z / 2500, 2, 76))
-      const u = Math.min(1, Math.max(0, (d - bw) / Ws))
-      let h = Bb * Math.pow(sst(0, bw, d), 0.5) + Math.max(0, S - Bb) * (1 - (1 - u) ** 2.4)
-      // Beyond the shoulders: inside, an upland higher than the outer bank in places; outside, ridges with
-      // spurs and side valleys running out (long in the way they run), falling over 2–3 km to the land around.
-      const hills = 70 * fbmR(x / 2800, z / 2800, 3, 77) + 45 * fbmR(x / 800, z / 800, 2, 78)
-      if (c.inner) h += sst(0, 1, (d - bw - Ws) / 900) * (90 + 160 * sst(1200, 5000, d) + hills + 60 * (0.5 + 0.5 * fbmR(x / 4000, z / 4000, 2, 79)))
-      else {
-        const rid = 1 - Math.abs(warp(x / 1700, z / 1700, 80, 0.9)), t = rimDown(c, 81, 2200, 900)
-        h += sst(0, 1, (d - bw - Ws) / 700) * (170 * rid ** 3 - 60 + hills)
-        h = -4 + (h + 4) * (1 - t) ** 1.4 * (0.75 + 0.25 * rid * (1 - t))
-      }
-      if (c.chan < 1e8) {
-        // A side valley: wooded slopes down to a stream bed; cut sheer where it meets the gorge's granite.
-        const k = 0.6 + 2.5 * sst(bw + 200, 0, d)
-        h = Math.min(h, -4 + Math.max(0, c.chan) * k)
-      }
-      return Math.max(-4, h)
-    },
   },
 }
 
-/** A growing float buffer (the land is ~100k triangles: a JS array of every float was a third of the build). */
+/** A growing float buffer (the walls are ~100k triangles: a JS array of every float was a third of the build). */
 class Buf {
   a = new Float32Array(1 << 16)
   n = 0
@@ -404,14 +98,12 @@ class Buf {
 const BIG = 20000
 /** Beside the floor (m out from the foot) the wall is the race's own (see wallsNear). */
 const BAND = 150
-/** Land rows per row of the race's wall grid (every ~200 m → ~100 m). */
+/** Wall rows per row of the race's wall grid (every ~200 m → ~100 m). */
 const SUB = 2
-/** The inner columns are metric to this far out from the foot, then share out what is left to the middle. */
-const D0 = 2400
 /** The water's clock (main.ts advances it). */
 export const WATER_T = { value: 0 }
 
-/** One side's grid. */
+/** One side's walls. */
 interface Side {
   inner: boolean
   /** Feet (one per row), their distance from the middle, and their angle about it (unwrapped). */
@@ -419,15 +111,12 @@ interface Side {
   fz: Float64Array
   lam: Float64Array
   ang: Float64Array
-  /** Columns: metres out (outer: every row alike); inner: those, then fractions of what is left. */
+  /** Columns: metres out from the foot. */
   col: number[]
-  frac: number[]
-  /** Inner: the shortest foot-to-middle less D0 (the rings near the middle sit within it). */
-  rmin: number
   /** Heights (absolute y) and aCrev, rows × columns. */
   y: Float32Array
   cv: Float32Array
-  /** 1 where the land is down at its foot (under the ground: a triangle all of these is not drawn). */
+  /** 1 where the walls are down at their foot (a triangle all of these is not drawn). */
   low: Uint8Array
   /** Height above the ground there (m). */
   rel: Float32Array
@@ -454,18 +143,23 @@ export class Canyon {
   readonly cz: number
   /** Loop length (m). */
   readonly L: number
-  /** The breaches: the race's row at the mouth, its side (+1/−1), and the mouth on the floor's edge;
-   *  axis: [x, z, metres out] every 100 m. */
+  /** The ways in: the race's row at the mouth, its side (+1/−1), the mouth on the floor's edge; axis:
+   *  [x, z, metres out] every 120 m. */
   readonly breaches: { row: number; side: number; u: number; x: number; z: number; axis: number[]; box: number[] }[] = []
-  /** Per row of the race's grid: is the wall beside the floor open (a breach) on side +1 / −1? */
+  /** Per row of the race's grid: is the wall beside the floor open (a way in) on side +1 / −1? */
   private readonly openP: Uint8Array
   private readonly openN: Uint8Array
   private readonly sides: Side[] = []
   private readonly N: number
+  /** The land (src/land.ts): built in workers at boot (src/landjob.ts) and given here by attachLand. */
+  tile: LandTile | null = null
+  /** The land's loop description (for the workers, and the boot-time questions before the tile is here). */
+  readonly land: LandLoop
   /** Farthest the land reaches from the middle (m). */
   private reach = 0
   private last = 0
   private qlast = 0
+  private readonly cand = new Int32Array(81)
 
   constructor(private readonly loop: (u: number) => [number, number], readonly style: GorgeStyle = 'desert') {
     this.st = STYLES[style]
@@ -491,7 +185,24 @@ export class Canyon {
     }
     this.openP = new Uint8Array(m); this.openN = new Uint8Array(m)
     this.N = m * SUB
-    this.shapeLand()
+    // Which side is the inside (nearer the middle)?
+    const dIn = (sg: number) => Math.hypot(this.rx[0] + this.tz[0] * sg * this.half[0] - this.cx, this.rz[0] - this.tx[0] * sg * this.half[0] - this.cz)
+    const sgIn = dIn(1) < dIn(-1) ? 1 : -1
+    // The ice over the cave's roof, per row, smoothed along the loop (the glacier runs over it).
+    const roofTop = new Float64Array(m)
+    if (this.st.roof) for (let i = 0; i < m; i++) {
+      let a = 0, n = 0
+      for (let q = -6; q <= 6; q++) { const j = (i + q + m) % m; a += this.roofK[j] * (this.roofLift(j, 0.5) + ROOF_T); n++ }
+      roofTop[i] = a / n
+    }
+    this.land = { rx: this.rx, rz: this.rz, tx: this.tx, tz: this.tz, half: this.half, cx: this.cx, cz: this.cz, sgIn, roofTop }
+    // The ways in, from the land's own network (the same the workers build: seeded).
+    for (const o of landNetwork(this.land, style).open) {
+      const box = [Infinity, Infinity, -Infinity, -Infinity]
+      for (let j = 0; j < o.axis.length; j += 3) { box[0] = Math.min(box[0], o.axis[j] - 1700); box[1] = Math.min(box[1], o.axis[j + 1] - 1700); box[2] = Math.max(box[2], o.axis[j] + 1700); box[3] = Math.max(box[3], o.axis[j + 1] + 1700) }
+      this.breaches.push({ row: Math.floor(o.row / SUB) * 0 + o.row, side: o.side, u: o.row / m, x: o.x, z: o.z, axis: o.axis, box })
+    }
+    this.feet(sgIn)
   }
 
   /** BLUE HOLLOW's cave sections (u): about half the loop under ice, the rest an open gorge — the start
@@ -501,158 +212,132 @@ export class Canyon {
     return 0
   }
 
-  // ── the land ──
+  // ── the walls ──
 
-  private shapeLand(): void {
+  /** Each side's feet (every wall row) and columns: what the boot-time questions need before the land. */
+  private feet(sgIn: number): void {
     const st = this.st, N = this.N, m = this.m
-    // Feet every land row, from the loop itself (the race's rows are every SUB-th).
-    const lx = new Float64Array(N), lz = new Float64Array(N), ltx = new Float64Array(N), ltz = new Float64Array(N), lh = new Float64Array(N)
-    for (let r = 0; r < N; r++) {
-      const u = r / N
-      const [x, z] = this.loop(u), [x2, z2] = this.loop(u + 0.5 / m), [x0, z0] = this.loop(u - 0.5 / m)
-      const dl = Math.hypot(x2 - x0, z2 - z0) || 1
-      lx[r] = x; lz[r] = z; ltx[r] = (x2 - x0) / dl; ltz[r] = (z2 - z0) / dl; lh[r] = st.half(u)
-    }
-    // Which side is the inside (nearer the middle)?
-    const dIn = (sg: number) => Math.hypot(lx[0] + ltz[0] * sg * lh[0] - this.cx, lz[0] - ltx[0] * sg * lh[0] - this.cz)
-    const sgIn = dIn(1) < dIn(-1) ? 1 : -1
-    // Breaches: outward, from the floor's edge to past the land's end, wandering a little.
-    for (const bu of st.breachU) {
-      const r = Math.round(bu * N) % N, sg = -sgIn
-      const fx = lx[r] + ltz[r] * sg * lh[r], fz = lz[r] - ltx[r] * sg * lh[r]
-      const ox = fx - this.cx, oz = fz - this.cz, ol = Math.hypot(ox, oz), dx = ox / ol, dz = oz / ol
-      const axis: number[] = [], ph = bu * 40, box = [Infinity, Infinity, -Infinity, -Infinity]
-      for (let d = -300; d <= st.outer + 600; d += 100) {
-        const w = 320 * Math.sin(d / 900 + ph) * sst(0, 900, d)
-        const x = fx + dx * d - dz * w, z = fz + dz * d + dx * w
-        axis.push(x, z, d)
-        box[0] = Math.min(box[0], x - 1700); box[1] = Math.min(box[1], z - 1700); box[2] = Math.max(box[2], x + 1700); box[3] = Math.max(box[3], z + 1700)
-      }
-      this.breaches.push({ row: Math.round(bu * m) % m, side: sg, u: bu, x: fx, z: fz, axis, box })
-    }
-    const c: Ctx = { inner: false, d: 0, x: 0, z: 0, s: 0, L: this.L, roof: 0, edgeH: 0, apex: 0, roofS: 0, chan: Infinity, crev: 0, ich: Infinity, ichE: 0, cx: this.cx, cz: this.cz, lim: st.reach - 300 }
-    // CANYON RUN's island: three canyons from the gorge meeting near the middle (with branches), cutting the
-    // massif into mesas — its drainage running down to the gorge, hanging over it at the first bench.
-    const isl: { p: number[]; w: number; box: number[] }[] = []
-    if (this.style === 'desert') {
-      let sd = 5309
-      const rnd = () => { sd = (sd * 1664525 + 1013904223) >>> 0; return sd / 4294967296 }
-      const jx = this.cx + 900, jz = this.cz - 600
-      const line = (x0: number, z0: number, x1: number, z1: number, e0: number, e1: number, amp: number, w: number) => {
-        const L = Math.hypot(x1 - x0, z1 - z0), nx = (z1 - z0) / L, nz = -(x1 - x0) / L, ph = rnd() * 6, p: number[] = [], box = [Infinity, Infinity, -Infinity, -Infinity]
-        for (let q = 0; q <= Math.ceil(L / 150); q++) {
-          const f = q / Math.ceil(L / 150), wv = amp * Math.sin(f * Math.PI * 3 + ph) * Math.sin(f * Math.PI)
-          const x = x0 + (x1 - x0) * f + nx * wv, z = z0 + (z1 - z0) * f + nz * wv
-          p.push(x, z, e0 + (e1 - e0) * f)
-          box[0] = Math.min(box[0], x - 900); box[1] = Math.min(box[1], z - 900); box[2] = Math.max(box[2], x + 900); box[3] = Math.max(box[3], z + 900)
-        }
-        isl.push({ p, w, box })
-        return p
-      }
-      for (const u of [0.05, 0.38, 0.71]) {
-        const r = Math.round(u * N) % N
-        const fx = lx[r] + ltz[r] * sgIn * (lh[r] - 120), fz = lz[r] - ltx[r] * sgIn * (lh[r] - 120)
-        const p = line(fx, fz, jx, jz, 240, 640, 450, 170)
-        for (const f of [0.4, 0.68]) {
-          const q = Math.floor((p.length / 3 - 1) * f) * 3, a = Math.atan2(jx - fx, jz - fz) + (rnd() < 0.5 ? -1 : 1) * (0.7 + 0.4 * rnd()), Lb = 1500 + 900 * rnd()
-          line(p[q], p[q + 1], p[q] + Math.sin(a) * Lb, p[q + 1] + Math.cos(a) * Lb, p[q + 2], p[q + 2] + 300, 200, 90)
-        }
-      }
-    }
-    const island = (x: number, z: number) => {
-      let bestE = Infinity
-      c.ich = Infinity
-      for (const L of isl) {
-        const B = L.box, P = L.p
-        if (x < B[0] || z < B[1] || x > B[2] || z > B[3]) continue
-        for (let j = 0; j + 3 < P.length; j += 3) {
-          const ax = P[j], az = P[j + 1], ex = P[j + 3] - ax, ez = P[j + 4] - az, l2 = ex * ex + ez * ez
-          const t = Math.max(0, Math.min(1, ((x - ax) * ex + (z - az) * ez) / l2))
-          const dd = Math.hypot(x - ax - ex * t, z - az - ez * t) - L.w, e = P[j + 2] + (P[j + 5] - P[j + 2]) * t
-          const E = e + Math.max(0, dd) * 2.4
-          if (E < bestE) { bestE = E; c.ich = dd; c.ichE = e }
-        }
-      }
-    }
-    const roofS = new Float64Array(m)
-    for (let i = 0; i < m; i++) { let a = 0; for (let q = -4; q <= 4; q++) a += this.roofK[(i + q + m) % m]; roofS[i] = a / 9 }
     for (const sg of [sgIn, -sgIn]) {
       const inner = sg === sgIn
       const fx = new Float64Array(N), fz = new Float64Array(N), lam = new Float64Array(N), ang = new Float64Array(N)
       for (let r = 0; r < N; r++) {
-        fx[r] = lx[r] + ltz[r] * sg * lh[r]; fz[r] = lz[r] - ltx[r] * sg * lh[r]
+        const u = r / N
+        const [x, z] = this.loop(u), [x2, z2] = this.loop(u + 0.5 / m), [x0, z0] = this.loop(u - 0.5 / m)
+        const dl = Math.hypot(x2 - x0, z2 - z0) || 1, tx = (x2 - x0) / dl, tz = (z2 - z0) / dl, h = st.half(u)
+        fx[r] = x + tz * sg * h; fz[r] = z - tx * sg * h
         lam[r] = Math.hypot(fx[r] - this.cx, fz[r] - this.cz)
         const a = Math.atan2(fx[r] - this.cx, fz[r] - this.cz)
         ang[r] = r === 0 ? a : ang[r - 1] + Math.atan2(Math.sin(a - ang[r - 1]), Math.cos(a - ang[r - 1]))
       }
-      // Columns: the near ones as given, then wider and wider (to the land's end, or toward the middle).
+      // Columns: the near ones as given, then every 45 m to WALL_TO; and a skirt tucked under the land.
       const col = st.near.slice()
-      const end = inner ? D0 : st.outer
-      // (Never wider than 45 m outside out to 2.6 km, where the rim's cliffs and benches are — coarser, its
-      // stepped cliffs read as pyramids — then 95 m down its long outer slopes; 110 m inside, out to the
-      // massif. WHITEWATER's hills are smooth: wider will do.)
-      const cap = (d: number) => this.style === 'forest' ? (inner ? 200 : 120) : inner ? 110 : d < 2600 ? 45 : 95
-      while (col[col.length - 1] < end - 1) { const d = col[col.length - 1]; col.push(Math.min(end, d + Math.min(cap(d), 12 + 0.09 * d))) }
-      const frac: number[] = []
-      if (inner) for (let k = 1; k <= 20; k++) frac.push((k / 20) ** 1.25)
-      const K = col.length + frac.length
-      const y = new Float32Array(N * K), cv = new Float32Array(N * K)
-      let rmin = Infinity
-      for (let r = 0; r < N; r++) rmin = Math.min(rmin, lam[r] - D0)
-      const low = new Uint8Array(N * K)
-      const rel = new Float32Array(N * K)
-      const S: Side = { inner, fx, fz, lam, ang, col, frac, rmin, y, cv, low, rel, K }
+      while (col[col.length - 1] < WALL_TO - 1) { const d = col[col.length - 1]; col.push(Math.min(WALL_TO, d + Math.min(45, 12 + 0.09 * d))) }
+      col.push(WALL_TO + 50)
+      const K = col.length
+      this.sides.push({ inner, fx, fz, lam, ang, col, y: new Float32Array(N * K), cv: new Float32Array(N * K), low: new Uint8Array(N * K), rel: new Float32Array(N * K), K })
+    }
+  }
+
+  /** The land is here (from the workers): shape the walls on it. */
+  attachLand(tile: LandTile): void {
+    this.tile = tile
+    const N = this.N, m = this.m
+    for (const S of this.sides) {
+      const { fx, fz, lam, col, y, cv, low, rel, K, inner } = S
+      const sg = inner ? this.land.sgIn : -this.land.sgIn
       for (let r = 0; r < N; r++) {
         const i = Math.floor(r / SUB)
         const ox = (fx[r] - this.cx) / lam[r], oz = (fz[r] - this.cz) / lam[r], dir = inner ? -1 : 1
-        c.inner = inner; c.s = (r / N) * this.L
-        // (The roof and the walls under it: by the race's row, as the roof mesh is.)
-        c.roof = this.roofK[i]
-        c.edgeH = st.roof ? ROOF_H * this.wallH(i, sg) : 0
-        c.apex = st.roof ? this.roofLift(i, 0.5) + ROOF_T : 0
-        c.roofS = roofS[i]
         for (let k = 0; k < K; k++) {
-          const d = this.colD(S, r, k)
-          // (Past where the land can reach at all, the row is ground: asking the noise for it was most of the
-          // build. Not sooner: a few columns down at the foot is not the land's end — the rim rises again.)
-          // (Deep under: never drawn, and the ground is above it wherever it is asked — no need to ask the
-          // ground's own height there, which was most of what was left.)
-          if (!inner && d > st.reach) { y[r * K + k] = -1e4; cv[r * K + k] = 0; low[r * K + k] = 1; rel[r * K + k] = -1e4; continue }
-          c.d = d; c.x = fx[r] + ox * dir * d; c.z = fz[r] + oz * dir * d; c.crev = 0
-          c.chan = inner ? Infinity : this.chanAt(c.x, c.z)
-          // (A breach's sides broken at a few hundred metres: drawn true to the axis they were huge flat facets.)
-          if (c.chan < 800) c.chan += 70 * warp(c.x / 320, c.z / 320, 99, 0.8) + 28 * fbmR(c.x / 110, c.z / 110, 2, 98)
-          if (inner && isl.length) island(c.x, c.z); else c.ich = Infinity
-          TK = inner ? 1 - sst(1800, 2400, d) : 1
-          let h = st.shape(c)
-          // (The foot exactly on the floor's edge, where the race's wall is — see wallsNear.)
+          const d = col[k], x = fx[r] + ox * dir * d, z = fz[r] + oz * dir * d
+          const w = this.wallShape(x, z, d, inner, i, sg)
+          let h = w.h
           const foot = this.style === 'forest' || this.style === 'ice' ? -4 : -6
+          // (The foot exactly on the floor's edge, where the race's wall is — see wallsNear.)
           if (k === 0) h = foot
-          // (Down to the ground before the grid ends: land still standing at its last column ended in a
-          //  straight slab.)
-          if (!inner) h = foot + (h - foot) * sst(st.outer, st.outer - 450, d)
-          low[r * K + k] = h <= foot + 0.01 && k > 0 ? 1 : 0
-          y[r * K + k] = groundH(c.x, c.z) + h
-          rel[r * K + k] = h
-          cv[r * K + k] = c.crev + (this.style === 'ice' && c.roof > 0 && d <= ROOF_D ? 0.15 * (1 - d / ROOF_D) : 0)
+          // (The skirt: just under the land's own surface there.)
+          if (k === K - 1) h = this.tileH(x, z) - 25
+          const q = r * K + k
+          low[q] = h <= foot + 0.01 && k > 0 ? 1 : 0
+          y[q] = groundH(x, z) + h
+          rel[q] = h
+          cv[q] = w.crev
         }
       }
-      this.sides.push(S)
-      if (!inner) for (let r = 0; r < N; r++) this.reach = Math.max(this.reach, lam[r] + st.outer + 200)
-      // The race's wall is open where a breach meets the floor: one of the row's land rows still low all the
+      // The race's wall is open where a way in meets the floor: one of the row's wall rows still low all the
       // way across the band beside the floor (past the foot's own first rise).
       const open = sg > 0 ? this.openP : this.openN
       for (let i = 0; i < m; i++) {
-        let low = false
+        let lo = false
         for (let q = -1; q <= SUB; q++) {
           const r = (i * SUB + q + N) % N
           let hi = -Infinity
-          for (let k = 1; k < K && col[k] <= BAND; k++) if (col[k] >= 40) hi = Math.max(hi, y[r * K + k] - groundH(fx[r], fz[r]))
-          if (hi < 40) low = true
+          for (let k = 1; k < K && col[k] <= BAND; k++) if (col[k] >= 40) hi = Math.max(hi, rel[r * K + k])
+          if (hi < 40) lo = true
         }
-        if (low) open[i] = 1
+        if (lo) open[i] = 1
       }
     }
+    this.reach = Math.max(Math.hypot(tile.x0 - this.cx, tile.z0 - this.cz), Math.hypot(tile.x0 + tile.nx * tile.step - this.cx, tile.z0 + tile.nz * tile.step - this.cz))
+  }
+
+  /** The land tile's height above the ground at (x, z) (whether it is switched on or not). */
+  tileH(x: number, z: number): number {
+    const t = this.tile
+    if (!t) return 0
+    const fx = (x - t.x0) / t.step, fz = (z - t.z0) / t.step
+    if (fx < 0 || fz < 0 || fx >= t.nx - 1 || fz >= t.nz - 1) return 0
+    const ix = Math.floor(fx), iz = Math.floor(fz), u = fx - ix, v = fz - iz, q = iz * t.nx + ix, H = t.h
+    return (H[q] + (H[q + 1] - H[q]) * u) * (1 - v) + (H[q + t.nx] + (H[q + t.nx + 1] - H[q + t.nx]) * u) * v
+  }
+  /** …and the side canyons' carve there. */
+  private tileC(x: number, z: number): number {
+    const t = this.tile!
+    const fx = (x - t.x0) / t.step, fz = (z - t.z0) / t.step
+    if (fx < 0 || fz < 0 || fx >= t.nx - 1 || fz >= t.nz - 1) return 1e5
+    const ix = Math.floor(fx), iz = Math.floor(fz), u = fx - ix, v = fz - iz, q = iz * t.nx + ix, C = t.c
+    return (C[q] + (C[q + 1] - C[q]) * u) * (1 - v) + (C[q + t.nx] + (C[q + t.nx + 1] - C[q + t.nx]) * u) * v
+  }
+
+  /** The walls beside the floor, d out from the foot at race row i: the land's own surface (cut by its side
+   *  canyons), with each world's foot — a cliff always (a canyon notches the rim, never the foot), lava
+   *  glowing along it, the cave's walls leaning out to its roof. */
+  private wallShape(x: number, z: number, d: number, inner: boolean, i: number, sg: number): { h: number; crev: number } {
+    const s = this.style, C = this.tileC(x, z), open = C < 60
+    let E = Math.min(landPotential(s, x, z, d, inner, this.land.roofTop[i]), C)
+    if (s === 'desert') {
+      E = Math.max(E, 236 * sst(4, 18, d) * sst(70, 40, d) * (open ? 0 : 1))
+      return { h: landSurface(s, E, x, z, d) - 6 * sst(30, 0, d), crev: 0 }
+    }
+    if (s === 'lava') {
+      // (The glow only on the foot's own narrow faces: across a 200 m face it read as a band of yellow paint.)
+      if (d <= 12 && !open) return { h: d <= 0 ? -6 : d <= 6 ? 2 : 8, crev: d <= 6 ? 1 : 0 }
+      E = Math.max(E, 200 * sst(12, 22, d) * sst(70, 40, d) * (open ? 0 : 1))
+      return { h: landSurface(s, E, x, z, d), crev: 0 }
+    }
+    if (s === 'ice') {
+      E = Math.max(E, 125 * sst(4, 22, d) * sst(80, 50, d) * (open ? 0 : 1))
+      // Ice cliffs by the gorge: a few tall faces, rolling ice behind them.
+      const tk = (1 - sst(450, 900, d)) * (C < 300 ? sst(150, 300, C) : 1)
+      let h = E + (terrace(E, ICE_LV, 0.92, 0.08, (j) => 25 * fbmR(x / 5000, z / 5000, 2, 41 + j), 0.3) - E) * tk
+      const roof = this.roofK[i]
+      if (roof > 0) {
+        // Under the roof: the cave wall leaning out to the roof's edge, then up over the roof's ice into the
+        // glacier.
+        const eh = ROOF_H * this.wallH(i, sg)
+        let w: number
+        if (d <= ROOF_D) {
+          const P = CAVE_WALL
+          w = P[P.length - 1][1]
+          for (let k = 0; k < P.length - 1; k++) if (d <= P[k + 1][0]) { const t = (d - P[k][0]) / (P[k + 1][0] - P[k][0]); w = P[k][1] + (P[k + 1][1] - P[k][1]) * t; break }
+          if (w > 0) w *= eh / ROOF_H
+        // (Past the roof's edge: the glacier, never below the roof's ice — it runs on over the cave.)
+        } else w = Math.max(eh + ROOF_T * sst(ROOF_D, ROOF_D + 40, d), h)
+        h = h + (w - h) * roof
+      }
+      return { h, crev: roof > 0 && d <= ROOF_D ? 0.15 * (1 - d / ROOF_D) : 0 }
+    }
+    return { h: landSurface(s, E, x, z, d), crev: 0 }
   }
 
   /** The cave walls' height scale at a race row (BLUE HOLLOW's walls wander). */
@@ -661,20 +346,9 @@ export class Canyon {
     return (1 - st.hk + st.hk * Math.sin(i * 0.09 * side + 1.3) + st.hk * 0.5 * Math.sin(i * 0.37 + side)) * this.wallK[i]
   }
 
-  /** Column k's distance out from row r's foot. */
-  private colD(S: Side, r: number, k: number): number {
-    if (k < S.col.length) return S.col[k]
-    // Toward the middle, rings at the same distance from it on every row (fractions of each row's own
-    // length left the triangles there skewed, and their edges radiated from the middle).
-    const f = S.frac[k - S.col.length], w = f * f
-    const rho = (S.lam[r] - D0) * (1 - f) * (1 - w) + S.rmin * (1 - f) * w
-    return S.lam[r] - rho
-  }
-
-  /** Out from the nearest breach's floor edge (m): ≤ 0 on it; Infinity if none is near. */
+  /** Out from the nearest way in's floor edge (m): ≤ 0 on it; Infinity if none is near. */
   private chanAt(x: number, z: number): number {
     let best = Infinity
-    const [w0, w1] = this.st.chanW
     for (const b of this.breaches) {
       const A = b.axis, B = b.box
       if (x < B[0] || z < B[1] || x > B[2] || z > B[3]) continue
@@ -683,9 +357,7 @@ export class Canyon {
         const t = Math.max(0, Math.min(1, ((x - ax) * ex + (z - az) * ez) / l2))
         const dx = x - ax - ex * t, dz = z - az - ez * t, dd = dx * dx + dz * dz
         if (dd > 2.5e6) continue
-        const along = A[j + 2] + (A[j + 5] - A[j + 2]) * t
-        // Wider at the mouth (a fan opening onto the floor), then a canyon's own width.
-        const v = Math.sqrt(dd) - (w0 + w1 * Math.exp(-Math.max(0, along) / 380))
+        const v = Math.sqrt(dd) - 220
         if (v < best) best = v
       }
     }
@@ -694,7 +366,7 @@ export class Canyon {
 
   // ── asking the land ──
 
-  /** The land row of side S at angle th about the middle: row r, the fraction f on to r + 1, and the
+  /** The wall row of side S at angle th about the middle: row r, the fraction f on to r + 1, and the
    *  foot's distance from the middle there. */
   private rowAt(S: Side, th: number): { r: number; f: number; lam: number } {
     const N = this.N, a0 = S.ang[0], sgn = S.ang[N - 1] > a0 ? 1 : -1
@@ -713,31 +385,23 @@ export class Canyon {
 
   /** Height (absolute y) along row r of side S at distance s out from its foot. */
   private rowY(S: Side, r: number, s: number): number {
-    const K = S.K, nc = S.col.length
-    let k: number, t: number
-    if (!S.inner || s < S.col[nc - 1]) {
-      let lo = 0, hi = nc - 1
-      if (s >= S.col[hi]) return S.y[r * K + hi]
-      while (hi - lo > 1) { const mid = (lo + hi) >> 1; if (S.col[mid] <= s) lo = mid; else hi = mid }
-      k = lo; t = (s - S.col[lo]) / (S.col[hi] - S.col[lo])
-    } else {
-      let j = nc, d1 = this.colD(S, r, j)
-      while (j < K - 1 && d1 < s) { j++; d1 = this.colD(S, r, j) }
-      const d0 = this.colD(S, r, j - 1)
-      k = j - 1; t = Math.max(0, Math.min(1, (s - d0) / Math.max(1e-6, d1 - d0)))
-    }
-    const a = S.y[r * K + k], b = S.y[r * K + k + 1]
-    return a + (b - a) * t
+    const K = S.K, col = S.col
+    let lo = 0, hi = K - 1
+    if (s >= col[hi]) return S.y[r * K + hi]
+    while (hi - lo > 1) { const mid = (lo + hi) >> 1; if (col[mid] <= s) lo = mid; else hi = mid }
+    const t = (s - col[lo]) / (col[hi] - col[lo]), a = S.y[r * K + lo]
+    return a + (S.y[r * K + hi] - a) * t
   }
 
-  /** The land's height (absolute y) at (x, z), as drawn; −Infinity on the floor or off the land. */
+  /** The land's height (absolute y) at (x, z), as drawn: the walls' mesh beside the floor, the tile beyond;
+   *  −Infinity on the floor. */
   heightAt(x: number, z: number): number {
     const qx = x - this.cx, qz = z - this.cz, rho = Math.hypot(qx, qz), th = Math.atan2(qx, qz)
     for (const S of this.sides) {
       const q = this.rowAt(S, th)
       const s = S.inner ? q.lam - rho : rho - q.lam
       if (s < 0) continue
-      if (!S.inner && s > this.st.outer) return -Infinity
+      if (s > WALL_TO || !this.tile) return groundH(x, z) + this.tileH(x, z)
       const r2 = (q.r + 1) % this.N, a = this.rowY(S, q.r, s)
       return a + (this.rowY(S, r2, s) - a) * q.f
     }
@@ -881,18 +545,32 @@ export class Canyon {
     for (let i = 0; i < this.m; i++) bd = Math.min(bd, (this.rx[i] - x) ** 2 + (this.rz[i] - z) ** 2)
     return Math.sqrt(bd)
   }
-  /** In the gorge or on its land (r: a landform's radius): nothing else stands there. Past the land's
-   *  broken edge the world's own landforms stand — its buttes and outliers. */
+  /** In the gorge or on its land (r: a landform's radius): nothing else stands there — past the land's
+   *  edge the world's own landforms stand. Asked at boot (populate) before the land is built: then the
+   *  land's own functions, at the point and round it. */
   covers(x: number, z: number, r: number): boolean {
     // (By the middle's angle, not a search of the line: populate asks this of every landform it places.)
     const rho = Math.hypot(x - this.cx, z - this.cz)
-    if (rho > this.reach + r) return false
+    if (this.tile && rho > this.reach + r) return false
     const th = Math.atan2(x - this.cx, z - this.cz)
-    // Inside the loop, the floor, and the outer rim's first ~900 m: always.
-    if (rho < this.rowAt(this.sides[1], th).lam + 900 + r) return true
-    // (Nor in a breach: the world's mesas stood in them, out on the plain, and blocked the way in.)
+    // Inside the loop, the floor, and the outer walls: always.
+    if (rho < this.rowAt(this.sides[1], th).lam + WALL_TO + r) return true
+    // (Nor in a way in: the world's mesas stood in them, out on the plain, and blocked the way.)
     if (this.chanAt(x, z) < r + 500) return true
-    return this.topNear(x, z, r + 150) > groundH(x, z) + 2
+    if (!this.tile) {
+      // (Before the land is built: anywhere it may reach — the outer side's edge zone too.)
+      // (Its nearest rows near the middle's angle: a search of the whole line, for every landform populate
+      //  places, was a fifth of the world's boot.)
+      const r0 = Math.floor(this.rowAt(this.sides[1], th).r / SUB), cand = this.cand
+      for (let k = 0; k < cand.length; k++) cand[k] = (r0 + k - 40 + this.m) % this.m
+      const l = lineAt(this.land, x, z, cand)
+      return l.side === this.land.sgIn || l.df < landReach(this.style, x, z) + r
+    }
+    for (let k = 0; k < 9; k++) {
+      const a = k * 0.785, rr = k ? r + 150 : 0
+      if (this.tileH(x + Math.sin(a) * rr, z + Math.cos(a) * rr) > 2) return true
+    }
+    return false
   }
 
   // ── drawing ──
@@ -947,7 +625,7 @@ export class Canyon {
     const vx = new Float32Array(N * K), vz = new Float32Array(N * K)
     for (let r = 0; r < N; r++) {
       const ox = (S.fx[r] - this.cx) / S.lam[r], oz = (S.fz[r] - this.cz) / S.lam[r]
-      for (let k = 0; k < K; k++) { const d = this.colD(S, r, k); vx[r * K + k] = S.fx[r] + ox * dir * d; vz[r * K + k] = S.fz[r] + oz * dir * d }
+      for (let k = 0; k < K; k++) { const d = S.col[k]; vx[r * K + k] = S.fx[r] + ox * dir * d; vz[r * K + k] = S.fz[r] + oz * dir * d }
     }
     // Winding: facing up in plan, whichever way the rows run.
     const flip = (vx[K] - vx[0]) * (vz[1] - vz[0]) - (vz[K] - vz[0]) * (vx[1] - vx[0]) > 0
@@ -983,13 +661,6 @@ export class Canyon {
     const kinds = new Uint8Array(N * (K - 1) * 2)
     let ti = 0
     if (split) quads((a, b, c) => { kinds[ti++] = kind(a, b, c, true) })
-    // (Every row meets at the middle, each with its own corner there: one shared normal for them all, or the
-    // middle shone as a starburst.)
-    if (split && S.inner) {
-      let ax = 0, ay = 0, az = 0
-      for (let r = 0; r < N; r++) { const q = (r * K + K - 1) * 3; ax += vn3![q]; ay += vn3![q + 1]; az += vn3![q + 2] }
-      for (let r = 0; r < N; r++) { const q = (r * K + K - 1) * 3; vn3![q] = ax; vn3![q + 1] = ay; vn3![q + 2] = az }
-    }
     ti = 0
     quads((q0, q1, q2, r) => {
       const B = blocks[Math.floor(r / RB)]

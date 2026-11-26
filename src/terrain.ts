@@ -1,4 +1,4 @@
-import { Vector4 } from 'three'
+import { DataTexture, FloatType, NearestFilter, RedFormat, Vector4 } from 'three'
 
 /** Climbing out to space (src/space.ts): x the radius where the flat world dissolves into the planet
  *  (0 = off), y how much of all of it is gone (0…1), z climbing (0…1: the haze thins, the ground bends
@@ -83,6 +83,40 @@ export const MOUNDS: number[] = []
 export const MOUND_U = {
   uMounds: { value: Array.from({ length: MAX_MOUNDS }, () => new Vector4()) },
   uMoundCount: { value: 0 },
+  // The gorge's land (src/land.ts): a height tile added to the ground, on while its gorge stands. (With the
+  // mounds: every shader that asks groundH already takes these.)
+  tLand: { value: null as DataTexture | null },
+  /** x0, z0, step, on (0/1). */
+  uLandBox: { value: new Vector4(0, 0, 1, 0) },
+  uLandN: { value: new Vector4(1, 1, 0, 0) },
+}
+
+/** The gorge's land tile (src/land.ts): heights above the ground, sampled bilinearly — here and in GLSL the
+ *  same way (four texel reads, no hardware filtering: the two must agree). */
+export const LAND = { on: false, x0: 0, z0: 0, step: 60, nx: 0, nz: 0, h: null as Float32Array | null }
+export function setLand(t: { x0: number; z0: number; step: number; nx: number; nz: number; h: Float32Array } | null): void {
+  if (!t) { LAND.h = null; LAND.on = false; MOUND_U.uLandBox.value.w = 0; return }
+  Object.assign(LAND, { x0: t.x0, z0: t.z0, step: t.step, nx: t.nx, nz: t.nz, h: t.h })
+  const tex = new DataTexture(t.h, t.nx, t.nz, RedFormat, FloatType)
+  tex.minFilter = tex.magFilter = NearestFilter
+  tex.generateMipmaps = false
+  tex.needsUpdate = true
+  MOUND_U.tLand.value = tex
+  MOUND_U.uLandBox.value.set(t.x0, t.z0, t.step, LAND.on ? 1 : 0)
+  MOUND_U.uLandN.value.set(t.nx, t.nz, 0, 0)
+}
+/** Land on or off (its gorge standing or not): off, groundH is exactly the world's own. */
+export function landOn(on: boolean): void { LAND.on = on && !!LAND.h; MOUND_U.uLandBox.value.w = LAND.on ? 1 : 0 }
+/** The land's height above the ground at (x, z) (0 off the tile, or with it off). */
+export function landH(x: number, z: number): number {
+  const H = LAND.h
+  if (!LAND.on || !H) return 0
+  const fx = (x - LAND.x0) / LAND.step, fz = (z - LAND.z0) / LAND.step
+  if (fx < 0 || fz < 0 || fx >= LAND.nx - 1 || fz >= LAND.nz - 1) return 0
+  const ix = Math.floor(fx), iz = Math.floor(fz), u = fx - ix, v = fz - iz, q = iz * LAND.nx + ix
+  const a = H[q], b = H[q + 1], c = H[q + LAND.nx], d = H[q + LAND.nx + 1]
+  if (a === 0 && b === 0 && c === 0 && d === 0) return 0
+  return (a + (b - a) * u) * (1 - v) + (c + (d - c) * u) * v
 }
 export function setMounds(list: number[]): void {
   MOUNDS.length = 0
@@ -112,6 +146,16 @@ export function groundH(x: number, z: number): number {
   const c = Math.cos(k(47, -19, x, z) + 1.1)
   h += 3 * c * c * c * c * (0.55 + 0.45 * Math.sin(k(5, 3, x, z) + 0.4))
   h -= 5 * riverAt(x, z)
+  // (Added only where there is land: + 0 elsewhere, so the race on the gorge's floor is exactly what it was.)
+  if (LAND.on) { const l = landH(x, z); if (l !== 0) h += l }
+  return h
+}
+/** The world's own ground, without the gorge's land (the land asks it, to stand on it). */
+export function groundBase(x: number, z: number): number {
+  if (!LAND.on) return groundH(x, z)
+  LAND.on = false
+  const h = groundH(x, z)
+  LAND.on = true
   return h
 }
 
@@ -142,8 +186,21 @@ float riverAt(vec2 p) {
 #define MAX_MOUNDS ${MAX_MOUNDS}
 uniform vec4 uMounds[MAX_MOUNDS];
 uniform int uMoundCount;
+uniform sampler2D tLand;
+uniform vec4 uLandBox;
+uniform vec4 uLandN;
+float landH(vec2 p) {
+  if (uLandBox.w < 0.5) return 0.0;
+  vec2 f = (p - uLandBox.xy) / uLandBox.z;
+  if (f.x < 0.0 || f.y < 0.0 || f.x >= uLandN.x - 1.0 || f.y >= uLandN.y - 1.0) return 0.0;
+  ivec2 i = ivec2(floor(f));
+  vec2 t = f - vec2(i);
+  float a = texelFetch(tLand, i, 0).r, b = texelFetch(tLand, i + ivec2(1, 0), 0).r;
+  float c = texelFetch(tLand, i + ivec2(0, 1), 0).r, d = texelFetch(tLand, i + ivec2(1, 1), 0).r;
+  return mix(mix(a, b, t.x), mix(c, d, t.x), t.y);
+}
 float groundH(vec2 p) {
-  float h = 0.0;
+  float h = landH(p);
   for (int i = 0; i < MAX_MOUNDS; i++) {
     if (i >= uMoundCount) break;
     vec4 m = uMounds[i];

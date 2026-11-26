@@ -5,6 +5,7 @@ import '@fontsource/chakra-petch/700.css'
 import * as THREE from 'three'
 import { DETAIL_U, patchStandard } from './shaders'
 import { Canyon, WATER_T } from './canyon'
+import { startLand } from './landjob'
 import { FullScreenQuad } from 'three/addons/postprocessing/Pass.js'
 import { CFG, MACH, REBASE } from './config'
 import { World, prebuildLand } from './world'
@@ -27,7 +28,7 @@ import { Scatter } from './scatter'
 import { LOD, drainSwaps } from './lod'
 import { rngState, setRngState } from './rng'
 import { idbGet, idbSet } from './store'
-import { BIOME, biomeOf, type Biome, DUST, GREEN, groundH, SUN_DIR, WORLD_FADE } from './terrain'
+import { BIOME, biomeOf, type Biome, DUST, GREEN, groundH, landOn, setLand, SUN_DIR, WORLD_FADE } from './terrain'
 import { PLANET_R, Space, SPACE_U } from './space'
 import { PLANETS, StarSystem, STAR_R } from './system'
 /** Shadows are cast along the sun, but never stretched past a ~17° sun (a sun on the horizon threw them 100 m off). */
@@ -386,6 +387,8 @@ const bestOf = (id: string): number | null => { try { const v = localStorage.get
 // Each world's gorge course (CANYON RUN, BLUE HOLLOW, MAGMA GORGE, WHITEWATER): its walls stand in the world.
 const GORGE = COURSES.find((c) => c.gorge && c.loop && biomeOf(c.id) === BIOME)
 const canyon = GORGE ? new Canyon(GORGE.loop!, GORGE.gorge) : null
+// Its land (src/land.ts), built in workers while the rest boots; given to it before the first frame.
+const landJob = canyon ? startLand(canyon.land, canyon.style) : null
 const clearAt = (x: number, z: number, r: number) => {
   // (Nothing stands in the world's gorge or on its rim, on any of its courses: in the open world it is there.)
   if (canyon && canyon.covers(x, z, r)) return false
@@ -449,10 +452,14 @@ function smoothTop(): THREE.Material {
   patchStandard(m, BIOME === 'ice' ? { ice: true, shadow: true, detail: true } : BIOME === 'lava' ? { lava: true, shadow: true, detail: true } : { strata: true, shadow: true, detail: true })
   return m
 }
-const canyonMesh = !canyon ? null : canyon.style === 'ice' ? canyon.build(wallMat!, { roofMat: caveRoof, topMat: smoothTop(), roofTopMat: world.mesaMat!, cliffMat: gorgeWall(0xa9c6e2, [0.25, 0.6, 1.2], 0x24466e) })
+let canyonMesh: THREE.Group | null = null
+// (BLUE HOLLOW: the roof's ice from above in the same snow as the glacier's tops round it — in the world's
+//  faceted ice it read as grey slabs laid across the gorge.)
+const iceTop = BIOME === 'ice' ? smoothTop() : null
+const buildCanyonMesh = (cv: Canyon): THREE.Group => cv.style === 'ice' ? cv.build(wallMat!, { roofMat: caveRoof, topMat: iceTop!, roofTopMat: iceTop!, cliffMat: gorgeWall(0xa9c6e2, [0.25, 0.6, 1.2], 0x24466e) })
   // (The plateau's own cliffs in a basalt a shade lighter than the gorge's: black against the ash they read
   //  as cut-out wedges.)
-  : canyon.build(wallMat!, canyon.style === 'lava' ? { topMat: lavaCrust(), cliffMat: gorgeWall(0x4f3e35, [4.5, 1.4, 0.25], 0x3a2920) } : canyon.style === 'desert' ? { topMat: smoothTop() } : {})
+  : cv.build(wallMat!, cv.style === 'lava' ? { topMat: lavaCrust(), cliffMat: gorgeWall(0x4f3e35, [4.5, 1.4, 0.25], 0x3a2920) } : cv.style === 'desert' ? { topMat: smoothTop() } : {})
 // MAGMA's flats: the flows' own crust (vertex colours: dark, rusty where it has oxidised), smooth-shaded, with
 // the gorge's lava glow in its pits. (The world's lava rock dusts every flat with pale ash: on the plateau
 // that read as a tan cloth draped over the basalt.)
@@ -461,7 +468,6 @@ function lavaCrust(): THREE.Material {
   m.flatShading = false; m.vertexColors = true; m.roughness = 0.95
   return m
 }
-if (canyon && canyonMesh) { world.canyon = canyon; world.group.add(canyonMesh) }
 // The polar world's set pieces: glaciers, seracs and spike fields placed close beside the line
 // (150–400 m off its edge), so the race threads past the ice instead of seeing it on the horizon.
 if (BIOME !== 'desert') {
@@ -2867,6 +2873,15 @@ function updateSpace(): void {
 }
 // Sun shadows (src/shadow.ts): mesas, trees, towers and ships cast them; off on the low tier.
 const sunShadow = new SunShadow()
+// The gorge's land, from its workers: the walls shaped on it, and it made the world's ground (on while the
+// gorge stands — see the frame).
+if (canyon && landJob) {
+  canyon.attachLand(await landJob)
+  canyonMesh = buildCanyonMesh(canyon)
+  world.canyon = canyon
+  world.group.add(canyonMesh)
+  setLand(canyon.tile)
+}
 const markAllCasters = () => { markCasters(world.group); markCasters(course.group); for (const v of visuals.values()) markCasters(v.craft.root); markCasters(darts.mesh) }
 markAllCasters()
 /**
@@ -3913,7 +3928,7 @@ function frame(now: number): void {
   const me = race.racers[0]
   course.update(mode === 'race' ? me.next : -1, time, false)
   course.group.visible = (mode === 'race' || mode === 'title') && !IN_SYSTEM
-  if (canyonMesh) { world.canyonOn = !!course.def.gorge || mode === 'free' || mode === 'hunt'; canyonMesh.visible = world.canyonOn }
+  if (canyonMesh) { world.canyonOn = !!course.def.gorge || mode === 'free' || mode === 'hunt'; canyonMesh.visible = world.canyonOn; landOn(world.canyonOn) }
   WATER_T.value = time
   world.ground.uTrackOn.value = mode === 'hunt' || mode === 'free' ? 0 : course.def.wear ?? 1
   if (mode === 'free') shards.draw(time)
