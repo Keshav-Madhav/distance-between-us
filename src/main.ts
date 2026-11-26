@@ -1836,12 +1836,14 @@ let replayIn: Float32Array | null = null
 let gridRec = 0
 /** This race is a replay (a loaded file, your best, a test): watched, not raced — it sets no best time, ghost or medal. */
 let runIsReplay = false
-type ReplayFile = { game?: string; v?: number; course: string; sub?: 'race' | 'trial' | 'duel'; rivals?: string; countdown?: boolean; time?: number | null; steps: number[][] }
+type ReplayFile = { game?: string; v?: number; course: string; sub?: 'race' | 'trial' | 'duel'; rivals?: string; assist?: number; engine?: string; countdown?: boolean; time?: number | null; steps: number[][] }
+/** The browser engine a run was recorded in: their maths differ in the last digits, so a run drifts in another. */
+const ENGINE = /Firefox\//.test(navigator.userAgent) ? 'firefox' : /AppleWebKit/.test(navigator.userAgent) && !/Chrome\//.test(navigator.userAgent) ? 'safari' : 'chromium'
 function downloadRun(): void {
   const steps: number[][] = []
   for (let i = 0; i + 2 < inputRec.length; i += 3) steps.push([inputRec[i], inputRec[i + 1], inputRec[i + 2]])
   const me = race.racers[0]
-  const file: ReplayFile = { game: 'dbu-inputs', v: 1, course: course.def.id, sub: subMode, rivals: String(race.aiBoost), countdown: gridRec > 30, time: me.finished ? +me.finishTime.toFixed(3) : null, steps }
+  const file: ReplayFile = { game: 'dbu-inputs', v: 1, course: course.def.id, sub: subMode, rivals: String(race.aiBoost), assist: player.assist, engine: ENGINE, countdown: gridRec > 30, time: me.finished ? +me.finishTime.toFixed(3) : null, steps }
   const a = document.createElement('a')
   a.href = URL.createObjectURL(new Blob([JSON.stringify(file)], { type: 'application/json' }))
   a.download = `dbu-${course.def.id}-${me.finished ? me.finishTime.toFixed(2).replace('.', '_') + 's' : 'run'}.json`
@@ -1864,7 +1866,11 @@ function startReplay(r: ReplayFile): void {
   subMode = r.sub === 'race' || r.sub === 'duel' ? r.sub : 'trial'
   if (r.rivals !== undefined && Number.isFinite(+r.rivals)) race.aiBoost = +r.rivals
   startRace()
+  // Its steering assist (it changes the physics); your own comes back with your next race.
+  if (typeof r.assist === 'number' && Number.isFinite(r.assist)) player.assist = r.assist
   replayIn = new Float32Array(r.steps.flat()); replayAt = 0; runIsReplay = true
+  if (r.engine && r.engine !== ENGINE) setTimeout(() => warn('REPLAY MAY DRIFT', `RECORDED IN ${r.engine === 'firefox' ? 'FIREFOX' : r.engine === 'safari' ? 'SAFARI' : 'CHROME'}: THIS BROWSER'S MATHS DIFFERS`), 600)
+  else if (r.game === 'dbu-inputs' && r.assist === undefined) setTimeout(() => warn('REPLAY MAY DRIFT', 'AN OLDER FILE: ITS STEERING ASSIST WAS NOT SAVED'), 600)
   if (r.countdown === false || (r.game !== 'dbu-inputs' && r.countdown === undefined)) race.countdown = 0.01
 }
 /** Load a replay: on this course it starts now; on another, the game switches course and starts it there. */
@@ -1920,6 +1926,8 @@ void (async () => {
 })()
 
 function startRace(): void {
+  // Your steering assist (a replay may have flown with its own).
+  player.assist = assistPick
   ;(document.activeElement as HTMLElement | null)?.blur?.() // (see Input: a focused START restarted the run on Space)
   freeOff()
   world.courseOn = true; course.group.visible = true
@@ -2621,7 +2629,13 @@ try {
 } catch { /* fresh */ }
 for (const id of ['#g-fps', '#g-scale', '#g-dist', '#g-part', '#g-bloom', '#g-blur', '#g-sharp', '#g-grain', '#g-cloud', '#g-map']) $(id).addEventListener('input', applyGraphics), $(id).addEventListener('change', applyGraphics)
 applyGraphics()
-$<HTMLSelectElement>('#as').onchange = (e) => { player.assist = +(e.target as HTMLSelectElement).value }
+// STEERING ASSIST changes the physics (grip, self-align, countersteer): saved, applied at boot, and the menu
+// shows the value in use (Firefox restored the menu's last pick on reload while the craft kept MEDIUM).
+const assistSel = $<HTMLSelectElement>('#as')
+let assistPick = 0.6
+try { const v = localStorage.getItem('dbu-assist'); if (v !== null && [...assistSel.options].some((o) => o.value === v)) assistPick = +v } catch { /* blocked */ }
+assistSel.value = String(assistPick); player.assist = assistPick
+assistSel.onchange = () => { assistPick = +assistSel.value; player.assist = assistPick; try { localStorage.setItem('dbu-assist', assistSel.value) } catch { /* blocked */ } }
 
 $<HTMLInputElement>('#ghoston').onchange = (e) => { settings.ghost = (e.target as HTMLInputElement).checked }
 // (The box's own class is the switch: the saved settings are restored before the frame code below is set up.)
