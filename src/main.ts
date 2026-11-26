@@ -2157,6 +2157,9 @@ function startRace(): void {
   for (const r of race.all) if (!race.racers.includes(r)) { const v = visuals.get(r.p)!; v.craft.root.visible = false; for (const t of v.trail) t.reset() }
   race.reset()
   resetVisuals()
+  // (A replay's inputs end with it: they were only cleared once used up, so restarting — or starting a new race
+  //  — before then played the loaded file again from the top. Replays set their inputs after this.)
+  replayIn = null; forced = null
   ghostRec = []; ghostStep = 0; inputRec = []; gridRec = 0; replayAt = 0; runIsReplay = false
   ghostPlay = settings.ghost ? loadGhost() : null
   if (settings.line) raceLine.load(course.def.id)
