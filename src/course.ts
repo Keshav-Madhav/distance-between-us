@@ -733,8 +733,11 @@ export function medals(d: CourseDef): [number, number, number] {
  * winner (rubber band off) on a normal human's time — the player's best × 1.04 (estimated from their pace
  * elsewhere where they had no valid best) — and the first two courses of each world 5% / 2% easier.
  * THE OVAL and CANYON RUN are at the top of the range and still ~7% / 3% short of their target.
+ * Re-tuned 2026-11-26 (tools/aitune.mjs): OVAL (two laps now) and WHITEOUT to NORMAL ≈ 1.64× IDEAL like the rest;
+ * DRAG so HARD is ~48 s (a practised straight-line run beats it); SPRINT to 0 — its field crashes in the spire
+ * weave more the faster it goes, so at 2.02 HARD came out slower than NORMAL.
  */
-export const AI_LEVEL: Record<string, number> = {'sprint': 2.02, 'dry-river': 1.25, 'drag': 0.51, 'circuit': 0.72, 'oval': 2.2, 'canyon': 2.2, 'frostline': 0.43, 'icefall': -0.06, 'whiteout': 0.56, 'caldera': 0.27, 'faultline': -0.34, 'obsidian': 0.76, 'greenway': -0.18, 'riverrun': 0.23, 'timberline': 0.23, 'mistriver': 0.31, 'understory': 0.76, 'icecave': 0.72, 'magma': 0.6, 'whitewater': 0.76}
+export const AI_LEVEL: Record<string, number> = {'sprint': 0, 'dry-river': 1.25, 'drag': 0, 'circuit': 0.72, 'oval': -0.09, 'canyon': 2.2, 'frostline': 0.43, 'icefall': -0.06, 'whiteout': -0.13, 'caldera': 0.27, 'faultline': -0.34, 'obsidian': 0.76, 'greenway': -0.18, 'riverrun': 0.23, 'timberline': 0.23, 'mistriver': 0.31, 'understory': 0.76, 'icecave': 0.72, 'magma': 0.6, 'whitewater': 0.76}
 export const COURSES: CourseDef[] = [SPRINT, DRY_RIVER, DRAG, CIRCUIT, OVAL, CANYON, FROSTLINE, ICEFALL, WHITEOUT, ICECAVE, CALDERA, FAULTLINE, OBSIDIAN, MAGMA, GREENWAY, RIVERRUN, TIMBERLINE, WHITEWATER, MISTRIVER, UNDERSTORY, ORBIT]
 for (const d of COURSES) d.aiLevel ??= AI_LEVEL[d.id]
 

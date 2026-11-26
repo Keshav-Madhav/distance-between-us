@@ -306,7 +306,9 @@ export class Race {
       const wide = lat > this.course.gateHalf + 15
       // The finish is the one gate that must be flown through, by everyone (ROGUE too): beside it, or
       // reached by skipping the one before it wide, nothing counts — turn back through it (or R).
-      if (k === this.K - 1 && wide) { if (ahead === 0) this.ev.missedFinish?.(r); continue }
+      // (Rivals are the exception: one that still crosses the line beside it finishes — rather than flying on
+      //  for ever, hundreds of km past the end, which held whole fields out of the results on CIRCUIT.)
+      if (k === this.K - 1 && wide && !(r.ai && !r.replay)) { if (ahead === 0) this.ev.missedFinish?.(r); continue }
       const missed = wide || ahead === 1
       const count = ahead + 1
       for (let q = 0; q < count; q++) {
@@ -450,7 +452,9 @@ export class Race {
     const toGate = (nextGate.i - r.idx) * 40
     // (Squeezed only in the last ~1 s before a gate: at Mach 6 the old 2 s + 600 m window held it for
     // 4.7 km, leaving no room beside spires near the edge — the field crossed through them instead.)
-    const laneLim = toGate > 0 && toGate < p.speed * 1.0 + 300 ? 175 : 220
+    // (The finish is squeezed tighter and earlier: it must be flown through — a wide one doesn't count.)
+    const fin = r.next >= this.K - 1
+    const laneLim = toGate > 0 && toGate < p.speed * (fin ? 2.0 : 1.0) + 300 ? (fin ? 110 : 175) : 220
     // (tools/optline.mjs: a searched racing line for your autopilot — the lane at points along the course.)
     const pol = !r.ai ? this.playerPolicy : null
     if (pol) { const f = THREE.MathUtils.clamp(r.idx / pol.step, 0, pol.lane.length - 1.001), k = Math.floor(f), u = f - k; lane = pol.lane[k] + (pol.lane[k + 1] - pol.lane[k]) * u }
