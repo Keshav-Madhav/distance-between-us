@@ -708,7 +708,18 @@ export const ORBIT: CourseDef = {
  * fixed average Mach per course, blind to how hard the course is: a bronze 11 s ahead of the field.)
  */
 export const MEDAL_H: Record<string, number> = {'sprint': 87.43, 'dry-river': 46.02, 'drag': 51.86, 'circuit': 79.1, 'oval': 68.5, 'canyon': 35.18, 'frostline': 80.75, 'icefall': 67.55, 'whiteout': 39.17, 'caldera': 72.41, 'faultline': 51.37, 'obsidian': 63.58, 'greenway': 73.61, 'riverrun': 44.39, 'timberline': 59.51, 'mistriver': 40.94, 'understory': 62.26, 'icecave': 45.3, 'magma': 34.43, 'whitewater': 33.04}
+/**
+ * Each course's IDEAL time: the fastest run a human could input (WASD + Shift, every key held >= 0.1 s, every
+ * gate, on the track) — found by tools/optruns/solver, bench-verified, the RACING LINE in public/lines/.
+ */
+export const IDEAL_T: Record<string, number> = {'caldera': 43.88, 'canyon': 23.92, 'circuit': 48.72, 'drag': 45.15, 'dry-river': 29.52, 'faultline': 30.27, 'frostline': 49.25, 'greenway': 43.65, 'icecave': 27.28, 'icefall': 41.53, 'magma': 22.72, 'mistriver': 26.92, 'obsidian': 39.33, 'oval': 55.12, 'riverrun': 27.77, 'sprint': 45.67, 'timberline': 37.15, 'understory': 38.77, 'whiteout': 28.37, 'whitewater': 22.13}
+/** Medal times (gold, silver, bronze) as multiples of IDEAL — the same bar on every course (2026-11-26). Set so a
+ *  practised player takes silver comfortably and gold with a little more practice; a near-perfect gold
+ *  discouraged. (They were from estimated human times, uneven: gold sat 11% off perfect on DRAG, 85% on SPRINT.) */
+const MEDAL_K = [1.35, 1.6, 2.0]
 export function medals(d: CourseDef): [number, number, number] {
+  const ideal = IDEAL_T[d.id]
+  if (ideal) return MEDAL_K.map((k) => Math.round(ideal * k * 10) / 10) as [number, number, number]
   const h = MEDAL_H[d.id]
   if (h) return [0.97, 1.03, 1.1].map((k) => Math.round(h * k * 10) / 10) as [number, number, number]
   const dist = d.km * 1000 * (d.laps ?? 1)
