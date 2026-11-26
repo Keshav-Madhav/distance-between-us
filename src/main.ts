@@ -1554,11 +1554,11 @@ function showCourse(): void {
     $('#tp-stats').innerHTML = cell(WORLDS.find((w) => w.id === BIOME)?.name ?? '', 'World') + cell('× Mach', 'Score multiplier') + cell('6 waves', 'Then it ends') + cell((() => { try { return localStorage.getItem('dbu-hunt-best') ?? 'No run yet' } catch { return 'No run yet' } })(), 'Your best')
     $('#tp-info').textContent = '' // (the keys are in the footer: they showed twice)
   } else if (menuMode === 'free' && IN_SYSTEM) {
-    $('#title .free-only.huntinfo').innerHTML = '<b>HOW IT PLAYS</b><p>You start in orbit beside RED MESA. Every world is marked with its name and distance: point the nose at one and hold Shift to cruise — you slow down by yourself as you arrive.</p><p>Fly below 1,500 km of a world and you are there, coming down to its ground. Climb back out past 1,500 km to return here and pick another.</p>'
+    $('#title .free-only.huntinfo').innerHTML = '<b>HOW IT PLAYS</b><p>You start in orbit beside RED MESA. Every world is marked with its name and distance: point the nose at one and hold Shift to cruise — you slow down by yourself as you arrive.</p><p>Fly within 3,000 km of a world and you are there, coming down to its ground. Climb back out past 1,500 km to return here and pick another.</p>'
     $('#tp-name').textContent = 'ORBIT'
     $('#tp-blurb').textContent = 'A star and its five worlds. Hold Shift to cruise between them; fly down to any one and you are there.'
     const cell = (v: string, l: string) => `<div><b>${v}</b><small>${l}</small></div>`
-    $('#tp-stats').innerHTML = cell('5', 'Worlds') + cell('Shift', 'Cruise') + cell('1,500 km', 'Fly down below') + cell('1,500 km', 'Climb out above')
+    $('#tp-stats').innerHTML = cell('5', 'Worlds') + cell('Shift', 'Cruise') + cell('3,000 km', 'Fly down below') + cell('1,500 km', 'Climb out above')
     $('#tp-info').textContent = ''
   } else if (menuMode === 'free') {
     $('#tp-name').textContent = 'FREE ROAM'
@@ -2172,6 +2172,9 @@ let freeRockHit = 0
 const freeRockN = new THREE.Vector3()
 /** After an automatic handover: the nose eases into a glide until Space or C. */
 let freeAuto = false
+/** Just handed over from ORBIT, still coming down from space (the cruise carries you to 60 km). */
+let arriving = false
+const worldName = () => PLANETS.find((p) => p.biome === BIOME)?.name ?? WORLDS.find((w) => w.id === BIOME)?.name ?? ''
 const FREE_GLIDE = -0.07 // (−4°)
 /** Where a wreck respawns: the last place you were flying or driving clear and unhurt. */
 const freeSafe = { x: 0, z: 0, h: 0, ok: false }
@@ -2223,7 +2226,7 @@ function startFree(): void {
   //  gorge's walls are the mountains.)
   flight.onRock = (imp, nx, nz, solid) => { if (solid && imp > freeRockHit) { freeRockHit = imp; freeRockN.set(nx, 0, nz) } }
   player.onRockFree = (imp, solid) => { if (solid) freeRock(imp, player.pos) }
-  freeHull = FREE_HULL; freeSinceHit = 9; freeGhost = 0; freeWreckT = 0; freeAuto = false; freeSafe.ok = false
+  freeHull = FREE_HULL; freeSinceHit = 9; freeGhost = 0; freeWreckT = 0; freeAuto = false; freeSafe.ok = false; arriving = false
   const c = course.cps[0]
   player.reset(c.x, c.z, Math.atan2(c.tx, c.tz), 1.5)
   shards.start(player.pos.x, player.pos.z, player.heading, groundH, surf)
@@ -2483,7 +2486,7 @@ const _sv = new THREE.Vector3(), _sn = new THREE.Vector3()
 function startSystem(): void {
   startFree()
   // The system's own controls (the world's card talked about crystals and climbing to orbit).
-  hintsEl.innerHTML = ['<b>W · SHIFT</b>THROTTLE · CRUISE (FASTER THE HIGHER YOU ARE)', '<b>A D · Q E</b>TURN · ROLL', '<b>SPACE · C</b>NOSE UP · NOSE DOWN', '<b>MARKERS</b>EVERY WORLD · AT THE EDGE: TURN TOWARD THE ARROW', '<b>TO LAND</b>HEAD FOR A WORLD · BELOW 1,500 KM YOU ARE THERE'].map((h) => `<div>${h}</div>`).join('')
+  hintsEl.innerHTML = ['<b>W · SHIFT</b>THROTTLE · CRUISE (FASTER THE HIGHER YOU ARE)', '<b>A D · Q E</b>TURN · ROLL', '<b>SPACE · C</b>NOSE UP · NOSE DOWN', '<b>MARKERS</b>EVERY WORLD · AT THE EDGE: TURN TOWARD THE ARROW', '<b>TO LAND</b>HEAD FOR A WORLD · WITHIN 3,000 KM YOU ARE THERE'].map((h) => `<div>${h}</div>`).join('')
   // Out here the ship is lit by the star, not by a sky: its reflections of the world's sky turned it
   // flat white.
   for (const v of visuals.values()) v.craft.root.traverse((o) => { const m = (o as THREE.Mesh).material as THREE.MeshStandardMaterial | undefined; if (m && 'envMapIntensity' in m) m.envMapIntensity = Math.min(m.envMapIntensity, 0.22) })
@@ -2494,8 +2497,16 @@ function startSystem(): void {
   const pl = PLANETS.find((p) => p.biome === 'desert')!
   const toStar = _sn.copy(pl.pos).negate().normalize()
   sysPos.copy(pl.pos).addScaledVector(toStar, PLANET_R + 6e7)
-  const fwd = toStar.clone().negate()
-  flight.launch(ANCHOR, Math.atan2(fwd.x, fwd.z), 3 * MACH, Math.asin(THREE.MathUtils.clamp(fwd.y, -1, 1)))
+  // Facing open space, the planet ~40° off the nose to the left and a little below, wings level to the
+  // system. (Nose-on to it, the first Shift cruised you straight into the world you started beside, and
+  // A/D — a turn about the planet's up, the axis you were looking down — barely moved the nose.)
+  const toPl = toStar.clone().negate()
+  const e1 = new THREE.Vector3().crossVectors(toPl, new THREE.Vector3(0, 1, 0)).normalize()
+  const e2 = new THREE.Vector3().crossVectors(e1, toPl)
+  const fwd = toPl.clone().multiplyScalar(Math.cos(0.7)).addScaledVector(e1.clone().multiplyScalar(Math.cos(0.25)).addScaledVector(e2, Math.sin(0.25)), Math.sin(0.7)).normalize()
+  flight.launch(ANCHOR, 0, 3 * MACH, 0)
+  setAttitude(fwd, e2, 3 * MACH)
+  cruiseRamp = 0
   flight.syncTo(player)
   fcam.snap()
   camBlend = 0
@@ -2553,6 +2564,10 @@ function applyHandoff(h: Handoff): void {
     flight.pos.set(player.pos.x, flight.ground(player.pos.x, player.pos.z) + THREE.MathUtils.clamp(h.alt, 60000, 4800000), player.pos.z)
     flight.prev.copy(flight.pos)
     setAttitude(fwd, new THREE.Vector3(0, 1, 0), h.speed)
+    // Down from ORBIT: the cruise carries on down to 60 km, and the nose glides you in by itself until
+    // you take the pitch (freeAuto: as off a cliff — down to a gentle flare, no wreck hands-off).
+    // (It dropped to Mach 85 at the handover, nose −24°: ~3.5 min to the ground hands-off.)
+    if (h.alt > 100000) { arriving = true; freeAuto = true; flash(`${worldName()} · HOLD SHIFT TO DESCEND`) }
     // The sky: this world's directions turned into the system's so the ship's frame matches —
     // nose-horizontal, up and side here onto the same three out there.
     if (h.n && h.fh) {
@@ -2598,6 +2613,8 @@ function setAttitude(fwd: THREE.Vector3, up: THREE.Vector3, speed: number): void
   _bq.setFromRotationMatrix(_bm.makeBasis(left, u, fwd))
   flight.setAttitude(_bq, speed)
 }
+/** ORBIT's cruise build-up (0 … 1 over ~2 s of Shift). */
+let cruiseRamp = 0
 /** ORBIT's step: flight in free space, cruise, the system moving past the anchored craft, arrival. */
 function systemStep(): void {
   if (!flyForced) readFlight()
@@ -2605,15 +2622,31 @@ function systemStep(): void {
   // Near a planet "up" is its up (level flight, banking, the view); far out, the system's.
   if (nb.i >= 0) {
     const rn = _sn.subVectors(sysPos, PLANETS[nb.i].pos).normalize()
-    const w = 1 - THREE.MathUtils.smoothstep(nb.alt, 2e7, 4e8) // (full within 20,000 km; none past 400,000)
+    // (Full within 5,000 km — a world's handover leaves you at 1,500 km, level — none past 40,000: out
+    //  there no "up", A/D yaw about the craft's own top and the view rolls with it. It held the planet's
+    //  up out to 400,000 km, so wings-level kept the spawn's planet dead under the nose.)
+    const w = 1 - THREE.MathUtils.smoothstep(nb.alt, 5e6, 4e7)
     UP_REF.copy(rn)
     FLY_LEVEL.k = w
   } else FLY_LEVEL.k = 0
-  // Cruise: Shift scales the speed with the distance to the nearest body (half of it a second) — a
-  // planet millions of km off is seconds away, and you slow by yourself as you close on anything.
-  const safe = 0.5 * Math.max(nb.alt, 0)
+  // Cruise: Shift scales the speed with the distance to the body AHEAD (half of it a second) — a
+  // planet millions of km off is seconds away, and you slow by yourself as you close on it. Bodies more
+  // than 60° off the nose don't count (you are not flying into them); with none ahead, the nearest.
+  // (It was always the nearest: aimed away from RED MESA at VERDANT, Shift went to 19,000 km/s off RED
+  //  MESA's distance before the nose came round, and you dived into RED MESA.)
+  // It builds over ~2 s, by orders of magnitude (from Mach 85 to the full cruise, evenly in log), so a
+  // nose still swinging onto its target doesn't carry you a million km the wrong way.
+  let ahead = Infinity
+  {
+    const f = flight.fwd
+    PLANETS.forEach((p) => { _sv.subVectors(p.pos, sysPos); const d = _sv.length(); if (_sv.dot(f) > 0.5 * d) ahead = Math.min(ahead, d - PLANET_R) })
+    const ds = sysPos.length()
+    if (-sysPos.dot(f) > 0.5 * ds) ahead = Math.min(ahead, ds - STAR_R)
+  }
+  const safe = 0.5 * Math.max(ahead < Infinity ? ahead : nb.alt, 0)
   const top = 85 * MACH
-  if (fc.burner && safe > top) flight.cruise = safe
+  cruiseRamp = fc.burner ? Math.min(1, cruiseRamp + STEP / 2) : 0
+  if (fc.burner && safe > top) flight.cruise = Math.max(flight.speed > top ? Math.min(flight.speed, safe) : top, top * Math.pow(safe / top, cruiseRamp * cruiseRamp * (3 - 2 * cruiseRamp)))
   else if (flight.speed > top) flight.cruise = Math.min(flight.speed * Math.exp(-1.4 * STEP), Math.max(safe, top))
   else flight.cruise = 0
   if (testSpeed > 0) flight.cruise = testSpeed
@@ -3116,8 +3149,13 @@ function simStep(): void {
       // Above the air, cruise as in ORBIT: Shift scales the speed with the height (half of it a second),
       // so climbing out to 1,500 km or coming down from it takes seconds, not minutes.
       {
-        const top = 85 * MACH, safe = 0.5 * Math.max(flight.agl - 60000, 0)
-        if (flight.vac > 0.95 && fc.burner && safe > top) flight.cruise = safe
+        // (The height from the position: flight.agl is last step's — just after a handover, the launch's 0.)
+        const h = flight.pos.y - flight.ground(flight.pos.x, flight.pos.z)
+        const top = 85 * MACH, safe = 0.5 * Math.max(h - 60000, 0)
+        // Arriving: carried down hands-off, faster on Shift — until 60 km, the brake, or the nose up.
+        if (arriving && (h < 60000 || fc.brake || flight.fwd.y > 0.05)) arriving = false
+        if (arriving && safe > top) flight.cruise = fc.burner ? safe * 1.8 : safe
+        else if (flight.vac > 0.95 && fc.burner && safe > top) flight.cruise = safe
         else if (flight.speed > top) flight.cruise = Math.min(flight.speed * Math.exp(-1.4 * STEP), Math.max(safe, top))
         else flight.cruise = 0
         if (testSpeed > 0) flight.cruise = testSpeed
@@ -3205,7 +3243,9 @@ function readFlight(): void {
   if (mode !== 'hunt') {
     if (pitch !== 0) freeAuto = false
     if (freeAuto) {
-      const want = -THREE.MathUtils.clamp(flight.agl / 2000, -FREE_GLIDE, 0.3)
+      // (The flare starts higher the faster you come in — ~1.5 s ahead of the ground: down from ORBIT at
+      //  Mach 12 the fixed 2 km scale left under a second to flare, and it met the ground at 930 m/s.)
+      const want = -THREE.MathUtils.clamp(flight.agl / Math.max(2000, flight.speed * 1.5), -FREE_GLIDE, 0.3)
       pitch = THREE.MathUtils.clamp((want - Math.asin(THREE.MathUtils.clamp(flight.fwd.y, -1, 1))) * 4, -0.6, 0.6)
     }
   }
@@ -3255,6 +3295,11 @@ let flyForced = false
 
 
 /** Draw one racer's craft, flames, trails and dust. */
+/** Flying this frame (HUNT, or FREE ROAM in the air — not ORBIT): the flight camera and speed cues. */
+function flyingNow(): boolean { return !system && (mode === 'hunt' || (mode === 'free' && freeAir)) }
+/** Tests: the flight speed cues (motes, wisps) on or off, for frame-cost A/B. */
+let speedFx = true
+const _upv = new THREE.Vector3()
 function drawRacer(p: Player, alpha: number, dt: number, isMe: boolean): void {
   // (The weather in the air round you — rain, snow, pollen, embers — stays down in the air.)
   const airLow = mode !== 'free' || p.pos.y - groundH(p.pos.x, p.pos.z) < 3000
@@ -3306,7 +3351,12 @@ function drawRacer(p: Player, alpha: number, dt: number, isMe: boolean): void {
     v.trail[i].strength = isMe ? 0.2 + p.boost * 0.8 : 0.16 + p.boost * 0.18
   }
   if (isMe) {
-    const vap = THREE.MathUtils.clamp((p.mach - 1.5) / 3, 0, 1) * (0.25 + Math.min(1, Math.abs(p.yawRate) * 1.4))
+    // (Flying: from the nose's swing — the Player's yaw rate is the ground model's, never set in the air,
+    //  so hard turns drew no more vapour than a straight line. A full-rate turn above ~Mach 1.5 pulls
+    //  long wingtip trails; a gentle one none.)
+    const vap = flyingNow()
+      ? THREE.MathUtils.clamp((p.mach - 0.9) / 1.2, 0, 1) * THREE.MathUtils.smoothstep(flight.omega.length(), 0.3, 0.95) * 1.5 * (1 - flight.vac)
+      : THREE.MathUtils.clamp((p.mach - 1.5) / 3, 0, 1) * (0.25 + Math.min(1, Math.abs(p.yawRate) * 1.4))
     for (let i = 0; i < 2; i++) {
       nozzleW.copy(craft.wingtips[i]).applyMatrix4(craft.body.matrixWorld)
       v.vapour[i].push(nozzleW, dt)
@@ -3432,6 +3482,34 @@ function drawRacer(p: Player, alpha: number, dt: number, isMe: boolean): void {
       e.y = groundH(e.x, e.z) + Math.random() * 25
       e.vx = 4 * (Math.random() - 0.5); e.vy = 3 + Math.random() * 5; e.vz = 4 * (Math.random() - 0.5)
       e.life = 2.2; e.size0 = 0.14; e.size1 = 0.05; e.r = 4.5; e.g = 1.3; e.b = 0.25; e.a = 1; e.streak = p.mach > 1.5 ? 1 : 0
+      fx.glow.emit(e)
+    }
+  }
+  // Flying: speed in the air itself. Motes hanging still in the air ahead, drawn as streaks of their
+  // motion past the camera (particles.ts, streak 2) — more and longer the faster you go. (At fighting
+  // height there was nothing near enough to pass: Mach 3 read as a glide.) Small additive quads in the
+  // glow pool: no measurable frame cost. (Cloud puffs to fly through at 1–2 km were tried — billboards
+  // that far off read as a row of round blobs in the sky — and left out.)
+  if (isMe && speedFx && flyingNow() && flight.vac < 0.95) {
+    const air = (1 - flight.vac) * (1 - 0.6 * flight.thin)
+    const vd = tmp2.copy(flight.vel).normalize()
+    const side = tmp3.set(-vd.z, 0, vd.x)
+    if (side.lengthSq() < 1e-4) side.set(1, 0, 0)
+    side.normalize()
+    const upv = _upv.crossVectors(side, vd)
+    const n = Math.round(Math.min(16, Math.max(0, (p.mach - 0.5) * 4.5)) * air)
+    for (let i = 0; i < n; i++) {
+      const e = resetE()
+      // (In a hollow cylinder round the path: never through the craft or the camera's face.)
+      const ahead = 40 + Math.random() * 420, a = Math.random() * 6.283, r = 7 + Math.random() * 55
+      e.x = tmp.x + vd.x * ahead + side.x * Math.cos(a) * r + upv.x * Math.sin(a) * r
+      e.y = tmp.y + vd.y * ahead + side.y * Math.cos(a) * r + upv.y * Math.sin(a) * r
+      e.z = tmp.z + vd.z * ahead + side.z * Math.cos(a) * r + upv.z * Math.sin(a) * r
+      if (e.y < groundH(e.x, e.z) + 2) continue
+      e.vx = 0; e.vy = 0; e.vz = 0
+      e.life = 0.7; e.size0 = 0.2; e.size1 = 0.2
+      const k = 1.5 * Math.min(1, p.mach / 3)
+      e.r = 1.0 * k; e.g = 1.0 * k; e.b = 1.05 * k; e.a = 1; e.streak = 2
       fx.glow.emit(e)
     }
   }
@@ -3701,7 +3779,10 @@ function frame(now: number): void {
     flightPunch *= Math.exp(-realDt * 4)
     // Turbulence shakes the view a little (more with ice on); "reduce shake" in settings cuts it.
     fcam.shake = flight.turb * (0.6 + 0.4 * flight.ice) * (CFG.camera.reduceShake ? 0.3 : 1)
-    fcam.update(realDt, renderPos, flightQ, flight.vel, flight.mach, fovMax, flightPunch)
+    // The burner pulls the view back; navigating to far targets (ORBIT, up in space) lifts it over the craft.
+    fcam.kick = flight.burning ? 1 : 0
+    fcam.lift = system ? 1 : mode === 'free' ? THREE.MathUtils.smoothstep(flight.agl, 20000, 80000) : 0
+    fcam.update(realDt, renderPos, flightQ, flight.vel, flight.mach, fovMax, flightPunch, flight.omega)
     if (hitT > 0) { hitT -= realDt; if (hitT <= 0) $('#hitmark').style.opacity = '0' }
     if (dmgT > 0) { dmgT -= realDt; if (dmgT <= 0) $('#dmgarc').style.opacity = '0' }
     // Hit marker sits on the nose.
@@ -3731,6 +3812,7 @@ function frame(now: number): void {
   if (mode === 'hunt') combat.render(alpha, realDt, time)
   combat.group.visible = mode === 'hunt'
   pm('craft+cam')
+  fx.camVel.copy(player.vel)
   fx.update(dt)
   wreckage.update(dt)
   shock.update(dt)
@@ -3792,7 +3874,10 @@ function frame(now: number): void {
   P.uBlur.value = play ? settings.blur * (cine ? 0.3 : 1) * CFG.post.radialBlur * (s * s * 1.2 + player.boost * 0.4 + white * 0.6 + impactPulse * 0.8) * (1 - space.vac) : 0
   // (Not in vacuum: at cruise speeds it split every star into red, green and blue copies.)
   P.uAberr.value = play ? CFG.post.aberration * (s + player.boost * 0.5 + damageFlash + impactPulse * 2.5) * (1 - space.vac) : 0
-  P.uStreak.value = play ? (cine ? 0.25 : 1) * (BIOME === 'ice' ? 0.45 : BIOME === 'lava' ? 0.6 : 1) * CFG.post.streaks * THREE.MathUtils.clamp((player.mach - 0.8) / 4, 0, 1) * (1 - space.vac) : 0
+  // (Flying, the edge streaks come in sooner — near full by Mach 3, more on the burner: the ground's
+  //  rush is far below, and at 1 km Mach 3 showed only a faint trace of them.)
+  const streakK = flyingNow() ? THREE.MathUtils.clamp((player.mach - 0.7) / 2.6 + (flight.burning ? 0.2 : 0), 0, 1.1) : THREE.MathUtils.clamp((player.mach - 0.8) / 4, 0, 1)
+  P.uStreak.value = play ? (cine ? 0.25 : 1) * (BIOME === 'ice' ? 0.45 : BIOME === 'lava' ? 0.6 : 1) * CFG.post.streaks * streakK * (1 - space.vac) : 0
   P.uStreakT.value += realDt * (0.4 + player.mach * 0.45)
   P.uWhite.value = white * 0.45
   P.uDamage.value = damageFlash
@@ -3944,11 +4029,20 @@ function updateHud(dt: number, slow: boolean): void {
   // then the fraction of light speed past 10,000 km/s (and CRUISE when cruising).
   {
     const v = player.speed, kmh = v * 3.6, kms = v / 1000
-    setText(machNum, m < 100 ? m.toFixed(2) : Math.round(m).toLocaleString('en'))
-    if (machLab.textContent !== 'MACH') machLab.textContent = 'MACH'
-    const sub = kmh < 10000 ? `${Math.round(kmh).toLocaleString('en')} KM/H`
-      : kms < 10000 ? `${kms < 100 ? kms.toFixed(2) : Math.round(kms).toLocaleString('en')} KM/S`
-        : `${(v / 2.998e8).toFixed(v < 2.998e7 ? 3 : 2)} × LIGHT SPEED`
+    // (In space — ORBIT, or up out of a world's air — the big number is km/s: it read MACH 8,198.)
+    const inSpace = !!system || (mode === 'free' && space.vac > 0.5)
+    let sub: string
+    if (inSpace) {
+      setText(machNum, kms < 10 ? kms.toFixed(2) : kms < 100 ? kms.toFixed(1) : kms < 1e5 ? Math.round(kms).toLocaleString('en') : kms < 1e8 ? `${(kms / 1e6).toFixed(kms < 1e7 ? 2 : 1)}M` : `${Math.round(kms / 1e6)}M`)
+      if (machLab.textContent !== 'KM/S') machLab.textContent = 'KM/S'
+      sub = v < 2.998e6 ? `MACH ${m < 100 ? m.toFixed(1) : Math.round(m).toLocaleString('en')}` : `${(v / 2.998e8).toFixed(v < 2.998e7 ? 3 : 2)} × LIGHT SPEED`
+    } else {
+      setText(machNum, m < 100 ? m.toFixed(2) : Math.round(m).toLocaleString('en'))
+      if (machLab.textContent !== 'MACH') machLab.textContent = 'MACH'
+      sub = kmh < 10000 ? `${Math.round(kmh).toLocaleString('en')} KM/H`
+        : kms < 10000 ? `${kms < 100 ? kms.toFixed(2) : Math.round(kms).toLocaleString('en')} KM/S`
+          : `${(v / 2.998e8).toFixed(v < 2.998e7 ? 3 : 2)} × LIGHT SPEED`
+    }
     setText(kmsEl, mode === 'free' && flight.cruise > 0 ? `CRUISE · ${sub}` : sub)
   }
   for (let i = 0; i < 6; i++) {
@@ -4153,7 +4247,14 @@ function updateHud(dt: number, slow: boolean): void {
       scoreNum.textContent = name
       if ($('#score .lab').textContent !== 'NEAREST') $('#score .lab').textContent = 'NEAREST'
       scoreSub.innerHTML = `${km > 1e6 ? (km / 1e6).toFixed(2) + ' MILLION KM' : Math.round(km).toLocaleString('en') + ' KM'} ABOVE IT<br/>${flight.cruise > 0 ? '<b style="color:#9fd2ff">CRUISE</b>' : 'HOLD SHIFT TO CRUISE'} · BELOW 1,500 KM YOU ARE THERE<br/>${fmtTime(runTime)}`
+    } else if (slow && arriving) {
+      // Down from ORBIT: the world you are coming to, how high, what Shift does — not the crystal count.
+      const alt = Math.max(0, player.pos.y - groundH(player.pos.x, player.pos.z)) / 1000
+      setText(scoreNum, worldName())
+      if ($('#score .lab').textContent !== 'ARRIVING') $('#score .lab').textContent = 'ARRIVING'
+      scoreSub.innerHTML = `${Math.round(alt).toLocaleString('en')} KM ABOVE IT<br/>${flight.cruise > 0 ? '<b style="color:#9fd2ff">DESCENDING</b> · HOLD SHIFT TO DESCEND FASTER' : 'HOLD SHIFT TO DESCEND'}<br/>${fmtTime(runTime)}`
     } else if (slow) {
+      if ($('#score .lab').textContent !== 'CRYSTALS') $('#score .lab').textContent = 'CRYSTALS'
       scoreNum.textContent = String(shards.taken)
       const alt = Math.max(0, Math.round(player.pos.y - groundH(player.pos.x, player.pos.z)))
       const altTxt = alt < 10000 ? `${alt} M` : `${(alt / 1000).toFixed(alt < 100000 ? 1 : 0)} KM`
@@ -4794,6 +4895,7 @@ const g = {
   }),
   player, race, course, combat, flight, fc, CFG, world, scene, camera, post, fx, input, wreckage, shards, scatter,
   spaceOff: (v: boolean) => { spaceOff = v },
+  speedFx: (v: boolean) => { speedFx = v },
   setSpeed: (v: number) => { testSpeed = v },
   get craftPos() { return visuals.get(player)!.craft.root.position },
   free: () => startFree(), system: () => startSystem(), get sys() { return { pos: sysPos, planets: PLANETS, near: system?.nearest(sysPos) } }, fly: () => takeOff(0.3), get freeAir() { return freeAir },

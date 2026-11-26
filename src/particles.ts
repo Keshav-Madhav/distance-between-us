@@ -16,7 +16,8 @@ export interface Emit {
   r1?: number; g1?: number; b1?: number
   drag?: number
   grav?: number
-  /** 0 soft blob, 1 streak along velocity. */
+  /** 0 soft blob, 1 streak along velocity, 2 streak along its motion on screen relative to the camera
+   *  (still air rushing past: Fx.camVel) — perspective-true, a mote off to the side runs outward. */
   streak?: number
 }
 
@@ -26,6 +27,7 @@ export interface Emit {
 const VERT = /* glsl */ `
   ${SKY_GLSL}
   uniform float uAdd;
+  uniform vec3 uCamVel;
   attribute vec4 aPos;   // xyz, size
   attribute vec4 aCol;   // rgba
   attribute vec4 aVel;   // velocity (for streaks), streak flag
@@ -47,7 +49,16 @@ const VERT = /* glsl */ `
     float size = aPos.w * min(1.0, 0.7 / max(scr, 1e-4));
     vCol.a *= smoothstep(0.5, 1.6, depth / max(aPos.w, 0.01));
     vec2 off = position.xy * size;
-    if (aVel.w > 0.5) {
+    if (aVel.w > 1.5) {
+      // Its velocity relative to the camera, seen at its depth: the view-plane motion of a point at
+      // (x, y, −D) moving by v is v.xy + (x, y)·v.z / D. Stretched over ~1/40 s of it (capped).
+      vec3 vv = mat3(viewMatrix) * (aVel.xyz - uCamVel);
+      vec2 ve = vv.xy + mv.xy * vv.z / depth;
+      float l = length(ve);
+      vec2 d = l > 1e-4 ? ve / l : vec2(0.0, 1.0);
+      float len = size + min(l * 0.025, size * 80.0);
+      off = d * position.y * len + vec2(-d.y, d.x) * position.x * size;
+    } else if (aVel.w > 0.5) {
       // Stretched along the screen-space velocity.
       vec3 vv = mat3(viewMatrix) * aVel.xyz;
       vec2 d = vv.xy;
@@ -62,12 +73,15 @@ const VERT = /* glsl */ `
     gl_Position = projectionMatrix * mv;
   }`
 
+/** The camera's velocity (m/s, world), shared by both pools: streak mode 2 stretches by motion relative to it. */
+const CAM_VEL = new THREE.Vector3()
+
 function material(additive: boolean): THREE.ShaderMaterial {
   return new THREE.ShaderMaterial({
     transparent: true,
     depthWrite: false,
     blending: additive ? THREE.AdditiveBlending : THREE.NormalBlending,
-    uniforms: { uAdd: { value: additive ? 1 : 0 }, tNoise: { value: NOISE_TEX } },
+    uniforms: { uAdd: { value: additive ? 1 : 0 }, tNoise: { value: NOISE_TEX }, uCamVel: { value: CAM_VEL } },
     vertexShader: VERT,
     fragmentShader: /* glsl */ `
       uniform sampler2D tNoise;
@@ -210,6 +224,8 @@ export class Fx {
   readonly glow = new Pool(2600, true)
   readonly smoke = new Pool(3200, false)
   readonly group = new THREE.Group()
+  /** The camera's velocity this frame (the game sets it): still air streaks past at it (streak 2). */
+  readonly camVel = CAM_VEL
   constructor() {
     this.group.add(this.smoke.mesh, this.glow.mesh)
   }

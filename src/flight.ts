@@ -155,6 +155,9 @@ export class FlightCraft {
   topMach = 0
   /** Rates (rad/s) actually applied: pitch, roll, yaw. */
   private rates = new THREE.Vector3()
+  /** The nose's angular velocity in the world (rad/s) from the pitch and turn rates, roll left out: where
+   *  the nose is swinging (the camera looks ahead along it). */
+  readonly omega = new THREE.Vector3()
   /** Manual roll suspends the auto-bank for a moment after release. */
   private manualT = 0
   /** How long the air brake has been held (the snap is its first moments). */
@@ -220,7 +223,7 @@ export class FlightCraft {
     this.ghost = 0
     this.rockGrace = 0
     this.brakeT = 0
-    this.rates.set(0, 0, 0)
+    this.rates.set(0, 0, 0); this.omega.set(0, 0, 0)
     this.topMach = 0
     this.ice = 0; this.frozen = 0; this.frozenT = 0; this.freezeCd = 0; this.mush = 0
   }
@@ -231,7 +234,7 @@ export class FlightCraft {
     this.speed = speed
     this.vel.copy(this.fwd).multiplyScalar(speed)
     this.aim.copy(this.fwd)
-    this.rates.set(0, 0, 0)
+    this.rates.set(0, 0, 0); this.omega.set(0, 0, 0)
   }
 
   /** FREE ROAM: lift off from the hover — at pos, on heading, at speed (m/s), the nose up a little. */
@@ -308,10 +311,16 @@ export class FlightCraft {
     this.rates.y += (tw - this.rates.y) * (Math.abs(tw) < Math.abs(this.rates.y) || tw * this.rates.y < 0 ? stop : ease)
     this.rates.z += (rollCmd * F.rollRate - this.rates.z) * ease
     // Turn about the world's up (pre-multiplied: a world-axis rotation); pitch and roll in the craft.
-    // Turn about "up" — or, in deep space, about the craft's own vertical (a pure yaw).
-    _ax.copy(UP_REF).multiplyScalar(FLY_LEVEL.k).addScaledVector(this.up, 1 - FLY_LEVEL.k)
+    // Turn about "up" — or, in deep space, about the craft's own vertical (a pure yaw). In ORBIT also
+    // when the nose points along the planet's up (straight at it or away): a turn about the axis you
+    // are looking down only spun the view, and A/D seemed dead from the spawn.
+    let kUp = FLY_LEVEL.k
+    if (this.unbound) { const a = this.fwd.dot(UP_REF); kUp *= 1 - a * a }
+    _ax.copy(UP_REF).multiplyScalar(kUp).addScaledVector(this.up, 1 - kUp)
     if (_ax.lengthSq() < 1e-6) _ax.copy(this.up)
     _q.setFromAxisAngle(_ax.normalize(), -this.rates.y * dt); this.quat.premultiply(_q)
+    // (Pitch about the right wing: the craft's −x.)
+    this.omega.copy(_ax).multiplyScalar(-this.rates.y).addScaledVector(this.right, this.rates.x)
     _q.setFromAxisAngle(AX, -this.rates.x * dt); this.quat.multiply(_q)
     _q.setFromAxisAngle(AZ, this.rates.z * dt); this.quat.multiply(_q)
     // Turbulence: smooth, slow wander (a few incommensurate sines) — the wings rock, the nose bobs a
@@ -559,7 +568,8 @@ export function turnRate(m: number): number {
   return C[C.length - 1][1]
 }
 
-/** The flight camera: behind and above along nose and travel, horizon mostly level. */
+/** The flight camera: behind and above along nose and travel, horizon mostly level. It looks ahead
+ *  along a turn, pulls back on the burner, and rides higher where you navigate to far-off targets. */
 export class FlightCam {
   /** The camera's offset direction from the craft (smoothed), and its up (smoothed). Position is
    *  rebuilt from the craft every frame — smoothing the position itself lagged 130 m at Mach 3. */
@@ -572,13 +582,34 @@ export class FlightCam {
   /** Turbulence shake (0 … 1, set by the game each frame): a small, slow wobble of the view. */
   shake = 0
   private shakeT = 0
+  /** The burner (0 … 1, set by the game): the view pulls back and widens, with a light buffet. */
+  kick = 0
+  private kickS = 0
+  /** Far targets (0 … 1, set by the game — ORBIT, space): the camera rides higher and looks over the
+   *  craft, so what the nose is on shows above it instead of behind it. */
+  lift = 0
+  private liftS = 0
+  /** How far ahead along a turn the view looks (s of the nose's swing). */
+  static readonly LEAD = 0.42
+  private readonly omS = new THREE.Vector3()
   constructor(private readonly camera: THREE.PerspectiveCamera) {}
   snap(): void { this.init = false }
-  update(dt: number, at: THREE.Vector3, q: THREE.Quaternion, vel: THREE.Vector3, mach: number, fovMax: number, punch = 0): void {
+  /** omega: the nose's angular velocity (rad/s, world) — the view leads the nose by it. */
+  update(dt: number, at: THREE.Vector3, q: THREE.Quaternion, vel: THREE.Vector3, mach: number, fovMax: number, punch = 0, omega: THREE.Vector3 | null = null): void {
     const fwd = _v.copy(AZ).applyQuaternion(q)
     const cUp = _w.copy(AY).applyQuaternion(q)
     const vdir = vel.lengthSq() > 1 ? vel.clone().normalize() : fwd.clone()
-    const wantBack = fwd.clone().multiplyScalar(0.7).addScaledVector(vdir, 0.3).normalize()
+    // Where to look: ahead of the nose along its swing (a full-rate turn shows where it is going, ~12°
+    // on). The camera swings round to the outside of the turn with most of it, so the craft slides only
+    // a little toward the outside on screen (looking ahead alone threw it a quarter-screen sideways, and
+    // a pull-up dropped it off the bottom). (It aimed at the nose itself, smoothed: in a hard turn the
+    // nose ran 8° ahead of the view and the craft never moved on screen.)
+    // (The swing itself eased — ~0.15 s — so letting go of a turn settles the view, never snaps it.)
+    if (omega) this.omS.lerp(omega, 1 - Math.exp(-dt * 6))
+    else this.omS.set(0, 0, 0)
+    _lead.crossVectors(this.omS, fwd).multiplyScalar(FlightCam.LEAD)
+    const wantFwd = fwd.clone().add(_lead).normalize()
+    const wantBack = fwd.clone().addScaledVector(_lead, 1.1).multiplyScalar(0.7).addScaledVector(vdir, 0.3).normalize()
     // The view's up: the world's, taking a little of the craft's roll — and all of it when the craft
     // goes past vertical (through a loop the world's up would flip the view).
     // (Deep space: no horizon to hold — the view rolls with the craft.)
@@ -586,26 +617,35 @@ export class FlightCam {
     const wantUp = UP_REF.clone().lerp(cUp, lean)
     if (wantUp.lengthSq() < 1e-4) wantUp.copy(cUp)
     wantUp.normalize()
-    if (!this.init) { this.back.copy(wantBack); this.upS.copy(wantUp); this.fwdS.copy(fwd); this.init = true }
+    if (!this.init) { this.back.copy(wantBack); this.upS.copy(wantUp); this.fwdS.copy(wantFwd); this.kickS = this.kick; this.liftS = this.lift; if (omega) this.omS.copy(omega); this.init = true }
     // The swing: the offset direction trails the nose a little (hard pulls show the craft swinging
     // toward the outside of the turn), the up follows smoothly.
     this.back.lerp(wantBack, 1 - Math.exp(-dt * 7)).normalize()
     this.upS.lerp(wantUp, 1 - Math.exp(-dt * 5)).normalize()
-    this.fwdS.lerp(fwd, 1 - Math.exp(-dt * 10)).normalize()
+    this.fwdS.lerp(wantFwd, 1 - Math.exp(-dt * 8)).normalize()
+    // (The burner's pull-back eases in over ~0.4 s and out slower; the lift over a second or two.)
+    this.kickS += (this.kick - this.kickS) * (1 - Math.exp(-dt * (this.kick > this.kickS ? 2.5 : 1.5)))
+    this.liftS += (this.lift - this.liftS) * (1 - Math.exp(-dt * 1.5))
+    const k = this.kickS, l = this.liftS
     const cam = this.camera
-    cam.position.copy(at).addScaledVector(this.back, -14).addScaledVector(this.upS, 4.6)
+    // 14 m back and 4.6 up; the burner 3 m further; lifted, further and higher (the craft smaller and
+    // lower on screen, the nose's target ~4° above the middle).
+    cam.position.copy(at).addScaledVector(this.back, -(14 + 3 * k + 5 * l)).addScaledVector(this.upS, 4.6 + 0.6 * k + 3.4 * l)
     const g = groundH(cam.position.x, cam.position.z)
     if (cam.position.y < g + 1.6) cam.position.y = g + 1.6
     cam.up.copy(this.upS)
-    cam.lookAt(at.x + this.fwdS.x * 45 + this.upS.x * 1.2, at.y + this.fwdS.y * 45 + this.upS.y * 1.2, at.z + this.fwdS.z * 45 + this.upS.z * 1.2)
-    if (this.shake > 0.01) {
+    const lu = 1.2 + 2.6 * l
+    cam.lookAt(at.x + this.fwdS.x * 45 + this.upS.x * lu, at.y + this.fwdS.y * 45 + this.upS.y * lu, at.z + this.fwdS.z * 45 + this.upS.z * lu)
+    const sh = this.shake + 0.35 * k
+    if (sh > 0.01) {
       // (Low frequencies, under half a degree: a buffeting, not a flicker.)
-      const t = (this.shakeT += dt), k = this.shake * 0.007
-      cam.rotateX((Math.sin(t * 7.1) * 0.6 + Math.sin(t * 11.3 + 1.7) * 0.4) * k)
-      cam.rotateY((Math.sin(t * 6.3 + 0.9) * 0.6 + Math.sin(t * 9.7 + 2.3) * 0.4) * k)
+      const t = (this.shakeT += dt), kk = Math.min(1, sh) * 0.007
+      cam.rotateX((Math.sin(t * 7.1) * 0.6 + Math.sin(t * 11.3 + 1.7) * 0.4) * kk)
+      cam.rotateY((Math.sin(t * 6.3 + 0.9) * 0.6 + Math.sin(t * 9.7 + 2.3) * 0.4) * kk)
     }
     const s = THREE.MathUtils.clamp((mach - 1) / 4, 0, 1)
-    cam.fov += (72 + (fovMax - 72) * s + punch - cam.fov) * (1 - Math.exp(-dt * 3))
+    cam.fov += (72 + (fovMax - 72) * s + 6 * k + punch - cam.fov) * (1 - Math.exp(-dt * 3))
     cam.updateProjectionMatrix()
   }
 }
+const _lead = new THREE.Vector3()
