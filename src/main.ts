@@ -438,19 +438,29 @@ function gorgeWall(base: number, glow: [number, number, number], emissive = 0x00
   m.customProgramCacheKey = () => 'gorge-wall-' + glow.join('-')
   return m
 }
-const wallMat = !canyon ? null : canyon.style === 'ice' ? gorgeWall(0x5b86b8, [0.3, 0.7, 1.4], 0x0a1c33) : canyon.style === 'lava' ? gorgeWall(0x1d1816, [4.5, 1.4, 0.25]) : world.mesaMat!
+// (The basalt with a little light of its own — the lava's glow bouncing about the gorge: faces turned from
+// the sun were pure black.)
+const wallMat = !canyon ? null : canyon.style === 'ice' ? gorgeWall(0x5b86b8, [0.3, 0.7, 1.4], 0x0a1c33) : canyon.style === 'lava' ? gorgeWall(0x2a221e, [4.5, 1.4, 0.25], 0x2e2019) : world.mesaMat!
 // The land's gentlest faces in the world's own rock — the glacier's top in its snow, the lava plateau's flats
 // in its ash — smooth-shaded (the world's landforms are faceted: across km of ground, facets read as card);
 // the roof's ice from above in the world's own; the glacier's cliffs outside the cave in a paler ice.
 function smoothTop(): THREE.Material {
-  const m = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: BIOME === 'ice' ? 0.3 : 0.85, metalness: 0 })
-  patchStandard(m, BIOME === 'ice' ? { ice: true, shadow: true, detail: true } : { lava: true, shadow: true, detail: true })
+  const m = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: BIOME === 'ice' ? 0.3 : 0.92, metalness: 0 })
+  patchStandard(m, BIOME === 'ice' ? { ice: true, shadow: true, detail: true } : BIOME === 'lava' ? { lava: true, shadow: true, detail: true } : { strata: true, shadow: true, detail: true })
   return m
 }
 const canyonMesh = !canyon ? null : canyon.style === 'ice' ? canyon.build(wallMat!, { roofMat: caveRoof, topMat: smoothTop(), roofTopMat: world.mesaMat!, cliffMat: gorgeWall(0xa9c6e2, [0.25, 0.6, 1.2], 0x24466e) })
   // (The plateau's own cliffs in a basalt a shade lighter than the gorge's: black against the ash they read
   //  as cut-out wedges.)
-  : canyon.build(wallMat!, canyon.style === 'lava' ? { topMat: smoothTop(), cliffMat: gorgeWall(0x55423a, [4.5, 1.4, 0.25], 0x1e120d) } : {})
+  : canyon.build(wallMat!, canyon.style === 'lava' ? { topMat: lavaCrust(), cliffMat: gorgeWall(0x4f3e35, [4.5, 1.4, 0.25], 0x3a2920) } : canyon.style === 'desert' ? { topMat: smoothTop() } : {})
+// MAGMA's flats: the flows' own crust (vertex colours: dark, rusty where it has oxidised), smooth-shaded, with
+// the gorge's lava glow in its pits. (The world's lava rock dusts every flat with pale ash: on the plateau
+// that read as a tan cloth draped over the basalt.)
+function lavaCrust(): THREE.Material {
+  const m = gorgeWall(0xffffff, [4.5, 1.4, 0.25], 0x45291a) as THREE.MeshStandardMaterial
+  m.flatShading = false; m.vertexColors = true; m.roughness = 0.95
+  return m
+}
 if (canyon && canyonMesh) { world.canyon = canyon; world.group.add(canyonMesh) }
 // The polar world's set pieces: glaciers, seracs and spike fields placed close beside the line
 // (150–400 m off its edge), so the race threads past the ice instead of seeing it on the horizon.
