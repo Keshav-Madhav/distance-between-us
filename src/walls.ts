@@ -28,13 +28,13 @@ export interface WallsIn {
   cliffs: boolean
 }
 export interface WallSideOut { y: Float32Array; cv: Float32Array; low: Uint8Array; rel: Float32Array }
-/** One chunk of the walls' triangles: walls, gentle faces (smooth normals, and colours for MAGMA's crust),
+/** One chunk of the walls' triangles: walls, gentle faces (smooth normals),
  *  cliffs — each a flat triangle list with its normals and aCrev; heights above the world's ground, and each
  *  corner's grid vertex (Q: side 0's first, then side 1's) for the main thread to lift by the ground there
  *  (a worker cannot ask the ground: it is the course's, with its jumps). */
 export interface WallBlock {
   pos: Float32Array; posN: Float32Array; crev: Float32Array; posQ: Int32Array
-  top: Float32Array; topN: Float32Array; topC: Float32Array; topCol: Float32Array | null; topQ: Int32Array
+  top: Float32Array; topN: Float32Array; topC: Float32Array; topQ: Int32Array
   cliff: Float32Array; cliffN: Float32Array; cliffC: Float32Array; cliffQ: Int32Array
 }
 export interface WallsOut { sides: WallSideOut[]; blocks: WallBlock[] }
@@ -69,14 +69,22 @@ function wallShape(inp: WallsIn, carve: CarveAt, x: number, z: number, d: number
   let E = Math.min(landPotential(s, x, z, d, inner, roofTop), C)
   let h: number, crev = 0
   if (s === 'desert') {
-    E = Math.max(E, 236 * sst(4, 18, d) * sst(70, 40, d) * (open ? 0 : 1))
+    // The foot's cliff: low, its height wandering along the gorge and notched — the strata's own cliffs stand
+    // above it, set back as the land wanders; behind it a bench until the land rises past it, falling away only
+    // into a side canyon. (One tall face at the floor's edge, one height all round and cut square behind, read
+    // as a road cut, and from the air as boxes on a shelf.)
+    const Hf = 60 + 120 * (0.5 + 0.5 * warp(x / 1300, z / 1300, 441, 0.9, 2)) - 40 * Math.max(0, vn(x / 260, z / 260, 442)) ** 2
+    E = Math.max(E, Hf * sst(4, 18, d) * Math.max(1 - sst(45, 210, d), sst(0.5 * Hf, Hf, C)) * (open ? 0 : 1))
     h = landSurface(s, E, x, z, d) - 6 * sst(30, 0, d)
   } else if (s === 'lava') {
     // (The glow only on the foot's own narrow faces: across a 200 m face it read as a band of yellow paint.)
-    if (d <= 12 && !open) return { h: d <= 0 ? -6 : d <= 6 ? 2 : 8, crev: d <= 6 ? 1 : 0 }
+    // (And in pools along it, not one unbroken seam: from the air a lit line drawn round the floor.)
+    if (d <= 12 && !open) return { h: d <= 0 ? -6 : d <= 6 ? 2 : 8, crev: d <= 6 ? sst(0.05, 0.45, vn(x / 110, z / 110, 433)) : 0 }
     // The rim's lip: uneven, here a low levee and there a tall wall (one height all round read as a parapet).
-    const Hr = 70 + 160 * (0.5 + 0.5 * warp(x / 1500, z / 1500, 431, 0.8, 2))
-    E = Math.max(E, Hr * sst(12, 22, d) * sst(70, 40, d) * (open ? 0 : 1))
+    // (Behind it a bench until the land rises past it, falling away only into a side canyon: cut square
+    //  behind, it was a slab laid round the gorge.)
+    const Hr = 70 + 160 * (0.5 + 0.5 * warp(x / 1500, z / 1500, 431, 0.8, 2)) - 50 * Math.max(0, vn(x / 240, z / 240, 432)) ** 2
+    E = Math.max(E, Hr * sst(12, 22, d) * Math.max(1 - sst(40, 200, d), sst(0.5 * Hr, Hr, C)) * (open ? 0 : 1))
     h = landSurface(s, E, x, z, d)
   } else if (s === 'ice') {
     E = Math.max(E, 125 * sst(4, 22, d) * sst(80, 50, d) * (open ? 0 : 1))
@@ -93,9 +101,13 @@ function wallShape(inp: WallsIn, carve: CarveAt, x: number, z: number, d: number
         w = P[P.length - 1][1]
         for (let k = 0; k < P.length - 1; k++) if (d <= P[k + 1][0]) { const t = (d - P[k][0]) / (P[k + 1][0] - P[k][0]); w = P[k][1] + (P[k + 1][1] - P[k][1]) * t; break }
         if (w > 0) w *= eh / ROOF_H
+        // (Bulging and hollowed: one profile all along, the cave's walls were flat blue boards.)
+        w += 22 * vn(x / 70, z / 70, 451) * Math.sin(Math.PI * d / ROOF_D)
       } else w = Math.max(eh + ROOF_T * sst(ROOF_D, ROOF_D + 40, d) + 20, h)
       h = h + (w - h) * roof
-      crev = d <= ROOF_D ? 0.15 * (1 - d / ROOF_D) * roof : 0
+      // (The cave's own lit ice only well inside it: at its mouths, under open sky, the walls are the
+      //  glacier's — in the cave's blue they were ragged blue ribbons laid along the rim from the air.)
+      crev = d <= ROOF_D && roof > 0.85 ? 0.15 * (1 - d / ROOF_D) * roof : 0
     }
   } else h = landSurface(s, E, x, z, d)
   // Into the land's own surface at the walls' outer edge (above or below it, a step there read as a fence).
@@ -109,7 +121,7 @@ export function buildWalls(inp: WallsIn): WallsOut {
   const { N, SUB, L, style } = inp, cx = L.cx, cz = L.cz
   const foot = style === 'forest' || style === 'ice' ? -4 : -6
   const sides: WallSideOut[] = []
-  const blocks = Array.from({ length: 4 }, () => ({ pos: new Buf(), posN: new Buf(), crev: new Buf(), posQ: new IBuf(), top: new Buf(), topN: new Buf(), topC: new Buf(), topR: new Buf(), topQ: new IBuf(), cliff: new Buf(), cliffN: new Buf(), cliffC: new Buf(), cliffQ: new IBuf() }))
+  const blocks = Array.from({ length: 4 }, () => ({ pos: new Buf(), posN: new Buf(), crev: new Buf(), posQ: new IBuf(), top: new Buf(), topN: new Buf(), topC: new Buf(), topQ: new IBuf(), cliff: new Buf(), cliffN: new Buf(), cliffC: new Buf(), cliffQ: new IBuf() }))
   let qBase = 0
   for (let si = 0; si < inp.sides.length; si++) {
     const S = inp.sides[si], { fx, fz, lam, col, inner } = S, K = col.length
@@ -127,34 +139,25 @@ export function buildWalls(inp: WallsIn): WallsOut {
           const C = carve.at(x, z)
           h = tileHere(style, x, z, d, inner, C, L.roofTop[i]) - 25
         } else { const w = wallShape(inp, carve, x, z, d, inner, i, si); h = w.h; c = w.crev }
-        low[q] = h <= foot + 0.01 && k > 0 ? 1 : 0
+        // (Low: at or under the ground there — the faces between are never seen, and at a way's mouth, lying
+        //  on the floor in the walls' strata, they z-fought it into a dark striped band.)
+        low[q] = k > 0 && h <= 0.5 ? 1 : 0
         y[q] = h; rel[q] = h; cv[q] = c
       }
     }
     sides.push({ y, cv, low, rel })
-    tris(inp, vx, vz, y, cv, low, rel, N, K, blocks, qBase)
+    tris(inp, vx, vz, y, cv, low, N, K, blocks, qBase)
     qBase += N * K
   }
   const out: WallBlock[] = blocks.map((B) => {
-    const top = B.top.out(), rel = B.topR.out()
-    let topCol: Float32Array | null = null
-    if (style === 'lava' && top.length) {
-      // MAGMA's flats: the flows' own rough dark crust, rusty where it has oxidised; paler toward the plain at
-      // the flows' feet (a dark crust ending on the bright plain was a hard rim).
-      topCol = new Float32Array(top.length)
-      for (let i = 0; i < top.length; i += 3) {
-        const x = top[i], z = top[i + 2], ox = sst(0.15, 0.6, fbmR(x / 520, z / 520, 2, 141)), v = 0.85 + 0.3 * vn(x / 60, z / 60, 142)
-        const pl = sst(70, 4, rel[i / 3])
-        topCol[i] = (0.3 + 0.24 * ox) * v * (1 - pl) + 0.5 * pl; topCol[i + 1] = (0.25 + 0.02 * ox) * v * (1 - pl) + 0.3 * pl; topCol[i + 2] = (0.22 - 0.08 * ox) * v * (1 - pl) + 0.2 * pl
-      }
-    }
-    return { pos: B.pos.out(), posN: B.posN.out(), crev: B.crev.out(), posQ: B.posQ.out(), top, topN: B.topN.out(), topC: B.topC.out(), topCol, topQ: B.topQ.out(), cliff: B.cliff.out(), cliffN: B.cliffN.out(), cliffC: B.cliffC.out(), cliffQ: B.cliffQ.out() }
+    const top = B.top.out()
+    return { pos: B.pos.out(), posN: B.posN.out(), crev: B.crev.out(), posQ: B.posQ.out(), top, topN: B.topN.out(), topC: B.topC.out(), topQ: B.topQ.out(), cliff: B.cliff.out(), cliffN: B.cliffN.out(), cliffC: B.cliffC.out(), cliffQ: B.cliffQ.out() }
   })
   return { sides, blocks: out }
 }
 
 /** One side's grid as triangles, into the chunks round the loop. */
-function tris(inp: WallsIn, vx: Float32Array, vz: Float32Array, Y: Float32Array, cv: Float32Array, low: Uint8Array, rel: Float32Array, N: number, K: number, blocks: { pos: Buf; posN: Buf; crev: Buf; posQ: IBuf; top: Buf; topN: Buf; topC: Buf; topR: Buf; topQ: IBuf; cliff: Buf; cliffN: Buf; cliffC: Buf; cliffQ: IBuf }[], qBase: number): void {
+function tris(inp: WallsIn, vx: Float32Array, vz: Float32Array, Y: Float32Array, cv: Float32Array, low: Uint8Array, N: number, K: number, blocks: { pos: Buf; posN: Buf; crev: Buf; posQ: IBuf; top: Buf; topN: Buf; topC: Buf; topQ: IBuf; cliff: Buf; cliffN: Buf; cliffC: Buf; cliffQ: IBuf }[], qBase: number): void {
   const RB = Math.ceil(N / blocks.length), split = inp.topY > 0, topY = inp.topY
   const flip = (vx[K] - vx[0]) * (vz[1] - vz[0]) - (vz[K] - vz[0]) * (vx[1] - vx[0]) > 0
   const vn3 = split ? new Float32Array(N * K * 3) : null
@@ -193,8 +196,9 @@ function tris(inp: WallsIn, vx: Float32Array, vz: Float32Array, Y: Float32Array,
   ti = 0
   quads((q0, q1, q2, r) => {
     const B = blocks[Math.floor(r / RB)], kd = kinds[ti++]
-    // (Ground under the ground: never seen.)
-    if (low[q0] && low[q1] && low[q2]) return
+    // (Ground under the ground: never seen. The foot's own row is under it too, so a face counts as low
+    //  when every corner past the foot is.)
+    if ((low[q0] || Y[q0] <= -3.9) && (low[q1] || Y[q1] <= -3.9) && (low[q2] || Y[q2] <= -3.9)) return
     const o = kd === 1 ? B.top : kd === 2 ? B.cliff : B.pos, oc = kd === 1 ? B.topC : kd === 2 ? B.cliffC : B.crev, oq = kd === 1 ? B.topQ : kd === 2 ? B.cliffQ : B.posQ
     o.push3(vx[q0], Y[q0], vz[q0]); o.push3(vx[q1], Y[q1], vz[q1]); o.push3(vx[q2], Y[q2], vz[q2])
     oq.push(qBase + q0); oq.push(qBase + q1); oq.push(qBase + q2)
@@ -202,7 +206,6 @@ function tris(inp: WallsIn, vx: Float32Array, vz: Float32Array, Y: Float32Array,
     if (kd === 1) for (const q of [q0, q1, q2]) {
       const x = vn3![q * 3], y = vn3![q * 3 + 1], z = vn3![q * 3 + 2], l = Math.hypot(x, y, z) || 1
       B.topN.push3(x / l, y / l, z / l)
-      B.topR.push(rel[q])
     } else {
       face(q0, q1, q2)
       const l = Math.hypot(fn[0], fn[1], fn[2]) || 1, on = kd === 2 ? B.cliffN : B.posN

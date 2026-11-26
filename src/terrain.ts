@@ -108,18 +108,25 @@ export function setLand(t: { x0: number; z0: number; step: number; nx: number; n
   MOUND_U.tLand.value = tex
   {
     const F = 4, fnx = Math.floor((t.nx - 1) / F) + 1, fnz = Math.floor((t.nz - 1) / F) + 1, hf = new Float32Array(fnx * fnz)
+    // The floor's cells (h 0) counted in a summed-area table, to ask "any within Z?" of each coarse point.
+    const Z = 6, W1 = t.nx + 1, zc = new Int32Array(W1 * (t.nz + 1))
+    for (let j = 0; j < t.nz; j++) for (let k = 0, row = 0; k < t.nx; k++) { row += t.h[j * t.nx + k] <= 0 ? 1 : 0; zc[(j + 1) * W1 + k + 1] = zc[j * W1 + k + 1] + row }
     for (let j = 0; j < fnz; j++) for (let k = 0; k < fnx; k++) {
       // (A tent filter centred on each coarse point: its own cell and half of each neighbour's.)
-      // (0 wherever any cell under it is the gorge's floor or a way in: averaged, the land spread over the floor
+      // (0 wherever any cell near it is the gorge's floor or a way in: averaged, the land spread over the floor
       //  and the river and covered them in 400 m teeth.)
-      let sum = 0, wsum = 0, mn = Infinity
+      // (Out to Z cells, not only under it: the far rings' vertices are 400 m apart, and one on the bank
+      //  next to one on the river drew a sloping triangle over the water — its edge sawn into teeth.)
+      const ja = Math.max(0, j * F - Z), jb = Math.min(t.nz - 1, j * F + Z), ka = Math.max(0, k * F - Z), kb = Math.min(t.nx - 1, k * F + Z)
+      if (zc[(jb + 1) * W1 + kb + 1] - zc[ja * W1 + kb + 1] - zc[(jb + 1) * W1 + ka] + zc[ja * W1 + ka] > 0) { hf[j * fnx + k] = 0; continue }
+      let sum = 0, wsum = 0
       for (let dz = -F + 1; dz < F; dz++) for (let dx = -F + 1; dx < F; dx++) {
         const jj = j * F + dz, kk = k * F + dx
         if (jj < 0 || kk < 0 || jj >= t.nz || kk >= t.nx) continue
-        const w = (F - Math.abs(dx)) * (F - Math.abs(dz)), v = t.h[jj * t.nx + kk]
-        sum += v * w; wsum += w; mn = Math.min(mn, v)
+        const w = (F - Math.abs(dx)) * (F - Math.abs(dz))
+        sum += t.h[jj * t.nx + kk] * w; wsum += w
       }
-      hf[j * fnx + k] = mn <= 0 ? 0 : sum / wsum
+      hf[j * fnx + k] = sum / wsum
     }
     const tf = new DataTexture(hf, fnx, fnz, RedFormat, FloatType)
     tf.minFilter = tf.magFilter = NearestFilter

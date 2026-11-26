@@ -9,7 +9,7 @@ self.onmessage = (e: MessageEvent<{ op: 'band'; L: LandLoop; spec: LandSpec; a: 
   if (d.op === 'walls') {
     const w = buildWalls(d.inp), tr: ArrayBuffer[] = []
     for (const S of w.sides) tr.push(S.y.buffer as ArrayBuffer, S.cv.buffer as ArrayBuffer, S.low.buffer as ArrayBuffer, S.rel.buffer as ArrayBuffer)
-    for (const B of w.blocks) for (const a of [B.pos, B.posN, B.crev, B.posQ, B.top, B.topN, B.topC, B.topQ, B.cliff, B.cliffN, B.cliffC, B.cliffQ, B.topCol]) if (a) tr.push(a.buffer as ArrayBuffer)
+    for (const B of w.blocks) for (const a of [B.pos, B.posN, B.crev, B.posQ, B.top, B.topN, B.topC, B.topQ, B.cliff, B.cliffN, B.cliffC, B.cliffQ]) if (a) tr.push(a.buffer as ArrayBuffer)
     ;(self as unknown as Worker).postMessage({ walls: w }, tr)
     return
   }

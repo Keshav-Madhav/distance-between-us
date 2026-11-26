@@ -536,14 +536,11 @@ export class Canyon {
     for (const B of this.walls?.blocks ?? []) {
       if (B.pos.length) add(this.mesh(B.pos, B.crev, mat, B.posN))
       if (B.cliff.length) add(this.mesh(B.cliff, B.cliffC, cliffMat ?? mat, B.cliffN))
-      if (B.top.length) {
-        const m = this.mesh(B.top, B.topC, topMat ?? mat, B.topN)
-        if (B.topCol) m.geometry.setAttribute('color', new THREE.BufferAttribute(B.topCol, 3))
-        add(m)
-      }
+      if (B.top.length) add(this.mesh(B.top, B.topC, topMat ?? mat, B.topN))
     }
     if (this.st.roof) {
-      this.roofMeshes(extra.roofMat ?? mat, extra.roofTopMat ?? extra.topMat ?? mat, mat, g)
+      // (The cave's mouths in the glacier's own cliff ice: in the cave's lit blue they were flat blue boards.)
+      this.roofMeshes(extra.roofMat ?? mat, extra.roofTopMat ?? extra.topMat ?? mat, extra.cliffMat ?? mat, g)
       g.add(this.lamps())
       g.add(this.icicles())
       g.add(this.crevasses())
@@ -707,8 +704,23 @@ export class Canyon {
   /** Icicles hanging from the roof (low-poly cones, a faint blue). */
   private icicles(): THREE.InstancedMesh {
     const per = 10, n = this.m * per
-    const ic = new THREE.InstancedMesh(new THREE.ConeGeometry(4, 1, 5).rotateX(Math.PI).translate(0, -0.5, 0), new THREE.MeshBasicMaterial({ color: new THREE.Color(0.35, 0.62, 0.95) }), n)
-    const m = new THREE.Matrix4(), q = new THREE.Quaternion(), s = new THREE.Vector3(), v = new THREE.Vector3()
+    // Lit ice, faceted, pale at the root going clear blue to the tip; each turned and leaning its own way
+    // and fat or thin (unlit, all alike and upright, they read as paper cones pinned to the roof).
+    const geo = new THREE.ConeGeometry(4, 1, 6, 3).rotateX(Math.PI).translate(0, -0.5, 0).toNonIndexed()
+    const P = geo.getAttribute('position'), col = new Float32Array(P.count * 3)
+    for (let i = 0; i < P.count; i++) {
+      const t = -P.getY(i), x = P.getX(i), z = P.getZ(i)
+      // (A wobble round each ring: no two faces in line.)
+      const k = 1 + 0.25 * Math.sin(Math.atan2(z, x) * 3 + t * 5)
+      P.setXYZ(i, x * k, P.getY(i), z * k)
+      col[i * 3] = 0.9 - 0.35 * t; col[i * 3 + 1] = 0.97 - 0.17 * t; col[i * 3 + 2] = 1
+    }
+    geo.setAttribute('color', new THREE.BufferAttribute(col, 3))
+    geo.computeVertexNormals()
+    const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.35, metalness: 0, emissive: 0x3d7cbc, flatShading: true })
+    patchStandard(mat, {})
+    const ic = new THREE.InstancedMesh(geo, mat, n)
+    const m = new THREE.Matrix4(), q = new THREE.Quaternion(), s = new THREE.Vector3(), v = new THREE.Vector3(), e = new THREE.Euler()
     let c = 0
     for (let i = 0; i < n; i++) {
       const r = Math.floor(i / per), hh = Math.sin(i * 12.9898) * 43758.5453, f = hh - Math.floor(hh)
@@ -717,8 +729,9 @@ export class Canyon {
       // (Into the roof, so they hang from it: they floated just below before.)
       const y = groundH(this.rx[r], this.rz[r]) + this.roofLift(r, t) + 8
       v.set(this.rx[r] + this.tz[r] * across, y, this.rz[r] - this.tx[r] * across)
-      const w = 3 + 4 * ((f * 3.1) % 1)
-      s.set(w, 40 + 110 * ((f * 7.3) % 1) ** 2, w)
+      const w = 2.5 + 5 * ((f * 3.1) % 1) ** 1.5
+      s.set(w * (0.7 + 0.6 * ((f * 5.7) % 1)), 25 + 125 * ((f * 7.3) % 1) ** 2, w * (0.7 + 0.6 * ((f * 9.1) % 1)))
+      q.setFromEuler(e.set(0.12 * (((f * 13.7) % 1) - 0.5), ((f * 17.3) % 1) * 6.28, 0.12 * (((f * 19.1) % 1) - 0.5)))
       ic.setMatrixAt(c++, m.compose(v, q, s))
     }
     ic.count = c
@@ -850,8 +863,10 @@ export class Canyon {
     const mat = new THREE.ShaderMaterial({
       uniforms: { uTime: WATER_T },
       side: THREE.DoubleSide,
+      // (Lifted with distance — 1.4 m over the ground is below the depth buffer's grain km off: there the
+      //  ground cut through it along its triangles, the river's edges sawn into steps from the air.)
       vertexShader: `varying vec2 vUv; varying vec3 vW;
-        void main() { vUv = uv; vec4 w = modelMatrix * vec4(position, 1.0); vW = w.xyz; gl_Position = projectionMatrix * viewMatrix * w; }`,
+        void main() { vUv = uv; vec4 w = modelMatrix * vec4(position, 1.0); w.y += 6e-4 * length(w.xz - cameraPosition.xz); vW = w.xyz; gl_Position = projectionMatrix * viewMatrix * w; }`,
       fragmentShader: `uniform float uTime; varying vec2 vUv; varying vec3 vW;
         float h(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
         float n(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f); return mix(mix(h(i), h(i + vec2(1, 0)), f.x), mix(h(i + vec2(0, 1)), h(i + 1.0), f.x), f.y); }

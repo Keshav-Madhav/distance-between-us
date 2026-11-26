@@ -407,7 +407,12 @@ function terrainMaterial(shared: GroundUniforms, snap: { value: THREE.Vector2 },
         }
         #endif
         vec2 xz = position.xz + uSnap;
-        #if defined(LAND_MODE)
+        #if defined(LAND_MODE) && LAND_MODE == 2
+        // (Inside the land's tile the ground between its land too: discarded there, the gorge's floor seen from
+        //  far off was a hole, and the world's distant mountains showed through it as floating shards.)
+        vec2 lb = (xz - uLandBox.xy) / uLandBox.z;
+        vLand = max(landHF(xz), lb.x > 0.0 && lb.y > 0.0 && lb.x < uLandN.x - 1.0 && lb.y < uLandN.y - 1.0 ? 1.5 : 0.0);
+        #elif defined(LAND_MODE)
         vLand = landHF(xz);
         #else
         vLand = landH(xz);
@@ -465,7 +470,7 @@ function terrainMaterial(shared: GroundUniforms, snap: { value: THREE.Vector2 },
         float h0 = vH;
         float river = vRiver;
         #if defined(LAND_MODE) && LAND_MODE == 2
-        // The far land ring (24–60 km out, only with the gorge's land): only the land itself — past the last
+        // The far land ring (24–60 km out, only with the gorge's land): only the land's tile — past the last
         // ring the world draws no ground (the full ground over that much of the screen from high up cost a
         // tenth of the frame).
         if (vLand < 1.0) discard;
@@ -636,6 +641,12 @@ function terrainMaterial(shared: GroundUniforms, snap: { value: THREE.Vector2 },
         if (vLand > 1.0) {
           vec3 gn = normalize(vN);
           float onL = smoothstep(1.0, 25.0, vLand);
+          #if defined(BIOME_LAVA)
+          // The plateau's flats in the flows' own dark crust, rusty where it has oxidised: in the plain's ash
+          // the land read as more plain — from the air no rim at all.
+          float rust = smoothstep(0.55, 0.8, fbmT(p * 0.0019 + 2.0));
+          alb = mix(alb, mix(vec3(0.15, 0.12, 0.11), vec3(0.3, 0.15, 0.08), rust * 0.6) * (0.8 + 0.4 * fbmT(p * 0.011)), 0.75 * onL);
+          #endif
           float steep = smoothstep(0.66, 0.48, gn.y) * onL;
           float scree = smoothstep(0.9, 0.7, gn.y) * onL * (1.0 - steep);
           if (steep + scree > 0.0) {

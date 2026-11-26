@@ -444,29 +444,25 @@ function gorgeWall(base: number, glow: [number, number, number], emissive = 0x00
 // (The basalt with a little light of its own — the lava's glow bouncing about the gorge: faces turned from
 // the sun were pure black.)
 const wallMat = !canyon ? null : canyon.style === 'ice' ? gorgeWall(0x5b86b8, [0.3, 0.7, 1.4], 0x0a1c33) : canyon.style === 'lava' ? gorgeWall(0x3c3029, [4.5, 1.4, 0.25], 0x3a281e) : world.mesaMat!
-// The land's gentlest faces in the world's own rock — the glacier's top in its snow, the lava plateau's flats
-// in its ash — smooth-shaded (the world's landforms are faceted: across km of ground, facets read as card);
-// the roof's ice from above in the world's own; the glacier's cliffs outside the cave in a paler ice.
+// CANYON RUN's gentlest wall faces in its strata, smooth-shaded (the world's landforms are faceted: across
+// km of ground, facets read as card).
 function smoothTop(): THREE.Material {
-  const m = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: BIOME === 'ice' ? 0.3 : 0.92, metalness: 0 })
-  patchStandard(m, BIOME === 'ice' ? { ice: true, shadow: true, detail: true } : BIOME === 'lava' ? { lava: true, shadow: true, detail: true } : { strata: true, shadow: true, detail: true })
+  const m = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.92, metalness: 0 })
+  patchStandard(m, { strata: true, shadow: true, detail: true })
   return m
 }
 let canyonMesh: THREE.Group | null = null
-// (BLUE HOLLOW: the roof's ice from above in the same snow as the glacier's tops round it — in the world's
-//  faceted ice it read as grey slabs laid across the gorge.)
-const iceTop = BIOME === 'ice' ? smoothTop() : null
-const buildCanyonMesh = (cv: Canyon): THREE.Group => cv.style === 'ice' ? cv.build(wallMat!, { roofMat: caveRoof, topMat: iceTop!, roofTopMat: world.groundLook(), cliffMat: gorgeWall(0x8fa7c2, [0.25, 0.6, 1.2], 0x0c1828) })
-  // (The plateau's own cliffs in a basalt a shade lighter than the gorge's: black against the ash they read
-  //  as cut-out wedges.)
-  : cv.build(wallMat!, cv.style === 'lava' ? { topMat: lavaCrust(), cliffMat: gorgeWall(0x4f3e35, [4.5, 1.4, 0.25], 0x3a2920) } : cv.style === 'desert' ? { topMat: smoothTop() } : {})
-// MAGMA's flats: the flows' own crust (vertex colours: dark, rusty where it has oxidised), smooth-shaded, with
-// the gorge's lava glow in its pits. (The world's lava rock dusts every flat with pale ash: on the plateau
-// that read as a tan cloth draped over the basalt.)
-function lavaCrust(): THREE.Material {
-  const m = gorgeWall(0xffffff, [4.5, 1.4, 0.25], 0x45291a) as THREE.MeshStandardMaterial
-  m.flatShading = false; m.vertexColors = true; m.roughness = 0.95
-  return m
+// (BLUE HOLLOW's walls past their foot drawn as the ground itself, like the glacier they run into: in materials
+//  of their own they met it along a seam, and read from the air as dark slabs laid round it. MAGMA's in the same
+//  dark crust and basalt its land is drawn in (see world.ts), lit from within as the ground's sky fill lights
+//  it (unlit, its faces turned from the low sun were black slabs) — as the ground, its wide flats cost a fifth
+//  of the frame from the air.)
+const buildCanyonMesh = (cv: Canyon): THREE.Group => {
+  if (cv.style === 'desert') return cv.build(wallMat!, { topMat: smoothTop() })
+  if (cv.style === 'lava') return cv.build(wallMat!, { topMat: new THREE.MeshStandardMaterial({ color: 0x8a6650, emissive: 0x5a3c2a, roughness: 0.95 }), cliffMat: gorgeWall(0x6a4c3c, [4.5, 1.4, 0.25], 0x6a4430) })
+  if (cv.style !== 'ice') return cv.build(wallMat!)
+  const look = world.groundLook()
+  return cv.build(wallMat!, { roofMat: caveRoof, topMat: look, roofTopMat: look, cliffMat: look })
 }
 // The polar world's set pieces: glaciers, seracs and spike fields placed close beside the line
 // (150–400 m off its edge), so the race threads past the ice instead of seeing it on the horizon.
@@ -575,7 +571,9 @@ if (BIOME !== 'desert') {
   }
   // CINDER: the course's stacks squat and broad (tall hex columns beside the course read as towers).
   if (BIOME === 'lava') for (const h of heroes) if (h.kind === 'spire') { h.h *= 0.3; h.r *= 1.5 }
-  world.addHeroes(heroes)
+  // (Not on a gorge's land: its own landforms are the set pieces there. Stood on the ground under it, they
+  //  poked through its slopes as boxes and pyramids — out of reach of the race, behind its walls.)
+  world.addHeroes(canyon ? heroes.filter((h) => !canyon.covers(h.x, h.z, h.r)) : heroes)
 }
 scene.add(world.group)
 // Near-field scatter: harmless ground clutter round the camera (pebbles, grass, scrub, mounds, vents, flags).
