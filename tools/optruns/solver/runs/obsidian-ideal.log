@@ -1,0 +1,11 @@
+[4s] plain cal {"time":40.183,"missed":0,"maxLat":281.8,"pads":16,"crashes":0,"hurt":0,"dropped":0,"ms":1526,"valid":false}
+[17s] plain oval {"time":41.367,"missed":0,"maxLat":302.1,"pads":15,"crashes":0,"hurt":0,"dropped":0,"ms":12893,"valid":false}
+[20s] plain spr {"time":41.75,"missed":0,"maxLat":258.7,"pads":16,"crashes":0,"hurt":0,"dropped":0,"ms":2579,"valid":true}
+[940s] plain mis {"time":42.167,"missed":0,"maxLat":259.1,"pads":14,"crashes":0,"hurt":0,"dropped":0,"ms":2622,"valid":true}
+[3122s] mpc spr+mpc {"time":39.333,"missed":0,"maxLat":223.9,"pads":18,"crashes":0,"hurt":0,"dropped":0,"ms":59594,"valid":true}
+[3122s] skip mpc (budget) spr {"D":6,"H":90,"aims":[-40,0,40],"burns":[-1,1,0]}
+[3122s] skip mpc (budget) mis {"D":6,"H":60,"aims":[-60,-20,20,60],"burns":[-1,1,0]}
+[3122s] skip mpc (budget) mis {"D":6,"H":90,"aims":[-40,0,40],"burns":[-1,1,0]}
+[3122s] skip mpc (budget) cal {"D":6,"H":60,"aims":[-60,-20,20,60],"burns":[-1,1,0]}
+[3122s] skip mpc (budget) cal {"D":6,"H":90,"aims":[-40,0,40],"burns":[-1,1,0]}
+[4154s] bench spr+mpc in-page 39.333 bench 39.333 counted true missed 0 human true VALID

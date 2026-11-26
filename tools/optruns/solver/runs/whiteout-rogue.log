@@ -1,0 +1,12 @@
+[3s] plain cal {"time":30.883,"missed":1,"maxLat":359.7,"pads":11,"crashes":0,"hurt":0,"dropped":0,"ms":1040,"valid":true}
+[4s] plain cal-sa {"time":30.883,"missed":1,"maxLat":356.7,"pads":11,"crashes":0,"hurt":0,"dropped":0,"ms":1002,"valid":true}
+[5s] plain oval {"time":28.783,"missed":0,"maxLat":336.5,"pads":8,"crashes":0,"hurt":0,"dropped":0,"ms":905,"valid":true}
+[6s] plain oval-g90 {"time":29.15,"missed":0,"maxLat":331.9,"pads":8,"crashes":0,"hurt":0,"dropped":0,"ms":1183,"valid":true}
+[909s] plain spr {"time":32.267,"missed":1,"maxLat":398.1,"pads":10,"crashes":0,"hurt":0,"dropped":0,"ms":1646,"valid":true}
+[2028s] mpc oval+mpc {"time":27.233,"missed":0,"maxLat":333.2,"pads":11,"crashes":0,"hurt":0,"dropped":0,"ms":51024,"valid":true}
+[2028s] skip mpc (budget) oval {"D":6,"H":90,"aims":[-80,-30,0,30,80],"burns":[-1,1,0]}
+[2028s] skip mpc (budget) oval-g90 {"D":6,"H":60,"aims":[-40,0,40],"burns":[-1,1,0]}
+[2028s] skip mpc (budget) oval-g90 {"D":6,"H":90,"aims":[-80,-30,0,30,80],"burns":[-1,1,0]}
+[2028s] skip mpc (budget) cal {"D":6,"H":60,"aims":[-40,0,40],"burns":[-1,1,0]}
+[2028s] skip mpc (budget) cal {"D":6,"H":90,"aims":[-80,-30,0,30,80],"burns":[-1,1,0]}
+[2938s] bench oval+mpc in-page 27.233 bench 27.233 counted true missed 0 human false VALID

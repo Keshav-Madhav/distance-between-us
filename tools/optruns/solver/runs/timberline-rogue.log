@@ -1,0 +1,14 @@
+[3s] plain cal {"time":34.633,"missed":1,"maxLat":384.1,"pads":14,"crashes":0,"hurt":0,"dropped":0,"ms":1331,"valid":true}
+[4s] plain cal-sa {"time":33.933,"missed":0,"maxLat":365.6,"pads":13,"crashes":0,"hurt":0,"dropped":0,"ms":1224,"valid":true}
+[7s] plain oval {"time":34.017,"missed":0,"maxLat":330.1,"pads":13,"crashes":0,"hurt":0,"dropped":0,"ms":1915,"valid":true}
+[9s] plain oval-g90 {"time":34,"missed":0,"maxLat":333.1,"pads":13,"crashes":0,"hurt":0,"dropped":0,"ms":1665,"valid":true}
+[11s] plain spr {"time":35.45,"missed":0,"maxLat":342.3,"pads":12,"crashes":0,"hurt":0,"dropped":0,"ms":2083,"valid":true}
+[13s] plain mis {"time":55.267,"missed":0,"maxLat":1085.8,"pads":7,"crashes":0,"hurt":111,"dropped":14,"ms":2253,"valid":true}
+[919s] plain cal-omg {"time":37.717,"missed":0,"maxLat":332.1,"pads":14,"crashes":0,"hurt":0,"dropped":0,"ms":3924,"valid":true}
+[3699s] mpc cal-sa+mpc {"time":32.717,"missed":0,"maxLat":362.2,"pads":14,"crashes":0,"hurt":0,"dropped":0,"ms":76553,"valid":true}
+[3699s] skip mpc (budget) cal-sa {"D":6,"H":90,"aims":[-80,-30,0,30,80],"burns":[-1,1,0]}
+[3699s] skip mpc (budget) oval-g90 {"D":6,"H":60,"aims":[-40,0,40],"burns":[-1,1,0]}
+[3699s] skip mpc (budget) oval-g90 {"D":6,"H":90,"aims":[-80,-30,0,30,80],"burns":[-1,1,0]}
+[3699s] skip mpc (budget) oval {"D":6,"H":60,"aims":[-40,0,40],"burns":[-1,1,0]}
+[3699s] skip mpc (budget) oval {"D":6,"H":90,"aims":[-80,-30,0,30,80],"burns":[-1,1,0]}
+[3713s] bench cal-sa+mpc in-page 32.717 bench 32.717 counted true missed 0 human false VALID

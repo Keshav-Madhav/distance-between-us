@@ -1,0 +1,16 @@
+[3s] plain cal {"time":27.433,"missed":0,"maxLat":324.2,"pads":12,"crashes":0,"hurt":0,"dropped":0,"ms":1142,"valid":false}
+[5s] plain oval {"time":29.55,"missed":0,"maxLat":276.7,"pads":9,"crashes":0,"hurt":0,"dropped":0,"ms":2407,"valid":false}
+[9s] plain spr {"time":28.783,"missed":0,"maxLat":296.4,"pads":10,"crashes":0,"hurt":0,"dropped":0,"ms":3520,"valid":false}
+[16s] plain mis {"time":29.517,"missed":0,"maxLat":306.8,"pads":10,"crashes":0,"hurt":0,"dropped":0,"ms":6729,"valid":false}
+[23s] plain cal-95 {"time":27.967,"missed":0,"maxLat":287.9,"pads":11,"crashes":0,"hurt":0,"dropped":0,"ms":6266,"valid":false}
+[589s] plain oval-95 {"time":28.6,"missed":0,"maxLat":290.1,"pads":11,"crashes":0,"hurt":0,"dropped":0,"ms":2469,"valid":false}
+[590s] plain cal-omg {"time":28.05,"missed":0,"maxLat":278.8,"pads":11,"crashes":0,"hurt":0,"dropped":0,"ms":1170,"valid":false}
+[591s] plain narrow {"time":28.117,"missed":0,"maxLat":264.5,"pads":11,"crashes":0,"hurt":0,"dropped":0,"ms":857,"valid":false}
+[592s] plain safe {"time":28.183,"missed":0,"maxLat":214.9,"pads":11,"crashes":0,"hurt":0,"dropped":1,"ms":1027,"valid":true}
+[4307s] mpc safe+mpc {"time":27.767,"missed":0,"maxLat":190.9,"pads":11,"crashes":0,"hurt":0,"dropped":1,"ms":108618,"valid":true}
+[4307s] skip mpc (budget) safe {"D":6,"H":90,"aims":[-40,0,40],"burns":[-1,1,0]}
+[4307s] skip mpc (budget) narrow {"D":6,"H":60,"aims":[-60,-20,20,60],"burns":[-1,1,0]}
+[4307s] skip mpc (budget) narrow {"D":6,"H":90,"aims":[-40,0,40],"burns":[-1,1,0]}
+[4307s] skip mpc (budget) oval {"D":6,"H":60,"aims":[-60,-20,20,60],"burns":[-1,1,0]}
+[4307s] skip mpc (budget) oval {"D":6,"H":90,"aims":[-40,0,40],"burns":[-1,1,0]}
+[4314s] bench safe+mpc in-page 27.767 bench 27.767 counted true missed 0 human true VALID
