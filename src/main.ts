@@ -1059,41 +1059,66 @@ function huntCombatStep(): void {
     }
   }
 }
+const SPAWN_ALT = 800
+const spawnAt = new THREE.Vector3()
+/** The rock round a spawn candidate (World.standingAround): x, z, reach, top — reused. */
+const spawnRocks: number[] = []
 /**
  * HUNT's spawn, and a lost craft's respawn: airborne, 800 m over open ground, at a point with ~9 km of
- * clear air ahead (World.topAt) and outside the world's gorge — searched outward from (x0, z0), the
+ * clear air ahead (World.standingAround) and outside the world's gorge — searched outward from (x0, z0), the
  * nearest first, the given heading first. (Runs began at the race's start line 40 m up, aimed down the
  * course: on the sprint the canyon walls took a hit at t=0 and a craft ~6 s in; respawns came back 600 m
  * up, still inside the canyon's bowl.)
+ *
+ * (Cheap enough for the mid-fight respawn: the old search ran a whole world.update — every instance buffer
+ *  rewritten — at each of up to 33 spots, then 8 headings × 31 samples × every rock in the world: ~130-250
+ *  ms when nothing near was clear. Now each spot gathers the rock standing near it once, without touching
+ *  what is drawn; a heading tests that short list as segments (exact, no sampling gaps), the ground every
+ *  600 m and the gorge every 1.8 km. One world.update, for the spot taken. Typically 1-3 ms, capped at ~8.)
  */
-const SPAWN_ALT = 800
-const spawnAt = new THREE.Vector3()
 function huntSpawn(x0: number, z0: number, h0: number, awayFromCourse = true): void {
-  const clearAhead = (x: number, z: number, h: number): boolean => {
-    const y = groundH(x, z) + SPAWN_ALT
+  const RUN = 9000
+  // (In HUNT the gorge is always there; its walls stand far higher than the ground under them says —
+  //  the desert's plateau is 840 m up, and its outer face is a wall too.)
+  const inGorge = (x: number, z: number) => { if (!canyon) return false; const a = canyon.across(x, z); return Math.abs(a.lat) < a.half + canyon.st.outer + 1500 }
+  const clearAhead = (x: number, z: number, h: number, y: number): boolean => {
     // 9 km: the first ten seconds flown straight at cruise. (Clutter past ~3 km is still sunk at this
     // point, so the far end mostly answers for the big mesas and the gorge.)
-    for (let s = 0; s <= 9000; s += 300) {
-      const px = x + Math.sin(h) * s, pz = z + Math.cos(h) * s
-      if (world.topAt(px, pz, 250) > y - 300) return false
-      // (In HUNT the gorge is always there; its walls stand far higher than the ground under them says —
-      //  the desert's plateau is 840 m up, and its outer face is a wall too.)
-      if (canyon) { const a = canyon.across(px, pz); if (Math.abs(a.lat) < a.half + canyon.st.outer + 1500) return false }
+    const dx = Math.sin(h), dz = Math.cos(h)
+    // Rock: anything over y − 300 (the only ones listed) whose reach (+250 m) comes within the 9 km run.
+    for (let k = 0; k < spawnRocks.length; k += 4) {
+      const rx = spawnRocks[k] - x, rz = spawnRocks[k + 1] - z
+      const t = THREE.MathUtils.clamp(rx * dx + rz * dz, 0, RUN)
+      const ex = rx - dx * t, ez = rz - dz * t, R = spawnRocks[k + 2] + 250
+      if (ex * ex + ez * ez < R * R) return false
+    }
+    // The ground along it, and the gorge (every 1.8 km: its band is at least 3 km across, and off the
+    // gorge each ask is a full search of its line).
+    for (let s = 600; s <= RUN; s += 600) {
+      const px = x + dx * s, pz = z + dz * s
+      if (groundH(px, pz) > y - 300 || (s % 1800 === 0 && inGorge(px, pz))) return false
     }
     return true
   }
+  // (A hard cap on the work: past ~8 ms, the fallback below — the respawn lands mid-fight, in a frame.)
+  const t0 = performance.now()
   for (const r of [0, 4000, 8000, 12000, 16000]) {
     for (let k = 0; k < (r ? 8 : 1); k++) {
+      if (performance.now() - t0 > 8) break
       const a = h0 + (k * Math.PI) / 4
       const x = x0 + Math.sin(a) * r, z = z0 + Math.cos(a) * r
       // A run starts away from the race line too: the open world, not the course.
       if (awayFromCourse && course.distance(x, z) < 1500) continue
-      // Raise the landforms round this spot before asking about them (they sink with distance from the view).
-      world.update(spawnAt.set(x, groundH(x, z) + SPAWN_ALT, z), time)
+      if (inGorge(x, z)) continue
+      const y = groundH(x, z) + SPAWN_ALT
+      // The landforms as they would stand with the view here (they sink with distance from the view).
+      world.standingAround(x, z, RUN, spawnRocks, y - 300)
       for (let j = 0; j < 8; j++) {
         const h = h0 + (j % 2 ? -1 : 1) * Math.ceil(j / 2) * (Math.PI / 4)
-        if (!clearAhead(x, z, h)) continue
+        if (!clearAhead(x, z, h, y)) continue
         flight.reset(x, z, h, SPAWN_ALT, FLIGHT.cruiseMach)
+        // (Raised round the spot now, so the first steps there collide with what is drawn.)
+        world.update(spawnAt.set(x, y, z), time)
         return
       }
     }
@@ -1187,20 +1212,30 @@ function airTick(): void {
 // The frost on the glass: a pattern drawn once (ice crystals creeping in from the edges, clear in the
 // middle — a CSS mask keeps it so) on one full-screen layer whose opacity is the ice — a composited fade,
 // no render pass.
+// (Drawn ahead, in idle time, a few crystals a slice from the start of HUNT or FREE ROAM, onto a canvas
+//  that IS the layer: drawn the first frame ice showed — mid-flight — then encoded to a PNG, it took 28-40
+//  ms, a dropped frame or two just as the warning came up.)
 const frostEl = $('#frost')
-let frostOn = false, frostShown = -1
-function frostPattern(): string {
-  const W = 960, H = 540, cv = document.createElement('canvas')
-  cv.width = W; cv.height = H
-  const g = cv.getContext('2d')!
-  // A rime haze thickest at the edges and corners.
-  const rg = g.createRadialGradient(W / 2, H / 2, H * 0.32, W / 2, H / 2, W * 0.62)
-  rg.addColorStop(0, 'rgba(225,240,255,0)'); rg.addColorStop(0.55, 'rgba(225,240,255,0.1)'); rg.addColorStop(1, 'rgba(235,246,255,0.7)')
-  g.fillStyle = rg; g.fillRect(0, 0, W, H)
+let frostShown = -1
+const frost = { cv: null as HTMLCanvasElement | null, g: null as CanvasRenderingContext2D | null, next: 0, seed: 7, queued: false }
+const FROST_W = 960, FROST_H = 540, FROST_N = 46
+/** Draw the frost's next crystals (all of them with no deadline): false while some are left. */
+function frostDraw(deadline?: IdleDeadline): boolean {
+  const W = FROST_W, H = FROST_H
+  if (!frost.cv) {
+    const cv = (frost.cv = document.createElement('canvas'))
+    cv.width = W; cv.height = H
+    cv.style.cssText = 'display:block;width:100%;height:100%'
+    const g = (frost.g = cv.getContext('2d')!)
+    // A rime haze thickest at the edges and corners.
+    const rg = g.createRadialGradient(W / 2, H / 2, H * 0.32, W / 2, H / 2, W * 0.62)
+    rg.addColorStop(0, 'rgba(225,240,255,0)'); rg.addColorStop(0.55, 'rgba(225,240,255,0.1)'); rg.addColorStop(1, 'rgba(235,246,255,0.7)')
+    g.fillStyle = rg; g.fillRect(0, 0, W, H)
+    g.lineCap = 'round'
+  }
+  const g = frost.g!
   // Fern-like crystals growing inward from points along the border (a fixed seed: the same frost each time).
-  let sd = 7
-  const r = () => ((sd = (sd * 16807) % 2147483647) / 2147483647)
-  g.lineCap = 'round'
+  const r = () => ((frost.seed = (frost.seed * 16807) % 2147483647) / 2147483647)
   const branch = (x: number, y: number, a: number, len: number, w: number, depth: number): void => {
     const x2 = x + Math.cos(a) * len, y2 = y + Math.sin(a) * len
     g.strokeStyle = `rgba(240,248,255,${0.25 + 0.35 * w / 3})`; g.lineWidth = w
@@ -1215,23 +1250,35 @@ function frostPattern(): string {
     }
     branch(x2, y2, a + (r() - 0.5) * 0.5, len * 0.6, w * 0.75, depth - 1)
   }
-  for (let i = 0; i < 46; i++) {
+  while (frost.next < FROST_N) {
+    // (One crystal is well under a millisecond: stop while the idle slice still has room.)
+    if (deadline && deadline.timeRemaining() < 3) return false
+    const i = frost.next++
     const side = i % 4, u = r()
     const [x, y, a] = side === 0 ? [u * W, 0, Math.PI / 2] : side === 1 ? [u * W, H, -Math.PI / 2] : side === 2 ? [0, u * H, 0] : [W, u * H, Math.PI]
     // (Longer into the corners, short mid-edge: the middle of the view stays clear.)
     const mid = side < 2 ? Math.abs(u - 0.5) * 2 : Math.abs(u - 0.5) * 2
     branch(x, y, a + (r() - 0.5) * 0.9, 28 + 70 * mid + r() * 30, 2.6, 3)
   }
-  return cv.toDataURL('image/png')
+  if (!frost.cv.parentNode) frostEl.append(frost.cv)
+  return true
 }
-/** Each frame: the frost layer's opacity follows the ice (the pattern only made the first time it shows). */
+/** At the start of a flying mode: the frost drawn in idle slices, long before any ice. */
+function frostAhead(): void {
+  if (frost.queued || frost.next >= FROST_N) return
+  frost.queued = true
+  const slice = (d: IdleDeadline) => { if (!frostDraw(d)) requestIdleCallback(slice, { timeout: 1000 }); else frost.queued = false }
+  if ('requestIdleCallback' in window) requestIdleCallback(slice, { timeout: 1000 })
+  else setTimeout(() => { frostDraw(); frost.queued = false }, 1500)
+}
+/** Each frame: the frost layer's opacity follows the ice (the pattern finished here only if ice beat it). */
 function frostFrame(play: boolean): void {
   const flying = (mode === 'hunt' || (mode === 'free' && freeAir && !system)) && !player.dead && play
   const want = flying ? Math.min(1, flight.ice * 1.15) : 0
   const q = Math.round(want * 50) / 50
   if (q === frostShown) return
   frostShown = q
-  if (q > 0 && !frostOn) { frostOn = true; frostEl.style.backgroundImage = `url(${frostPattern()})` }
+  if (q > 0 && !frost.cv?.parentNode) frostDraw()
   frostEl.style.opacity = String(q)
 }
 
@@ -1308,6 +1355,9 @@ player.onDriftBoost = (lvl) => {
   input.rumble(0.5, 0.9, 200)
 }
 player.onCrash = (sev, big, x, y, z, nx, nz) => {
+  // FREE ROAM: grinding along a face is a contact every step — one cue (sound, sparks, kick) a quarter
+  // second, unless it is a real hit. (Every step, with freeRock's own on top, it rattled.)
+  if (mode === 'free') { if (freeGrindCool > 0 && sev < 0.5) return; freeGrindCool = 0.25 }
   sound.crash(big)
   sparks(x, y, z, player.vel, big ? Math.round(30 + sev * 80) : 18, 1 + sev)
   if (big) {
@@ -1562,7 +1612,7 @@ function showCourse(): void {
     $('#tp-info').textContent = ''
   } else if (menuMode === 'free') {
     $('#tp-name').textContent = 'FREE ROAM'
-    $('#tp-blurb').textContent = 'No race, no clock, no damage. Drive up any rock and launch off it, take off and fly, land anywhere.'
+    $('#tp-blurb').textContent = 'No race, no clock. Drive up any rock, take off on Space and fly, land anywhere — gently: hard landings and rock hurt.'
     const cell = (v: string, l: string) => `<div><b>${v}</b><small>${l}</small></div>`
     $('#tp-stats').innerHTML = cell(WORLDS.find((w) => w.id === BIOME)?.name ?? '', 'World') + cell('Off', 'Damage') + cell('Space · C', 'Nose up · down') + cell(String(shards.total), 'Crystals found')
     $('#tp-info').textContent = ''
@@ -2113,6 +2163,7 @@ function startHunt(): void {
   sound.revive()
   mode = 'hunt'
   overlay = false
+  frostAhead()
   player.reset()
   combat.reset()
   // Phase 1 of the flight rework: free flight through rings; the drones come back as phase 2.
@@ -2155,8 +2206,8 @@ function startHunt(): void {
 }
 
 // ───────────────────────── free roam ─────────────────────────
-// No race, no clock, no damage: ride up the rocks and off their tops, take off (Space) and fly, touch
-// down anywhere to drive on. The hover craft (Player) on the ground, the FlightCraft in the air; the
+// No race, no clock: ride up the rocks (a crest only hops you), take off (Space, or off a real drop) and
+// fly, touch down anywhere to drive on — a big healing hull takes the hard hits (freeGround, freeRock). The hover craft (Player) on the ground, the FlightCraft in the air; the
 // handover keeps position and velocity, and the camera and the hull's attitude blend across it.
 let freeAir = false, freeAirT = 0
 // FREE ROAM's damage (see freeGround / freeRock): a big hull that heals, so ordinary flying never hurts
@@ -2179,6 +2230,8 @@ const FREE_GLIDE = -0.07 // (−4°)
 /** Where a wreck respawns: the last place you were flying or driving clear and unhurt. */
 const freeSafe = { x: 0, z: 0, h: 0, ok: false }
 let freeSafeT = 0, freeCloseCool = 0, freeLow = false, freeNearRock = false
+/** One grinding cue at a time along a face (s): the contact fires every step. */
+let freeGrindCool = 0
 /** Tests: the last impacts (what, how hard). */
 const freeEvents: { t: number; k: string; v: number; g?: number; auto: boolean; air: boolean }[] = []
 const freeEvent = (k: string, v: number, g?: number) => { freeEvents.push({ t: +runTime.toFixed(2), k, v: Math.round(v), g: g === undefined ? undefined : Math.round(g * 57.3), auto: freeAuto, air: freeAir }); if (freeEvents.length > 30) freeEvents.shift() }
@@ -2213,6 +2266,7 @@ function startFree(): void {
   sound.revive()
   mode = 'free'
   overlay = false
+  frostAhead()
   combat.enabled = false
   combat.reset()
   rings.hide()
@@ -2289,11 +2343,20 @@ function touchDown(): void {
   sinceLand = 0
 }
 let sinceLand = 9
-/** A hit in FREE ROAM: past the grace since the last one, off the hull; empty, it's a wreck. */
+/** The hit that started the grace (freeHurt). */
+let freeGraceDmg = 0
+/** A hit in FREE ROAM, off the hull; empty, it's a wreck. For 1.5 s after a hit, repeats of it (a scrape
+ *  along a face, a bounce) cost nothing more — but a bigger one costs what it adds over it. (It ignored any
+ *  hit in the grace: a small graze, then a Mach 6 strike a second later, did nothing.) */
 function freeHurt(dmg: number): void {
-  if (freeGhost > 0 || freeWreckT > 0 || freeSinceHit < 1.5) return
+  if (freeGhost > 0 || freeWreckT > 0) return
+  if (freeSinceHit < 1.5) {
+    if (dmg <= freeGraceDmg) return
+    const extra = dmg - freeGraceDmg
+    freeGraceDmg = dmg
+    dmg = extra
+  } else { freeGraceDmg = dmg; freeSinceHit = 0 }
   freeHull -= dmg
-  freeSinceHit = 0
   damageFlash = Math.max(damageFlash, Math.min(1, 0.25 + dmg / 120))
   if (freeHull <= 0) freeCrash()
 }
@@ -2322,6 +2385,9 @@ function freeRespawn(): void {
   fcam.snap(); camBlend = 0
   for (const t of visuals.get(player)!.trail) t.reset()
   freeHull = FREE_HULL; freeSinceHit = 9; freeGhost = 2.5
+  // (The wreck's sound.death() ducked the game's audio; nothing brought it back — the rest of the session
+  //  played at 40%.)
+  sound.revive()
 }
 /**
  * The flight met the ground: how hard, from the speed into the surface along its normal (v_n) and how
@@ -2341,7 +2407,9 @@ function freeGround(): void {
   const dive = Math.asin(THREE.MathUtils.clamp(-v.y / sp, -1, 1))
   // A landform's flank (steeper than ~35°) met flying, not diving: that is flying into a mountain — the
   // rock's rule (freeRock), the same as its face or a gorge wall.
-  if (tmp3.y < 0.82 && dive < Math.PI / 4) { if (vn > 100) freeRock(vn, flight.pos); return }
+  // (The automatic glide too — but it never wrecks there: arriving from ORBIT it comes down at up to
+  //  ~Mach 14, and a hands-off glide into a landform's side blew up with no input at all.)
+  if (tmp3.y < 0.82 && dive < Math.PI / 4) { if (vn > 100) freeRock(vn, flight.pos, freeAuto); return }
   if (vn > 100) freeEvent('ground', vn, dive)
   // (Not flying by choice — an automatic handover gliding you down — the hover catches any touch, as it
   //  does a hop: a W-only drive never hurts.)
@@ -2364,16 +2432,22 @@ function freeGround(): void {
  *  ~2,050, about a third of it); past that (Mach 7 head-on and up — Mach 10 is ~3,400) a wreck. (At
  *  1,500 and twice the damage a W-only drive down a winding gorge blew up on its walls: Mach 5 into
  *  rock should hurt, not end you.) */
-function freeRock(imp: number, at: THREE.Vector3): void {
+function freeRock(imp: number, at: THREE.Vector3, auto = false): void {
   if (freeWreckT > 0) return
   if (imp > 100) freeEvent('rock', imp)
-  if (imp > 2400 && freeGhost <= 0) { freeCrash(); return }
-  sparks(at.x, at.y, at.z, freeAir ? flight.vel : player.vel, Math.round(14 + Math.min(60, imp / 20)), 1 + imp / 600)
-  sound.bounce(Math.min(1, 0.3 + imp / 1000))
+  // (Hands-off — the automatic glide — never a wreck: a hit, at most half the hull that is left.)
+  if (imp > 2400 && freeGhost <= 0 && !auto) { freeCrash(); return }
+  // Driving, the hover's own contact (player.onCrash) has already thrown the sparks and played the crash:
+  // only the hull's rule here. (Both, on every contact step, was a double rattle grinding along a wall.)
+  if (freeAir) {
+    sparks(at.x, at.y, at.z, flight.vel, Math.round(14 + Math.min(60, imp / 20)), 1 + imp / 600)
+    if (freeGrindCool <= 0 || imp >= 300) { sound.bounce(Math.min(1, 0.3 + imp / 1000)); freeGrindCool = 0.25 }
+  }
   // (Driving, a wall or rock only scrapes — no hull: a W-only run down SPRINT's winding gorge clipped a wall every
   //  ~3 s and wrecked on the sum of grazes. Flying into one costs hull; Mach 10 head-on wrecks anywhere.)
   if (imp >= 300 && freeAir) {
-    freeHurt((imp - 300) * 0.06)
+    const dmg = (imp - 300) * 0.06
+    freeHurt(auto ? Math.min(dmg, freeHull * 0.5) : dmg)
     pop('ROCK STRIKE', 'bad')
     shake(Math.min(0.9, 0.3 + imp / 2000))
   } else shake(0.12 + imp / 1500)
@@ -2382,6 +2456,7 @@ function freeRock(imp: number, at: THREE.Vector3): void {
 function freeTick(): void {
   freeSinceHit += STEP
   freeGhost = Math.max(0, freeGhost - STEP)
+  freeGrindCool -= STEP
   if (freeSinceHit > 3) freeHull = Math.min(FREE_HULL, freeHull + 15 * STEP)
   // The safe point: clear of trouble, unhurt for a while, not diving.
   freeSafeT -= STEP
@@ -2639,7 +2714,8 @@ function systemStep(): void {
   let ahead = Infinity
   {
     const f = flight.fwd
-    PLANETS.forEach((p) => { _sv.subVectors(p.pos, sysPos); const d = _sv.length(); if (_sv.dot(f) > 0.5 * d) ahead = Math.min(ahead, d - PLANET_R) })
+    // (A plain loop: a closure each step for this added up.)
+    for (let i = 0; i < PLANETS.length; i++) { _sv.subVectors(PLANETS[i].pos, sysPos); const d = _sv.length(); if (_sv.dot(f) > 0.5 * d) ahead = Math.min(ahead, d - PLANET_R) }
     const ds = sysPos.length()
     if (-sysPos.dot(f) > 0.5 * ds) ahead = Math.min(ahead, ds - STAR_R)
   }
@@ -3165,7 +3241,7 @@ function simStep(): void {
       airTick()
       flight.syncTo(player)
       freeAirT += STEP
-      if (freeRockHit > 0) freeRock(freeRockHit, tmp2.copy(flight.pos).addScaledVector(freeRockN, -6))
+      if (freeRockHit > 0) freeRock(freeRockHit, tmp2.copy(flight.pos).addScaledVector(freeRockN, -6), freeAuto)
       if (flight.groundHit && freeWreckT <= 0) freeGround()
       // Down on the surface (coming down, not skimming up off it): grip takes over, you drive on.
       // (Not flying by choice — an automatic handover — any touch is a landing: the hover rides on.)
@@ -3300,6 +3376,8 @@ function flyingNow(): boolean { return !system && (mode === 'hunt' || (mode === 
 /** Tests: the flight speed cues (motes, wisps) on or off, for frame-cost A/B. */
 let speedFx = true
 const _upv = new THREE.Vector3()
+/** Motes owed (speed cues in the air): a rate per second, carried between frames. */
+let moteAcc = 0
 function drawRacer(p: Player, alpha: number, dt: number, isMe: boolean): void {
   // (The weather in the air round you — rain, snow, pollen, embers — stays down in the air.)
   const airLow = mode !== 'free' || p.pos.y - groundH(p.pos.x, p.pos.z) < 3000
@@ -3497,7 +3575,11 @@ function drawRacer(p: Player, alpha: number, dt: number, isMe: boolean): void {
     if (side.lengthSq() < 1e-4) side.set(1, 0, 0)
     side.normalize()
     const upv = _upv.crossVectors(side, vd)
-    const n = Math.round(Math.min(16, Math.max(0, (p.mach - 0.5) * 4.5)) * air)
+    // (Per second × dt, not per frame — at 120 Hz it was twice the motes of 60 Hz, at 30 half: the same
+    //  density as 60 Hz had, through an accumulator so low rates still come out.)
+    moteAcc = Math.min(moteAcc + Math.min(16, Math.max(0, (p.mach - 0.5) * 4.5)) * air * 60 * dt, 48)
+    const n = Math.floor(moteAcc)
+    moteAcc -= n
     for (let i = 0; i < n; i++) {
       const e = resetE()
       // (In a hollow cylinder round the path: never through the craft or the camera's face.)
@@ -4086,7 +4168,9 @@ function updateHud(dt: number, slow: boolean): void {
   const hullPct = mode === 'free' ? (freeHull / FREE_HULL) * 100 : player.hull
   hullFill.style.width = `${Math.max(0, hullPct)}%`
   hullEl.classList.toggle('low', hullPct < 35)
-  hullEl.style.display = mode === 'free' && system ? 'none' : ''
+  // (Only on a change: a style write every frame.)
+  const hullDisp = mode === 'free' && system ? 'none' : ''
+  if (hullEl.style.display !== hullDisp) hullEl.style.display = hullDisp
   flashT = Math.max(0, flashT - dt)
   flashEl.style.opacity = String(Math.min(1, flashT * 3))
   flashEl.style.transform = `translate(-50%, -50%) scale(${1 + (1.1 - flashT) * 0.15})`
@@ -4246,7 +4330,7 @@ function updateHud(dt: number, slow: boolean): void {
       const km = nb.alt / 1000
       scoreNum.textContent = name
       if ($('#score .lab').textContent !== 'NEAREST') $('#score .lab').textContent = 'NEAREST'
-      scoreSub.innerHTML = `${km > 1e6 ? (km / 1e6).toFixed(2) + ' MILLION KM' : Math.round(km).toLocaleString('en') + ' KM'} ABOVE IT<br/>${flight.cruise > 0 ? '<b style="color:#9fd2ff">CRUISE</b>' : 'HOLD SHIFT TO CRUISE'} · BELOW 1,500 KM YOU ARE THERE<br/>${fmtTime(runTime)}`
+      scoreSub.innerHTML = `${km > 1e6 ? (km / 1e6).toFixed(2) + ' MILLION KM' : Math.round(km).toLocaleString('en') + ' KM'} ABOVE IT<br/>${flight.cruise > 0 ? '<b style="color:#9fd2ff">CRUISE</b>' : 'HOLD SHIFT TO CRUISE'} · WITHIN 3,000 KM YOU ARE THERE<br/>${fmtTime(runTime)}`
     } else if (slow && arriving) {
       // Down from ORBIT: the world you are coming to, how high, what Shift does — not the crystal count.
       const alt = Math.max(0, player.pos.y - groundH(player.pos.x, player.pos.z)) / 1000
@@ -4266,7 +4350,9 @@ function updateHud(dt: number, slow: boolean): void {
     // from 2 km at Mach 4 is a warning already.
     if (!system && freeAir && !player.dead) {
       const sink = -flight.vel.y, al = $('#align')
-      if (sink > 150 && flight.agl / sink < 2 && freeGhost <= 0) { al.style.display = 'block'; al.textContent = 'PULL UP · SPACE'; al.className = 'bad' }
+      // (Not while the automatic glide flies you: it never wrecks — see freeGround — and arriving from ORBIT
+      //  the warning lit up on every pass over a ridge with nothing to do about it.)
+      if (sink > 150 && flight.agl / sink < 2 && freeGhost <= 0 && !freeAuto) { al.style.display = 'block'; al.textContent = 'PULL UP · SPACE'; al.className = 'bad' }
       else if (al.textContent?.startsWith('PULL UP')) al.style.display = 'none'
     }
   } else if (mode === 'hunt') {
@@ -4899,6 +4985,10 @@ const g = {
   setSpeed: (v: number) => { testSpeed = v },
   get craftPos() { return visuals.get(player)!.craft.root.position },
   free: () => startFree(), system: () => startSystem(), get sys() { return { pos: sysPos, planets: PLANETS, near: system?.nearest(sysPos) } }, fly: () => takeOff(0.3), get freeAir() { return freeAir },
+  /** Tests: one HUNT spawn search from (x, z, heading) — how long it took, and where it put you. */
+  spawnProbe: (x: number, z: number, h: number, away = true) => { const t0 = performance.now(); huntSpawn(x, z, h, away); return { ms: performance.now() - t0, x: flight.pos.x, z: flight.pos.z, y: flight.pos.y, h: Math.atan2(flight.fwd.x, flight.fwd.z) } },
+  /** Tests: a FREE ROAM hit of `dmg` (freeHurt's grace rules apply). */
+  freeHit: (dmg: number) => freeHurt(dmg),
   get freeDmg() { return { hull: freeHull, wreck: freeWreckT, ghost: freeGhost, auto: freeAuto, safe: { ...freeSafe }, events: freeEvents } },
 }
 ;(window as unknown as { __g: typeof g }).__g = g

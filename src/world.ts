@@ -1218,6 +1218,33 @@ class Wrapped {
     }
     pair.end()
   }
+  /** Each item standing within `range` (+ its reach) of (cx, cz), as update() would raise it with the view
+   *  there — the same copy, the same sink, the same veto — but nothing drawn is touched: x, z, reach, top
+   *  appended to `out` (4 a rock), those whose top is over minTop. (HUNT's spawn search ran a whole
+   *  update per candidate spot for this.) */
+  standing(cx: number, cz: number, range: number, out: number[], minTop = -Infinity): void {
+    const T = this.tile
+    for (let i = 0; i < this.items.length; i++) {
+      const it = this.items[i]
+      const x = it.ox + T * Math.floor((cx - it.ox) / T + 0.5)
+      const z = it.oz + T * Math.floor((cz - it.oz) / T + 0.5)
+      const cheb = Math.max(Math.abs(x - cx), Math.abs(z - cz))
+      if (cheb > range + it.r * 1.8) continue
+      const grow = 1 - smooth(this.sinkFrom, this.sinkTo, cheb)
+      if (grow < 0.03) continue
+      // (The veto and height are cached per copy, keyed on its place: asked here for this copy, the next
+      //  update() redoes them for its own.)
+      if (this.veto && (it.vx !== x || it.vz !== z)) {
+        it.vx = x; it.vz = z
+        if (this.heightK) { it.h0 ??= it.h; it.r0 ??= it.r; const k = this.heightK(x, z); it.h = it.h0 * k; it.r = it.r0 * Math.sqrt(k) }
+        it.vetoed = this.veto(x, z, it.r)
+      }
+      if (it.vetoed) continue
+      if (it.bx !== x || it.bz !== z) { it.bx = x; it.bz = z; it.by = groundH(x, z) - (this.bury + (it.sink ?? 0)) * it.h - 3 }
+      const top = it.by + it.h * grow
+      if (top > minTop) out.push(x, z, it.r * 1.8, top)
+    }
+  }
 }
 
 export interface Obstacle {
@@ -1588,6 +1615,17 @@ export class World {
       if ((it.x - x) ** 2 + (it.z - z) ** 2 < reach * reach) top = Math.max(top, it.by + it.h)
     }
     return top
+  }
+
+  /** The rock standing round (cx, cz) as topAt would see it with the view there (see Wrapped.standing),
+   *  without a world update: x, z, reach, top, 4 a rock, into `out` (cleared first) — only those whose
+   *  top is over minTop. */
+  standingAround(cx: number, cz: number, range: number, out: number[], minTop = -Infinity): void {
+    out.length = 0
+    for (const w of this.wrapped) w.standing(cx, cz, range, out, minTop)
+    if (this.courseRocks.visible) for (const it of this.fixed) {
+      if (it.by + it.h > minTop && Math.max(Math.abs(it.x - cx), Math.abs(it.z - cz)) < range + it.r * 2) out.push(it.x, it.z, it.r * 2, it.by + it.h)
+    }
   }
 
   /** Everything standing at a fixed place (course spires, trackside landmarks): for pass-by sounds. */

@@ -68,7 +68,10 @@ export class Dart implements Target {
     if (this.kind === 'lancer' && this.charge > 0 && !this.rearHit) { this.charge = 0; this.special = 2.5 } // a hit on its nose spoils the shot (and it must line up again)
     if (this.breakT <= 0) {
       this.breakT = 1.4
-      this.breakDir.crossVectors(fwd, UP).normalize().multiplyScalar(Math.random() < 0.5 ? -1 : 1).addScaledVector(UP, (Math.random() - 0.3) * 0.6).normalize()
+      // (Guarded as the weave is: flying straight up or down, fwd × up is zero.)
+      this.breakDir.crossVectors(fwd, UP)
+      if (this.breakDir.lengthSq() < 1e-6) this.breakDir.set(1, 0, 0)
+      this.breakDir.normalize().multiplyScalar(Math.random() < 0.5 ? -1 : 1).addScaledVector(UP, (Math.random() - 0.3) * 0.6).normalize()
     }
     if (this.hp <= 0) { this.alive = false; this.killed = true }
   }
@@ -143,7 +146,7 @@ export class Darts {
     const lead = free[0]
     free.forEach((d, i) => {
       d.kind = kind; d.charge = 0; d.beamT = 0; d.lockT = 0; d.special = 3 + Math.random() * 2
-      d.alive = true; d.dummy = false; d.killed = false; d.commit = false; d.hp = KINDS[kind].hp; d.breakT = 0; d.burstLeft = 0; d.fireCd = 1.5 + Math.random() * 2
+      d.alive = true; d.dummy = false; d.killed = false; d.commit = false; d.jinkT = 0; d.hp = KINDS[kind].hp; d.breakT = 0; d.burstLeft = 0; d.fireCd = 1.5 + Math.random() * 2
       d.leader = i === 0 || kind !== 'dart' ? null : lead
       const k = Math.ceil(i / 2), side = i % 2 ? 1 : -1
       d.slot.set(side * 70 * k, 0, -60 * k)
@@ -186,7 +189,10 @@ export class Darts {
         if (!behind) d.jinkT = 0
         if (chased && d.jinkT < 5) {
           d.jinkT += dt
-          want.copy(fwd).addScaledVector(_s.crossVectors(fwd, UP).normalize(), 0.3 * Math.sin(d.jinkT * 0.8)).normalize()
+          // (Its side from fwd × up — straight up or down that is zero, and normalised a NaN: any side then.)
+          _s.crossVectors(fwd, UP)
+          if (_s.lengthSq() < 1e-6) _s.set(1, 0, 0)
+          want.copy(fwd).addScaledVector(_s.normalize(), 0.3 * Math.sin(d.jinkT * 0.8)).normalize()
         } else {
           // Pursue: aim a little ahead of where you will be — but once you are behind it (just after a
           // pass) or it has been called in, straight at you: the lead point then lies even further back

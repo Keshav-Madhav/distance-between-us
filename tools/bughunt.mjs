@@ -135,10 +135,18 @@ await scenario('free:climb-to-orbit', async () => {
   pg.note = 'reached orbit'
   return pg
 })
-// 7. ORBIT: fly into a planet (live handover) and keep flying there.
+// 7. ORBIT: fly into a planet (live handover) and keep flying there. (The spawn faces open space since
+// phase 4: the nose is held on the nearest world — fc.aim, re-aimed as the craft moves — then the burner.)
 await scenario('orbit:arrive', async () => {
   const pg = await page(`?course=orbit&fixed=1`)
-  await pg.p.evaluate(() => { const g = window.__g; g.system(); g.flyForce(true); Object.assign(g.fc, { pitch: 0, turn: 0, roll: 0, throttle: true, brake: false, burner: true, aim: null }) })
+  await pg.p.evaluate(() => {
+    const g = window.__g; g.system(); g.flyForce(true)
+    const s0 = g.sys, target = s0.planets.reduce((a, p) => (p.pos.distanceTo(s0.pos) < a.pos.distanceTo(s0.pos) ? p : a))
+    const aim = target.pos.clone().sub(s0.pos).normalize()
+    Object.assign(g.fc, { pitch: 0, turn: 0, roll: 0, throttle: true, brake: false, burner: false, aim })
+    // (Cruise only once the nose is on it: Shift with the nose swinging carries you off the wrong way.)
+    const iv = setInterval(() => { if (g.mode !== 'free' || !g.sys.pos) return clearInterval(iv); aim.copy(target.pos).sub(g.sys.pos).normalize(); g.fc.burner = g.flight.fwd.dot(aim) > 0.98 }, 100)
+  })
   let landed = null
   for (let i = 0; i < 60 && !landed; i++) { await pg.p.waitForTimeout(1000); landed = await pg.p.evaluate(() => { const f = [...document.querySelectorAll('iframe')].find((f) => f.style.opacity === '1'); return f ? new URL(f.src).searchParams.get('course') : null }) }
   if (!landed || landed === 'orbit') throw new Error('never arrived on a planet')

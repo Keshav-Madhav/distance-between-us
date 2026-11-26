@@ -226,6 +226,9 @@ export class FlightCraft {
     this.rates.set(0, 0, 0); this.omega.set(0, 0, 0)
     this.topMach = 0
     this.ice = 0; this.frozen = 0; this.frozenT = 0; this.freezeCd = 0; this.mush = 0
+    // (The freeze die and the turbulence clock too: kept across resets, a replay or fast-sim test that
+    //  reset the craft met different freezes and gusts depending on what had flown before it.)
+    this.seed = 12345; this.airT = 0
   }
 
   /** Set the attitude outright (a world handover): the nose and wings as given, velocity along the nose. */
@@ -598,7 +601,8 @@ export class FlightCam {
   update(dt: number, at: THREE.Vector3, q: THREE.Quaternion, vel: THREE.Vector3, mach: number, fovMax: number, punch = 0, omega: THREE.Vector3 | null = null): void {
     const fwd = _v.copy(AZ).applyQuaternion(q)
     const cUp = _w.copy(AY).applyQuaternion(q)
-    const vdir = vel.lengthSq() > 1 ? vel.clone().normalize() : fwd.clone()
+    // (Module temps, not clones: this runs every frame.)
+    const vdir = vel.lengthSq() > 1 ? _vd.copy(vel).normalize() : _vd.copy(fwd)
     // Where to look: ahead of the nose along its swing (a full-rate turn shows where it is going, ~12°
     // on). The camera swings round to the outside of the turn with most of it, so the craft slides only
     // a little toward the outside on screen (looking ahead alone threw it a quarter-screen sideways, and
@@ -608,13 +612,13 @@ export class FlightCam {
     if (omega) this.omS.lerp(omega, 1 - Math.exp(-dt * 6))
     else this.omS.set(0, 0, 0)
     _lead.crossVectors(this.omS, fwd).multiplyScalar(FlightCam.LEAD)
-    const wantFwd = fwd.clone().add(_lead).normalize()
-    const wantBack = fwd.clone().addScaledVector(_lead, 1.1).multiplyScalar(0.7).addScaledVector(vdir, 0.3).normalize()
+    const wantFwd = _wf.copy(fwd).add(_lead).normalize()
+    const wantBack = _wb.copy(fwd).addScaledVector(_lead, 1.1).multiplyScalar(0.7).addScaledVector(vdir, 0.3).normalize()
     // The view's up: the world's, taking a little of the craft's roll — and all of it when the craft
     // goes past vertical (through a loop the world's up would flip the view).
     // (Deep space: no horizon to hold — the view rolls with the craft.)
     const lean = THREE.MathUtils.lerp(1, THREE.MathUtils.clamp(this.horizon + Math.max(0, -cUp.dot(UP_REF)) * 1.4, 0, 1), FLY_LEVEL.k)
-    const wantUp = UP_REF.clone().lerp(cUp, lean)
+    const wantUp = _wu.copy(UP_REF).lerp(cUp, lean)
     if (wantUp.lengthSq() < 1e-4) wantUp.copy(cUp)
     wantUp.normalize()
     if (!this.init) { this.back.copy(wantBack); this.upS.copy(wantUp); this.fwdS.copy(wantFwd); this.kickS = this.kick; this.liftS = this.lift; if (omega) this.omS.copy(omega); this.init = true }
@@ -648,4 +652,4 @@ export class FlightCam {
     cam.updateProjectionMatrix()
   }
 }
-const _lead = new THREE.Vector3()
+const _lead = new THREE.Vector3(), _vd = new THREE.Vector3(), _wf = new THREE.Vector3(), _wb = new THREE.Vector3(), _wu = new THREE.Vector3()

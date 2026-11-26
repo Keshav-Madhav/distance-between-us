@@ -453,7 +453,10 @@ export class Race {
     // (Squeezed only in the last ~1 s before a gate: at Mach 6 the old 2 s + 600 m window held it for
     // 4.7 km, leaving no room beside spires near the edge — the field crossed through them instead.)
     // (The finish is squeezed tighter and earlier: it must be flown through — a wide one doesn't count.)
+    // (For every user of drive() — rivals, the autopilot flying you, optline policies, spectating — on
+    // purpose: rivals may still finish wide (see gates()), but you may not, and the autopilot needs it.)
     const fin = r.next >= this.K - 1
+    const finNear = fin && toGate > 0 && toGate < p.speed * 2.0 + 300
     const laneLim = toGate > 0 && toGate < p.speed * (fin ? 2.0 : 1.0) + 300 ? (fin ? 110 : 175) : 220
     // (tools/optline.mjs: a searched racing line for your autopilot — the lane at points along the course.)
     const pol = !r.ai ? this.playerPolicy : null
@@ -505,14 +508,31 @@ export class Race {
     }
     // (Not after a spire's gap was chosen: clamping that pushed racers back into the spire.)
     if (aimI < 0) lane = THREE.MathUtils.clamp(lane, -laneLim, laneLim)
+    // Flying you into the finish (see below): the lane through the finish gate is its middle, moved toward
+    // the inside of the bend there — a craft at speed slides to the outside, and the drifting lane (−110 m
+    // on CIRCUIT, on the outside) left nothing for the slide. Blended in over the approach: a step in the
+    // lane 4 km out swung it 300 m across and back.
+    const autoFin = !r.ai && finNear && !c.def.drag && aimI < 0
+    if (autoFin) {
+      const gi = nextGate.i, j = Math.min(n - 1, gi + 10)
+      const [gx, gz] = c.tangent(gi)
+      // (How far the line 400 m past the gate sits off the gate's own heading: ~0 on a straight, ~50 m
+      // through CIRCUIT's 1.7 km bend there.)
+      const inside = (c.px[j] - c.px[gi]) * -gz + (c.pz[j] - c.pz[gi]) * gx
+      const w = THREE.MathUtils.clamp(1.4 - toGate / (p.speed * 2.0 + 300), 0, 1)
+      lane += (THREE.MathUtils.clamp(inside * 2, -100, 100) - lane) * w
+    }
     r.aimLane = lane
     // Stanley-style steering: the line's heading a little ahead, plus a correction that closes the
     // cross-track error to the lane fast (the old far-point aim drifted 80 m off its own lane).
-    const look = Math.min(n - 1, r.idx + Math.round((p.speed * 0.45 + 60) / 40))
+    // (Into the finish, flying you: the line's heading only ~0.1 s ahead and a firmer pull onto the lane.
+    // Looking 0.45 s ahead across CIRCUIT's S-bend at the finish pointed the craft along the next bend's
+    // heading, 0.2 rad off the line it was on — at Mach 5 it crossed 300 m sideways in the last km.)
+    const look = Math.min(n - 1, r.idx + Math.round((p.speed * (autoFin ? 0.1 : 0.45) + 60) / 40))
     const [tx, tz] = c.tangent(look)
     const lineH = Math.atan2(tx, tz)
     const cte = lane - myLat
-    const want = lineH - Math.atan2(3 * cte, p.speed + 60)
+    const want = lineH - Math.atan2((autoFin ? 5 : 3) * cte, p.speed + 60)
     let err = want - p.heading
     err = Math.atan2(Math.sin(err), Math.cos(err))
     void aimI
@@ -598,6 +618,19 @@ export class Race {
     if (aimI >= 0 && Math.abs(lane - myLat) > 15) ctl.strafe = THREE.MathUtils.clamp((lane - myLat) / 40, -1, 1)
     // A long way to go across for the gap: lift, as you would (no burner past 40 m off it, no throttle past 80).
     if (aimI >= 0 && Math.abs(lane - myLat) > 40 && !c.def.drag && !p.unwreckable) { ctl.burner = false; if (Math.abs(lane - myLat) > 80) ctl.boost = false }
+    // Flying YOU into the finish: it must be flown through (a wide one doesn't count for you), and the lane
+    // squeeze alone was not enough — CIRCUIT's line bends to a ~1.7 km radius right at the finish, and at
+    // Mach 6 the craft slides through it on steering alone: 50 m off its lane 1 km out, 560 m wide at the
+    // line. So the last ~2 s: side thrusters onto the lane, no burner, and off the throttle (braking when
+    // well off it) until it is back. (Your autopilot only: rivals keep their calibrated driving — they may
+    // finish wide.)
+    if (!r.ai && finNear && !c.def.drag) {
+      const off = Math.abs(lane - myLat)
+      if (off > 10) ctl.strafe = THREE.MathUtils.clamp((lane - myLat) / 40, -1, 1)
+      if (off > 30) ctl.burner = false
+      if (off > 60) ctl.boost = false
+      if (off > 160 && p.mach > 2.5) ctl.brake = true
+    }
     // Drag race: dodge on the side thrusters (the burner locks the stick, not the thrusters) — a
     // racer closing in your lane ahead, or one right beside you.
     if (c.def.drag && this.state === 'racing' && this.clock > 8) {
