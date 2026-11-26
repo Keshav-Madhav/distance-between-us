@@ -134,5 +134,29 @@
     "estimated": false,
     "world": 4,
     "order": 1
+  },
+  "icecave": {
+    "level": 0.717,
+    "target": 33.16,
+    "best": null,
+    "estimated": true,
+    "world": 1,
+    "order": 3
+  },
+  "magma": {
+    "level": 0.595,
+    "target": 34.43,
+    "best": null,
+    "estimated": true,
+    "world": 2,
+    "order": 3
+  },
+  "whitewater": {
+    "level": 0.758,
+    "target": 33.04,
+    "best": null,
+    "estimated": true,
+    "world": 3,
+    "order": 3
   }
 }
