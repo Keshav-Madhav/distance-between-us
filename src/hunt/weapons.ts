@@ -97,7 +97,8 @@ export class Rounds {
   shift(dx: number, dz: number): void { for (const r of this.items) if (r.on) { r.pos.x += dx; r.pos.z += dz; r.prev.x += dx; r.prev.z += dz } }
 }
 
-export const CANNON = { rate: 12, speed: 2600, life: 0.9, heatMax: 3, lockout: 1.2, cool: 1.5, assistDeg: 2 }
+// (assistDeg was 2: on the keys the nose spent ~3% of a fight inside it. 4.5° makes a steady pass pay.)
+export const CANNON = { rate: 12, speed: 2600, life: 0.9, heatMax: 3, lockout: 1.2, cool: 1.5, assistDeg: 4.5 }
 
 export class Cannon {
   heat = 0
@@ -132,7 +133,9 @@ export class Cannon {
   reset(): void { this.heat = 0; this.lockout = 0; this.cd = 0 }
 }
 
-export const MISSILE = { rack: 6, reload: 3, boxDeg: 16, lockTime: 0.3, maxLocks: 4, arm: 250, life: 6, accel: 600, extra: 900, turn: 2.4, dmg: 2, radius: 22, ripple: 0.1 }
+// One lock, one Dart (3 HP): at dmg 2 a missile only wounded one — the payoff of a lock was a miss.
+// Lancers and interceptors (6 HP) still take two, or one up the engine.
+export const MISSILE = { rack: 6, reload: 3, boxDeg: 16, lockTime: 0.3, maxLocks: 4, arm: 250, life: 6, accel: 600, extra: 900, turn: 2.4, dmg: 3, radius: 22, ripple: 0.1 }
 
 export interface Missile { on: boolean; pos: THREE.Vector3; prev: THREE.Vector3; vel: THREE.Vector3; target: Target | null; life: number; travelled: number }
 

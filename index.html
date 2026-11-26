@@ -491,7 +491,8 @@
   /* Round 3 critique. */
   body.flying #score .sub { background: none; text-shadow: 0 1px 3px #000, 0 0 10px rgba(0,0,0,0.7); }
   body.flying #mach .num { font-size: 44px; }
-  body.flying #tip { bottom: 22vh; }
+  /* (Flying, a tip low on the left above the hull and craft: centred at the top it sat over the reticle for the first ~40 s of a hunt.) */
+  body.flying #tip { top: auto; bottom: calc(5.5vh + 64px); left: 4vw; right: auto; margin-inline: 0; max-width: min(420px, 40vw); }
   /* (Solid dark panels: the old fades washed out over bright skies and snow.) */
   #race > div { background: rgba(8,10,14,0.62); border-top: 1px solid rgba(255,255,255,0.16); border-radius: 4px; padding: 4px 12px; }
   body.world-lava .etag, body.world-lava .etag i { color: #8ef0ff; border-top-color: #5fe6ff; filter: drop-shadow(0 0 4px #5fe6ff); }

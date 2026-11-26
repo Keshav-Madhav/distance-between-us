@@ -2,7 +2,8 @@
 // Flights of 3–5 in a V behind a leader. Real flight — a velocity, a top speed, a turn-rate limit —
 // never steered in your frame. The leader pursues you; wingmen hold their slots. Each fires 3-round
 // bursts when you are in its 10° front cone; shot at, it breaks hard for a moment. It keeps clear of
-// the ground and rock. Left far behind, it turns back (pursuit) rather than vanishing.
+// the ground and rock. Past you, it turns straight back for you (pure pursuit); left far behind, it
+// runs a good deal faster than its band to close (a fight with nobody in it was the old failure).
 // 3 HP; hits from behind (the engine, a 60° rear cone) count double.
 import * as THREE from 'three'
 import { MACH } from '../config'
@@ -54,6 +55,10 @@ export class Dart implements Target {
   beamHit = false
   lockT = 0
   special = 3
+  /** A straggler the game has called in (src/main.ts): it stops holding formation and runs you down. */
+  commit = false
+  /** The weave's clock while you are on its tail. */
+  jinkT = 0
   hit(dmg: number, dir: THREE.Vector3): void {
     if (!this.alive) return
     const fwd = _a.copy(this.vel).normalize()
@@ -138,7 +143,7 @@ export class Darts {
     const lead = free[0]
     free.forEach((d, i) => {
       d.kind = kind; d.charge = 0; d.beamT = 0; d.lockT = 0; d.special = 3 + Math.random() * 2
-      d.alive = true; d.dummy = false; d.killed = false; d.hp = KINDS[kind].hp; d.breakT = 0; d.burstLeft = 0; d.fireCd = 1.5 + Math.random() * 2
+      d.alive = true; d.dummy = false; d.killed = false; d.commit = false; d.hp = KINDS[kind].hp; d.breakT = 0; d.burstLeft = 0; d.fireCd = 1.5 + Math.random() * 2
       d.leader = i === 0 || kind !== 'dart' ? null : lead
       const k = Math.ceil(i / 2), side = i % 2 ? 1 : -1
       d.slot.set(side * 70 * k, 0, -60 * k)
@@ -157,7 +162,7 @@ export class Darts {
       // Where it wants to go.
       const want = _b
       if (d.breakT > 0) { d.breakT -= dt; want.copy(d.breakDir) }
-      else if (d.leader?.alive) {
+      else if (d.leader?.alive && !d.commit) {
         // Hold the slot: a point beside and behind the leader, in the leader's frame.
         const lf = _c.copy(d.leader.vel).normalize()
         const lr = new THREE.Vector3().crossVectors(lf, UP).normalize()
@@ -171,8 +176,23 @@ export class Darts {
         // Get on your tail: a point behind you.
         want.copy(me.pos).addScaledVector(me.fwd, -500).addScaledVector(me.vel, 0.6).sub(d.pos).normalize()
       } else {
-        // Pursue: aim a little ahead of where you will be.
-        want.copy(me.pos).addScaledVector(me.vel, 0.8).sub(d.pos).normalize()
+        const to = _c.subVectors(me.pos, d.pos), dist = to.length()
+        const behind = to.dot(fwd) < 0
+        // You on its tail, nose on it: it weaves, gently, rather than reversing on the spot — a tail chase
+        // has to be winnable (a hard jink at its full turn put it ~65 m off any lead in a round's flight),
+        // and a hit makes it break anyway. After ~5 s of it, it reverses into you (it outran a pilot off
+        // the throttle for minutes).
+        const chased = behind && dist < 3000 && -to.dot(me.fwd) > dist * 0.82
+        if (!behind) d.jinkT = 0
+        if (chased && d.jinkT < 5) {
+          d.jinkT += dt
+          want.copy(fwd).addScaledVector(_s.crossVectors(fwd, UP).normalize(), 0.3 * Math.sin(d.jinkT * 0.8)).normalize()
+        } else {
+          // Pursue: aim a little ahead of where you will be — but once you are behind it (just after a
+          // pass) or it has been called in, straight at you: the lead point then lies even further back
+          // and it came round late and wide.
+          want.copy(me.pos).addScaledVector(me.vel, behind || d.commit ? 0 : 0.8).sub(d.pos).normalize()
+        }
       }
       // Keep clear of the ground and rock ahead.
       const look = d.vel.length() * 1.2
@@ -185,15 +205,19 @@ export class Darts {
       const K = KINDS[d.kind]
       const maxTurn = K.turn * dt * (d.breakT > 0 ? 1.4 : 1)
       const before = fwd.clone()
-      if (ang > 1e-5) fwd.lerp(want, Math.min(1, maxTurn / ang)).normalize()
+      turnToward(fwd, want, ang, maxTurn)
       // Bank into the turn (for drawing).
       const turnSide = before.cross(fwd).y
       d.bank += (THREE.MathUtils.clamp(-turnSide * 40, -1.2, 1.2) - d.bank) * Math.min(1, dt * 4)
       // Speed: keep up with you, within its band.
       // Their own speed (mid band), a little more to keep formation or close a long gap — not yours:
       // matching it tethered every fight (you could never extend away or line up a clean pass).
-      const far = d.pos.distanceTo(me.pos) > 4500 ? 0.25 : 0
-      const target = THREE.MathUtils.clamp(((K.minMach + K.maxMach) / 2 + far + (d.leader ? 0.08 : 0)) * MACH, K.minMach * MACH, K.maxMach * MACH)
+      // Far off (past 3 km) or called in: up to +0.6 Mach past the top of its band, to close the gap.
+      // (+0.25 from 4.5 km, inside the band: after a pass they closed at ~155 m/s from 13 km.)
+      // (Called in, from 1.5 km: closer than that, a Dart 0.6 Mach faster than its band only overshoots.)
+      const dist = d.pos.distanceTo(me.pos)
+      const far = 0.6 * (d.commit ? THREE.MathUtils.smoothstep(dist, 1500, 2500) : THREE.MathUtils.smoothstep(dist, 3000, 4500))
+      const target = THREE.MathUtils.clamp(((K.minMach + K.maxMach) / 2 + far + (d.leader ? 0.08 : 0)) * MACH, K.minMach * MACH, (K.maxMach + far) * MACH)
       const sp = d.vel.length() + THREE.MathUtils.clamp(target - d.vel.length(), -150 * dt, 120 * dt)
       d.vel.copy(fwd).multiplyScalar(sp)
       d.pos.addScaledVector(d.vel, dt)
@@ -341,6 +365,18 @@ export class Darts {
     for (const d of this.list) if (d.alive) { d.pos.x += dx; d.pos.z += dz; d.prev.x += dx; d.prev.z += dz }
     for (const m of this.seekers) if (m.on) { m.pos.x += dx; m.pos.z += dz; m.prev.x += dx; m.prev.z += dz }
   }
+}
+
+/** Swing unit vector fwd toward want by at most maxTurn (rad); ang is the angle between them. A true
+ *  rotation: lerping two near-opposite vectors barely turned at all — a Dart just past you flew on
+ *  for seconds before it began to come round. Dead astern it turns level, about the world's up. */
+const _ax = new THREE.Vector3()
+function turnToward(fwd: THREE.Vector3, want: THREE.Vector3, ang: number, maxTurn: number): void {
+  if (ang < 1e-5) return
+  if (maxTurn >= ang) { fwd.copy(want); return }
+  _ax.crossVectors(fwd, want)
+  if (_ax.lengthSq() < 1e-6) { _ax.copy(UP); if (Math.abs(fwd.y) > 0.95) _ax.set(1, 0, 0) }
+  fwd.applyAxisAngle(_ax.normalize(), maxTurn).normalize()
 }
 
 /** Merge non-indexed position-only geometries. */

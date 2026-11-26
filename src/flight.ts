@@ -28,10 +28,20 @@ export const FLIGHT = {
   /** Speed change toward the target (m/s²): up, and down. */
   accel: 140,
   decel: 220,
-  /** Pitch rate (rad/s) at corner speed (Mach 1.4–2.6), falling to `pitchFast` at Mach 5. */
+  /** Pitch and turn rate (rad/s) by Mach: a corner speed. Slow is sluggish (0.7 at Mach 1.1), the
+   *  best turn is at Mach 2.2–2.6 (1.1, around cruise), fast is wide again (0.75 at Mach 5).
+   *  (It was flat 1.05 from the floor speed to Mach 2.6: slowest always turned best, so holding the air
+   *  brake and pulling beat everything — the answer to every fight.) */
   // (Calmer than the plan's 1.5 / 3.6: at those a key tap swung 120° a second — "too difficult".)
-  pitchRate: 1.05,
-  pitchFast: 0.7,
+  rateCurve: [[0.9, 0.62], [1.1, 0.7], [2.2, 1.1], [2.6, 1.1], [5, 0.75], [6.2, 0.68]] as [number, number][],
+  /** The air brake's snap: a burst of extra rate for the first moments of a press, then nothing — a
+   *  move to time, not a state to hold. */
+  brakeSnap: 1.3,
+  brakeSnapTime: 0.5,
+  /** Rock: no damage below this speed into the face (m/s) — a scrape slides along it; above, the
+   *  damage grows with the impact. After any hit, a grace before rock can hurt again. */
+  rockSafe: 250,
+  rockGrace: 1.2,
   rollRate: 2.6,
   yawRate: 0.35,
   /** How fast the velocity swings onto the nose (1/s): low slides, high is rails. */
@@ -103,6 +113,10 @@ export class FlightCraft {
   private rates = new THREE.Vector3()
   /** Manual roll suspends the auto-bank for a moment after release. */
   private manualT = 0
+  /** How long the air brake has been held (the snap is its first moments). */
+  private brakeT = 0
+  /** Rock can't hurt again until this runs out (s). */
+  rockGrace = 0
   /** Events for the game: hits (damage), ground scrapes. */
   onHit: ((dmg: number, kind: 'ground' | 'rock') => void) | null = null
   private readonly obs: Obstacle[] = []
@@ -138,6 +152,8 @@ export class FlightCraft {
     this.energy = FLIGHT.energyMax
     this.hull = 100
     this.ghost = 0
+    this.rockGrace = 0
+    this.brakeT = 0
     this.rates.set(0, 0, 0)
     this.topMach = 0
   }
@@ -184,9 +200,12 @@ export class FlightCraft {
       turnIn = THREE.MathUtils.clamp(dh * 3, -1, 1)
       pitchIn = THREE.MathUtils.clamp((Math.asin(THREE.MathUtils.clamp(c.aim.y, -1, 1)) - Math.asin(THREE.MathUtils.clamp(this.fwd.y, -1, 1))) * 3, -1, 1)
     }
-    const m = this.mach
-    const corner = THREE.MathUtils.clamp((m - 2.6) / (5 - 2.6), 0, 1)
-    const pitchMax = THREE.MathUtils.lerp(F.pitchRate, F.pitchFast, corner) * (c.brake ? 1.25 : 1)
+    this.brakeT = c.brake ? this.brakeT + dt : 0
+    const snap = c.brake && this.brakeT < F.brakeSnapTime ? F.brakeSnap : 1
+    // (FREE ROAM and ORBIT keep their old flat rate and held brake bonus: tuned for touring, not fights.)
+    const pitchMax = this.sandbox || this.unbound
+      ? THREE.MathUtils.lerp(1.05, 0.7, THREE.MathUtils.clamp((this.mach - 2.6) / 2.4, 0, 1)) * (c.brake ? 1.25 : 1)
+      : turnRate(this.mach) * snap
     // (Equal to pitch: at 0.75× a Dart out-turned you on the keys.)
     const turnMax = pitchMax
     // Bank: the world's up seen from the cockpit (+ = rolled right).
@@ -205,9 +224,12 @@ export class FlightCraft {
       d = Math.atan2(Math.sin(d), Math.cos(d))
       rollCmd = THREE.MathUtils.clamp(d * 2.5, -1, 1) * FLY_LEVEL.k // (deep space: nothing to level to)
     }
-    const ease = 1 - Math.exp(-dt * 10)
-    this.rates.x += (pitchIn * pitchMax - this.rates.x) * ease
-    this.rates.y += (turnIn * turnMax - this.rates.y) * ease
+    // Rates build in a tenth of a second but stop in a twenty-fifth: letting go of a turn should stop
+    // the nose where it is (at one easing both ways it carried on ~6° past — the gun never settled).
+    const ease = 1 - Math.exp(-dt * 10), stop = 1 - Math.exp(-dt * 25)
+    const pw = pitchIn * pitchMax, tw = turnIn * turnMax
+    this.rates.x += (pw - this.rates.x) * (Math.abs(pw) < Math.abs(this.rates.x) || pw * this.rates.x < 0 ? stop : ease)
+    this.rates.y += (tw - this.rates.y) * (Math.abs(tw) < Math.abs(this.rates.y) || tw * this.rates.y < 0 ? stop : ease)
     this.rates.z += (rollCmd * F.rollRate - this.rates.z) * ease
     // Turn about the world's up (pre-multiplied: a world-axis rotation); pitch and roll in the craft.
     // Turn about "up" — or, in deep space, about the craft's own vertical (a pure yaw).
@@ -249,7 +271,9 @@ export class FlightCraft {
     } else {
       let target = (c.brake ? F.brakeMach : this.burning ? F.burnerMach : c.throttle || c.burner ? F.throttleMach : F.cruiseMach) * MACH
       target *= 1 - thin * 0.6
-      const up = this.burning ? F.accel * 1.5 : c.throttle || c.burner ? F.accel : F.accel * 0.3
+      // (Off the throttle it recovers at 0.5× — enough to hold a level full-rate turn at cruise, the corner:
+      //  at 0.3× any sustained turn bled you to the floor speed, where the turn is worst.)
+      const up = this.burning ? F.accel * 1.5 : c.throttle || c.burner ? F.accel : F.accel * 0.5
       this.speed += THREE.MathUtils.clamp(target - this.speed, -F.decel * dt * (c.brake ? 1.6 : 0.25), up * dt)
     }
     // Climbing costs, diving gains; turning bleeds a little.
@@ -304,6 +328,10 @@ export class FlightCraft {
     if (this.agl > hard) this.pos.y = g + hard
 
     // ── rock: solid (with height — over a mesa is clear air) ──
+    // A touch slides you along the face: the speed into it is taken away (a little bounce), the nose is
+    // turned to run along the wall, and only a real impact hurts — scaled by the speed into the rock,
+    // then a grace. (It reflected the velocity and took 15 hull a contact, but the nose still pointed
+    // in, so the craft re-scraped every few steps: grinding a wall cost ~60 hull a second.)
     const n = world.near(this.pos.x, this.pos.z, this.pos.y, 30, this.obs)
     for (let i = 0; i < n; i++) {
       const o = this.obs[i]
@@ -313,11 +341,26 @@ export class FlightCraft {
       const nx = dx / d, nz = dz / d
       this.pos.x = o.x + nx * (o.cr + 6); this.pos.z = o.z + nz * (o.cr + 6)
       const vn = this.vel.x * nx + this.vel.z * nz
-      if (vn < 0) { this.vel.x -= nx * vn * 1.6; this.vel.z -= nz * vn * 1.6; this.speed *= vn < -this.speed * 0.6 ? 0.5 : 0.85 }
-      if (this.ghost <= 0) this.hurt(vn < -this.speed * 0.6 ? 35 : 15, 'rock')
+      if (vn < 0) {
+        this.vel.x -= nx * vn * 1.2; this.vel.z -= nz * vn * 1.2
+        this.speed = Math.max(F.floorMach * MACH, this.speed * (1 - 0.55 * Math.min(1, -vn / Math.max(1, this.speed))))
+      }
+      // The nose off the face: along the wall, a few degrees out.
+      const fn = this.fwd.x * nx + this.fwd.z * nz
+      if (fn < 0.06) {
+        _w.copy(this.fwd); _w.x += nx * (0.06 - fn); _w.z += nz * (0.06 - fn); _w.normalize()
+        _q.setFromUnitVectors(this.fwd, _w); this.quat.premultiply(_q).normalize(); this.axes()
+      }
+      const impact = -vn
+      if (impact > F.rockSafe && this.ghost <= 0 && this.rockGrace <= 0) {
+        // ~10 at a 20° glance at cruise, ~35 head-on at Mach 2.4, 45 at most.
+        this.hurt(Math.min(45, 6 + (impact - F.rockSafe) * 0.05), 'rock')
+        this.rockGrace = F.rockGrace
+      }
     }
 
     this.ghost = Math.max(0, this.ghost - dt)
+    this.rockGrace = Math.max(0, this.rockGrace - dt)
     this.sinceHurt += dt
     if (this.sinceHurt > 4) this.hull = Math.min(100, this.hull + 4 * dt)
   }
@@ -366,6 +409,14 @@ export class FlightCraft {
     this.pos.x += dx; this.pos.z += dz
     this.prev.x += dx; this.prev.z += dz
   }
+}
+
+/** Pitch / turn rate (rad/s) at Mach m: FLIGHT.rateCurve, linear between its points. */
+export function turnRate(m: number): number {
+  const C = FLIGHT.rateCurve
+  if (m <= C[0][0]) return C[0][1]
+  for (let i = 1; i < C.length; i++) if (m <= C[i][0]) return THREE.MathUtils.lerp(C[i - 1][1], C[i][1], (m - C[i - 1][0]) / (C[i][0] - C[i - 1][0]))
+  return C[C.length - 1][1]
 }
 
 /** The flight camera: behind and above along nose and travel, horizon mostly level. */

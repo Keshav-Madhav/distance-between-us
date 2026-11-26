@@ -18,7 +18,7 @@ import { Shards } from './shards'
 import { Rings } from './rings'
 import { Tips } from './tips'
 import { markCasters, SunShadow } from './shadow'
-import { CANNON, Cannon, interceptT, Missiles, Rounds, segDist, type Target } from './hunt/weapons'
+import { CANNON, Cannon, interceptT, MISSILE, Missiles, Rounds, segDist, type Target } from './hunt/weapons'
 import { KINDS, Darts, type Kind } from './hunt/enemies'
 import { Sound } from './audio'
 import { Input } from './input'
@@ -979,7 +979,7 @@ function huntCombatStep(): void {
   const nt = noseTarget()
   cannon.step(STEP, fireGun && !player.dead, flight, nt, rounds)
   if (cannon.fired) { if (Math.random() < 0.5) sound.pulse(); cannon.fired = 0 }
-  missiles.step(STEP, fireMsl && !player.dead, flight, darts.list, (m, t) => { t.hit(2, tmp3.copy(m.vel).normalize()); sound.hit(true) })
+  missiles.step(STEP, fireMsl && !player.dead, flight, darts.list, (m, t) => { t.hit(MISSILE.dmg, tmp3.copy(m.vel).normalize()); sound.hit(true) })
   darts.step(STEP, flight, rounds, (x, z, r) => world.topAt(x, z, r))
   darts.stepSeekers(STEP, flight)
   // Being locked: a tone that quickens as the lock builds.
@@ -1026,9 +1026,19 @@ function huntCombatStep(): void {
       if (close < 300) { sound.whoosh(Math.min(1, 90 / Math.max(close, 15)), side > 0 ? 0.8 : -0.8); if (close < 60) shake(0.15) }
     }
   }
+  // A wave never stalls, and never stacks: after 45 s its stragglers are called in (they leave formation
+  // and run you down, fast); after 70 s any still more than 3 km out break off and are gone. Then the
+  // next wave comes as usual. (After 75 s the next wave used to come on top of the survivors: alive
+  // counts climbed to the pool's 16.)
+  if (directorOn && waveAge > 45) {
+    for (const d of darts.list) {
+      if (!d.alive || d.dummy) continue
+      d.commit = true
+      if (waveAge > 70 && d.pos.distanceTo(flight.pos) > 3000) { d.alive = false; pop(`${d.kind.toUpperCase()} BROKE OFF`) }
+    }
+  }
   // The run: six waves, each a mix, sent when the last is down; after the sixth, the hunt is won.
-  // (A wave never stalls: after 75 s the next comes anyway — a straggler that wandered off held up the run.)
-  if ((darts.alive === 0 || (waveAge > 75 && huntWave < HUNT_WAVES.length)) && directorOn && !huntDone) {
+  if (darts.alive === 0 && directorOn && !huntDone) {
     waveT -= STEP
     if (waveT <= 0) {
       if (huntWave >= HUNT_WAVES.length) { huntDone = true; setTimeout(() => showHuntOver(true), 1600); flash('HUNT COMPLETE'); sound.fanfare(true); return }
@@ -1036,9 +1046,10 @@ function huntCombatStep(): void {
       const w = HUNT_WAVES[huntWave++]
       const h = Math.atan2(flight.fwd.x, flight.fwd.z)
       for (const [kind, n] of w.groups) {
-        // Darts and lancers come from ahead; interceptors from behind.
+        // Darts and lancers come from ahead, 3–4 km out and inside the view (at 7 km and ±26° they were
+        // a dot off-screen, then past you); interceptors from behind.
         const behind = kind === 'interceptor'
-        darts.spawnFlight(n, flight.pos, h + (behind ? Math.PI : 0) + (Math.random() - 0.5) * 0.9, behind ? 5000 : 7000, flight.pos, kind)
+        darts.spawnFlight(n, flight.pos, h + (behind ? Math.PI : 0) + (Math.random() - 0.5) * (behind ? 0.9 : 0.5), behind ? 4500 : 3000 + Math.random() * 1000, flight.pos, kind)
       }
       flash(`WAVE ${huntWave} / ${HUNT_WAVES.length}`)
       if (w.note) { warn(w.note[0], w.note[1]); warnT = 2.5 }
@@ -1046,6 +1057,49 @@ function huntCombatStep(): void {
       waveT = 3.5
     }
   }
+}
+/**
+ * HUNT's spawn, and a lost craft's respawn: airborne, 800 m over open ground, at a point with ~9 km of
+ * clear air ahead (World.topAt) and outside the world's gorge — searched outward from (x0, z0), the
+ * nearest first, the given heading first. (Runs began at the race's start line 40 m up, aimed down the
+ * course: on the sprint the canyon walls took a hit at t=0 and a craft ~6 s in; respawns came back 600 m
+ * up, still inside the canyon's bowl.)
+ */
+const SPAWN_ALT = 800
+const spawnAt = new THREE.Vector3()
+function huntSpawn(x0: number, z0: number, h0: number, awayFromCourse = true): void {
+  const clearAhead = (x: number, z: number, h: number): boolean => {
+    const y = groundH(x, z) + SPAWN_ALT
+    // 9 km: the first ten seconds flown straight at cruise. (Clutter past ~3 km is still sunk at this
+    // point, so the far end mostly answers for the big mesas and the gorge.)
+    for (let s = 0; s <= 9000; s += 300) {
+      const px = x + Math.sin(h) * s, pz = z + Math.cos(h) * s
+      if (world.topAt(px, pz, 250) > y - 300) return false
+      // (In HUNT the gorge is always there; its walls stand far higher than the ground under them says —
+      //  the desert's plateau is 840 m up, and its outer face is a wall too.)
+      if (canyon) { const a = canyon.across(px, pz); if (Math.abs(a.lat) < a.half + canyon.st.outer + 1500) return false }
+    }
+    return true
+  }
+  for (const r of [0, 4000, 8000, 12000, 16000]) {
+    for (let k = 0; k < (r ? 8 : 1); k++) {
+      const a = h0 + (k * Math.PI) / 4
+      const x = x0 + Math.sin(a) * r, z = z0 + Math.cos(a) * r
+      // A run starts away from the race line too: the open world, not the course.
+      if (awayFromCourse && course.distance(x, z) < 1500) continue
+      // Raise the landforms round this spot before asking about them (they sink with distance from the view).
+      world.update(spawnAt.set(x, groundH(x, z) + SPAWN_ALT, z), time)
+      for (let j = 0; j < 8; j++) {
+        const h = h0 + (j % 2 ? -1 : 1) * Math.ceil(j / 2) * (Math.PI / 4)
+        if (!clearAhead(x, z, h)) continue
+        flight.reset(x, z, h, SPAWN_ALT, FLIGHT.cruiseMach)
+        return
+      }
+    }
+  }
+  // Nowhere clear (never seen): high over where you were — above any wall or rim.
+  flight.reset(x0, z0, h0, 1500, FLIGHT.cruiseMach)
+  world.update(flight.pos, time)
 }
 let autoFire = false
 let huntDone = false
@@ -1303,7 +1357,7 @@ const flashEl = $('#flash')
 const warnEl = $('#warn')
 const hintsEl = $('#hints')
 const RACE_HINTS = hintsEl.innerHTML
-const FLY_HINTS = ['<b>SPACE</b>CANNON · <b>F</b> HOLD TO LOCK, RELEASE TO FIRE MISSILES', '<b>A D · ← →</b>TURN (THE CRAFT BANKS ITSELF)', '<b>W S · ↑ ↓</b>NOSE DOWN · PULL UP', '<b>Q E</b>ROLL', '<b>SHIFT</b>THROTTLE · <b>C</b> AIR BRAKE', '<b>RINGS</b>FLY THROUGH THE GLOWING ONE'].map((h) => `<div>${h}</div>`).join('')
+const FLY_HINTS = ['<b>SPACE</b>CANNON · <b>F</b> HOLD TO LOCK, RELEASE TO FIRE MISSILES', '<b>A D · ← →</b>TURN (THE CRAFT BANKS ITSELF)', '<b>W S · ↑ ↓</b>NOSE DOWN · PULL UP', '<b>Q E</b>ROLL', '<b>SHIFT</b>THROTTLE · <b>C</b> AIR BRAKE'].map((h) => `<div>${h}</div>`).join('')
 const debugEl = $('#debug')
 const raceEl = $('#race')
 const standEl = $('#stand')
@@ -1997,13 +2051,15 @@ function startHunt(): void {
   combat.reset()
   // Phase 1 of the flight rework: free flight through rings; the drones come back as phase 2.
   combat.enabled = false
-  flight.reset(player.pos.x, player.pos.z, player.heading, 40, 2)
+  // The open world: no course, no course-placed landforms (see World.courseRocks).
+  world.courseOn = false; course.group.visible = false
+  // Up in clear air, away from the start line (see huntSpawn), with a moment's grace.
+  huntSpawn(player.pos.x, player.pos.z, player.heading)
+  flight.ghost = 2
   flight.syncTo(player)
   fcam.snap()
   // (The rings were phase 1's sandbox; the hunt is the waves now. tools/flight.mjs still lays them.)
   rings.hide()
-  // The open world: no course, no course-placed landforms (see World.courseRocks).
-  world.courseOn = false; course.group.visible = false
   rings.passed = 0; rings.missed = 0; rings.sets = 0
   rounds.clear(); cannon.reset(); missiles.reset(); darts.clear(); waveT = 3; huntWave = 0; kills = 0; huntDone = false; craftLeft = 3; chain = 1; chainT = 0; waveAge = 0
   hintsEl.innerHTML = FLY_HINTS
@@ -2840,8 +2896,7 @@ function simStep(): void {
       if (craftLeft > 0) {
         fx.explosion(flight.pos.x, flight.pos.y, flight.pos.z, flight.vel.x * 0.4, flight.vel.y * 0.4, flight.vel.z * 0.4, 2.2)
         sound.death(); shake(0.8)
-        const h = Math.atan2(flight.fwd.x, flight.fwd.z)
-        flight.reset(flight.pos.x, flight.pos.z, h, 600, 2.4)
+        huntSpawn(flight.pos.x, flight.pos.z, Math.atan2(flight.fwd.x, flight.fwd.z), false)
         flight.ghost = 3
         flight.syncTo(player)
         fcam.snap()
@@ -2899,6 +2954,8 @@ function simStep(): void {
  *  (↑ = nose down, as on a stick; "Invert flight pitch" in settings), Q/E roll, Shift boost;
  *  pad — left stick fly, right stick roll, triggers throttle / brake, X boost. */
 let fTurn = 0, fPitch = 0
+/** The keys' last direction and how long it has been held (the precision band). */
+let fTurnWant = 0, fPitchWant = 0, fTurnHeld = 0, fPitchHeld = 0
 function readFlight(): void {
   const k = (c: string) => input.isDown(c)
   // HUNT keys: W/S (and ↑/↓) pitch like a stick, A/D turn, Q/E roll, Shift throttle, C air brake (never Ctrl: Ctrl+W closes the tab).
@@ -2906,22 +2963,30 @@ function readFlight(): void {
   fc.roll = (k('KeyE') ? 1 : 0) - (k('KeyQ') ? 1 : 0)
   let turn = (k('KeyD') || k('ArrowRight') ? 1 : 0) - (k('KeyA') || k('ArrowLeft') ? 1 : 0)
   let pitch = ((k('ArrowDown') || k('KeyS') ? 1 : 0) - (k('ArrowUp') || k('KeyW') ? 1 : 0)) * (invertPitch ? -1 : 1)
+  let padTurn = false, padPitch = false
   const pads = navigator.getGamepads ? navigator.getGamepads() : []
   for (const p of pads) {
     if (!p) continue
     const dz = (v: number) => (Math.abs(v) < 0.12 ? 0 : (v - Math.sign(v) * 0.12) / 0.88)
     const ax = dz(p.axes[0] ?? 0), ay = dz(p.axes[1] ?? 0)
-    if (ax) turn = ax
-    if (ay) pitch = ay * (invertPitch ? -1 : 1) // stick back (down on the pad's y) pulls up
+    if (ax) { turn = ax; padTurn = true }
+    if (ay) { pitch = ay * (invertPitch ? -1 : 1); padPitch = true } // stick back (down on the pad's y) pulls up
     if ((p.buttons[7]?.value ?? 0) > 0.3) fc.throttle = true
     if ((p.buttons[6]?.value ?? 0) > 0.3) fc.brake = true
     if (p.buttons[2]?.pressed) fc.burner = true
     const rx = dz(p.axes[2] ?? 0)
     if (rx) fc.roll = rx
   }
-  // Keys ramp in (a tap is a nudge, a hold a full turn).
-  fTurn += THREE.MathUtils.clamp(turn - fTurn, -STEP * 6, STEP * 6)
-  fPitch += THREE.MathUtils.clamp(pitch - fPitch, -STEP * 6, STEP * 6)
+  // Keys: a precision band, then the full rate — the first ~0.2 s of a press is ~0.3× (a tap nudges the
+  // nose onto a target), then it ramps to full by ~0.4 s. Letting go stops at once (~20/s).
+  // (It ramped in and out at 6/s: a released full-rate turn carried the nose ~10° on, and only 3% of a
+  //  fight was spent inside the gun's 2°.) A stick is already proportional: no band.
+  const band = (v: number, held: number) => (v === 0 ? 0 : held < 0.2 ? v * 0.3 : v * Math.min(1, 0.3 + (held - 0.2) * 3.5))
+  if (!padTurn) { fTurnHeld = turn !== 0 && Math.sign(turn) === Math.sign(fTurnWant) ? fTurnHeld + STEP : 0; fTurnWant = turn; turn = band(turn, fTurnHeld) }
+  if (!padPitch) { fPitchHeld = pitch !== 0 && Math.sign(pitch) === Math.sign(fPitchWant) ? fPitchHeld + STEP : 0; fPitchWant = pitch; pitch = band(pitch, fPitchHeld) }
+  const toward = (f: number, v: number) => f + THREE.MathUtils.clamp(v - f, -STEP * (Math.abs(v) < Math.abs(f) || v * f < 0 ? 20 : 8), STEP * (Math.abs(v) < Math.abs(f) || v * f < 0 ? 20 : 8))
+  fTurn = toward(fTurn, turn)
+  fPitch = toward(fPitch, pitch)
   fc.turn = fTurn; fc.pitch = fPitch
   // (HUNT is keyboard and pad only: no mouse steering.)
   fc.aim = null
@@ -3680,7 +3745,8 @@ function updateHud(dt: number, slow: boolean): void {
   // The afterburner: say plainly that the steering is locked, and say it louder if you try to turn.
   const bn = $('#burn')
   const fighting = player.burning && Math.abs(player.steerWant) > 0.3
-  bn.style.display = player.burning && !(mode === 'free' && freeAir) ? 'block' : 'none'
+  // (Not in the air: HUNT's Shift is a throttle and steering stays free.)
+  bn.style.display = player.burning && mode !== 'hunt' && !(mode === 'free' && freeAir) ? 'block' : 'none'
   setCls(bn, fighting ? 'fight' : '')
   setHtml(bn, fighting ? 'RELEASE <b>SHIFT</b> TO TURN' : 'AFTERBURNER · <b>STEERING LOCKED</b>')
   // In a wake: the camera shakes with it.
