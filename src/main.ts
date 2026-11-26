@@ -3,7 +3,7 @@
 import '@fontsource/chakra-petch/400.css'
 import '@fontsource/chakra-petch/700.css'
 import * as THREE from 'three'
-import { DETAIL_U } from './shaders'
+import { DETAIL_U, patchStandard } from './shaders'
 import { Canyon, WATER_T } from './canyon'
 import { FullScreenQuad } from 'three/addons/postprocessing/Pass.js'
 import { CFG, MACH, REBASE } from './config'
@@ -439,7 +439,18 @@ function gorgeWall(base: number, glow: [number, number, number], emissive = 0x00
   return m
 }
 const wallMat = !canyon ? null : canyon.style === 'ice' ? gorgeWall(0x5b86b8, [0.3, 0.7, 1.4], 0x0a1c33) : canyon.style === 'lava' ? gorgeWall(0x1d1816, [4.5, 1.4, 0.25]) : world.mesaMat!
-const canyonMesh = canyon ? canyon.build(wallMat!, canyon.style === 'ice' ? { roofMat: caveRoof } : {}) : null
+// The land's gentlest faces in the world's own rock — the glacier's top in its snow, the lava plateau's flats
+// in its ash — smooth-shaded (the world's landforms are faceted: across km of ground, facets read as card);
+// the roof's ice from above in the world's own; the glacier's cliffs outside the cave in a paler ice.
+function smoothTop(): THREE.Material {
+  const m = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: BIOME === 'ice' ? 0.3 : 0.85, metalness: 0 })
+  patchStandard(m, BIOME === 'ice' ? { ice: true, shadow: true, detail: true } : { lava: true, shadow: true, detail: true })
+  return m
+}
+const canyonMesh = !canyon ? null : canyon.style === 'ice' ? canyon.build(wallMat!, { roofMat: caveRoof, topMat: smoothTop(), roofTopMat: world.mesaMat!, cliffMat: gorgeWall(0xa9c6e2, [0.25, 0.6, 1.2], 0x24466e) })
+  // (The plateau's own cliffs in a basalt a shade lighter than the gorge's: black against the ash they read
+  //  as cut-out wedges.)
+  : canyon.build(wallMat!, canyon.style === 'lava' ? { topMat: smoothTop(), cliffMat: gorgeWall(0x55423a, [4.5, 1.4, 0.25], 0x1e120d) } : {})
 if (canyon && canyonMesh) { world.canyon = canyon; world.group.add(canyonMesh) }
 // The polar world's set pieces: glaciers, seracs and spike fields placed close beside the line
 // (150–400 m off its edge), so the race threads past the ice instead of seeing it on the horizon.
@@ -1073,14 +1084,14 @@ const spawnRocks: number[] = []
  * (Cheap enough for the mid-fight respawn: the old search ran a whole world.update — every instance buffer
  *  rewritten — at each of up to 33 spots, then 8 headings × 31 samples × every rock in the world: ~130-250
  *  ms when nothing near was clear. Now each spot gathers the rock standing near it once, without touching
- *  what is drawn; a heading tests that short list as segments (exact, no sampling gaps), the ground every
- *  600 m and the gorge every 1.8 km. One world.update, for the spot taken. Typically 1-3 ms, capped at ~8.)
+ *  what is drawn; a heading tests that short list as segments (exact, no sampling gaps), the ground and the
+ *  gorge's land every 600 m. One world.update, for the spot taken. Typically 1-3 ms, capped at ~8.)
  */
 function huntSpawn(x0: number, z0: number, h0: number, awayFromCourse = true): void {
   const RUN = 9000
-  // (In HUNT the gorge is always there; its walls stand far higher than the ground under them says —
-  //  the desert's plateau is 840 m up, and its outer face is a wall too.)
-  const inGorge = (x: number, z: number) => { if (!canyon) return false; const a = canyon.across(x, z); return Math.abs(a.lat) < a.half + canyon.st.outer + 1500 }
+  // (In HUNT the gorge is always there, and its land stands far higher than the ground under it says —
+  //  the desert's massif is over 1 km up: asked of the land itself, ~300 m round the point.)
+  const inGorge = (x: number, z: number, y: number) => !!canyon && canyon.topNear(x, z, 300) > y - 300
   const clearAhead = (x: number, z: number, h: number, y: number): boolean => {
     // 9 km: the first ten seconds flown straight at cruise. (Clutter past ~3 km is still sunk at this
     // point, so the far end mostly answers for the big mesas and the gorge.)
@@ -1092,11 +1103,10 @@ function huntSpawn(x0: number, z0: number, h0: number, awayFromCourse = true): v
       const ex = rx - dx * t, ez = rz - dz * t, R = spawnRocks[k + 2] + 250
       if (ex * ex + ez * ez < R * R) return false
     }
-    // The ground along it, and the gorge (every 1.8 km: its band is at least 3 km across, and off the
-    // gorge each ask is a full search of its line).
+    // The ground along it, and the gorge's land (a few lookups each: as often as the ground).
     for (let s = 600; s <= RUN; s += 600) {
       const px = x + dx * s, pz = z + dz * s
-      if (groundH(px, pz) > y - 300 || (s % 1800 === 0 && inGorge(px, pz))) return false
+      if (groundH(px, pz) > y - 300 || inGorge(px, pz, y)) return false
     }
     return true
   }
@@ -1109,8 +1119,8 @@ function huntSpawn(x0: number, z0: number, h0: number, awayFromCourse = true): v
       const x = x0 + Math.sin(a) * r, z = z0 + Math.cos(a) * r
       // A run starts away from the race line too: the open world, not the course.
       if (awayFromCourse && course.distance(x, z) < 1500) continue
-      if (inGorge(x, z)) continue
       const y = groundH(x, z) + SPAWN_ALT
+      if (inGorge(x, z, y)) continue
       // The landforms as they would stand with the view here (they sink with distance from the view).
       world.standingAround(x, z, RUN, spawnRocks, y - 300)
       for (let j = 0; j < 8; j++) {
@@ -1170,7 +1180,8 @@ scene.add(rings.mesh)
 // FREE ROAM's crystals (src/shards.ts) and the surface the free craft rides (rocks included).
 const shards = new Shards(BIOME === 'ice' ? 0x9fe8ff : BIOME === 'forest' ? 0xc8ff7a : BIOME === 'jungle' ? 0xffe08a : 0xffd36a)
 scene.add(shards.group)
-const surf = (x: number, z: number) => world.surfaceAt(x, z)
+// (At the craft's own height: over BLUE HOLLOW's roof its ice is the ground, under it the floor.)
+const surf = (x: number, z: number) => world.surfaceAt(x, z, freeAir ? flight.pos.y : player.pos.y)
 shards.onTake = (x, y, z, n, done, kind) => {
   sound.chime(n, done)
   for (let i = 0; i < (done ? 40 : 16); i++) {
@@ -2156,6 +2167,8 @@ function startRace(): void {
 function startHunt(): void {
   ;(document.activeElement as HTMLElement | null)?.blur?.() // (see Input: a focused START restarted the run on Space)
   freeOff()
+  // (The gorge's land is ground in the air too: its massif, its plateaus.)
+  if (canyon) flight.ground = (x, z) => world.surfaceAt(x, z, flight.pos.y)
   applyPending()
   runTop = 0
   player.noCollide = false
@@ -3981,7 +3994,8 @@ function frame(now: number): void {
   // BLUE HOLLOW: under the roof the day outside is a glow at the cave mouths, not light on everything — the
   // exposure eases down inside (the lamps, far brighter than the ice, carry the scene).
   {
-    const inCave = canyon && canyon.style === 'ice' && world.canyonOn && canyon.inside(camera.position.x, camera.position.z) && camera.position.y < groundH(camera.position.x, camera.position.z) + 300 ? 1 : 0
+    // (Only its roofed stretches: between them the gorge is open to the sky.)
+    const inCave = canyon && canyon.style === 'ice' && world.canyonOn && canyon.inside(camera.position.x, camera.position.z) && camera.position.y < groundH(camera.position.x, camera.position.z) + 300 && canyon.underRoof(camera.position.x, camera.position.z, camera.position.y) ? 1 : 0
     caveK += (inCave - caveK) * Math.min(1, realDt * 2)
   }
   P.uExposure.value = CFG.post.exposure * (BIOME === 'forest' ? 0.85 : 1) * (1 - 0.62 * caveK)

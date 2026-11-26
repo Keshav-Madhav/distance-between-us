@@ -1571,8 +1571,11 @@ export class World {
    * rock there at its true profile, with a skirt at the foot (wide at the bottom, gone at the top) so
    * a wall is a steep ramp you can drive up, not a cliff you stop against.
    */
-  surfaceAt(x: number, z: number): number {
+  surfaceAt(x: number, z: number, y = Infinity): number {
     let top = groundH(x, z)
+    // The gorge's land (src/canyon.ts): its own ground — a cliff's foot, not a ramp; `y` the asker's height
+    // (BLUE HOLLOW: over its roof, the roof's ice is ground).
+    if (this.canyon && this.canyonOn) top = Math.max(top, this.canyon.surface(x, z, y))
     for (let wi = 0; wi < this.wrapped.length; wi++) {
       const w = this.wrapped[wi]
       for (const it of w.items) {
@@ -1605,6 +1608,7 @@ export class World {
   /** The highest rock top within r of (x, z) (the ground if none): rings and flight clear it. */
   topAt(x: number, z: number, r: number): number {
     let top = groundH(x, z)
+    if (this.canyon && this.canyonOn) top = Math.max(top, this.canyon.topNear(x, z, r))
     for (const w of this.wrapped) for (const it of w.items) {
       if (it.grow < 0.03) continue
       const reach = r + it.r * 1.8
