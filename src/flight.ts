@@ -119,6 +119,13 @@ export class FlightCraft {
   rockGrace = 0
   /** Events for the game: hits (damage), ground scrapes. */
   onHit: ((dmg: number, kind: 'ground' | 'rock') => void) | null = null
+  /** FREE ROAM's damage is the game's (main.ts): when set, a rock contact is reported here — the speed
+   *  into the face (m/s), its normal, and whether it was solid (a landform or a gorge wall, not a
+   *  boulder) — instead of HUNT's damage. */
+  onRock: ((impact: number, nx: number, nz: number, solid: boolean) => void) | null = null
+  /** This step met the ground (it was put back on it), and the velocity it came in with. */
+  groundHit = false
+  readonly impactVel = new THREE.Vector3()
   private readonly obs: Obstacle[] = []
   /** The surface under the craft (FREE ROAM: World.surfaceAt, so a mesa top is ground). */
   ground: (x: number, z: number) => number = groundH
@@ -317,7 +324,9 @@ export class FlightCraft {
         }
       }
     }
+    this.groundHit = this.agl < 3
     if (this.agl < 3) {
+      this.impactVel.copy(this.vel)
       const descent = -this.vel.y
       this.pos.y = g + 3
       if (this.vel.y < 0) this.vel.y = 0
@@ -343,7 +352,9 @@ export class FlightCraft {
       const vn = this.vel.x * nx + this.vel.z * nz
       if (vn < 0) {
         this.vel.x -= nx * vn * 1.2; this.vel.z -= nz * vn * 1.2
-        this.speed = Math.max(F.floorMach * MACH, this.speed * (1 - 0.55 * Math.min(1, -vn / Math.max(1, this.speed))))
+        // (FREE ROAM: a graze — under 300 m/s into the face — only scrapes a little speed off.)
+        const k = this.onRock && -vn < 300 ? 0.08 : 0.55 * Math.min(1, -vn / Math.max(1, this.speed))
+        this.speed = Math.max(F.floorMach * MACH, this.speed * (1 - k))
       }
       // The nose off the face: along the wall, a few degrees out.
       const fn = this.fwd.x * nx + this.fwd.z * nz
@@ -352,7 +363,8 @@ export class FlightCraft {
         _q.setFromUnitVectors(this.fwd, _w); this.quat.premultiply(_q).normalize(); this.axes()
       }
       const impact = -vn
-      if (impact > F.rockSafe && this.ghost <= 0 && this.rockGrace <= 0) {
+      if (this.onRock) { if (impact > 0) this.onRock(impact, nx, nz, o.big || !!o.wall) }
+      else if (impact > F.rockSafe && this.ghost <= 0 && this.rockGrace <= 0) {
         // ~10 at a 20° glance at cruise, ~35 head-on at Mach 2.4, 45 at most.
         this.hurt(Math.min(45, 6 + (impact - F.rockSafe) * 0.05), 'rock')
         this.rockGrace = F.rockGrace

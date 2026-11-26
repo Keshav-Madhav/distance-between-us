@@ -444,22 +444,29 @@ export class Player {
     const slope = (gA - gB) / 40
     const slopeAhead = (gC - gA) / 40
     const ride = g0 + H.hover
-    if (!this.airborne && this.cliffs && slope < -0.7) {
-      // Off the edge of a mesa: keep the height and fall from it.
+    // (Steeper than a landform's skirt, ~1:1.1: the hover rides down a flank and only falls off a real
+    //  face. At −0.7 every skirt was a cliff — a W-only drive spent a third of its time falling.)
+    if (!this.airborne && this.cliffs && slope < -1.4) {
+      // Off the edge of a mesa: keep the height and fall from it. (With no more lift than a crest's
+      // launch: riding up a landform's flank the hover climbs at hundreds of m/s, and kept, that threw
+      // the craft 1.5–2.5 km into the sky off a lip.)
       this.airborne = true
       this.airTime = 0
-      this.vy = Math.max(this.vy, 0)
+      this.vy = THREE.MathUtils.clamp(this.vy, 0, 10 + 2 * m)
       this.onLaunch?.(0)
     }
     if (!this.airborne) {
       const terrainVy = slope * hs
       // Launch: rising, and the ground is about to fall away faster than the ground effect can hold.
       // (The bar rises with speed: at Mach 6 every dune was a ramp and the craft lived in the air.)
-      if (slope > 0.02 && (slope - slopeAhead) * hs > LAUNCH_DV + 0.05 * hs) {
+      // (FREE ROAM — `cliffs` — holds the ground harder: a crest takes half as much again to let go,
+      //  and its hop is low and short, ~1.3 s at Mach 6. Driving W-only, the hover was in the air 40%
+      //  of the time on hops alone.)
+      if (slope > 0.02 && (slope - slopeAhead) * hs > (LAUNCH_DV + 0.05 * hs) * (this.cliffs ? 1.5 : 1)) {
         this.airborne = true
         this.airTime = 0
         // (Toned down: ~3.5 s of air at Mach 11, ~2.5 s at Mach 6.)
-        this.vy = Math.min(terrainVy, 18 + 4 * m)
+        this.vy = Math.min(terrainVy, this.cliffs ? 10 + 2 * m : 18 + 4 * m)
         this.onLaunch?.(this.vy)
       } else {
         const w = H.hoverW
@@ -472,14 +479,15 @@ export class Player {
     }
     if (this.airborne) {
       this.airTime += dt
-      this.vy -= (GRAVITY + (c.brake && this.tumble <= 0 ? 120 : 0)) * dt
+      // (FREE ROAM: falling, the ground effect pulls it down harder — a hop comes back to the ground.)
+      this.vy -= (GRAVITY * (this.cliffs && this.vy < 0 ? 1.8 : 1) + (c.brake && this.tumble <= 0 ? 120 : 0)) * dt
       this.pos.y += this.vy * dt
       // On a ramp's rising face the ground climbs far faster than the launch (~1 km/s at Mach 10
       // against ~75 m/s): it re-landed the next frame, on every course — "sticky to the floor". Riding
       // the face to the crest makes the launch real.
       if (this.pos.y <= ride && this.airTime < 0.8 && slope > 0.01) {
         this.pos.y = ride
-        this.vy = Math.max(this.vy, Math.min(slope * hs, 18 + 4 * m))
+        this.vy = Math.max(this.vy, Math.min(slope * hs, this.cliffs ? 10 + 2 * m : 18 + 4 * m))
       } else if (this.pos.y <= ride) {
         const terrainVy = slope * hs
         // (Against a rising slope at Mach speeds the raw number is hundreds of m/s: it is felt —
@@ -710,8 +718,12 @@ export class Player {
   unwreckable = false
   /** The surface the hover rides (FREE ROAM swaps in World.surfaceAt: up the landforms). */
   ground: (x: number, z: number) => number = groundH
-  /** FREE ROAM: a drop steeper than this is a cliff edge — off it you fly, not slide down the face. */
+  /** FREE ROAM: a drop steeper than a landform's flank is a cliff edge — off it you fall, not slide down the face; hops are lower and fall faster. */
   cliffs = false
+  /** FREE ROAM's damage is the game's (main.ts): when set, a rock hit is reported here — the speed into
+   *  it (m/s), and whether it was solid (a landform or a gorge wall, not a boulder) — and slides along
+   *  instead of wrecking or costing this hull. */
+  onRockFree: ((impact: number, solid: boolean) => void) | null = null
   private collide(world: World): void {
     if (this.noCollide) return
     // Swept: at Mach 8+ a step is longer than a spire is wide. Walk the step in 12 m samples and stop
@@ -759,16 +771,23 @@ export class Player {
       const sev = -vn / 600
       // Hard into rock: not a deflection — a wreck.
       // (Only a real hit: more than 300 m/s into the rock. A shallow one at Mach 5 scrapes.)
-      if (o.big && sev > 0.5 && this.ghost <= 0 && !this.unwreckable) {
+      if (o.big && sev > 0.5 && this.ghost <= 0 && !this.unwreckable && !this.onRockFree) {
         this.scrapeAt.set(o.x + nx * o.cr, this.pos.y - 0.5, o.z + nz * o.cr)
         this.startCrash(sev, nx, nz)
         return
       }
       // Nose follows the new direction part of the way (a deflection, not a snap).
-      const nh = Math.atan2(nvx, nvz)
+      let nh = Math.atan2(nvx, nvz)
+      // (FREE ROAM: the nose is put along the face, a few degrees out, the way it was already going —
+      //  the craft runs on beside it. Part-way, W drove it back into a gorge wall every few seconds; onto
+      //  the bounce, it crossed the gorge into the other wall: Mach 5 hits until the hull was gone.)
+      if (this.onRockFree) {
+        const s = this.fwd.x * -nz + this.fwd.z * nx >= 0 ? 1 : -1
+        nh = Math.atan2(-nz * s + nx * 0.1, nx * s + nz * 0.1)
+      }
       let dh = nh - this.heading
       dh = Math.atan2(Math.sin(dh), Math.cos(dh))
-      this.heading += dh * (o.big ? 0.65 : 0.3)
+      this.heading += dh * (this.onRockFree ? 1 : o.big ? 0.65 : 0.3)
       this.updateAxes()
       // IMPOSSIBLE rivals slide along the rock at full speed (only its direction changes).
       if (this.unwreckable) { const sp0 = Math.hypot(this.vel.x, this.vel.z), k = sp0 / Math.max(1, Math.hypot(nvx, nvz)); this.setHorizontal(nvx * k, nvz * k) }
@@ -777,7 +796,8 @@ export class Player {
       this.scrape = Math.min(1, this.scrape + 0.5 + sev)
       this.scrapeAt.set(o.x + nx * o.cr, this.pos.y - 0.5, o.z + nz * o.cr)
       if (sev > 0.02 || !o.big) this.onCrash?.(sev, o.big, this.scrapeAt.x, this.scrapeAt.y, this.scrapeAt.z, nx, nz)
-      if (this.unwreckable) { /* no damage */ } else if (o.big) this.hull -= Math.min(45, sev * 40)
+      if (this.onRockFree) this.onRockFree(-vn, o.big || !!o.wall)
+      else if (this.unwreckable) { /* no damage */ } else if (o.big) this.hull -= Math.min(45, sev * 40)
       else this.hull -= 2 + sev * 10
       this.sinceHurt = 0
     }

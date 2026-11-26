@@ -2093,15 +2093,37 @@ function startHunt(): void {
 // down anywhere to drive on. The hover craft (Player) on the ground, the FlightCraft in the air; the
 // handover keeps position and velocity, and the camera and the hull's attitude blend across it.
 let freeAir = false, freeAirT = 0
+// FREE ROAM's damage (see freeGround / freeRock): a big hull that heals, so ordinary flying never hurts
+// and only a real mistake — nose straight into the ground, a mountain head-on at speed — ends in fire.
+const FREE_HULL = 300
+let freeHull = FREE_HULL, freeSinceHit = 9
+/** Grace after a respawn: nothing hurts (s). */
+let freeGhost = 0
+/** Wrecked: the fireball, then a respawn when this runs out (s). */
+let freeWreckT = 0
+/** The worst rock contact this step (the flight reports it; handled after its step). */
+let freeRockHit = 0
+const freeRockN = new THREE.Vector3()
+/** After an automatic handover: the nose eases into a glide until Space or C. */
+let freeAuto = false
+const FREE_GLIDE = -0.07 // (−4°)
+/** Where a wreck respawns: the last place you were flying or driving clear and unhurt. */
+const freeSafe = { x: 0, z: 0, h: 0, ok: false }
+let freeSafeT = 0, freeCloseCool = 0, freeLow = false, freeNearRock = false
+/** Tests: the last impacts (what, how hard). */
+const freeEvents: { t: number; k: string; v: number; g?: number; auto: boolean; air: boolean }[] = []
+const freeEvent = (k: string, v: number, g?: number) => { freeEvents.push({ t: +runTime.toFixed(2), k, v: Math.round(v), g: g === undefined ? undefined : Math.round(g * 57.3), auto: freeAuto, air: freeAir }); if (freeEvents.length > 30) freeEvents.shift() }
 let camBlend = 0, landBlend = 0
 const camFromOff = new THREE.Vector3(), camFromQ = new THREE.Quaternion()
 const landQ = new THREE.Quaternion(), landTmpQ = new THREE.Quaternion()
-const FREE_HINTS = ['<b>W · SHIFT</b>THROTTLE · BURNER (GROUND AND AIR)', '<b>A D · S</b>STEER · BRAKE', '<b>SPACE · C</b>NOSE UP · NOSE DOWN (IT STAYS WHERE YOU POINT IT)', '<b>A D · Q E</b>TURN (BANKS ITSELF; A PURE YAW IN DEEP SPACE) · ROLL', '<b>TO SPACE</b>NOSE UP, HOLD SHIFT · CLIMB OUT TO THE STAR SYSTEM', '<b>NO DAMAGE</b>DRIVE UP ANY ROCK, LAUNCH OFF THE TOP', '<b>BEAMS</b>CRYSTAL TRAILS · TAKE ALL FIVE'].map((h) => `<div>${h}</div>`).join('')
+const FREE_HINTS = ['<b>W · SHIFT</b>THROTTLE · BURNER (GROUND AND AIR)', '<b>A D · S</b>STEER · BRAKE', '<b>SPACE · C</b>NOSE UP · NOSE DOWN (IT STAYS WHERE YOU POINT IT)', '<b>A D · Q E</b>TURN (BANKS ITSELF; A PURE YAW IN DEEP SPACE) · ROLL', '<b>TO SPACE</b>NOSE UP, HOLD SHIFT · CLIMB OUT TO THE STAR SYSTEM', '<b>HULL</b>DRIVE UP ANY ROCK · LANDINGS AND GRAZES ARE SAFE, A STEEP DIVE OR A ROCK HEAD-ON AT SPEED IS NOT', '<b>BEAMS</b>CRYSTAL TRAILS · TAKE ALL FIVE'].map((h) => `<div>${h}</div>`).join('')
 function camBlendStart(): void { camFromOff.subVectors(camera.position, renderPos); camFromQ.copy(camera.quaternion); camBlend = 1 }
 function freeOff(): void {
   freeAir = false
   player.ground = groundH; player.cliffs = false
   flight.ground = groundH; flight.invincible = false; flight.cushionOn = true; flight.sandbox = false
+  flight.onRock = null; player.onRockFree = null
+  freeWreckT = 0
   shards.hide()
   document.body.classList.remove('free')
   $('#score .lab').textContent = 'SCORE'
@@ -2112,7 +2134,8 @@ function startFree(): void {
   freeOff()
   applyPending()
   runTop = 0
-  player.noCollide = true
+  // Rock is solid on the ground too (the hover rides up a landform's skirt — only its faces stop you).
+  player.noCollide = false
   player.announce = true
   player.maxMach = CFG.speed.boostMach
   spectate = false
@@ -2128,7 +2151,13 @@ function startFree(): void {
   for (const id of ['#aimring', '#velmark', '#gmark']) $(id).style.display = 'none'
   world.courseOn = false; course.group.visible = false
   player.ground = surf; player.cliffs = true
+  // (The flight's own HUNT damage stays off — invincible — and FREE ROAM's model below takes the hits.)
   flight.ground = surf; flight.invincible = true; flight.cushionOn = false; flight.sandbox = true
+  // (The small stuff — boulders, stubs — only knocks you about, as in a race: no hull. Landforms and the
+  //  gorge's walls are the mountains.)
+  flight.onRock = (imp, nx, nz, solid) => { if (solid && imp > freeRockHit) { freeRockHit = imp; freeRockN.set(nx, 0, nz) } }
+  player.onRockFree = (imp, solid) => { if (solid) freeRock(imp, player.pos) }
+  freeHull = FREE_HULL; freeSinceHit = 9; freeGhost = 0; freeWreckT = 0; freeAuto = false; freeSafe.ok = false
   const c = course.cps[0]
   player.reset(c.x, c.z, Math.atan2(c.tx, c.tz), 1.5)
   shards.start(player.pos.x, player.pos.z, player.heading, groundH, surf)
@@ -2155,10 +2184,13 @@ function startFree(): void {
   setTimeout(() => { if (mode === 'free') hintsEl.style.opacity = '0' }, 12000)
 }
 /** Into the air: the hover craft becomes the flying one, the nose along the travel (pitched to the
- *  climb it left the ground with). Automatic — off a jump, a cliff, a crest, or Space at speed. */
-function takeOff(pitchUp: number): void {
+ *  climb it left the ground with). Space at speed — or `auto`, off a real cliff: then, until you touch
+ *  Space or C, the nose eases into a gentle glide and brings you back down. */
+function takeOff(pitchUp: number, auto = false): void {
   if (player.spin > 0 || player.crashing) return
   freeAir = true; freeAirT = 0
+  freeAuto = auto
+  if (mode === 'free') freeEvent(auto ? 'auto-off' : 'off', player.agl)
   camBlendStart()
   tmp.copy(player.pos)
   const hs = Math.hypot(player.vel.x, player.vel.z)
@@ -2177,10 +2209,13 @@ function touchDown(): void {
   const hs = Math.hypot(flight.vel.x, flight.vel.z)
   const h = hs > 30 ? Math.atan2(flight.vel.x, flight.vel.z) : Math.atan2(flight.fwd.x, flight.fwd.z)
   // The dive's speed turns along the ground (a steep one costs a little more), not thrown away.
-  const steep = Math.min(1, Math.abs(flight.vel.y) / Math.max(flight.speed, 1))
+  // (The velocity it came down with: the flight has already put the craft on the ground and zeroed the
+  //  sink — read after that, every landing looked flat.)
+  const v = flight.groundHit ? flight.impactVel : flight.vel
+  const steep = Math.min(1, Math.abs(v.y) / Math.max(flight.speed, 1))
   player.reset(flight.pos.x, flight.pos.z, h, (flight.speed * (1 - 0.15 * steep)) / MACH)
   player.prev.copy(flight.prev)
-  player.squash = Math.min(1, Math.max(0, -flight.vel.y) / 70)
+  player.squash = Math.min(1, Math.max(0, -v.y) / 70)
   cam.snap(h)
   sinceLand = 0
 }
@@ -2205,6 +2240,15 @@ function readFree(): void {
     if (p.buttons[2]?.pressed) fc.burner = true
     if (p.buttons[0]?.pressed) pitch = 1
   }
+  // Handed over by itself (off a cliff): until you take the pitch, the nose eases down and you come
+  // back to the ground — steeper the higher you are (−17° from 600 m), flaring to a gentle −4° glide
+  // for the touch. (Held at the launch's climb, a W-only drive rose by itself to 1.1–1.4 km; a flat
+  // −4° off a mesa's top glided on for 8 km.)
+  if (pitch !== 0) freeAuto = false
+  if (freeAuto) {
+    const want = -THREE.MathUtils.clamp(flight.agl / 2000, -FREE_GLIDE, 0.3)
+    pitch = THREE.MathUtils.clamp((want - Math.asin(THREE.MathUtils.clamp(flight.fwd.y, -1, 1))) * 4, -0.6, 0.6)
+  }
   fTurn += THREE.MathUtils.clamp(turn - fTurn, -STEP * 6, STEP * 6)
   fPitch += THREE.MathUtils.clamp(pitch - fPitch, -STEP * 5, STEP * 5)
   fc.turn = fTurn
@@ -2213,6 +2257,129 @@ function readFree(): void {
   // fell back; nobody could reach space.)
   fc.pitch = fPitch
   fc.aim = null
+}
+
+/** A hit in FREE ROAM: past the grace since the last one, off the hull; empty, it's a wreck. */
+function freeHurt(dmg: number): void {
+  if (freeGhost > 0 || freeWreckT > 0 || freeSinceHit < 1.5) return
+  freeHull -= dmg
+  freeSinceHit = 0
+  damageFlash = Math.max(damageFlash, Math.min(1, 0.25 + dmg / 120))
+  if (freeHull <= 0) freeCrash()
+}
+/** Wrecked: the explosion, the craft gone, and in two seconds a fresh one in the air where you last
+ *  were safe. No lives, no game over — FREE ROAM is for trying things. */
+function freeCrash(): void {
+  if (freeWreckT > 0 || freeGhost > 0) return
+  const v = freeAir ? flight.vel : player.vel
+  fx.explosion(player.pos.x, player.pos.y + 1, player.pos.z, v.x * 0.4, Math.max(0, v.y) * 0.4 + 10, v.z * 0.4, 2.2)
+  sound.death(); shake(1); slowmoT = Math.max(slowmoT, 1.2); hitstop = Math.max(hitstop, 0.08)
+  damageFlash = 1
+  flash('WRECKED')
+  freeHull = 0
+  freeWreckT = 2
+  player.dead = true
+}
+function freeRespawn(): void {
+  const x = freeSafe.ok ? freeSafe.x : player.pos.x, z = freeSafe.ok ? freeSafe.z : player.pos.z
+  const h = freeSafe.ok ? freeSafe.h : player.heading
+  player.reset(x, z, h, 2) // (clears the wreck: dead, spinning, crashing)
+  takeOff(0, true)
+  // Up in the air, Mach 2, level: the glide brings you down from there.
+  flight.reset(x, z, h, 0, 2)
+  flight.pos.y = surf(x, z) + 300; flight.prev.copy(flight.pos)
+  flight.syncTo(player)
+  fcam.snap(); camBlend = 0
+  for (const t of visuals.get(player)!.trail) t.reset()
+  freeHull = FREE_HULL; freeSinceHit = 9; freeGhost = 2.5
+}
+/**
+ * The flight met the ground: how hard, from the speed into the surface along its normal (v_n) and how
+ * steeply the craft was diving. Under 200 m/s a landing (felt, never hurts); to 700 a hard landing
+ * (hull and speed); past 700 diving more than 45°, or past 1,600 any way at all, a wreck. (Mach 2 at
+ * 20° costs ~16; Mach 6 at 30° over half the hull; Mach 2 at 60° and anything straight down at speed,
+ * the craft. The dive is the craft's own, below the horizon: flown level into a landform's 50° flank
+ * at Mach 3 is a hard hit, not a nose-dive. A dive used to turn into the same speed on the ground at
+ * full hull — even Mach 10 straight down.)
+ */
+function freeGround(): void {
+  const v = flight.impactVel, x = flight.pos.x, z = flight.pos.z
+  const e = 3, gx = (surf(x + e, z) - surf(x - e, z)) / (2 * e), gz = (surf(x, z + e) - surf(x, z - e)) / (2 * e)
+  tmp3.set(-gx, 1, -gz).normalize()
+  const vn = -v.dot(tmp3), sp = Math.max(1, v.length())
+  if (vn <= 0) return
+  const dive = Math.asin(THREE.MathUtils.clamp(-v.y / sp, -1, 1))
+  // A landform's flank (steeper than ~35°) met flying, not diving: that is flying into a mountain — the
+  // rock's rule (freeRock), the same as its face or a gorge wall.
+  if (tmp3.y < 0.82 && dive < Math.PI / 4) { if (vn > 100) freeRock(vn, flight.pos); return }
+  if (vn > 100) freeEvent('ground', vn, dive)
+  // (Not flying by choice — an automatic handover gliding you down — the hover catches any touch, as it
+  //  does a hop: a W-only drive never hurts.)
+  if (freeGhost <= 0 && !freeAuto && ((vn > 700 && dive > Math.PI / 4) || vn > 1600)) { freeCrash(); return }
+  if (vn > 200 && !freeAuto) {
+    freeHurt((vn - 200) * 0.2)
+    flight.speed *= 0.85
+    pop('HARD LANDING', 'bad')
+    shake(Math.min(0.9, 0.35 + (vn - 200) / 800)); cam.punch -= 4
+    sound.crash(true)
+  } else if (vn > 25) shake(Math.min(0.35, vn / 500))
+  if (vn > 25) {
+    landDust(player, Math.min(150, vn))
+    sound.land(Math.min(150, vn))
+    input.rumble(Math.min(1, vn / 300), 0.6, 200)
+  }
+}
+/** Rock in FREE ROAM (in the air or on the ground), by the speed into it: under 300 m/s a graze —
+ *  sparks and a scrape, the craft slides along; to 2,400 a strike that costs hull (Mach 6 head-on,
+ *  ~2,050, about a third of it); past that (Mach 7 head-on and up — Mach 10 is ~3,400) a wreck. (At
+ *  1,500 and twice the damage a W-only drive down a winding gorge blew up on its walls: Mach 5 into
+ *  rock should hurt, not end you.) */
+function freeRock(imp: number, at: THREE.Vector3): void {
+  if (freeWreckT > 0) return
+  if (imp > 100) freeEvent('rock', imp)
+  if (imp > 2400 && freeGhost <= 0) { freeCrash(); return }
+  sparks(at.x, at.y, at.z, freeAir ? flight.vel : player.vel, Math.round(14 + Math.min(60, imp / 20)), 1 + imp / 600)
+  sound.bounce(Math.min(1, 0.3 + imp / 1000))
+  // (Driving, a wall or rock only scrapes — no hull: a W-only run down SPRINT's winding gorge clipped a wall every
+  //  ~3 s and wrecked on the sum of grazes. Flying into one costs hull; Mach 10 head-on wrecks anywhere.)
+  if (imp >= 300 && freeAir) {
+    freeHurt((imp - 300) * 0.06)
+    pop('ROCK STRIKE', 'bad')
+    shake(Math.min(0.9, 0.3 + imp / 2000))
+  } else shake(0.12 + imp / 1500)
+}
+/** Each FREE ROAM step: healing, the safe point, the near misses. */
+function freeTick(): void {
+  freeSinceHit += STEP
+  freeGhost = Math.max(0, freeGhost - STEP)
+  if (freeSinceHit > 3) freeHull = Math.min(FREE_HULL, freeHull + 15 * STEP)
+  // The safe point: clear of trouble, unhurt for a while, not diving.
+  freeSafeT -= STEP
+  if (freeSafeT <= 0 && freeSinceHit > 3 && !player.dead) {
+    freeSafeT = 0.5
+    const ok = freeAir ? flight.agl > 60 && flight.agl < 20000 && flight.fwd.y > -0.25 : player.spin <= 0 && !player.crashing
+    if (ok) { freeSafe.x = player.pos.x; freeSafe.z = player.pos.z; freeSafe.h = player.heading; freeSafe.ok = true }
+  }
+  // Near misses at speed: skimming the ground, or a rock flashing past — a whoosh from that side.
+  freeCloseCool -= STEP
+  if (!freeAir || flight.mach < 3 || player.dead) { freeLow = freeNearRock = false; return }
+  // (Skimming, not diving: a nose-down run into the ground is no near miss.)
+  const low = flight.agl < 15 && flight.vel.y > -60
+  let rockGap = Infinity, rockLat = 0
+  const n = world.near(flight.pos.x, flight.pos.z, flight.pos.y, 40, huntObs)
+  for (let i = 0; i < n; i++) {
+    const o = huntObs[i], dx = o.x - flight.pos.x, dz = o.z - flight.pos.z
+    const gap = Math.hypot(dx, dz) - o.cr
+    if (gap < rockGap) { rockGap = gap; rockLat = dx * flight.right.x + dz * flight.right.z }
+  }
+  const nearRock = rockGap < 20
+  if (freeCloseCool <= 0 && ((low && !freeLow) || (nearRock && !freeNearRock))) {
+    freeCloseCool = 1.2
+    pop('CLOSE CALL')
+    sound.whoosh(1, nearRock ? (rockLat > 0 ? 0.9 : -0.9) : 0)
+    shake(0.15); cam.punch += 2
+  }
+  freeLow = low; freeNearRock = nearRock
 }
 
 // ───────────────────────── quality ─────────────────────────
@@ -2824,6 +2991,7 @@ function rebase(): void {
   fx.shift(dx, dz)
   wreckage.shift(dx, dz)
   shock.shift(dx, dz)
+  freeSafe.x += dx; freeSafe.z += dz
   for (const v of visuals.values()) { for (const t of [...v.trail, ...v.vapour]) t.shift(dx, dz); v.lastDust.x += dx; v.lastDust.z += dz }
 }
 
@@ -2911,7 +3079,11 @@ function simStep(): void {
   } else if (mode === 'free' && system) {
     systemStep()
   } else if (mode === 'free') {
-    if (freeAir) {
+    if (freeWreckT > 0) {
+      // Wrecked: nothing flies until the respawn.
+      freeWreckT -= STEP
+      if (freeWreckT <= 0) freeRespawn()
+    } else if (freeAir) {
       if (!flyForced) readFree()
       // Above the air, cruise as in ORBIT: Shift scales the speed with the height (half of it a second),
       // so climbing out to 1,500 km or coming down from it takes seconds, not minutes.
@@ -2922,11 +3094,15 @@ function simStep(): void {
         else flight.cruise = 0
         if (testSpeed > 0) flight.cruise = testSpeed
       }
+      freeRockHit = 0
       flight.step(STEP, fc, world)
       flight.syncTo(player)
       freeAirT += STEP
+      if (freeRockHit > 0) freeRock(freeRockHit, tmp2.copy(flight.pos).addScaledVector(freeRockN, -6))
+      if (flight.groundHit && freeWreckT <= 0) freeGround()
       // Down on the surface (coming down, not skimming up off it): grip takes over, you drive on.
-      if (freeAirT > 0.8 && flight.agl < 5 && flight.vel.y <= 0) touchDown()
+      // (Not flying by choice — an automatic handover — any touch is a landing: the hover rides on.)
+      if (freeWreckT > 0) { /* wrecked */ } else if ((freeAirT > 0.8 && flight.agl < 5 && flight.vel.y <= 0) || (freeAuto && flight.groundHit)) touchDown()
       // Out of the top of the air: back to ORBIT, by this planet — pick another from up there.
       // (ORBIT booted ahead, dormant, from 300 km up on the way out.)
       if (flight.agl > 300000 && flight.vel.y > 0 && runTime > 4 && !swapPending) prewarm('orbit', 'live-sys')
@@ -2935,13 +3111,17 @@ function simStep(): void {
       player.step(STEP, forced ?? input.c, world)
       sinceLand += STEP
       const pullUp = !forced && !flyForced && (input.isDown('Space') || [...(navigator.getGamepads ? navigator.getGamepads() : [])].some((p) => p?.buttons[0]?.pressed))
-      // Properly airborne (a jump, a cliff edge, a rock's crest) — or pulling up at speed: you fly.
-      // (A hop over a dune stays a hop: only a real flight — well clear of the ground — hands over. The
-      //  old rule handed over on every bump: ~36 camera and attitude re-snaps in 45 s, "the reset".)
-      if (sinceLand > 0.8 && player.airborne && player.airTime > 0.35 && (player.agl > 10 || player.vy > 25)) takeOff(Math.atan2(player.vy, Math.max(player.speed, 1)))
-      else if (pullUp && player.mach > 0.8 && !player.airborne) takeOff(0.25)
+      // You fly when you choose to: Space at speed (on the ground or mid-hop). Off a crest the hover
+      // only hops — its own fall brings it down; only a real drop (a cliff: long in the air, or well
+      // clear of the ground) hands over by itself, and then the nose glides you back down (readFree).
+      // (Every crest at speed used to hand over and the craft held the launch's climb: a W-only drive
+      //  was airborne 82–94% of the time and rose to 1.1–1.4 km by itself.)
+      if (player.dead) { /* wrecked on the ground (freeRock): the respawn takes it */ }
+      else if (pullUp && player.mach > 0.8) takeOff(Math.max(0.25, Math.atan2(player.vy, Math.max(player.speed, 1))))
+      else if (sinceLand > 0.8 && player.airborne && (player.agl > 150 || (player.airTime > 2.5 && player.agl > 40))) takeOff(Math.min(0.1, Math.atan2(player.vy, Math.max(player.speed, 1))), true)
     }
     player.hull = 100
+    freeTick()
     runTop = Math.max(runTop, player.topMach)
     shards.step(player.prev, player.pos, player.heading, groundH, surf)
     rebase()
@@ -3755,8 +3935,11 @@ function updateHud(dt: number, slow: boolean): void {
   const lvl = player.drifting ? (player.drift >= 2 ? 2 : player.drift >= 0.9 ? 1 : 0) : 0
   if (lvl > driftLvl) { sound.driftLevel(lvl); input.rumble(0.35 + lvl * 0.2, 0.6, 110); cam.punch += 1.5 + lvl; shake(0.12 + lvl * 0.08) }
   driftLvl = lvl
-  hullFill.style.width = `${Math.max(0, player.hull)}%`
-  hullEl.classList.toggle('low', player.hull < 35)
+  // (FREE ROAM's own hull, out of 300; none in ORBIT.)
+  const hullPct = mode === 'free' ? (freeHull / FREE_HULL) * 100 : player.hull
+  hullFill.style.width = `${Math.max(0, hullPct)}%`
+  hullEl.classList.toggle('low', hullPct < 35)
+  hullEl.style.display = mode === 'free' && system ? 'none' : ''
   flashT = Math.max(0, flashT - dt)
   flashEl.style.opacity = String(Math.min(1, flashT * 3))
   flashEl.style.transform = `translate(-50%, -50%) scale(${1 + (1.1 - flashT) * 0.15})`
@@ -3923,6 +4106,14 @@ function updateHud(dt: number, slow: boolean): void {
       const altTxt = alt < 10000 ? `${alt} M` : `${(alt / 1000).toFixed(alt < 100000 ? 1 : 0)} KM`
       const zone = alt > 80000 ? '<b style="color:#9fd2ff">IN SPACE</b>' : alt > 25000 ? '<b style="color:#9fd2ff">EDGE OF SPACE</b>' : freeAir ? '<b>FLYING</b> · SPACE UP · C DOWN' : 'HOLD SPACE AT SPEED TO LIFT OFF'
       scoreSub.innerHTML = `${shards.total} FOUND IN ALL<br/>${zone}<br/>ALT ${altTxt} · ${fmtTime(runTime)}`
+    }
+    // PULL UP from the time to impact (under 2 s at this sink rate), not the height — and only for a
+    // descent that would hurt (sinking faster than ~150 m/s): a glide down at Mach 6 is a landing, a dive
+    // from 2 km at Mach 4 is a warning already.
+    if (!system && freeAir && !player.dead) {
+      const sink = -flight.vel.y, al = $('#align')
+      if (sink > 150 && flight.agl / sink < 2 && freeGhost <= 0) { al.style.display = 'block'; al.textContent = 'PULL UP · SPACE'; al.className = 'bad' }
+      else if (al.textContent?.startsWith('PULL UP')) al.style.display = 'none'
     }
   } else if (mode === 'hunt') {
     for (const { d } of tagEls) d.style.display = 'none'
@@ -4547,5 +4738,6 @@ const g = {
   setSpeed: (v: number) => { testSpeed = v },
   get craftPos() { return visuals.get(player)!.craft.root.position },
   free: () => startFree(), system: () => startSystem(), get sys() { return { pos: sysPos, planets: PLANETS, near: system?.nearest(sysPos) } }, fly: () => takeOff(0.3), get freeAir() { return freeAir },
+  get freeDmg() { return { hull: freeHull, wreck: freeWreckT, ghost: freeGhost, auto: freeAuto, safe: { ...freeSafe }, events: freeEvents } },
 }
 ;(window as unknown as { __g: typeof g }).__g = g

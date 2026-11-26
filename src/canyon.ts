@@ -129,7 +129,7 @@ export class Canyon {
   /** Is (x, z) on the gorge floor (between the walls)? */
   inside(x: number, z: number): boolean { const a = this.across(x, z); return Math.abs(a.lat) < a.half }
 
-  wallsNear(x: number, z: number, y: number, out: { x: number; z: number; cr: number; big: boolean }[], n: number): number {
+  wallsNear(x: number, z: number, y: number, out: { x: number; z: number; cr: number; big: boolean; wall?: boolean }[], n: number): number {
     const i = this.nearest(x, z)
     if (y > groundH(this.rx[i], this.rz[i]) + this.st.rim) return n
     const sx = this.tz[i], sz = -this.tx[i], h = this.half[i], OUT = this.st.outer
@@ -138,6 +138,7 @@ export class Canyon {
     let o = out[n]
     if (!o) out[n] = o = { x: 0, z: 0, cr: 0, big: false }
     o.big = false // (scrape and glance like a trackside block: a wall you run along)
+    o.wall = true
     if (d < h + OUT / 2) { o.x = this.rx[i] + sx * side * (h + BIG); o.z = this.rz[i] + sz * side * (h + BIG); o.cr = BIG }
     else if (d < h + OUT + 400) { o.x = this.rx[i] + sx * side * (h + OUT - BIG); o.z = this.rz[i] + sz * side * (h + OUT - BIG); o.cr = BIG }
     else return n

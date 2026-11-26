@@ -1226,6 +1226,8 @@ export interface Obstacle {
   /** True surface radius toward the query point, at the query height. */
   cr: number
   big: boolean
+  /** A gorge wall (src/canyon.ts): not `big` (a race glances along it), but a mountain all the same. */
+  wall?: boolean
 }
 
 export class World {
@@ -1693,7 +1695,7 @@ export class World {
         const cr = it.r * w.prof(Math.atan2(lz, lx), Math.max(0, t)) * 0.97
         let o = out[n]
         if (!o) out[n] = o = { x: 0, z: 0, cr: 0, big: false }
-        o.x = it.x; o.z = it.z; o.cr = cr; o.big = w.big
+        o.x = it.x; o.z = it.z; o.cr = cr; o.big = w.big; o.wall = false
         n++
       }
     }
@@ -1709,7 +1711,7 @@ export class World {
       const cr = it.r * it.prof(Math.atan2(dx * s + dz * c, dx * c - dz * s), Math.max(0, t)) * 0.97
       let o = out[n]
       if (!o) out[n] = o = { x: 0, z: 0, cr: 0, big: false }
-      o.x = it.x; o.z = it.z; o.cr = cr; o.big = it.big ?? true
+      o.x = it.x; o.z = it.z; o.cr = cr; o.big = it.big ?? true; o.wall = false
       n++
     }
     return n
