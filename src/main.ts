@@ -972,9 +972,10 @@ const tmp3 = new THREE.Vector3()
 /** Speed is score: ×1 at Mach 1 up to ×3.5 at Mach 6. */
 const speedMul = () => THREE.MathUtils.clamp(1 + (flight.mach - 1) * 0.5, 1, 3.5)
 function huntCombatStep(): void {
-  // Keyboard and pad only: Space / J (or pad A, RB) the cannon; F / K (or pad LB) paint and fire missiles.
+  // The cannon on the left mouse button or J (pad RB); F / K (pad LB) paint and fire missiles. (Space is
+  // nose up now, as in FREE ROAM — readFlight.)
   const pad = navigator.getGamepads ? [...navigator.getGamepads()].find((g) => g) : null
-  const fireGun = input.isDown('Space') || input.isDown('KeyJ') || !!pad?.buttons[0]?.pressed || !!pad?.buttons[5]?.pressed || autoFire
+  const fireGun = input.isDown('Mouse0') || input.isDown('KeyJ') || !!pad?.buttons[5]?.pressed || autoFire
   const fireMsl = input.isDown('KeyF') || input.isDown('KeyK') || !!pad?.buttons[4]?.pressed
   const nt = noseTarget()
   cannon.step(STEP, fireGun && !player.dead, flight, nt, rounds)
@@ -1168,6 +1169,71 @@ const flightQ = new THREE.Quaternion()
 const fcam = new FlightCam(camera)
 const fc: FlightControls = { pitch: 0, turn: 0, roll: 0, throttle: false, brake: false, burner: false, aim: null }
 flight.onHit = (dmg, kind) => { damageFlash = Math.min(1, damageFlash + dmg / 40); shake(Math.min(1, dmg / 30)); sound.bounce(Math.min(1, dmg / 30)); if (dmg >= 30) flash(kind === 'ground' ? 'GROUND' : 'ROCK') }
+// The ice locked a control (flight.ts AIR): say which, and the way out.
+flight.onFreeze = (axis) => {
+  warn(axis === 1 ? 'PITCH FROZEN' : 'TURN FROZEN', 'REDUCE ALTITUDE')
+  warnT = 1.6
+  sound.beep(false); sound.clang(0.25)
+  input.rumble(0.2, 0.5, 250)
+  flightPunch -= 1.5
+}
+let iceWarned = false
+/** After each flight step (HUNT, FREE ROAM in the air): the ICING warning as the ice builds (once, until
+ *  it has mostly melted again). */
+function airTick(): void {
+  if (flight.ice > 0.3 && !iceWarned) { iceWarned = true; if (flight.frozen === 0) { warn('ICING', 'REDUCE ALTITUDE'); warnT = 1.6; sound.beep(false) } }
+  else if (flight.ice < 0.15) iceWarned = false
+}
+// The frost on the glass: a pattern drawn once (ice crystals creeping in from the edges, clear in the
+// middle — a CSS mask keeps it so) on one full-screen layer whose opacity is the ice — a composited fade,
+// no render pass.
+const frostEl = $('#frost')
+let frostOn = false, frostShown = -1
+function frostPattern(): string {
+  const W = 960, H = 540, cv = document.createElement('canvas')
+  cv.width = W; cv.height = H
+  const g = cv.getContext('2d')!
+  // A rime haze thickest at the edges and corners.
+  const rg = g.createRadialGradient(W / 2, H / 2, H * 0.32, W / 2, H / 2, W * 0.62)
+  rg.addColorStop(0, 'rgba(225,240,255,0)'); rg.addColorStop(0.55, 'rgba(225,240,255,0.1)'); rg.addColorStop(1, 'rgba(235,246,255,0.7)')
+  g.fillStyle = rg; g.fillRect(0, 0, W, H)
+  // Fern-like crystals growing inward from points along the border (a fixed seed: the same frost each time).
+  let sd = 7
+  const r = () => ((sd = (sd * 16807) % 2147483647) / 2147483647)
+  g.lineCap = 'round'
+  const branch = (x: number, y: number, a: number, len: number, w: number, depth: number): void => {
+    const x2 = x + Math.cos(a) * len, y2 = y + Math.sin(a) * len
+    g.strokeStyle = `rgba(240,248,255,${0.25 + 0.35 * w / 3})`; g.lineWidth = w
+    g.beginPath(); g.moveTo(x, y); g.lineTo(x2, y2); g.stroke()
+    if (depth <= 0 || len < 6) return
+    const n = 3 + Math.floor(r() * 3)
+    for (let i = 1; i <= n; i++) {
+      const t = i / (n + 1), bx = x + (x2 - x) * t, by = y + (y2 - y) * t
+      const sl = len * (0.35 + r() * 0.2) * (1 - t * 0.5)
+      branch(bx, by, a + 1.0, sl, w * 0.6, depth - 1)
+      branch(bx, by, a - 1.0, sl, w * 0.6, depth - 1)
+    }
+    branch(x2, y2, a + (r() - 0.5) * 0.5, len * 0.6, w * 0.75, depth - 1)
+  }
+  for (let i = 0; i < 46; i++) {
+    const side = i % 4, u = r()
+    const [x, y, a] = side === 0 ? [u * W, 0, Math.PI / 2] : side === 1 ? [u * W, H, -Math.PI / 2] : side === 2 ? [0, u * H, 0] : [W, u * H, Math.PI]
+    // (Longer into the corners, short mid-edge: the middle of the view stays clear.)
+    const mid = side < 2 ? Math.abs(u - 0.5) * 2 : Math.abs(u - 0.5) * 2
+    branch(x, y, a + (r() - 0.5) * 0.9, 28 + 70 * mid + r() * 30, 2.6, 3)
+  }
+  return cv.toDataURL('image/png')
+}
+/** Each frame: the frost layer's opacity follows the ice (the pattern only made the first time it shows). */
+function frostFrame(play: boolean): void {
+  const flying = (mode === 'hunt' || (mode === 'free' && freeAir && !system)) && !player.dead && play
+  const want = flying ? Math.min(1, flight.ice * 1.15) : 0
+  const q = Math.round(want * 50) / 50
+  if (q === frostShown) return
+  frostShown = q
+  if (q > 0 && !frostOn) { frostOn = true; frostEl.style.backgroundImage = `url(${frostPattern()})` }
+  frostEl.style.opacity = String(q)
+}
 
 // ───────────────────────── player feedback ─────────────────────────
 player.onMach = (m) => {
@@ -1357,7 +1423,7 @@ const flashEl = $('#flash')
 const warnEl = $('#warn')
 const hintsEl = $('#hints')
 const RACE_HINTS = hintsEl.innerHTML
-const FLY_HINTS = ['<b>SPACE</b>CANNON · <b>F</b> HOLD TO LOCK, RELEASE TO FIRE MISSILES', '<b>A D · ← →</b>TURN (THE CRAFT BANKS ITSELF)', '<b>W S · ↑ ↓</b>NOSE DOWN · PULL UP', '<b>Q E</b>ROLL', '<b>SHIFT</b>THROTTLE · <b>C</b> AIR BRAKE'].map((h) => `<div>${h}</div>`).join('')
+const FLY_HINTS = ['<b>MOUSE · J</b>CANNON · <b>F</b> HOLD TO LOCK, RELEASE TO FIRE MISSILES', '<b>A D · ← →</b>TURN (THE CRAFT BANKS ITSELF)', '<b>SPACE · C</b>NOSE UP · NOSE DOWN', '<b>W · S</b>THROTTLE · AIR BRAKE · <b>SHIFT</b> BURNER', '<b>Q E</b>ROLL', '<b>HIGH UP</b>THE AIR THINS AND ICES YOU · COME DOWN TO THAW'].map((h) => `<div>${h}</div>`).join('')
 const debugEl = $('#debug')
 const raceEl = $('#race')
 const standEl = $('#stand')
@@ -2220,45 +2286,6 @@ function touchDown(): void {
   sinceLand = 0
 }
 let sinceLand = 9
-/** FREE ROAM's controls, one set for ground and air: W throttle, S brake, Shift burner, A/D steer
- *  (in the air: turn, the craft banks itself), Space nose up / C nose down, Q/E roll. Hands off the
- *  pitch and the nose settles into a shallow glide — you come down on your own. */
-function readFree(): void {
-  const k = (c: string) => input.isDown(c)
-  fc.throttle = k('KeyW') || k('ArrowUp'); fc.brake = k('KeyS') || k('ArrowDown'); fc.burner = k('ShiftLeft') || k('ShiftRight')
-  fc.roll = (k('KeyE') ? 1 : 0) - (k('KeyQ') ? 1 : 0)
-  let turn = (k('KeyD') || k('ArrowRight') ? 1 : 0) - (k('KeyA') || k('ArrowLeft') ? 1 : 0)
-  let pitch = (k('Space') ? 1 : 0) - (k('KeyC') ? 1 : 0)
-  for (const p of navigator.getGamepads ? navigator.getGamepads() : []) {
-    if (!p) continue
-    const dz = (v: number) => (Math.abs(v) < 0.12 ? 0 : (v - Math.sign(v) * 0.12) / 0.88)
-    const ax = dz(p.axes[0] ?? 0), ay = dz(p.axes[1] ?? 0)
-    if (ax) turn = ax
-    if (ay) pitch = ay * (invertPitch ? -1 : 1) // stick back pulls up
-    if ((p.buttons[7]?.value ?? 0) > 0.3) fc.throttle = true
-    if ((p.buttons[6]?.value ?? 0) > 0.3) fc.brake = true
-    if (p.buttons[2]?.pressed) fc.burner = true
-    if (p.buttons[0]?.pressed) pitch = 1
-  }
-  // Handed over by itself (off a cliff): until you take the pitch, the nose eases down and you come
-  // back to the ground — steeper the higher you are (−17° from 600 m), flaring to a gentle −4° glide
-  // for the touch. (Held at the launch's climb, a W-only drive rose by itself to 1.1–1.4 km; a flat
-  // −4° off a mesa's top glided on for 8 km.)
-  if (pitch !== 0) freeAuto = false
-  if (freeAuto) {
-    const want = -THREE.MathUtils.clamp(flight.agl / 2000, -FREE_GLIDE, 0.3)
-    pitch = THREE.MathUtils.clamp((want - Math.asin(THREE.MathUtils.clamp(flight.fwd.y, -1, 1))) * 4, -0.6, 0.6)
-  }
-  fTurn += THREE.MathUtils.clamp(turn - fTurn, -STEP * 6, STEP * 6)
-  fPitch += THREE.MathUtils.clamp(pitch - fPitch, -STEP * 5, STEP * 5)
-  fc.turn = fTurn
-  // Hands off: the nose stays where you put it (attitude hold, as in other flying games). (It used to
-  // ease into a glide: any climb you let go of turned back down — tools/climb.mjs peaked at 7 km and
-  // fell back; nobody could reach space.)
-  fc.pitch = fPitch
-  fc.aim = null
-}
-
 /** A hit in FREE ROAM: past the grace since the last one, off the hull; empty, it's a wreck. */
 function freeHurt(dmg: number): void {
   if (freeGhost > 0 || freeWreckT > 0 || freeSinceHit < 1.5) return
@@ -2573,7 +2600,7 @@ function setAttitude(fwd: THREE.Vector3, up: THREE.Vector3, speed: number): void
 }
 /** ORBIT's step: flight in free space, cruise, the system moving past the anchored craft, arrival. */
 function systemStep(): void {
-  if (!flyForced) readFree()
+  if (!flyForced) readFlight()
   const nb = system!.nearest(sysPos)
   // Near a planet "up" is its up (level flight, banking, the view); far out, the system's.
   if (nb.i >= 0) {
@@ -3054,6 +3081,7 @@ function simStep(): void {
     if (!flyForced) readFlight()
     if (autopilot) huntAutopilot()
     flight.step(STEP, fc, world)
+    airTick()
     flight.syncTo(player)
     runTop = Math.max(runTop, flight.topMach)
     rings.step(player)
@@ -3084,7 +3112,7 @@ function simStep(): void {
       freeWreckT -= STEP
       if (freeWreckT <= 0) freeRespawn()
     } else if (freeAir) {
-      if (!flyForced) readFree()
+      if (!flyForced) readFlight()
       // Above the air, cruise as in ORBIT: Shift scales the speed with the height (half of it a second),
       // so climbing out to 1,500 km or coming down from it takes seconds, not minutes.
       {
@@ -3096,6 +3124,7 @@ function simStep(): void {
       }
       freeRockHit = 0
       flight.step(STEP, fc, world)
+      airTick()
       flight.syncTo(player)
       freeAirT += STEP
       if (freeRockHit > 0) freeRock(freeRockHit, tmp2.copy(flight.pos).addScaledVector(freeRockN, -6))
@@ -3113,7 +3142,7 @@ function simStep(): void {
       const pullUp = !forced && !flyForced && (input.isDown('Space') || [...(navigator.getGamepads ? navigator.getGamepads() : [])].some((p) => p?.buttons[0]?.pressed))
       // You fly when you choose to: Space at speed (on the ground or mid-hop). Off a crest the hover
       // only hops — its own fall brings it down; only a real drop (a cliff: long in the air, or well
-      // clear of the ground) hands over by itself, and then the nose glides you back down (readFree).
+      // clear of the ground) hands over by itself, and then the nose glides you back down (readFlight).
       // (Every crest at speed used to hand over and the craft held the launch's climb: a W-only drive
       //  was airborne 82–94% of the time and rose to 1.1–1.4 km by itself.)
       if (player.dead) { /* wrecked on the ground (freeRock): the respawn takes it */ }
@@ -3129,23 +3158,26 @@ function simStep(): void {
   }
 }
 
-/** HUNT's controls, like other flying games:
- *  keys — W/S throttle and air brake, A/D or ←/→ turn (the craft banks itself), ↑/↓ pitch
- *  (↑ = nose down, as on a stick; "Invert flight pitch" in settings), Q/E roll, Shift boost;
- *  pad — left stick fly, right stick roll, triggers throttle / brake, X boost. */
+/** Every flying mode's controls — HUNT, FREE ROAM in the air and ORBIT, one set (FREE ROAM's, the same
+ *  on the ground): W throttle, S air brake, Shift burner (ORBIT: cruise), A/D turn (the craft banks
+ *  itself), Space nose up, C nose down, Q/E roll; arrows ↑ throttle, ↓ brake, ←/→ turn. Pad: left stick
+ *  flies (stick back pulls up; "Invert flight pitch" in settings), right stick rolls, RT throttle, LT
+ *  brake, X burner, A nose up, B nose down. HUNT's guns are off these: mouse / J (pad RB) the cannon,
+ *  F / K (pad LB) missiles (huntCombatStep). (HUNT had its own: W/S pitch, Shift throttle, Space fire,
+ *  C brake — two schemes to learn for one craft.) FREE ROAM: hands off the pitch and the nose holds;
+ *  handed over by itself (off a cliff) it glides you down until you take the pitch. */
 let fTurn = 0, fPitch = 0
 /** The keys' last direction and how long it has been held (the precision band). */
 let fTurnWant = 0, fPitchWant = 0, fTurnHeld = 0, fPitchHeld = 0
 function readFlight(): void {
   const k = (c: string) => input.isDown(c)
-  // HUNT keys: W/S (and ↑/↓) pitch like a stick, A/D turn, Q/E roll, Shift throttle, C air brake (never Ctrl: Ctrl+W closes the tab).
-  fc.throttle = false; fc.brake = k('KeyC'); fc.burner = k('ShiftLeft') || k('ShiftRight')
+  // (Never Ctrl: Ctrl+W closes the tab.)
+  fc.throttle = k('KeyW') || k('ArrowUp'); fc.brake = k('KeyS') || k('ArrowDown'); fc.burner = k('ShiftLeft') || k('ShiftRight')
   fc.roll = (k('KeyE') ? 1 : 0) - (k('KeyQ') ? 1 : 0)
   let turn = (k('KeyD') || k('ArrowRight') ? 1 : 0) - (k('KeyA') || k('ArrowLeft') ? 1 : 0)
-  let pitch = ((k('ArrowDown') || k('KeyS') ? 1 : 0) - (k('ArrowUp') || k('KeyW') ? 1 : 0)) * (invertPitch ? -1 : 1)
+  let pitch = (k('Space') ? 1 : 0) - (k('KeyC') ? 1 : 0)
   let padTurn = false, padPitch = false
-  const pads = navigator.getGamepads ? navigator.getGamepads() : []
-  for (const p of pads) {
+  for (const p of navigator.getGamepads ? navigator.getGamepads() : []) {
     if (!p) continue
     const dz = (v: number) => (Math.abs(v) < 0.12 ? 0 : (v - Math.sign(v) * 0.12) / 0.88)
     const ax = dz(p.axes[0] ?? 0), ay = dz(p.axes[1] ?? 0)
@@ -3154,6 +3186,8 @@ function readFlight(): void {
     if ((p.buttons[7]?.value ?? 0) > 0.3) fc.throttle = true
     if ((p.buttons[6]?.value ?? 0) > 0.3) fc.brake = true
     if (p.buttons[2]?.pressed) fc.burner = true
+    if (p.buttons[0]?.pressed) pitch = 1
+    if (p.buttons[1]?.pressed) pitch = -1
     const rx = dz(p.axes[2] ?? 0)
     if (rx) fc.roll = rx
   }
@@ -3164,11 +3198,25 @@ function readFlight(): void {
   const band = (v: number, held: number) => (v === 0 ? 0 : held < 0.2 ? v * 0.3 : v * Math.min(1, 0.3 + (held - 0.2) * 3.5))
   if (!padTurn) { fTurnHeld = turn !== 0 && Math.sign(turn) === Math.sign(fTurnWant) ? fTurnHeld + STEP : 0; fTurnWant = turn; turn = band(turn, fTurnHeld) }
   if (!padPitch) { fPitchHeld = pitch !== 0 && Math.sign(pitch) === Math.sign(fPitchWant) ? fPitchHeld + STEP : 0; fPitchWant = pitch; pitch = band(pitch, fPitchHeld) }
+  // FREE ROAM, handed over by itself (off a cliff): until you take the pitch, the nose eases down and
+  // you come back to the ground — steeper the higher you are (−17° from 600 m), flaring to a gentle −4°
+  // glide for the touch. (Held at the launch's climb, a W-only drive rose by itself to 1.1–1.4 km; a
+  // flat −4° off a mesa's top glided on for 8 km.)
+  if (mode !== 'hunt') {
+    if (pitch !== 0) freeAuto = false
+    if (freeAuto) {
+      const want = -THREE.MathUtils.clamp(flight.agl / 2000, -FREE_GLIDE, 0.3)
+      pitch = THREE.MathUtils.clamp((want - Math.asin(THREE.MathUtils.clamp(flight.fwd.y, -1, 1))) * 4, -0.6, 0.6)
+    }
+  }
   const toward = (f: number, v: number) => f + THREE.MathUtils.clamp(v - f, -STEP * (Math.abs(v) < Math.abs(f) || v * f < 0 ? 20 : 8), STEP * (Math.abs(v) < Math.abs(f) || v * f < 0 ? 20 : 8))
   fTurn = toward(fTurn, turn)
   fPitch = toward(fPitch, pitch)
+  // Hands off: the nose stays where you put it (attitude hold, as in other flying games). (FREE ROAM's
+  // used to ease into a glide: any climb you let go of turned back down — tools/climb.mjs peaked at 7 km
+  // and fell back; nobody could reach space.)
   fc.turn = fTurn; fc.pitch = fPitch
-  // (HUNT is keyboard and pad only: no mouse steering.)
+  // (Keyboard and pad only: no mouse steering — the mouse is HUNT's trigger.)
   fc.aim = null
 }
 const tmp2 = new THREE.Vector3()
@@ -3236,6 +3284,7 @@ function drawRacer(p: Player, alpha: number, dt: number, isMe: boolean): void {
   const mess = p.spin > 0 ? Math.min(1, p.spin) : 0
   const wob = mess * (Math.sin(time * 23 + p.pos.x) * 0.1 + Math.sin(time * 37) * 0.06)
   craft.setChar(p.crashing ? Math.min(1, p.crashT / 0.9) : 0)
+  if (isMe) craft.setFrost(mode === 'hunt' || (mode === 'free' && freeAir) ? flight.ice : 0)
   if (p.crashing) craft.body.rotation.set(p.crashRot.x, p.crashRot.y, p.crashRot.z)
   else craft.body.rotation.set(THREE.MathUtils.lerp(p.prevPitch, p.pitch, alpha) + wob * 0.6, 0, -THREE.MathUtils.lerp(p.prevBank, p.bank, alpha) + roll + wob)
   // Suspension squash on landing; a slow float bob on the ground effect.
@@ -3650,6 +3699,8 @@ function frame(now: number): void {
   } else if ((mode === 'hunt' || (mode === 'free' && freeAir)) && !player.dead) {
     flightQ.slerpQuaternions(flight.prevQuat, flight.quat, alpha)
     flightPunch *= Math.exp(-realDt * 4)
+    // Turbulence shakes the view a little (more with ice on); "reduce shake" in settings cuts it.
+    fcam.shake = flight.turb * (0.6 + 0.4 * flight.ice) * (CFG.camera.reduceShake ? 0.3 : 1)
     fcam.update(realDt, renderPos, flightQ, flight.vel, flight.mach, fovMax, flightPunch)
     if (hitT > 0) { hitT -= realDt; if (hitT <= 0) $('#hitmark').style.opacity = '0' }
     if (dmgT > 0) { dmgT -= realDt; if (dmgT <= 0) $('#dmgarc').style.opacity = '0' }
@@ -3733,6 +3784,7 @@ function frame(now: number): void {
   const cine = mode === 'race' && spectate && race.racers[0].finished
   hud.style.opacity = cine ? '0.3' : ''
   damageFlash = Math.max(0, damageFlash - realDt * 1.8)
+  frostFrame(play)
   impactPulse = Math.max(0, impactPulse - realDt * 3)
   if (player.barrier === 'silence') white = Math.min(1, white + realDt * 1.6)
   else white = Math.max(0, white - realDt * (player.barrier === 'boom' ? 1.6 : 4))
@@ -3844,6 +3896,7 @@ function frame(now: number): void {
   // The score: the space one above the air (with a little hysteresis) and in ORBIT.
   if (mode === 'free') sound.setSpace(IN_SYSTEM || (space.vac > 0.85 ? true : space.vac < 0.6 ? false : spaceMusic)); else sound.setSpace(false)
   spaceMusic = mode === 'free' && (IN_SYSTEM || space.vac > 0.7)
+  sound.gust = (mode === 'hunt' || (mode === 'free' && freeAir)) && !player.dead ? flight.turb * (0.5 + 0.5 * flight.ice) : 0
   sound.update(realDt, engineMach, player.boost, player.brake, mode === 'hunt' ? combat.lockProgress : 0, mode === 'hunt' && combat.locked, play && !player.dead && !player.crashing, heat, player.burning, rivalVoices, mode === 'free' ? space.vac : 0)
 
   sunShadow.enabled = tier !== 'low' && settings.shadows && detailCut < 2
@@ -4105,7 +4158,7 @@ function updateHud(dt: number, slow: boolean): void {
       const alt = Math.max(0, Math.round(player.pos.y - groundH(player.pos.x, player.pos.z)))
       const altTxt = alt < 10000 ? `${alt} M` : `${(alt / 1000).toFixed(alt < 100000 ? 1 : 0)} KM`
       const zone = alt > 80000 ? '<b style="color:#9fd2ff">IN SPACE</b>' : alt > 25000 ? '<b style="color:#9fd2ff">EDGE OF SPACE</b>' : freeAir ? '<b>FLYING</b> · SPACE UP · C DOWN' : 'HOLD SPACE AT SPEED TO LIFT OFF'
-      scoreSub.innerHTML = `${shards.total} FOUND IN ALL<br/>${zone}<br/>ALT ${altTxt} · ${fmtTime(runTime)}`
+      scoreSub.innerHTML = `${shards.total} FOUND IN ALL<br/>${zone}<br/>ALT ${altTxt}${freeAir ? iceTxt() : ''} · ${fmtTime(runTime)}`
     }
     // PULL UP from the time to impact (under 2 s at this sink rate), not the height — and only for a
     // descent that would hurt (sinking faster than ~150 m/s): a glide down at Mach 6 is a landing, a dive
@@ -4120,7 +4173,7 @@ function updateHud(dt: number, slow: boolean): void {
     $('#gmark').style.display = 'none'
     $('#gmark2').style.display = 'none'
     scoreNum.textContent = String(score)
-    scoreSub.innerHTML = `${chain > 1 ? `<b style="color:#ffd23a">CHAIN ×${chain.toFixed(2)}</b><br/>` : ''}WAVE ${Math.min(huntWave, HUNT_WAVES.length)} / ${HUNT_WAVES.length} · ${kills} DOWN<br/>ALT ${Math.round(flight.agl)} M · ${fmtTime(runTime)}`
+    scoreSub.innerHTML = `${chain > 1 ? `<b style="color:#ffd23a">CHAIN ×${chain.toFixed(2)}</b><br/>` : ''}WAVE ${Math.min(huntWave, HUNT_WAVES.length)} / ${HUNT_WAVES.length} · ${kills} DOWN<br/>ALT ${flight.agl < 10000 ? Math.round(flight.agl) + ' M' : (flight.agl / 1000).toFixed(1) + ' KM'}${iceTxt()} · ${fmtTime(runTime)}`
     // The HUNT HUD: bars and pips, not text.
     ;($('#hhud .en i') as HTMLElement).style.width = `${flight.energy}%`
     const ht = $('#hhud .ht'); (ht.firstElementChild as HTMLElement).style.width = `${cannon.lockout > 0 ? 100 : (cannon.heat / 3) * 100}%`
@@ -4184,7 +4237,7 @@ function updateHud(dt: number, slow: boolean): void {
     } else pip.style.display = 'none'
     // Low and sinking fast: PULL UP.
     const al = $('#align')
-    if (flight.sinking && !player.dead) { al.style.display = 'block'; al.textContent = 'PULL UP · S'; al.className = 'bad' }
+    if (flight.sinking && !player.dead) { al.style.display = 'block'; al.textContent = 'PULL UP · SPACE'; al.className = 'bad' }
     else if (al.textContent?.startsWith('PULL UP')) al.style.display = 'none'
     // Locked by an interceptor: a red bar that fills, top centre.
     const lw = $('#lockwarn')
@@ -4226,6 +4279,12 @@ function updateHud(dt: number, slow: boolean): void {
   }
 }
 
+/** The HUD's ice readout (flying): nothing when clear, then the percent — blue, red once it freezes. */
+function iceTxt(): string {
+  if (flight.ice < 0.03) return ''
+  const col = flight.frozen ? '#ff6a5a' : flight.ice > 0.55 ? '#bfe6ff' : '#9fd2ff'
+  return ` · <b style="color:${col}">${flight.frozen ? (flight.frozen === 1 ? 'PITCH' : 'TURN') + ' FROZEN' : 'ICE ' + Math.round(flight.ice * 100) + '%'}</b>`
+}
 /** The edge arrow toward a projected point when it is off screen. */
 function arrowTo(p: THREE.Vector3, label: string): void {
   const behind = p.z > 1

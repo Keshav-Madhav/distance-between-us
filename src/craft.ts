@@ -66,6 +66,7 @@ function liveryPatch(m: THREE.MeshPhysicalMaterial, u: { uLiv: { value: number }
 }
 
 const _soot = new THREE.Color(0x17110d)
+const _rime = new THREE.Color(0xdcecf7)
 
 
 /** Each model's merged geometry, built once and shared by every craft flying it (ten racers rebuilt
@@ -412,12 +413,23 @@ export class Craft {
 
   private readonly charMats: { m: THREE.MeshStandardMaterial; base: THREE.Color }[] = []
   private char = 0
+  private frost = 0
   /** Scorch the paint toward soot (0 clean … 1 burnt). */
   setChar(a: number): void {
     if (Math.abs(a - this.char) < 0.01) return
     this.char = a
-    for (const { m, base } of this.charMats) m.color.copy(base).lerp(_soot, a * 0.85)
-    this.farLit.color.setScalar(1 - a * 0.8)
+    this.tintPaint()
+  }
+  /** Rime on the paint (flight icing, 0 … 1): toward a pale ice blue — the same colour lerp as the
+   *  scorch, no new material or pass. */
+  setFrost(a: number): void {
+    if (Math.abs(a - this.frost) < 0.02 && !(a === 0 && this.frost > 0)) return
+    this.frost = a
+    this.tintPaint()
+  }
+  private tintPaint(): void {
+    for (const { m, base } of this.charMats) m.color.copy(base).lerp(_soot, this.char * 0.85).lerp(_rime, this.frost * 0.55)
+    this.farLit.color.setScalar(1 - this.char * 0.8)
   }
 
   /** Detail by distance from the camera. */

@@ -3,7 +3,8 @@
 // FlightCraft — arcade flight: a quaternion orientation (loops and inverted flight are fine), the nose
 //   goes where it is pointed and the velocity follows it a moment later (hard turns slide a little),
 //   climbing costs speed and diving gains it. No stall: there is a floor speed. A ground cushion
-//   (skim the dirt at Mach 3), rock is solid (fly over a mesa, not through it), a soft ceiling.
+//   (skim the dirt at Mach 3), rock is solid (fly over a mesa, not through it), and the air pushes back
+//   with height (AIR: thin air, turbulence, icing — no wall).
 // Aim-point control — every input scheme becomes one thing: a direction in the world to fly toward.
 //   The controller banks and pulls to put the nose on it, and levels the wings when it is close.
 // FlightCam — a chase camera that keeps the horizon mostly level (the craft rolls; the world rolls
@@ -53,8 +54,51 @@ export const FLIGHT = {
   burnDrain: 12,
   energyRefill: 12,
   cushion: 70,
-  softCeiling: 1800,
-  hardCeiling: 2200,
+  /** HUNT's last-resort ceiling (m): the thin air (AIR) holds a climb well under it. (It used to be a
+   *  wall at 2.2 km — climbs stopped dead and a loop started above 300 m hit it.) */
+  hardCeiling: 20000,
+}
+
+/**
+ * The air, by height — one model for HUNT and FREE ROAM flight (not ORBIT, not the ground). Height
+ * pushes back instead of a wall: past 3 km the air thins (less speed, less control, and a slow craft
+ * can't hold its climb — it mushes and the nose drops), from ~4 km the cloud layer ices the craft, and
+ * the air shakes it. Above ~25 km there's no weather left: a climb that punches through (FREE ROAM's
+ * rocket) is clear. HUNT's craft runs out of air around 10–13 km.
+ *
+ * Icing never runs away: the ice eases toward a level set by the height (speed only lowers it a
+ * little), its speed cost is bounded, and a slow craft sinks — down is always the way out, and below
+ * 3 km it melts in seconds.
+ */
+export const AIR = {
+  /** The air thins from here to there (m): 0 … 1. */
+  thinFrom: 3000,
+  thinTo: 16000,
+  /** At the thinnest: the speed the engines reach (−45%) and the control rates (−35%). */
+  thrustLoss: 0.45,
+  authLoss: 0.35,
+  /** The slowest the craft holds its height (Mach): the floor speed in thick air, +2 in the thinnest. */
+  stallMach: 0.9,
+  stallThin: 2.0,
+  /** Under it: the sink (m/s²) at a full Mach 0.6 short, and the nose falling toward the travel (rad/s). */
+  sink: 45,
+  nodDown: 1.0,
+  /** Icing: the band (m) — up to full from 4 to 14 km, gone between 20 and 25 km. */
+  iceFrom: 4000,
+  iceFull: 14000,
+  iceTop: 20000,
+  iceGone: 25000,
+  /** Kinetic heating: at Mach 7 the ice's level is 30% lower. */
+  iceHeat: 0.3,
+  /** At full ice: speed −35%, control −40%. */
+  iceSpeed: 0.35,
+  iceAuth: 0.4,
+  /** Above this ice, one axis at a time locks for a moment (a chance a second that grows with the ice). */
+  freezeAt: 0.55,
+  /** Turbulence: from 4.5 km, full by 11 km, gone with the weather. (From 3.5 km it shook HUNT's usual
+   *  fighting heights, 1–6 km, for nothing: the push back belongs above them.) */
+  turbFrom: 4500,
+  turbFull: 11000,
 }
 
 export interface FlightControls {
@@ -143,6 +187,21 @@ export class FlightCraft {
   unbound = false
   /** ORBIT's cruise: a speed the craft eases to (m/s; 0 = off), above every other limit. */
   cruise = 0
+  /** The air (AIR): how thin (0 … 1), the ice on the craft (0 … 1), the turbulence (0 … 1), how far
+   *  under the speed that holds height (0 … 1: mushing). */
+  thin = 0
+  ice = 0
+  turb = 0
+  mush = 0
+  /** A control frozen by the ice: 0 none, 1 pitch, 2 turn; for how long (s). */
+  frozen: 0 | 1 | 2 = 0
+  frozenT = 0
+  private freezeCd = 0
+  private airT = 0
+  /** A deterministic die for the freezes (replays and fast-sim tests see the same run). */
+  private seed = 12345
+  /** The game's warning when an axis freezes. */
+  onFreeze: ((axis: 1 | 2) => void) | null = null
 
   get mach(): number { return this.speed / MACH }
 
@@ -163,6 +222,7 @@ export class FlightCraft {
     this.brakeT = 0
     this.rates.set(0, 0, 0)
     this.topMach = 0
+    this.ice = 0; this.frozen = 0; this.frozenT = 0; this.freezeCd = 0; this.mush = 0
   }
 
   /** Set the attitude outright (a world handover): the nose and wings as given, velocity along the nose. */
@@ -193,6 +253,11 @@ export class FlightCraft {
     const F = FLIGHT
     this.prev.copy(this.pos)
     this.prevQuat.copy(this.quat)
+    this.airStep(dt)
+    /** What the air and the ice leave of the engines and the controls (1 in thick air, clean). */
+    const airK = 1 - this.vac
+    const spdK = (1 - AIR.thrustLoss * this.thin * airK) * (1 - AIR.iceSpeed * this.ice)
+    const authK = (1 - AIR.authLoss * this.thin * airK) * (1 - AIR.iceAuth * this.ice)
 
     // ── controls: rates, like other arcade flyers ──
     // Turn: the heading swings about the world's up at a steady rate, and the craft banks into it by
@@ -207,12 +272,16 @@ export class FlightCraft {
       turnIn = THREE.MathUtils.clamp(dh * 3, -1, 1)
       pitchIn = THREE.MathUtils.clamp((Math.asin(THREE.MathUtils.clamp(c.aim.y, -1, 1)) - Math.asin(THREE.MathUtils.clamp(this.fwd.y, -1, 1))) * 3, -1, 1)
     }
+    // Iced up: the frozen axis doesn't answer (the rate stops as on a release).
+    if (this.frozen === 1) pitchIn = 0
+    else if (this.frozen === 2) turnIn = 0
     this.brakeT = c.brake ? this.brakeT + dt : 0
     const snap = c.brake && this.brakeT < F.brakeSnapTime ? F.brakeSnap : 1
     // (FREE ROAM and ORBIT keep their old flat rate and held brake bonus: tuned for touring, not fights.)
-    const pitchMax = this.sandbox || this.unbound
+    let pitchMax = this.sandbox || this.unbound
       ? THREE.MathUtils.lerp(1.05, 0.7, THREE.MathUtils.clamp((this.mach - 2.6) / 2.4, 0, 1)) * (c.brake ? 1.25 : 1)
       : turnRate(this.mach) * snap
+    pitchMax *= authK
     // (Equal to pitch: at 0.75× a Dart out-turned you on the keys.)
     const turnMax = pitchMax
     // Bank: the world's up seen from the cockpit (+ = rolled right).
@@ -245,6 +314,19 @@ export class FlightCraft {
     _q.setFromAxisAngle(_ax.normalize(), -this.rates.y * dt); this.quat.premultiply(_q)
     _q.setFromAxisAngle(AX, -this.rates.x * dt); this.quat.multiply(_q)
     _q.setFromAxisAngle(AZ, this.rates.z * dt); this.quat.multiply(_q)
+    // Turbulence: smooth, slow wander (a few incommensurate sines) — the wings rock, the nose bobs a
+    // little; readable, never a twitch.
+    if (this.turb > 0.01) {
+      const t = this.airT, k = this.turb * (0.7 + 0.3 * this.ice)
+      const nP = Math.sin(t * 1.9) * 0.6 + Math.sin(t * 3.7 + 1.3) * 0.4
+      const nR = Math.sin(t * 1.3 + 2.1) * 0.6 + Math.sin(t * 2.9 + 0.4) * 0.4
+      const nY = Math.sin(t * 0.9 + 4.2)
+      _q.setFromAxisAngle(AX, nP * 0.07 * k * dt); this.quat.multiply(_q)
+      _q.setFromAxisAngle(AZ, nR * 0.3 * k * dt); this.quat.multiply(_q)
+      _q.setFromAxisAngle(AY, nY * 0.05 * k * dt); this.quat.multiply(_q)
+      // and a little lift and drop (m/s² — a bump, not a fall)
+      this.vel.y += (Math.sin(t * 2.3 + 0.7) * 0.6 + Math.sin(t * 4.1) * 0.4) * 18 * k * dt
+    }
     this.quat.normalize()
     this.axes()
     // Where the inputs are taking the nose (the HUD's aim ring when flying by keys).
@@ -257,13 +339,9 @@ export class FlightCraft {
     this.burning = c.burner && (this.energy > 0.5 || this.sandbox)
     if (this.burning && !this.sandbox) { this.energy = Math.max(0, this.energy - F.burnDrain * dt); this.energyIdle = 0 }
     else { this.energyIdle += dt; if (this.energyIdle > 0.8) this.energy = Math.min(F.energyMax, this.energy + F.energyRefill * dt) }
-    // (FREE ROAM: only where the world stops being drawn — the terrain reaches ~24 km.)
     // (FREE ROAM: up into space — src/space.ts; the limit is far beyond where the air ends.)
-    const soft = this.unbound ? Infinity : this.sandbox ? 4900000 : F.softCeiling, hard = this.unbound ? Infinity : this.sandbox ? 5000000 : F.hardCeiling
-    /** 0 in the air … 1 in vacuum (FREE ROAM): no drag, the engines push harder, speed is free. */
-    const vac = this.sandbox ? THREE.MathUtils.smoothstep(this.agl, 20000, 70000) : 0
-    this.vac = vac
-    const thin = this.unbound ? 0 : THREE.MathUtils.clamp((this.agl - soft) / (hard - soft), 0, 1)
+    const hard = this.unbound ? Infinity : this.sandbox ? 5000000 : F.hardCeiling
+    const vac = this.vac
     // Off the throttle the speed creeps toward cruise; Shift pushes hard (energy), or toward the
     // throttle speed when the energy is gone.
     if (this.cruise > 0) this.speed += (this.cruise - this.speed) * (1 - Math.exp(-2.4 * dt))
@@ -271,13 +349,12 @@ export class FlightCraft {
       // Held off the throttle (a little drag); W and Shift push toward their speeds, never pull back.
       const boost = 1 + 3 * vac
       if (c.brake) this.speed += Math.max(F.brakeMach * MACH - this.speed, -F.decel * 1.6 * boost * dt)
-      else if (this.burning && this.speed < THREE.MathUtils.lerp(12, 80, vac) * MACH) this.speed += F.accel * 1.5 * boost * dt
-      else if (c.throttle && this.speed < THREE.MathUtils.lerp(8.5, 30, vac) * MACH) this.speed += F.accel * boost * dt
+      else if (this.burning && this.speed < THREE.MathUtils.lerp(12, 80, vac) * MACH * spdK) this.speed += F.accel * 1.5 * boost * dt
+      else if (c.throttle && this.speed < THREE.MathUtils.lerp(8.5, 30, vac) * MACH * spdK) this.speed += F.accel * boost * dt
       this.speed -= this.speed * 0.012 * (1 - vac) * dt
-      this.speed *= 1 - thin * 0.5 * dt
     } else {
       let target = (c.brake ? F.brakeMach : this.burning ? F.burnerMach : c.throttle || c.burner ? F.throttleMach : F.cruiseMach) * MACH
-      target *= 1 - thin * 0.6
+      target *= spdK
       // (Off the throttle it recovers at 0.5× — enough to hold a level full-rate turn at cruise, the corner:
       //  at 0.3× any sustained turn bled you to the floor speed, where the turn is worst.)
       const up = this.burning ? F.accel * 1.5 : c.throttle || c.burner ? F.accel : F.accel * 0.5
@@ -292,16 +369,27 @@ export class FlightCraft {
     this.topMach = Math.max(this.topMach, this.mach)
 
     // ── velocity follows the nose ──
-    const k = c.brake ? 7 : this.burning ? 3 : F.follow
+    // (Mushing — too slow for the thin air — the wings barely bend the travel: the nose points, the
+    //  craft sinks.)
+    const k = (c.brake ? 7 : this.burning ? 3 : F.follow) * (1 - 0.85 * this.mush)
     const dir = _v.copy(this.vel).normalize()
     if (!Number.isFinite(dir.x) || dir.lengthSq() < 0.5) dir.copy(this.fwd)
     dir.lerp(this.fwd, 1 - Math.exp(-k * dt)).normalize()
     this.vel.copy(dir).multiplyScalar(this.speed)
 
-    // ── the ceiling: thin air pushes the nose down and stops the climb ──
-    if (thin > 0 && !this.sandbox) {
-      if (this.vel.y > 0) this.vel.y *= 1 - thin
-      if (this.fwd.y > 0) { _q.setFromAxisAngle(AX, thin * 0.6 * dt); this.quat.multiply(_q); this.axes() }
+    // ── too slow for the air: it sinks, and the nose drops toward the travel (a stall's mush — the
+    //    climb ends by itself, at a height set by the engines; diving gives the speed back) ──
+    if (this.mush > 0) {
+      this.vel.y -= AIR.sink * this.mush * dt
+      const ve = Math.asin(THREE.MathUtils.clamp(this.vel.y / Math.max(1, this.vel.length()), -1, 1))
+      const ne = Math.asin(THREE.MathUtils.clamp(this.fwd.y, -1, 1))
+      if (ne > ve && ne > -0.35) { // (to −20° at most: a nod, not a dive to the ground)
+        const ax = _w.crossVectors(this.fwd, UP)
+        if (ax.lengthSq() > 1e-6) {
+          _q.setFromAxisAngle(ax.normalize(), -Math.min(ne - ve, AIR.nodDown * this.mush * dt))
+          this.quat.premultiply(_q); this.quat.normalize(); this.axes()
+        }
+      }
     }
 
     this.pos.addScaledVector(this.vel, dt)
@@ -377,6 +465,46 @@ export class FlightCraft {
     if (this.sinceHurt > 4) this.hull = Math.min(100, this.hull + 4 * dt)
   }
 
+  /** The air at this height (AIR): thinning, mushing, turbulence, ice and its freezes. ORBIT has none
+   *  (the ice melts off). */
+  private airStep(dt: number): void {
+    const A = AIR, S = THREE.MathUtils.smoothstep
+    this.airT += dt
+    if (this.frozenT > 0) { this.frozenT -= dt; if (this.frozenT <= 0) this.frozen = 0 }
+    this.freezeCd = Math.max(0, this.freezeCd - dt)
+    // (0 in vacuum, FREE ROAM — set from the height above the ground, as before.)
+    this.vac = this.sandbox ? S(this.agl, 20000, 70000) : 0
+    if (this.unbound) {
+      this.thin = 0; this.turb = 0; this.mush = 0; this.frozen = 0; this.frozenT = 0
+      this.ice *= Math.exp(-0.6 * dt)
+      return
+    }
+    const alt = this.pos.y, airK = 1 - this.vac
+    this.thin = S(alt, A.thinFrom, A.thinTo)
+    // Holding height: a faster speed the thinner the air (not in vacuum — no lift needed, none had).
+    const stall = (A.stallMach + A.stallThin * this.thin) * MACH
+    // (Not scaled by the thinness: the floor speed — no stall — held a braked craft climbing slowly at
+    //  Mach 0.9 from 8 to 9 km. In thick air the stall speed is the floor, so nothing changes down low.)
+    this.mush = THREE.MathUtils.clamp((stall - this.speed) / (0.6 * MACH), 0, 1) * airK
+    this.turb = S(alt, A.turbFrom, A.turbFull) * (1 - S(alt, A.iceTop, A.iceGone + 1000)) * airK
+    // Ice: toward a level set by the height (higher in the band, more), a little lower the faster you
+    // go (kinetic heating). It builds over ~6–10 s, melts in a few below 3 km — speed melts it faster
+    // too, but nothing feeds back: the target never depends on the ice.
+    const band = S(alt, A.iceFrom, A.iceFull) * (1 - S(alt, A.iceTop, A.iceGone))
+    const heat = S(this.mach, 2.5, 7)
+    const target = band * (1 - A.iceHeat * heat)
+    const rate = target > this.ice ? 0.05 + 0.12 * band : (alt < A.thinFrom ? 0.5 : 0.15) + 0.3 * heat
+    this.ice += (target - this.ice) * (1 - Math.exp(-rate * dt))
+    // Freezes: past freezeAt, now and then one axis locks for 0.5–1.5 s (never both, a gap between).
+    if (this.frozen === 0 && this.freezeCd <= 0 && this.ice > A.freezeAt && this.rnd() < (this.ice - A.freezeAt) * 1.6 * dt) {
+      this.frozen = this.rnd() < 0.5 ? 1 : 2
+      this.frozenT = 0.5 + this.rnd() * (0.4 + 0.6 * (this.ice - A.freezeAt) / (1 - A.freezeAt))
+      this.freezeCd = this.frozenT + 1.5
+      this.onFreeze?.(this.frozen)
+    }
+  }
+  private rnd(): number { this.seed = (this.seed * 1664525 + 1013904223) >>> 0; return this.seed / 4294967296 }
+
   /** Hit by enemy fire. */
   damage(dmg: number): void {
     if (this.ghost > 0 || this.invincible) return
@@ -441,6 +569,9 @@ export class FlightCam {
   private init = false
   /** How much of the craft's roll the view takes (0 = horizon locked, 1 = cockpit). */
   horizon = 0.3
+  /** Turbulence shake (0 … 1, set by the game each frame): a small, slow wobble of the view. */
+  shake = 0
+  private shakeT = 0
   constructor(private readonly camera: THREE.PerspectiveCamera) {}
   snap(): void { this.init = false }
   update(dt: number, at: THREE.Vector3, q: THREE.Quaternion, vel: THREE.Vector3, mach: number, fovMax: number, punch = 0): void {
@@ -467,6 +598,12 @@ export class FlightCam {
     if (cam.position.y < g + 1.6) cam.position.y = g + 1.6
     cam.up.copy(this.upS)
     cam.lookAt(at.x + this.fwdS.x * 45 + this.upS.x * 1.2, at.y + this.fwdS.y * 45 + this.upS.y * 1.2, at.z + this.fwdS.z * 45 + this.upS.z * 1.2)
+    if (this.shake > 0.01) {
+      // (Low frequencies, under half a degree: a buffeting, not a flicker.)
+      const t = (this.shakeT += dt), k = this.shake * 0.007
+      cam.rotateX((Math.sin(t * 7.1) * 0.6 + Math.sin(t * 11.3 + 1.7) * 0.4) * k)
+      cam.rotateY((Math.sin(t * 6.3 + 0.9) * 0.6 + Math.sin(t * 9.7 + 2.3) * 0.4) * k)
+    }
     const s = THREE.MathUtils.clamp((mach - 1) / 4, 0, 1)
     cam.fov += (72 + (fovMax - 72) * s + punch - cam.fov) * (1 - Math.exp(-dt * 3))
     cam.updateProjectionMatrix()

@@ -75,6 +75,8 @@
   #arrow .t.keep { position: absolute; top: 30px; left: 50%; transform: translateX(-50%); color: var(--red); font-size: 11px; letter-spacing: 0.3em; font-weight: 700; white-space: nowrap; }
   #flash { position: absolute; left: 50%; top: 34%; transform: translate(-50%, -50%); font-size: 34px; font-weight: 700; letter-spacing: 0.3em; opacity: 0; text-shadow: 0 0 30px rgba(255,150,60,0.9); white-space: nowrap; }
   /* (Warnings sit high, the WRECKED / MACH callout lower: they shared one strip and overprinted.) */
+  /* Frost on the glass (flight icing): opacity is the ice; the pattern is drawn once by the game. */
+  #frost { position: absolute; inset: 0; pointer-events: none; opacity: 0; background-size: 100% 100%; mix-blend-mode: screen; -webkit-mask-image: radial-gradient(ellipse at center, transparent 38%, #000 78%); mask-image: radial-gradient(ellipse at center, transparent 38%, #000 78%); }
   #warn { position: absolute; left: 0; right: 0; top: 11vh; text-align: center; color: var(--red); font-weight: 700; opacity: 0; }
   #warn .big { font-size: 40px; letter-spacing: 0.35em; }
   #warn .small { font-size: 14px; letter-spacing: 0.4em; margin-top: 8px; }
@@ -507,6 +509,7 @@
 <div id="inpview" aria-hidden="true"><div class="k up"><i></i><b>▲</b></div><div class="k lt"><i></i><b>◀</b></div><div class="k mid">INPUT</div><div class="k rt"><i></i><b>▶</b></div><div class="k dn"><i></i><b>▼</b></div><div class="k sf"><i></i></div><div class="k bn"><i></i><b>BURNER</b></div></div>
 <div id="swapcard" aria-live="polite"><small>Loading</small><b id="ld-world"></b><span id="ld-course"></span><i><em id="ld-bar"></em></i></div>
 <div id="hud" class="layer">
+  <div id="frost"></div>
   <div id="reticle"></div>
   <div id="lock"><div class="d"></div><div class="t">LOCK</div></div>
   <div id="arrow"><div class="t">WALKER</div></div>
@@ -572,7 +575,7 @@
     <div class="info"><div class="ph"><b id="tp-name"></b><span id="tp-blurb"></span></div><div id="tp-stats"></div><div id="tp-info"></div></div>
     <button id="start" class="big">START</button>
   </footer>
-  <div class="keys"><span class="kc">Enter</span> start <span class="kc">Esc</span> pause <span class="race-keys"><span class="kc">drag</span> look around <span class="kc">W</span> throttle <span class="kc">Shift</span> burner <span class="kc">A D</span> steer</span><span class="free-keys"><span class="kc">W</span> throttle <span class="kc">A D</span> steer <span class="kc">Space C</span> nose up · down</span><span class="hunt-keys"><span class="kc">W S</span> pitch <span class="kc">A D</span> turn <span class="kc">Shift</span> throttle <span class="kc">Space</span> cannon <span class="kc">F</span> missiles</span></div>
+  <div class="keys"><span class="kc">Enter</span> start <span class="kc">Esc</span> pause <span class="race-keys"><span class="kc">drag</span> look around <span class="kc">W</span> throttle <span class="kc">Shift</span> burner <span class="kc">A D</span> steer</span><span class="free-keys"><span class="kc">W</span> throttle <span class="kc">A D</span> steer <span class="kc">Space C</span> nose up · down</span><span class="hunt-keys"><span class="kc">W</span> throttle <span class="kc">A D</span> turn <span class="kc">Space C</span> nose up · down <span class="kc">Mouse J</span> cannon <span class="kc">F</span> missiles</span></div>
 </div>
 <div id="over" class="screen hide">
   <div class="card">
@@ -596,7 +599,7 @@
   <label>EFFECTS <input id="vs" type="range" min="0" max="1" step="0.05" value="1" /></label>
   <div class="sub">CONTROLS</div>
   <label>STEERING ASSIST <select id="as" autocomplete="off"><option value="0">OFF</option><option value="0.35">LOW</option><option value="0.6" selected>MEDIUM</option><option value="0.85">HIGH</option></select></label>
-  <label>INVERT FLIGHT PITCH <input id="invp" type="checkbox" /></label>
+  <label>INVERT FLIGHT PITCH (STICK) <input id="invp" type="checkbox" /></label>
   <label>FIELD OF VIEW <input id="fov" type="range" min="80" max="120" step="1" value="98" /></label>
   <div class="sub">RACE</div>
   <label>GHOST OF YOUR BEST <input id="ghoston" type="checkbox" checked /></label>

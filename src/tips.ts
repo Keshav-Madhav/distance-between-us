@@ -90,14 +90,15 @@ const TIPS: Tip[] = [
   { id: 'any-burn', where: 'race', text: 'Afterburner on: steering is stiffer. Let go of [Shift] before the bends.', when: (c) => c.burnHeld > 2.5 },
   { id: 'any-hull', where: 'race', text: 'Hull low. It heals if you stay out of trouble for a few seconds.', when: (c) => c.hull < 45 },
   // ── hunt ──
-    { id: 'hunt-keys', where: 'hunt', text: 'Fly with the keys: [W] [S] nose down and pull up, [A] [D] turn (the craft banks itself), [Q] [E] roll.', when: (c) => c.t > 1 },
-  { id: 'hunt-speed', where: 'hunt', text: 'Hold [Shift] to accelerate (it spends the energy bar). Off it you settle to a cruise; hard turns bleed speed. [C] air brake.', when: (c) => c.t > 15 },
-  { id: 'hunt-pipper', where: 'hunt', text: 'The gold ring is where to aim: put your nose on it and fire with [Space].', when: (c) => c.dartNear },
+  { id: 'hunt-keys-v2', where: 'hunt', text: 'Fly with the keys: [Space] nose up, [C] nose down, [A] [D] turn (the craft banks itself), [Q] [E] roll.', when: (c) => c.t > 1 },
+  { id: 'hunt-speed-v2', where: 'hunt', text: '[W] throttle, [Shift] burner (it spends the energy bar). Off them you settle to a cruise; hard turns bleed speed. [S] air brake.', when: (c) => c.t > 15 },
+  { id: 'hunt-pipper-v2', where: 'hunt', text: 'The gold ring is where to aim: put your nose on it and fire with the mouse or [J].', when: (c) => c.dartNear },
   { id: 'hunt-missiles', where: 'hunt', text: 'Hold [F] to paint up to four locks. Release to fire them.', when: (c) => c.darts > 0 && c.t > 25 },
   { id: 'hunt-heat', where: 'hunt', text: 'Overheated. Fire in short bursts — the cannon cools fast between them.', when: (c) => c.overheat },
   { id: 'hunt-lancer', where: 'hunt', text: 'A lancer glows before it fires down its nose. Climb or turn out of its line, then get behind it.', when: (c) => c.t > 60 && c.darts > 0 },
   { id: 'hunt-engine', where: 'hunt', text: 'Hits from behind, into the engine, count double. Get on their tail.', when: (c) => c.kills >= 1 },
   { id: 'hunt-speedscore', where: 'hunt', text: 'Speed is score: every kill pays more the faster you are flying.', when: (c) => c.kills >= 3 },
+  { id: 'hunt-high', where: 'hunt', text: 'High up the air thins and ices the craft: slower, stiffer, and the controls freeze. Come down to thaw.', when: (c) => c.agl > 5000 },
   { id: 'hunt-low', where: 'hunt', text: 'Skimming low is legal — but the rock is solid.', when: (c) => c.agl < 40 && c.t > 5 },
 ]
 

@@ -614,6 +614,8 @@ export class Sound {
   }
 
   /** Per frame: engine, wind, rivals and music follow the race. */
+  /** High-altitude turbulence (0 … 1, set by the game): gusts in the wind layer. */
+  gust = 0
   update(dt: number, machIn: number, boost: number, brake: number, lockProg: number, locked: boolean, alive: boolean, heat: number, burning = false, rivals: RivalVoice[] = [], vac = 0): void {
     // (Every pitch and level here was tuned for Mach 1-10: in ORBIT, at Mach 60,000, the burner's sub was
     //  asked for 130 kHz and the wind kept growing — "very weird whooshing". Capped; and in vacuum there
@@ -645,7 +647,9 @@ export class Sound {
     this.burnRoarF.frequency.setTargetAtTime(600 + 140 * Math.min(10, mach), t, 0.2)
     this.crackleG.gain.setTargetAtTime((burn * 3.2 + live * boost * 0.4) * (0.25 + 0.75 * air), t, 0.04)
     // (Quieter: "the wind passing noise is too much" — 2026-11-21.)
-    this.windG.gain.setTargetAtTime((0.03 + 0.22 * Math.pow(Math.min(1, s), 1.5)) * air, t, k)
+    // (+ the gusts of high-altitude turbulence: the wind layer swells and ebbs with it — flight icing, flight.ts AIR.)
+    const gust = this.gust * (0.6 + 0.4 * Math.sin(t * 1.7) * Math.sin(t * 0.63 + 1))
+    this.windG.gain.setTargetAtTime((0.03 + 0.22 * Math.pow(Math.min(1, s), 1.5) + 0.18 * gust) * air, t, k)
     // Recorded layers: the roar's pitch rides the speed; the burner is the same roar, deeper and fat.
     if (this.engS) {
       this.engS.src.playbackRate.setTargetAtTime(0.62 + 0.09 * Math.min(10, mach) + 0.08 * boost, t, 0.08)
