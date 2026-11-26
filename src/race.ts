@@ -408,7 +408,11 @@ export class Race {
   playerPolicy: { lane: Float32Array; step: number; L: number; burn: number } | null = null
   /** ROGUE at race time t: placed from its recording (between two samples), its speed from the motion. */
   private playback(r: Racer, t: number): void {
-    const R = r.replay!, n = R.length / ROGUE_N, f = Math.min(n - 1, t / ROGUE_DT), i0 = Math.floor(f), i1 = Math.min(n - 1, i0 + 1), u = f - i0
+    const R = r.replay!, n = R.length / ROGUE_N
+    // Past the end of the recording: carried on along its last motion (it stops a sample short of the finish
+    // crossing — held at the last sample, ROGUE parked 100–200 m before the line and never finished).
+    const over = Math.max(0, t / ROGUE_DT - (n - 1))
+    const f = Math.min(n - 1, t / ROGUE_DT), i0 = Math.min(n - 2, Math.floor(f)), i1 = i0 + 1, u = f - i0 + over
     const a = i0 * ROGUE_N, b = i1 * ROGUE_N, L = (k: number) => R[a + k] + (R[b + k] - R[a + k]) * u
     const p = r.p
     p.prev.copy(p.pos); p.prevHeading = p.heading; p.prevBank = p.bank; p.prevPitch = p.pitch
@@ -417,7 +421,7 @@ export class Race {
     let dh = R[b + 3] - R[a + 3]; while (dh > Math.PI) dh -= 2 * Math.PI; while (dh < -Math.PI) dh += 2 * Math.PI
     p.heading = R[a + 3] + dh * u; p.bank = L(4); p.pitch = L(5)
     const sp = Math.hypot(R[b] - R[a], R[b + 2] - R[a + 2]) / ROGUE_DT
-    p.speed = i1 > i0 ? sp : 0
+    p.speed = sp
     p.vel.set(Math.sin(p.heading) * p.speed, 0, Math.cos(p.heading) * p.speed)
   }
 

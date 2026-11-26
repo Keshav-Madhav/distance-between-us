@@ -1919,9 +1919,11 @@ function showResults(): void {
     if (newBest || !loadGhost()) { saveGhost(); saveInputs() }
   }
   $('#over-h').textContent = runIsReplay ? 'REPLAY' : `${ord(race.racers[0].place)} PLACE`
-  const md = me0.finished ? medalOf(course.def, me0.finishTime) : 0, [mg, ms, mb] = medals(course.def)
+  const md = me0.finished && !runIsReplay ? medalOf(course.def, me0.finishTime) : 0, [mg, ms, mb] = medals(course.def)
   const next = md === 3 ? '' : ` · NEXT: ${['BRONZE', 'SILVER', 'GOLD'][md]} ${fmtLap([mb, ms, mg][md])}`
   $('#over-stats').innerHTML = `${course.def.name} · ${course.def.km} KM IN ${fmtLap(race.racers[0].finishTime)}${newBest ? ' · <b style="color:#ffb070">NEW BEST</b>' : ''} · TOP SPEED MACH ${Math.max(runTop, player.topMach).toFixed(2)}<br/>${md ? `<span class="medalbig">${medalSvg(md, 44)}<b>${['', 'BRONZE', 'SILVER', 'GOLD'][md]} TIME</b><small style="opacity:.7;margin-left:10px;letter-spacing:.12em">UNDER ${fmtLap([0, mb, ms, mg][md])}</small></span>` : 'NO MEDAL TIME'}${next}`
+  // A replay is watched, not raced: no medal line, just that it doesn't count.
+  if (runIsReplay) $('#over-stats').innerHTML = `${course.def.name} · ${course.def.km} KM IN ${fmtLap(race.racers[0].finishTime)} · TOP SPEED MACH ${Math.max(runTop, player.topMach).toFixed(2)}<br/>REPLAY · NOT COUNTED`
   resultsOpen = true
   renderResults()
   ;($('#dl-inputs') as HTMLAnchorElement).hidden = !me0.finished || inputRec.length < 3
@@ -2037,7 +2039,9 @@ function startReplay(r: ReplayFile): void {
   if (r.rivals !== undefined && Number.isFinite(+r.rivals)) race.aiBoost = +r.rivals
   startRace()
   // Its steering assist (it changes the physics); your own comes back with your next race.
-  if (typeof r.assist === 'number' && Number.isFinite(r.assist)) player.assist = r.assist
+  if (typeof r.assist === 'number' && Number.isFinite(r.assist)) { player.assist = r.assist; if ([...assistSel.options].some((o) => +o.value === r.assist)) assistSel.value = String(r.assist) }
+  // (Loaded from SETTINGS: the panel closes so the replay can be watched.)
+  if (!$('#pause').classList.contains('hide')) $('#p-close').click()
   replayIn = new Float32Array(r.steps.flat()); replayAt = 0; runIsReplay = true
   if (r.engine && r.engine !== ENGINE) setTimeout(() => warn('REPLAY MAY DRIFT', `RECORDED IN ${r.engine === 'firefox' ? 'FIREFOX' : r.engine === 'safari' ? 'SAFARI' : 'CHROME'}: THIS BROWSER'S MATHS DIFFERS`), 600)
   else if (r.game === 'dbu-inputs' && r.assist === undefined) setTimeout(() => warn('REPLAY MAY DRIFT', 'AN OLDER FILE: ITS STEERING ASSIST WAS NOT SAVED'), 600)
@@ -2096,8 +2100,8 @@ void (async () => {
 })()
 
 function startRace(): void {
-  // Your steering assist (a replay may have flown with its own).
-  player.assist = assistPick
+  // Your steering assist (a replay may have flown with its own) — and the menu shows it again.
+  player.assist = assistPick; assistSel.value = String(assistPick)
   ;(document.activeElement as HTMLElement | null)?.blur?.() // (see Input: a focused START restarted the run on Space)
   freeOff()
   world.courseOn = true; course.group.visible = true
