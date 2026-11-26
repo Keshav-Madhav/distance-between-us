@@ -19,8 +19,9 @@
 // more than a step is rock, pushed out toward its contour at your height. FREE ROAM rides it (surface):
 // gentle ground is ground; a cliff is not a ramp (its foot is the ground).
 import * as THREE from 'three'
+import { mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js'
 import { groundBase as groundH } from './terrain'
-import { fbmR, landNetwork, landReach, lineAt, sst, useLoop, vn, WALL_TO, type LandLoop, type LandTile } from './land'
+import { fbmR, landNetwork, landReach, lineAt, useLoop, vn, WALL_TO, type LandLoop, type LandTile } from './land'
 import { ROOF_D, ROOF_H, ROOF_T, type WallsIn, type WallsOut } from './walls'
 import { patchStandard } from './shaders'
 
@@ -585,7 +586,9 @@ export class Canyon {
       const cx = L(this.rx), cz = L(this.rz), tx = L(this.tx), tz = L(this.tz)
       // (Its edges on the walls' own tops — they wander in height — and a little into them: a gap let the
       // aurora through along the seam.)
-      const W = L(this.half) + ROOF_D + 6, across = (t * 2 - 1) * W
+      // (The ice's top reaches on past the roof's edge, down into the glacier beside it: ending at the edge, a
+      //  thin line of the cave's lit walls showed between them from the air.)
+      const W = L(this.half) + ROOF_D + 6 + (lift >= ROOF_T && (k === 0 || k === A - 1) ? 120 : 0), across = (t * 2 - 1) * W
       const wob = k > 0 && k < A - 1 ? 6 * Math.sin(fr * 0.8 + k * 2.1) : -4
       const lift0 = this.roofLift(a, t) + (this.roofLift(b, t) - this.roofLift(a, t)) * f
       let y = groundH(cx, cz) + lift0 + wob + lift
@@ -601,6 +604,7 @@ export class Canyon {
         // The ice sags and swells over the cave (a flat plate read as a slab laid across the gorge).
         const px = cx + tz * across, pz = cz - tx * across
         y += 22 * fbmR(px / 420, pz / 420, 2, 71) - 8 * Math.sin(Math.PI * t) + 9 * vn(px / 90, pz / 90, 72)
+        if (k === 0 || k === A - 1) { const hg = this.heightAt(px, pz); if (hg > -Infinity) y = Math.min(y, hg - 8) }
       }
       out.push(cx + tz * across, y, cz - tx * across)
     }
@@ -632,17 +636,11 @@ export class Canyon {
     // (The top must face the sky; the ceiling's material is two-sided.)
     const tm = this.mesh(new Float32Array(top), new Float32Array(top.length / 3), topMat)
     Canyon.orient(tm, () => [0, 1, 0])
-    {
-      // Snow on it, with the wind-polished blue ice showing through in patches and darker crevasse streaks
-      // across the way the ice flows (the glacier round it is the ground's own snow: the same look).
-      const p = tm.geometry.getAttribute('position').array as Float32Array, col = new Float32Array(p.length)
-      for (let i = 0; i < p.length; i += 3) {
-        const x = p[i], z = p[i + 2], pol = sst(0.25, 0.55, fbmR(x / 700, z / 700, 2, 73)), cr = sst(0.82, 0.95, 1 - Math.abs(vn(x / 160 + z / 400, z / 160 - x / 400, 74)))
-        const v = 0.9 + 0.1 * vn(x / 40, z / 40, 75)
-        col[i] = (0.92 - 0.55 * pol - 0.5 * cr) * v; col[i + 1] = (0.95 - 0.35 * pol - 0.4 * cr) * v; col[i + 2] = (1.0 - 0.15 * pol - 0.2 * cr) * v
-      }
-      tm.geometry.setAttribute('color', new THREE.BufferAttribute(col, 3))
-    }
+    // (Drawn as the glacier's own ground — its snow, sastrugi, polished ice — with smooth normals: in a
+    //  material of its own it read from the air as pale plates laid across the gorge.)
+    tm.geometry.deleteAttribute('normal')
+    tm.geometry = mergeVertices(tm.geometry, 0.5)
+    tm.geometry.computeVertexNormals()
     g.add(tm)
     const mm = this.mesh(new Float32Array(mouth), new Float32Array(mouth.length / 3).fill(0.1), wallMat)
     Canyon.orient(mm, (x, z) => {
@@ -680,7 +678,12 @@ export class Canyon {
     for (let r = 0; r < rows; r++) {
       const base = groundH(this.rx[r], this.rz[r])
       q.setFromAxisAngle(Y, Math.atan2(this.tx[r], this.tz[r]))
+      // (Only in the caves and just out of their mouths: out in the open gorge, from the air, rows of lamps
+      //  drew the race's ribbon across the glacier.)
+      let cave = 0
+      for (let q = -3; q <= 3; q++) cave = Math.max(cave, this.roofK[(r + q + rows) % rows])
       for (const side of [1, -1]) {
+        if (!cave) continue
         if ((side > 0 ? this.openP : this.openN)[r]) continue
         const off = this.half[r] - 6
         const x = this.rx[r] + this.tz[r] * side * off, z = this.rz[r] - this.tx[r] * side * off

@@ -89,6 +89,10 @@ export const MOUND_U = {
   /** x0, z0, step, on (0/1). */
   uLandBox: { value: new Vector4(0, 0, 1, 0) },
   uLandN: { value: new Vector4(1, 1, 0, 0) },
+  /** …and the same land averaged over 4 × 4 cells (240 m), for the far rings: sampled at their 400 m vertices,
+   *  the full tile's sharp gorge edges came out as staircases from the air. */
+  tLandF: { value: null as DataTexture | null },
+  uLandFN: { value: new Vector4(1, 1, 240, 0) },
 }
 
 /** The gorge's land tile (src/land.ts): heights above the ground, sampled bilinearly — here and in GLSL the
@@ -102,6 +106,28 @@ export function setLand(t: { x0: number; z0: number; step: number; nx: number; n
   tex.generateMipmaps = false
   tex.needsUpdate = true
   MOUND_U.tLand.value = tex
+  {
+    const F = 4, fnx = Math.floor((t.nx - 1) / F) + 1, fnz = Math.floor((t.nz - 1) / F) + 1, hf = new Float32Array(fnx * fnz)
+    for (let j = 0; j < fnz; j++) for (let k = 0; k < fnx; k++) {
+      // (A tent filter centred on each coarse point: its own cell and half of each neighbour's.)
+      // (0 wherever any cell under it is the gorge's floor or a way in: averaged, the land spread over the floor
+      //  and the river and covered them in 400 m teeth.)
+      let sum = 0, wsum = 0, mn = Infinity
+      for (let dz = -F + 1; dz < F; dz++) for (let dx = -F + 1; dx < F; dx++) {
+        const jj = j * F + dz, kk = k * F + dx
+        if (jj < 0 || kk < 0 || jj >= t.nz || kk >= t.nx) continue
+        const w = (F - Math.abs(dx)) * (F - Math.abs(dz)), v = t.h[jj * t.nx + kk]
+        sum += v * w; wsum += w; mn = Math.min(mn, v)
+      }
+      hf[j * fnx + k] = mn <= 0 ? 0 : sum / wsum
+    }
+    const tf = new DataTexture(hf, fnx, fnz, RedFormat, FloatType)
+    tf.minFilter = tf.magFilter = NearestFilter
+    tf.generateMipmaps = false
+    tf.needsUpdate = true
+    MOUND_U.tLandF.value = tf
+    MOUND_U.uLandFN.value.set(fnx, fnz, t.step * F, 0)
+  }
   MOUND_U.uLandBox.value.set(t.x0, t.z0, t.step, LAND.on ? 1 : 0)
   MOUND_U.uLandN.value.set(t.nx, t.nz, 0, 0)
 }
@@ -197,6 +223,19 @@ float landH(vec2 p) {
   vec2 t = f - vec2(i);
   float a = texelFetch(tLand, i, 0).r, b = texelFetch(tLand, i + ivec2(1, 0), 0).r;
   float c = texelFetch(tLand, i + ivec2(0, 1), 0).r, d = texelFetch(tLand, i + ivec2(1, 1), 0).r;
+  return mix(mix(a, b, t.x), mix(c, d, t.x), t.y);
+}
+uniform sampler2D tLandF;
+uniform vec4 uLandFN;
+/** The land, coarse (see tLandF): for the far rings' vertices. */
+float landHF(vec2 p) {
+  if (uLandBox.w < 0.5) return 0.0;
+  vec2 f = (p - uLandBox.xy) / uLandFN.z;
+  if (f.x < 0.0 || f.y < 0.0 || f.x >= uLandFN.x - 1.0 || f.y >= uLandFN.y - 1.0) return 0.0;
+  ivec2 i = ivec2(floor(f));
+  vec2 t = f - vec2(i);
+  float a = texelFetch(tLandF, i, 0).r, b = texelFetch(tLandF, i + ivec2(1, 0), 0).r;
+  float c = texelFetch(tLandF, i + ivec2(0, 1), 0).r, d = texelFetch(tLandF, i + ivec2(1, 1), 0).r;
   return mix(mix(a, b, t.x), mix(c, d, t.x), t.y);
 }
 float groundH(vec2 p) {

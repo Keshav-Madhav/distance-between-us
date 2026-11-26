@@ -366,10 +366,10 @@ export interface GroundUniforms {
   uTrackOn: { value: number }
 }
 
-/** The middle ring's centre (the gorge's land mesh draws only past it — see World.landMesh). */
+/** The middle ring's centre. */
 const RING2_C = { value: new THREE.Vector2() }
-/** mode: 0 the ground; 1 a far ring, where the gorge's land is not (its 400 m cells drew the land's edges as
- *  staircases from the air); 2 the land's own mesh, past the middle ring. */
+/** mode: 0 the ground; 1 a far ring — the gorge's land on it averaged to its scale (sampled sharp at its 400 m
+ *  cells, the land's edges came out as staircases from the air). */
 function terrainMaterial(shared: GroundUniforms, snap: { value: THREE.Vector2 }, drop: number, mode = 0): THREE.ShaderMaterial {
   return new THREE.ShaderMaterial({
     defines: mode ? { LAND_MODE: mode } : {},
@@ -383,15 +383,41 @@ function terrainMaterial(shared: GroundUniforms, snap: { value: THREE.Vector2 },
       varying float vH;
       varying float vRiver;
       varying float vLand;
+      #if defined(LAND_MODE) && LAND_MODE == 3
+      float gH(vec2 p) { return groundH(p); }
+      #elif defined(LAND_MODE)
+      // The far rings: the gorge's land averaged to their own scale (see tLandF).
+      float gH(vec2 p) { return groundH(p) - landH(p) + landHF(p); }
+      #else
+      float gH(vec2 p) { return groundH(p); }
+      #endif
       void main() {
+        #if defined(LAND_MODE) && LAND_MODE == 3
+        {
+          // A mesh of its own drawn as this ground (BLUE HOLLOW's glacier over its caves): its own heights
+          // and normals, the ground's look.
+          vec3 w = position;
+          vN = normalize(normal);
+          vH = w.y; vLand = 60.0; vRiver = 0.0;
+          float d = length(w.xz - cameraPosition.xz);
+          w.y -= uWorldFade.z * d * d / ${(2 * PLANET_R).toFixed(1)};
+          vW = w;
+          gl_Position = projectionMatrix * viewMatrix * vec4(w, 1.0);
+          return;
+        }
+        #endif
         vec2 xz = position.xz + uSnap;
+        #if defined(LAND_MODE)
+        vLand = landHF(xz);
+        #else
         vLand = landH(xz);
+        #endif
         float d = length(xz - cameraPosition.xz);
-        float h = groundH(xz);
+        float h = gH(xz);
         // (Normals per vertex, not per pixel: three height samples per pixel, each looping the
         // mounds, were most of the frame on a laptop GPU.)
         float e = 3.0 + d * 0.004;
-        vN = normalize(vec3(h - groundH(xz + vec2(e, 0.0)), e, h - groundH(xz + vec2(0.0, e))));
+        vN = normalize(vec3(h - gH(xz + vec2(e, 0.0)), e, h - gH(xz + vec2(0.0, e))));
         vH = h;
         // (Not up on the gorge's land: the world's rivers ran over its plateaus and down its cliffs.)
         vRiver = riverAt(xz) * (1.0 - smoothstep(1.0, 12.0, vLand));
@@ -421,6 +447,9 @@ function terrainMaterial(shared: GroundUniforms, snap: { value: THREE.Vector2 },
       ${FBMT_GLSL}
       uniform vec4 uTrackBox;
       uniform float uTrackOn;
+      #if defined(LAND_MODE) && LAND_MODE == 3
+      #define uTrackOn 0.0
+      #endif
       varying vec3 vW;
       varying vec3 vN;
       varying float vH;
@@ -431,15 +460,16 @@ function terrainMaterial(shared: GroundUniforms, snap: { value: THREE.Vector2 },
       ${SPACE_FN}
       void main() {
         if (worldCutGround(vW, gl_FragCoord.xy)) discard;
-        #if defined(LAND_MODE) && LAND_MODE == 1
-        if (vLand > 12.0 && uLandBox.w > 0.5) discard;
-        #elif defined(LAND_MODE) && LAND_MODE == 2
-        { vec2 rq = abs(vW.xz - uRing2C); if (vLand < 4.0 || max(rq.x, rq.y) < 11800.0) discard; }
-        #endif
         vec2 p = vW.xz;
         vec3 n = normalize(vN);
         float h0 = vH;
         float river = vRiver;
+        #if defined(LAND_MODE) && LAND_MODE == 2
+        // The far land ring (24–60 km out, only with the gorge's land): only the land itself — past the last
+        // ring the world draws no ground (the full ground over that much of the screen from high up cost a
+        // tenth of the frame).
+        if (vLand < 1.0) discard;
+        #endif
 
         // (At Mach speeds fine texture detail sweeps past faster than the frame rate and strobes —
         // the "flashing". The mip level is pushed up with speed: the ground blurs like the motion does.)
@@ -1361,36 +1391,10 @@ export class World {
   readonly sunLight: THREE.DirectionalLight
   /** The far ring for the gorge's land (on only with it). */
   private farLand: THREE.Mesh | null = null
-  /** The gorge's land past the middle ring, at 120 m (the far rings' 400 m cells drew its edges as
-   *  staircases from the air): chunks, each culled on its own; on only with the land. */
-  private landMesh: THREE.Group | null = null
+  /** A material that draws a mesh of its own as this world's ground (its look; the mesh's own heights). */
+  groundLook(): THREE.ShaderMaterial { return terrainMaterial(this.ground, { value: new THREE.Vector2() }, 0, 3) }
   /** Ask every wrapped item's veto again (the gorge's land has arrived: what may stand where has changed). */
   revetoAll(): void { for (const w of this.wrapped) for (const it of w.items) (it as { vx?: number }).vx = NaN }
-  addLandMesh(t: { x0: number; z0: number; step: number; nx: number; nz: number; h: Float32Array }): void {
-    const S = 120, C = 48, nx = Math.floor(((t.nx - 1) * t.step) / S), nz = Math.floor(((t.nz - 1) * t.step) / S)
-    const g = new THREE.Group(), mat = terrainMaterial(this.ground, { value: new THREE.Vector2() }, 3, 2)
-    const hAt = (x: number, z: number) => { const k = Math.round((x - t.x0) / t.step), j = Math.round((z - t.z0) / t.step); return t.h[Math.min(t.nz - 1, j) * t.nx + Math.min(t.nx - 1, k)] }
-    for (let cz = 0; cz < nz; cz += C) for (let cx = 0; cx < nx; cx += C) {
-      const ex = Math.min(nx, cx + C), ez = Math.min(nz, cz + C)
-      let top = 0
-      for (let j = cz; j <= ez; j += 2) for (let k = cx; k <= ex; k += 2) top = Math.max(top, hAt(t.x0 + k * S, t.z0 + j * S))
-      if (top < 4) continue
-      const w = ex - cx + 1, pos = new Float32Array(w * (ez - cz + 1) * 3), idx: number[] = []
-      for (let j = cz; j <= ez; j++) for (let k = cx; k <= ex; k++) { const o = ((j - cz) * w + (k - cx)) * 3; pos[o] = t.x0 + k * S; pos[o + 2] = t.z0 + j * S }
-      for (let j = 0; j < ez - cz; j++) for (let k = 0; k < ex - cx; k++) { const a = j * w + k; idx.push(a, a + w, a + 1, a + 1, a + w, a + w + 1) }
-      const geo = new THREE.BufferGeometry()
-      geo.setAttribute('position', new THREE.BufferAttribute(pos, 3))
-      geo.setIndex(idx)
-      const mx = t.x0 + ((cx + ex) / 2) * S, mz = t.z0 + ((cz + ez) / 2) * S
-      geo.boundingSphere = new THREE.Sphere(new THREE.Vector3(mx, top / 2, mz), Math.hypot((ex - cx) * S, (ez - cz) * S) / 2 + top + 200)
-      const m = new THREE.Mesh(geo, mat)
-      m.userData.box = [t.x0 + cx * S, t.z0 + cz * S, t.x0 + ex * S, t.z0 + ez * S]
-      g.add(m)
-    }
-    g.visible = false
-    this.landMesh = g
-    this.group.add(g)
-  }
   envTexture: THREE.Texture | null = null
 
   /**
@@ -1422,7 +1426,7 @@ export class World {
     // and from high up it was cut off along a square.
     {
       const snap = { value: new THREE.Vector2() }
-      const mesh = new THREE.Mesh(ringGeometry(1200, 100, 22200), terrainMaterial(this.ground, snap, 12, 1))
+      const mesh = new THREE.Mesh(ringGeometry(1200, 100, 22200), terrainMaterial(this.ground, snap, 12, 2))
       mesh.frustumCulled = false
       this.farLand = mesh
       mesh.visible = false
@@ -1804,16 +1808,7 @@ export class World {
     sm.uniforms.uCloudOff.value.set(time * 14, time * 5)
     for (const r of this.rings) r.snap.value.set(Math.round(cam.x / r.step) * r.step, Math.round(cam.z / r.step) * r.step)
     if (this.farLand) this.farLand.visible = MOUND_U.uLandBox.value.w > 0.5
-    if (this.landMesh) {
-      this.landMesh.visible = MOUND_U.uLandBox.value.w > 0.5
-      // (Chunks wholly inside the middle ring are never drawn there — every pixel discarded — but their
-      //  vertices were still shaded: off.)
-      const c = RING2_C.value
-      for (const ch of this.landMesh.children) {
-        const b = ch.userData.box as number[]
-        ch.visible = !(b[0] > c.x - 11800 && b[2] < c.x + 11800 && b[1] > c.y - 11800 && b[3] < c.y + 11800)
-      }
-    }
+
     let fx = 0, fz = 0, cosHalf = -2
     if (view) {
       // A horizontal cone round the look direction: half the horizontal FOV plus a margin (camera shake, banking).

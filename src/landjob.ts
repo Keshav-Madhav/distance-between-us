@@ -5,6 +5,9 @@
 import { buildLand, LAND_BANDS, landNetwork, landSpec, type LandLoop, type LandStyle, type LandTile } from './land'
 import { buildWalls, type WallsIn, type WallsOut } from './walls'
 import { BIOME } from './terrain'
+import { idbGetAny, idbPrune, idbSetAny } from './store'
+import LAND_SRC from './land.ts?raw'
+import WALLS_SRC from './walls.ts?raw'
 
 // The workers, started as this module loads (the first thing the page does): a worker takes a while to start,
 // and started only when the land was asked for, the boot waited on that too.
@@ -14,7 +17,33 @@ const POOL: Worker[] | null = (() => {
   try { return Array.from({ length: W }, () => new Worker(new URL('./landworker.ts', import.meta.url), { type: 'module' })) } catch { return null }
 })()
 
-export function startLand(L: LandLoop, style: LandStyle, wallsIn: WallsIn): Promise<{ tile: LandTile; walls: WallsOut }> {
+/** The land's cache key: its course's line, and the land's own code (a change to either is a new land). */
+function cacheKey(L: LandLoop, style: LandStyle, wallsIn: WallsIn): string {
+  let h = 2166136261
+  const mix = (s: string) => { for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 16777619) }
+  mix(LAND_SRC); mix(WALLS_SRC); mix(style)
+  for (let i = 0; i < L.rx.length; i += 7) mix(`${L.rx[i].toFixed(1)},${L.rz[i].toFixed(1)},${L.half[i].toFixed(1)},${L.roofTop[i].toFixed(1)}`)
+  mix(`${wallsIn.N},${wallsIn.topY},${wallsIn.sides.map((S) => S.col.join(',')).join('|')}`)
+  return `land:${style}:${(h >>> 0).toString(36)}`
+}
+
+/**
+ * The land and its walls: from the cache when this course's land was built before (the first boot of a world
+ * pays for it, later ones do not — and the course picker's prewarm builds the next one's behind the menu),
+ * else built in the workers and put in the cache once the page is up.
+ */
+export async function startLand(L: LandLoop, style: LandStyle, wallsIn: WallsIn): Promise<{ tile: LandTile; walls: WallsOut }> {
+  const key = cacheKey(L, style, wallsIn)
+  const hit = await idbGetAny<{ tile: LandTile; walls: WallsOut }>(key)
+  if (hit && hit.tile && hit.walls) { if (POOL) for (const w of POOL) w.terminate(); return hit }
+  const built = await build(L, style, wallsIn)
+  // (Stored when the page is idle: cloning ~10 MB is a hitch.)
+  const store = () => { void idbSetAny(key, { tile: { ...built.tile, c: new Float32Array(0) }, walls: built.walls }).then(() => idbPrune(`land:${style}:`, key)) }
+  if ('requestIdleCallback' in window) requestIdleCallback(store, { timeout: 5000 }); else setTimeout(store, 2000)
+  return built
+}
+
+function build(L: LandLoop, style: LandStyle, wallsIn: WallsIn): Promise<{ tile: LandTile; walls: WallsOut }> {
   const spec = landSpec(L, style)
   const here = () => ({ tile: buildLand(L, style), walls: buildWalls(wallsIn) })
   if (!POOL) return Promise.resolve(here())
