@@ -32,7 +32,9 @@ export interface LandLoop {
 
 export interface LandSpec { style: LandStyle; x0: number; z0: number; step: number; nx: number; nz: number; wallTo: number }
 
-export interface LandOpen { row: number; side: number; x: number; z: number; axis: number[] }
+/** A way in: its row and side, its mouth, its axis ([x, z, s] every 120 m) and half-width there; `big`: one of
+ *  the gorge's two valleys (its river's, its flow's, its ice's way in and out). */
+export interface LandOpen { row: number; side: number; x: number; z: number; axis: number[]; wid: number[]; big: boolean }
 export interface LandTile extends LandSpec {
   /** Height above the world's own ground (m), nx × nz, row-major in z. 0 on the race floor exactly. */
   h: Float32Array
@@ -120,6 +122,8 @@ interface World {
   wWay: [number, number]
   /** The canyons running out across the outer land: their half-width once grown (range). */
   wOut: [number, number]
+  /** The two big valleys' half-width out past their mouths. */
+  wBig: number
   top: number
   ways: number[]
   seed: number
@@ -210,8 +214,8 @@ const WORLDS: Record<LandStyle, World> = {
     // (Below the first bed the land is smooth — pediments and debris slopes: stepped, everything under it
     //  was ground, and the land ended at the first cliff in a ring. The first bed's own top wanders every few
     //  hundred metres: level, the gorge's foot cliff was one height all round — a road cut.)
-    surface: (E, x, z) => { const T = terrace(E, DESERT_LV, 0.9, 0.08, (j) => (j < 1 ? 0 : j < 2 ? 75 * fbmR(x / 700, z / 700, 2, 319) + 30 * vn(x / 170, z / 170, 318) : 95 * fbmR(x / (1500 + 350 * j), z / (1500 + 350 * j), 2, 320 + j * 13)), 0.45); return E + (T - E) * sst(120, 300, E) },
-    canyonK: [0.75, 1.5], wTrunk: [60, 120], wWay: [180, 260], wOut: [90, 200], top: 900, ways: [0.14, 0.4, 0.62, 0.86], seed: 7193,
+    surface: (E, x, z) => { const T = terrace(E, DESERT_LV, 0.9, 0.08, (j) => (j < 1 ? 0 : j < 2 ? 75 * fbmR(x / 700, z / 700, 2, 319) + 30 * vn(x / 170, z / 170, 318) : 95 * fbmR(x / (1500 + 350 * j), z / (1500 + 350 * j), 2, 320 + j * 13)), 0.45); return E + (T - E) * sst(120, 300, E) + 18 * fbmR(x / 650, z / 650, 2, 317) * sst(150, 400, E) },
+    canyonK: [0.75, 1.5], wTrunk: [60, 120], wWay: [180, 260], wOut: [90, 200], wBig: 850, top: 900, ways: [0.14, 0.4, 0.62, 0.86], seed: 7193,
     erode: [3, 1.3, 0.25], apron: 0.5,
   },
   // MAGMA GORGE: a basalt plateau — benches near the gorge (one to four, pinching out), shield swells, its
@@ -247,9 +251,10 @@ const WORLDS: Record<LandStyle, World> = {
       const fine = fronts(E, 9 + 9 * (0.5 + 0.5 * vn(x / 1200, z / 1200, 421)))
       // (Not on the cones: stepped, they were pyramids.)
       const w = sst(2200, 900, df) * (1 - sst(5, 60, coneAt(x, z, df)))
-      return Math.max(0, big * w + fine * (1 - w))
+      // (A little swell on the flats: above its last bench the land was knife-flat.)
+      return Math.max(0, big * w + fine * (1 - w) + 16 * fbmR(x / 600, z / 600, 2, 422) * sst(150, 400, E))
     },
-    canyonK: [1.0, 2.0], wTrunk: [55, 110], wWay: [190, 270], wOut: [80, 170], top: 760, ways: [0.12, 0.37, 0.66, 0.9], seed: 8317,
+    canyonK: [1.0, 2.0], wTrunk: [55, 110], wWay: [190, 270], wOut: [80, 170], wBig: 700, top: 760, ways: [0.12, 0.37, 0.66, 0.9], seed: 8317,
     erode: [3, 1.3, 0.2], apron: 0.3,
   },
   // BLUE HOLLOW: an ice sheet — rising toward the middle (tilted, its own height), ice cliffs at the gorge,
@@ -273,13 +278,14 @@ const WORLDS: Record<LandStyle, World> = {
       if (roofTop > 0) E = Math.max(E, (roofTop - 0.12 * Math.max(0, df - 300)) * sst(2400, 900, df))
       return Math.max(0, E)
     },
-    // Ice cliffs across the sheet where it breaks over a step in its bed (here and there, not all round):
-    // the glacier's own blue faces — on white rolling ice alone the gorge could not be seen from the land.
+    // Ice cliffs across the sheet where it breaks over a step in its bed (here and there, not all round, and
+    // off the walls): the glacier's own blue faces — on white rolling ice alone the gorge could not be seen
+    // from the land. (Not sheer: on the tile's 60 m cells a sheer step was drawn as a sawtooth.)
     surface: (E, x, z, df) => {
-      const tk = sst(-0.1, 0.45, warp(x / 3200, z / 3200, 521, 0.9, 2)) * sst(6000, 2000, df)
-      return Math.max(0, tk > 0 ? E + (terrace(E, ICE_LV, 0.9, 0.1, (j) => 40 * fbmR(x / 4000, z / 4000, 2, 522 + j), 0.3) - E) * tk : E)
+      const tk = sst(-0.1, 0.45, warp(x / 3200, z / 3200, 521, 0.9, 2)) * sst(6000, 2000, df) * sst(500, 900, df)
+      return Math.max(0, tk > 0 ? E + (terrace(E, ICE_LV, 0.75, 0.15, (j) => 40 * fbmR(x / 4000, z / 4000, 2, 522 + j), 0.3) - E) * tk : E)
     },
-    canyonK: [0.5, 0.9], wTrunk: [70, 120], wWay: [200, 260], wOut: [160, 300], top: 420, ways: [0.07, 0.31, 0.58, 0.95], seed: 9431,
+    canyonK: [0.5, 0.9], wTrunk: [70, 120], wWay: [200, 260], wOut: [160, 300], wBig: 900, top: 420, ways: [0.07, 0.31, 0.58, 0.95], seed: 9431,
     erode: [0, 1, 0], apron: 0,
   },
   // WHITEWATER: the river cut deep — bluffs at the water from nothing to three times as tall, steep wooded
@@ -290,7 +296,9 @@ const WORLDS: Record<LandStyle, World> = {
     potential: (x, z, df, inner) => {
       const d = Math.max(0, df)
       const Bb = 15 + 150 * sst(-0.45, 0.9, warp(x / 1700, z / 1700, 601, 0.8, 2)) ** 1.6 + 15 * fbmR(x / 220, z / 220, 2, 602)
-      const bw = 25 + 45 * (0.5 + 0.5 * vn(x / 900, z / 900, 603))
+      // (The bluffs' own width wanders from a step to a broad face: of one width, their tops drew a straight
+      //  green ledge along the river.)
+      const bw = 25 + 190 * sst(-0.4, 0.9, vn(x / 700, z / 700, 603))
       const S = 230 + 170 * (0.5 + 0.5 * warp(x / 4200, z / 4200, 604, 0.8, 2)) + (inner ? 60 : 60 * cn(x, z, 3, 612))
       const Ws = 240 + 300 * (0.5 + 0.5 * fbmR(x / 2500, z / 2500, 2, 605))
       const u = Math.min(1, Math.max(0, (d - bw) / Ws))
@@ -308,7 +316,7 @@ const WORLDS: Record<LandStyle, World> = {
       return Math.max(0, E)
     },
     surface: (E) => Math.max(0, E),
-    canyonK: [0.5, 0.8], wTrunk: [30, 70], wWay: [150, 230], wOut: [70, 150], top: 380, ways: [0.16, 0.42, 0.69, 0.92], seed: 6151,
+    canyonK: [0.5, 0.8], wTrunk: [30, 70], wWay: [150, 230], wOut: [70, 150], wBig: 600, top: 380, ways: [0.16, 0.42, 0.69, 0.92], seed: 6151,
     erode: [8, 0.75, 0.25], apron: 0,
   },
 }
@@ -402,7 +410,14 @@ export function landNetwork(L: LandLoop, style: LandStyle): { lines: number[][];
         }
         line = long.slice(0, cut * 4)
         const n = cut - 1
-        for (let i = 0; i < cut; i++) { const f = i / n; line[i * 4 + 3] = (w0 + (w1 - w0) * (0.5 + 0.5 * Math.sin(f * 11 + ph))) * (1 + 2.2 * sst(0.8, 1, f)) }
+        // Two of the ways are the gorge's own valleys — where its river or flow or ice comes in and goes out — a
+        // broad valley from a few hundred metres out on (by the floor as narrow as any way: the race's wall
+        // opens there as it always did).
+        const big = way === W.ways[0] || way === W.ways[2]
+        for (let i = 0; i < cut; i++) {
+          const f = i / n, w = w0 + (w1 - w0) * (0.5 + 0.5 * Math.sin(f * 11 + ph))
+          line[i * 4 + 3] = (big ? w + (W.wBig - w) * sst(240, 1600, i * 120) : w) * (1 + 2.2 * sst(0.8, 1, f))
+        }
       } else {
         const len = inner ? 2600 + rnd() * 5000 : 1500 + rnd() * 3200, wt = W.wTrunk[1] - rnd() * 40
         line = walk(fx, fz, a0, len, 30 + rnd() * 80, W.top * (0.7 + 0.25 * rnd()), (f) => 18 + (wt - 18) * (1 - f) ** 1.3, 1.5)
@@ -410,8 +425,9 @@ export function landNetwork(L: LandLoop, style: LandStyle): { lines: number[][];
       lines.push(line); ks.push(kOf())
       if (way !== undefined) {
         const axis: number[] = []
-        for (let i = 0; i < line.length; i += 4) axis.push(line[i], line[i + 1], (i / 4) * 120)
-        open.push({ row: r, side: sg, x: fx, z: fz, axis })
+        const wid: number[] = []
+        for (let i = 0; i < line.length; i += 4) { axis.push(line[i], line[i + 1], (i / 4) * 120); wid.push(line[i + 3]) }
+        open.push({ row: r, side: sg, x: fx, z: fz, axis, wid, big: way === W.ways[0] || way === W.ways[2] })
       }
       const nb = way !== undefined ? 2 + Math.floor(rnd() * 3) : Math.floor(rnd() * 3)
       for (let b = 0; b < nb; b++) {

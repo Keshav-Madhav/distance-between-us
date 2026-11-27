@@ -130,7 +130,7 @@ export class Canyon {
   readonly L: number
   /** The ways in: the race's row at the mouth, its side (+1/−1), the mouth on the floor's edge; axis:
    *  [x, z, metres out] every 120 m. */
-  readonly breaches: { row: number; side: number; u: number; x: number; z: number; axis: number[]; box: number[] }[] = []
+  readonly breaches: { row: number; side: number; u: number; x: number; z: number; axis: number[]; wid: number[]; big: boolean; box: number[] }[] = []
   /** Per row of the race's grid: is the wall beside the floor open (a way in) on side +1 / −1? */
   private readonly openP: Uint8Array
   private readonly openN: Uint8Array
@@ -187,7 +187,7 @@ export class Canyon {
     for (const o of landNetwork(this.land, style).open) {
       const box = [Infinity, Infinity, -Infinity, -Infinity]
       for (let j = 0; j < o.axis.length; j += 3) { box[0] = Math.min(box[0], o.axis[j] - 1700); box[1] = Math.min(box[1], o.axis[j + 1] - 1700); box[2] = Math.max(box[2], o.axis[j] + 1700); box[3] = Math.max(box[3], o.axis[j + 1] + 1700) }
-      this.breaches.push({ row: Math.floor(o.row / SUB) * 0 + o.row, side: o.side, u: o.row / m, x: o.x, z: o.z, axis: o.axis, box })
+      this.breaches.push({ row: Math.floor(o.row / SUB) * 0 + o.row, side: o.side, u: o.row / m, x: o.x, z: o.z, axis: o.axis, wid: o.wid, big: o.big, box })
     }
     this.feet(sgIn)
   }
@@ -546,6 +546,9 @@ export class Canyon {
       g.add(this.crevasses())
     }
     if (this.style === 'forest') { g.add(this.water()); g.add(this.treeLine()) }
+    // Down the two big valleys, what made the gorge: the river coming in and going out, a lava flow, a frozen
+    // meltwater stream, a dry wash.
+    g.add(this.valleyStreams())
     return g
   }
 
@@ -609,9 +612,11 @@ export class Canyon {
     // (Every section's ceiling in one mesh, every top in one, every mouth in one: a draw call each.)
     const ceil: number[] = [], top: number[] = [], mouth: number[] = [], ends: number[] = []
     for (const [i0, i1] of segs) {
-      // The mouths are ragged: each column's ice ends at its own place (up to most of a row back), and
-      // hangs below the ceiling there in a lip of its own depth — broken ice, not a sawn edge.
-      const R = (j: number, k: number) => j === 0 ? i0 + 0.85 * hh(i0 * 31 + k) : j === i1 - i0 ? i1 - 0.85 * hh(i1 * 17 + k) : i0 + j
+      // The mouths are ragged: each column's ice ends at its own place (up to most of a row on out), and
+      // hangs below the ceiling there in a lip of its own depth — broken ice, not a sawn edge. (Out past the
+      // last roofed row, never short of it: short, the cave's own walls under it showed from the air as blue
+      // holes along the rim.)
+      const R = (j: number, k: number) => j === 0 ? i0 - 0.85 * hh(i0 * 31 + k) : j === i1 - i0 ? i1 + 0.85 * hh(i1 * 17 + k) : i0 + j
       const drop = (j: number, k: number) => (k > 0 && k < A - 1 ? 12 + 34 * hh(j * 7 + k * 3 + i0) : 0)
       for (const [lift, pos] of [[0, ceil], [ROOF_T, top]] as const) {
         for (let j = 0; j < i1 - i0; j++) for (let k = 0; k < A - 1; k++) {
@@ -860,7 +865,47 @@ export class Canyon {
     geo.setAttribute('position', new THREE.BufferAttribute(pos, 3))
     geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2))
     geo.setIndex(idx)
-    const mat = new THREE.ShaderMaterial({
+    const w = new THREE.Mesh(geo, Canyon.waterMat())
+    w.frustumCulled = false
+    w.renderOrder = 1
+    return w
+  }
+
+  /** The big valleys' streams: a strip down each one's axis from inside the floor out onto the plain, as wide
+   *  as part of its floor, at the floor's own level (the land round it rises over its edges). */
+  private valleyStreams(): THREE.Mesh {
+    const A = 9, pos: number[] = [], uv: number[] = [], idx: number[] = []
+    const frac = this.style === 'forest' ? 0.6 : this.style === 'lava' ? 0.4 : this.style === 'desert' ? 0.45 : 0.16
+    for (const b of this.breaches) {
+      if (!b.big) continue
+      const P = b.axis, n = P.length / 3, base = pos.length / 3
+      // (The frozen stream from the floor's edge on: lying out on the floor it was a white sheet on the ice.)
+      for (let i = this.style === 'ice' ? 1 : 0; i < n; i++) {
+        const j = Math.min(n - 2, i), dx = P[(j + 1) * 3] - P[j * 3], dz = P[(j + 1) * 3 + 1] - P[j * 3 + 1], l = Math.hypot(dx, dz) || 1
+        // (Its first point is on the floor: the stream starts in the river, or out of the gorge's lava.)
+        const hw = (i === 0 ? b.wid[1] : b.wid[i]) * frac * (0.85 + 0.3 * vn(i * 0.37, b.row, 61))
+        for (let k = 0; k < A; k++) {
+          const t = k / (A - 1), a = (t * 2 - 1) * hw, x = P[i * 3] + (dz / l) * a, z = P[i * 3 + 1] - (dx / l) * a
+          pos.push(x, groundH(x, z) + 1.4, z); uv.push(t, P[i * 3 + 2])
+        }
+        const i0 = this.style === 'ice' ? 1 : 0
+        if (i < n - 1) for (let k = 0; k < A - 1; k++) { const q = base + (i - i0) * A + k; idx.push(q, q + 1, q + A, q + A, q + 1, q + A + 1) }
+      }
+    }
+    const geo = new THREE.BufferGeometry()
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3))
+    geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2))
+    geo.setIndex(idx)
+    const m = new THREE.Mesh(geo, Canyon.waterMat(this.style === 'lava' ? 1 : this.style === 'ice' ? 2 : this.style === 'desert' ? 3 : 0))
+    m.frustumCulled = false
+    m.renderOrder = 1
+    return m
+  }
+
+  /** Running water (kind 0), molten lava (1), a frozen stream (2), or a dry wash (3). */
+  private static waterMat(kind = 0): THREE.ShaderMaterial {
+    return new THREE.ShaderMaterial({
+      defines: { KIND: kind },
       uniforms: { uTime: WATER_T },
       side: THREE.DoubleSide,
       // (Lifted with distance — 1.4 m over the ground is below the depth buffer's grain km off: there the
@@ -888,12 +933,28 @@ export class Canyon {
           c = mix(c, vec3(0.92, 0.97, 1.0), wave * 0.6);
           float bank = smoothstep(0.08, 0.0, vUv.x) + smoothstep(0.92, 1.0, vUv.x);
           c = mix(c, vec3(0.9, 0.95, 0.95), bank * (0.5 + 0.5 * n(vec2(vUv.y * 0.05 - uTime, vUv.x * 30.0))));
+          #if KIND == 1
+          // Lava: crust plates riding a molten flow, glowing in the cracks between them and hottest mid-stream.
+          float pl = n(vec2(vUv.x * 9.0, vUv.y * 0.02 - uTime * 0.6)) * 0.7 + n(vec2(vUv.x * 25.0, vUv.y * 0.06 - uTime * 0.6)) * 0.3;
+          float mid = 1.0 - abs(vUv.x * 2.0 - 1.0);
+          float hot = smoothstep(0.55, 0.35, pl) * (0.4 + 0.6 * mid);
+          c = mix(vec3(0.06, 0.035, 0.03), vec3(2.6, 0.9, 0.15), hot) + vec3(0.5, 0.12, 0.02) * mid * 0.3;
+          #elif KIND == 2
+          // Frozen: pale ice, cracked, blue where it is clear, the sky in it; no flow.
+          float cr = smoothstep(0.03, 0.0, abs(n(vec2(vUv.x * 14.0, vUv.y * 0.04)) - 0.5));
+          c = mix(vec3(0.22, 0.38, 0.58), vec3(0.5, 0.64, 0.8), n(vec2(vUv.x * 5.0, vUv.y * 0.01))) * (1.0 - 0.3 * cr) + vec3(0.15, 0.2, 0.3) * fr;
+          #elif KIND == 3
+          // A dry wash: pale silt in braided channels, darker gravel bars between, fading into the sand at its edges.
+          float br = n(vec2(vUv.x * 7.0 + 2.0 * n(vec2(vUv.y * 0.004, 1.0)), vUv.y * 0.006));
+          c = mix(vec3(0.46, 0.33, 0.22), vec3(0.64, 0.52, 0.4), smoothstep(0.35, 0.6, br)) * (0.9 + 0.2 * n(vec2(vUv.x * 60.0, vUv.y * 0.2)));
+          #endif
+          #if KIND >= 2
+          gl_FragColor = vec4(c, smoothstep(0.0, 0.25, vUv.x) * smoothstep(1.0, 0.75, vUv.x));
+          #else
           gl_FragColor = vec4(c, 1.0); // (opaque: the worn track's orange smear showed through)
+          #endif
         }`,
+      transparent: kind >= 2, depthWrite: kind < 2,
     })
-    const w = new THREE.Mesh(geo, mat)
-    w.frustumCulled = false
-    w.renderOrder = 1
-    return w
   }
 }

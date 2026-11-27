@@ -425,7 +425,17 @@ function terrainMaterial(shared: GroundUniforms, snap: { value: THREE.Vector2 },
         vN = normalize(vec3(h - gH(xz + vec2(e, 0.0)), e, h - gH(xz + vec2(0.0, e))));
         vH = h;
         // (Not up on the gorge's land: the world's rivers ran over its plateaus and down its cliffs.)
-        vRiver = riverAt(xz) * (1.0 - smoothstep(1.0, 12.0, vLand));
+        // (Nor in its canyons and hollows: a river there was a pool of the world's water, or a spill of its lava,
+        //  lying in a fold of the land. Off its land by 150 m or more, then.)
+        vRiver = riverAt(xz);
+        if (vRiver > 0.0) {
+          #if defined(LAND_MODE)
+          float lm = max(max(landHF(xz + vec2(150.0, 0.0)), landHF(xz - vec2(150.0, 0.0))), max(landHF(xz + vec2(0.0, 150.0)), landHF(xz - vec2(0.0, 150.0))));
+          #else
+          float lm = max(max(landH(xz + vec2(150.0, 0.0)), landH(xz - vec2(150.0, 0.0))), max(landH(xz + vec2(0.0, 150.0)), landH(xz - vec2(0.0, 150.0))));
+          #endif
+          vRiver *= (1.0 - smoothstep(1.0, 12.0, vLand)) * (1.0 - smoothstep(4.0, 30.0, lm));
+        }
         vec3 w = vec3(xz.x, h - uDrop * smoothstep(0.0, 400.0, d), xz.y);
         // Climbing (src/space.ts): the ground bends away to the planet's curvature, so its edge meets
         // the planet drawn behind it. (Zero on the ground: nothing changes there.)

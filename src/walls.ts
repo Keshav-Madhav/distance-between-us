@@ -3,7 +3,7 @@
 // walls' finer spacing — each world's foot on it — blended into the land's surface at their outer edge and
 // tucked under it; then cut into triangles (gentle faces smooth-shaded apart from the cliffs).
 // Pure maths, no three.js: built in a worker at boot (src/landjob.ts) alongside the tile.
-import { CarveAt, fbmR, ICE_LV, LAND_ZERO, landNetwork, landPotential, landSurface, sst, terrace, useLoop, vn, WALL_TO, warp, type LandLoop, type LandStyle } from './land'
+import { CarveAt, LAND_ZERO, landNetwork, landPotential, landSurface, sst, useLoop, vn, WALL_TO, warp, type LandLoop, type LandStyle } from './land'
 
 /** The cave's roof: its edges stand on the walls `ROOF_D` out from the foot, at `ROOF_H` (× the row's
  *  height scale); its ice is `ROOF_T` thick (the glacier over the cave is that much higher). */
@@ -73,7 +73,7 @@ function wallShape(inp: WallsIn, carve: CarveAt, x: number, z: number, d: number
     // above it, set back as the land wanders; behind it a bench until the land rises past it, falling away only
     // into a side canyon. (One tall face at the floor's edge, one height all round and cut square behind, read
     // as a road cut, and from the air as boxes on a shelf.)
-    const Hf = 60 + 120 * (0.5 + 0.5 * warp(x / 1300, z / 1300, 441, 0.9, 2)) - 40 * Math.max(0, vn(x / 260, z / 260, 442)) ** 2
+    const Hf = 15 + 190 * sst(-0.5, 0.7, warp(x / 900, z / 900, 441, 0.9, 2)) - 40 * Math.max(0, vn(x / 260, z / 260, 442)) ** 2
     E = Math.max(E, Hf * sst(4, 18, d) * Math.max(1 - sst(45, 210, d), sst(0.5 * Hf, Hf, C)) * (open ? 0 : 1))
     h = landSurface(s, E, x, z, d) - 6 * sst(30, 0, d)
   } else if (s === 'lava') {
@@ -83,14 +83,16 @@ function wallShape(inp: WallsIn, carve: CarveAt, x: number, z: number, d: number
     // The rim's lip: uneven, here a low levee and there a tall wall (one height all round read as a parapet).
     // (Behind it a bench until the land rises past it, falling away only into a side canyon: cut square
     //  behind, it was a slab laid round the gorge.)
-    const Hr = 70 + 160 * (0.5 + 0.5 * warp(x / 1500, z / 1500, 431, 0.8, 2)) - 50 * Math.max(0, vn(x / 240, z / 240, 432)) ** 2
-    E = Math.max(E, Hr * sst(12, 22, d) * Math.max(1 - sst(40, 200, d), sst(0.5 * Hr, Hr, C)) * (open ? 0 : 1))
+    // (Low in long stretches, tall in others, and its top climbing back into the land: one band of even
+    //  height with flat tops read from the air as a wall built round the gorge.)
+    const Hr = 25 + 230 * sst(-0.5, 0.7, warp(x / 800, z / 800, 431, 0.8, 2)) - 50 * Math.max(0, vn(x / 240, z / 240, 432)) ** 2
+    E = Math.max(E, Hr * (1 + 0.8 * sst(22, 300, d)) * sst(12, 22, d) * Math.max(1 - sst(40, 200, d), sst(0.5 * Hr, Hr, C)) * (open ? 0 : 1))
     h = landSurface(s, E, x, z, d)
   } else if (s === 'ice') {
     E = Math.max(E, 125 * sst(4, 22, d) * sst(80, 50, d) * (open ? 0 : 1))
-    // Ice cliffs by the gorge: a few tall faces, rolling ice behind them.
-    const tk = (1 - sst(450, 900, d)) * (C < 300 ? sst(150, 300, C) : 1)
-    h = E + (terrace(E, ICE_LV, 0.92, 0.08, (j) => 25 * fbmR(x / 5000, z / 5000, 2, 41 + j), 0.3) - E) * tk
+    // (No terraced ice cliffs in the walls' own mesh: their steps fell between its columns, and every row
+    //  cut them its own way — a sawtooth along the rim from the air. The sheet's cliffs stand out past it.)
+    h = E
     const roof = inp.roofK[i]
     if (roof > 0) {
       // Under the roof: the cave wall leaning out to the roof's edge; past it the ice, never below the roof's.
@@ -107,7 +109,9 @@ function wallShape(inp: WallsIn, carve: CarveAt, x: number, z: number, d: number
       h = h + (w - h) * roof
       // (The cave's own lit ice only well inside it: at its mouths, under open sky, the walls are the
       //  glacier's — in the cave's blue they were ragged blue ribbons laid along the rim from the air.)
-      crev = d <= ROOF_D && roof > 0.85 ? 0.15 * (1 - d / ROOF_D) * roof : 0
+      // (Nor its last stretch under the roof's edge: from the air that showed past the edge as a broken blue
+      //  line along the rim; in the glacier's own look it is snow there.)
+      crev = d <= ROOF_D - 50 && roof > 0.85 ? 0.15 * (1 - d / ROOF_D) * roof : 0
     }
   } else h = landSurface(s, E, x, z, d)
   // Into the land's own surface at the walls' outer edge (above or below it, a step there read as a fence).

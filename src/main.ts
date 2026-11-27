@@ -434,11 +434,16 @@ const caveRoof = new THREE.ShaderMaterial({
 // the others in their world's rock.
 function gorgeWall(base: number, glow: [number, number, number], emissive = 0x000000): THREE.Material {
   const m = new THREE.MeshStandardMaterial({ color: base, emissive, roughness: 0.6, flatShading: true })
-  m.onBeforeCompile = (sh) => {
+  // (In the world's own haze, as the land round them is: in three's fog — none here — they stood out of the
+  //  haze from the air as black slabs laid round the gorge.)
+  patchStandard(m, {})
+  const haze = m.onBeforeCompile
+  m.onBeforeCompile = (sh, r) => {
+    haze(sh, r)
     sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute float aCrev;\nvarying float vCrev;').replace('#include <begin_vertex>', '#include <begin_vertex>\nvCrev = aCrev;')
     sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying float vCrev;').replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>\ntotalEmissiveRadiance += vec3(${glow.join(', ')}) * vCrev;`)
   }
-  m.customProgramCacheKey = () => 'gorge-wall-' + glow.join('-')
+  m.customProgramCacheKey = () => 'gorge-wall-hazed-' + glow.join('-')
   return m
 }
 // (The basalt with a little light of its own — the lava's glow bouncing about the gorge: faces turned from
@@ -451,6 +456,7 @@ function smoothTop(): THREE.Material {
   patchStandard(m, { strata: true, shadow: true, detail: true })
   return m
 }
+const hazed = (m: THREE.MeshStandardMaterial): THREE.MeshStandardMaterial => { patchStandard(m, {}); return m }
 let canyonMesh: THREE.Group | null = null
 // (BLUE HOLLOW's walls past their foot drawn as the ground itself, like the glacier they run into: in materials
 //  of their own they met it along a seam, and read from the air as dark slabs laid round it. MAGMA's in the same
@@ -459,7 +465,7 @@ let canyonMesh: THREE.Group | null = null
 //  of the frame from the air.)
 const buildCanyonMesh = (cv: Canyon): THREE.Group => {
   if (cv.style === 'desert') return cv.build(wallMat!, { topMat: smoothTop() })
-  if (cv.style === 'lava') return cv.build(wallMat!, { topMat: new THREE.MeshStandardMaterial({ color: 0x8a6650, emissive: 0x5a3c2a, roughness: 0.95 }), cliffMat: gorgeWall(0x6a4c3c, [4.5, 1.4, 0.25], 0x6a4430) })
+  if (cv.style === 'lava') return cv.build(wallMat!, { topMat: hazed(new THREE.MeshStandardMaterial({ color: 0x8a6650, emissive: 0x5a3c2a, roughness: 0.95 })), cliffMat: gorgeWall(0x6a4c3c, [4.5, 1.4, 0.25], 0x6a4430) })
   if (cv.style !== 'ice') return cv.build(wallMat!)
   const look = world.groundLook()
   return cv.build(wallMat!, { roofMat: caveRoof, topMat: look, roofTopMat: look, cliffMat: look })
