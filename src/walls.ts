@@ -70,26 +70,29 @@ function wallShape(inp: WallsIn, carve: CarveAt, x: number, z: number, d: number
   let h: number, crev = 0
   if (s === 'desert') {
     // The foot's cliff: low, its height wandering along the gorge and notched — the strata's own cliffs stand
-    // above it, set back as the land wanders; behind it a bench until the land rises past it, falling away only
-    // into a side canyon. (One tall face at the floor's edge, one height all round and cut square behind, read
-    // as a road cut, and from the air as boxes on a shelf.)
+    // above it, set back as the land wanders; behind it a long debris slope down into the land wherever the land
+    // is lower. (One tall face at the floor's edge, one height all round and cut square behind, read as a road
+    // cut, and from the air as boxes on a shelf; a bench held up until the land rose past it ended in a sheer
+    // face wherever a side canyon came down, a card standing in the land.)
     const Hf = 15 + 190 * sst(-0.5, 0.7, warp(x / 900, z / 900, 441, 0.9, 2)) - 40 * Math.max(0, vn(x / 260, z / 260, 442)) ** 2
-    E = Math.max(E, Hf * sst(4, 18, d) * Math.max(1 - sst(45, 210, d), sst(0.5 * Hf, Hf, C)) * (open ? 0 : 1))
+    E = Math.max(E, Hf * sst(4, 18, d) * (1 - sst(45, 230, d)) * (open ? 0 : 1))
     h = landSurface(s, E, x, z, d) - 6 * sst(30, 0, d)
   } else if (s === 'lava') {
     // (The glow only on the foot's own narrow faces: across a 200 m face it read as a band of yellow paint.)
     // (And in pools along it, not one unbroken seam: from the air a lit line drawn round the floor.)
     if (d <= 12 && !open) return { h: d <= 0 ? -6 : d <= 6 ? 2 : 8, crev: d <= 6 ? sst(0.05, 0.45, vn(x / 110, z / 110, 433)) : 0 }
     // The rim's lip: uneven, here a low levee and there a tall wall (one height all round read as a parapet).
-    // (Behind it a bench until the land rises past it, falling away only into a side canyon: cut square
-    //  behind, it was a slab laid round the gorge.)
-    // (Low in long stretches, tall in others, and its top climbing back into the land: one band of even
-    //  height with flat tops read from the air as a wall built round the gorge.)
+    // (Low in long stretches, tall in others, and falling back into the land as a levee: one band of even
+    //  height with flat tops read from the air as a wall built round the gorge; a bench held up behind it
+    //  ended in a sheer card wherever a side canyon came down.)
     const Hr = 25 + 230 * sst(-0.5, 0.7, warp(x / 800, z / 800, 431, 0.8, 2)) - 50 * Math.max(0, vn(x / 240, z / 240, 432)) ** 2
-    E = Math.max(E, Hr * (1 + 0.8 * sst(22, 300, d)) * sst(12, 22, d) * Math.max(1 - sst(40, 200, d), sst(0.5 * Hr, Hr, C)) * (open ? 0 : 1))
+    E = Math.max(E, Hr * sst(12, 22, d) * (1 - sst(40, 220, d)) * (open ? 0 : 1))
     h = landSurface(s, E, x, z, d)
   } else if (s === 'ice') {
-    E = Math.max(E, 125 * sst(4, 22, d) * sst(80, 50, d) * (open ? 0 : 1))
+    // The foot's ice cliff, its height wandering, its back falling away as a long slope (a ledge of one height
+    // cut square behind lay along the gorge as a plank, and from afar notched its skyline like a castle).
+    const Hi = 30 + 140 * sst(-0.5, 0.7, warp(x / 900, z / 900, 452, 0.9, 2))
+    E = Math.max(E, Hi * sst(4, 22, d) * (1 - sst(40, 240, d)) * (open ? 0 : 1))
     // (No terraced ice cliffs in the walls' own mesh: their steps fell between its columns, and every row
     //  cut them its own way — a sawtooth along the rim from the air. The sheet's cliffs stand out past it.)
     h = E
@@ -143,9 +146,11 @@ export function buildWalls(inp: WallsIn): WallsOut {
           const C = carve.at(x, z)
           h = tileHere(style, x, z, d, inner, C, L.roofTop[i]) - 25
         } else { const w = wallShape(inp, carve, x, z, d, inner, i, si); h = w.h; c = w.crev }
-        // (Low: at or under the ground there — the faces between are never seen, and at a way's mouth, lying
-        //  on the floor in the walls' strata, they z-fought it into a dark striped band.)
-        low[q] = k > 0 && h <= 0.5 ? 1 : 0
+        // (Near the ground's level, pressed under it: at a way's mouth faces lying on the floor in the walls'
+        //  strata z-fought it into a dark striped band. Pressed smoothly — culled instead, the faces left at a
+        //  low bluff's foot stood up out of the ground as spikes of grass.)
+        if (k > 0 && h < 3) h = foot + (3 - foot) * ((Math.max(h, foot) - foot) / (3 - foot)) ** 3
+        low[q] = h <= foot + 0.01 && k > 0 ? 1 : 0
         y[q] = h; rel[q] = h; cv[q] = c
       }
     }
@@ -200,9 +205,8 @@ function tris(inp: WallsIn, vx: Float32Array, vz: Float32Array, Y: Float32Array,
   ti = 0
   quads((q0, q1, q2, r) => {
     const B = blocks[Math.floor(r / RB)], kd = kinds[ti++]
-    // (Ground under the ground: never seen. The foot's own row is under it too, so a face counts as low
-    //  when every corner past the foot is.)
-    if ((low[q0] || Y[q0] <= -3.9) && (low[q1] || Y[q1] <= -3.9) && (low[q2] || Y[q2] <= -3.9)) return
+    // (Ground under the ground: never seen.)
+    if (low[q0] && low[q1] && low[q2]) return
     const o = kd === 1 ? B.top : kd === 2 ? B.cliff : B.pos, oc = kd === 1 ? B.topC : kd === 2 ? B.cliffC : B.crev, oq = kd === 1 ? B.topQ : kd === 2 ? B.cliffQ : B.posQ
     o.push3(vx[q0], Y[q0], vz[q0]); o.push3(vx[q1], Y[q1], vz[q1]); o.push3(vx[q2], Y[q2], vz[q2])
     oq.push(qBase + q0); oq.push(qBase + q1); oq.push(qBase + q2)

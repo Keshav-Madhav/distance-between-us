@@ -662,7 +662,9 @@ function terrainMaterial(shared: GroundUniforms, snap: { value: THREE.Vector2 },
           if (steep + scree > 0.0) {
             // (One plane's texture at a time, mostly: two blended evenly crossed their streaks into smudges.)
             vec3 an = abs(gn);
-            vec2 wq = an.xz * an.xz * an.xz * an.xz;
+            // (Floored: on a face turned straight down — an arch's underside — both planes' weights were ~0 and
+            //  their ratio noise: black blotches.)
+            vec2 wq = an.xz * an.xz * an.xz * an.xz + 1e-3;
             vec2 wxz = wq / max(wq.x + wq.y, 1e-6);
             float wy = vW.y + 7.0 * fbmT(p * 0.003);
             #if defined(BIOME_ICE)

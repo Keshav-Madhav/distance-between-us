@@ -176,9 +176,31 @@ function cones(x: number, z: number): number {
   }
   return best
 }
+/** Landmarks seen from the plain: a few great peaks a few km out from the gorge — MAGMA's volcanoes, BLUE
+ *  HOLLOW's nunataks — one in about half of 6 km cells, 2.2–3.4 km across the base, `h0`–`h0 + dh` tall (m). */
+function peaks(x: number, z: number, sd: number, h0: number, dh: number, crater: boolean): number {
+  const G = 6000, gx = Math.floor(x / G), gz = Math.floor(z / G)
+  let best = 0
+  for (let a = -1; a <= 1; a++) for (let b = -1; b <= 1; b++) {
+    const ix = gx + a, iz = gz + b
+    if (hash(ix, iz, sd) > 0.5) continue
+    const cx = (ix + 0.2 + 0.6 * hash(ix, iz, sd + 1)) * G, cz = (iz + 0.2 + 0.6 * hash(ix, iz, sd + 2)) * G
+    const R = 1100 + 600 * hash(ix, iz, sd + 3), H = h0 + dh * hash(ix, iz, sd + 4), r = Math.hypot(x - cx, z - cz)
+    if (r >= R) continue
+    let h = H * (1 - r / R) ** 1.6
+    if (crater) { const Rc = 0.16 * R; if (r < Rc) h = H * (1 - Rc / R) ** 1.6 - 0.12 * H * (1 - (r / Rc) ** 2) }
+    else h *= 0.8 + 0.2 * (1 - Math.abs(vn(x / 260, z / 260, sd + 5)))
+    if (h > best) best = h
+  }
+  return best
+}
+const peakBand = (df: number) => df < 1300 || df > 8000 ? 0 : sst(1300, 2600, df) * sst(8000, 5000, df)
+const volcanoAt = (x: number, z: number, df: number) => { const b = peakBand(df); return b > 0 ? b * peaks(x, z, 471, 750, 550, true) : 0 }
+const nunatakAt = (x: number, z: number, df: number) => { const b = peakBand(df); return b > 0 ? b * peaks(x, z, 571, 450, 450, false) : 0 }
+
 /** The cones as they stand: back from the rim (on it they stood in the way of every view across the
  *  gorge), and only within ~9 km of it. */
-const coneAt = (x: number, z: number, df: number) => df < 800 || df > 9000 ? 0 : cones(x, z) * sst(800, 1500, df) * sst(9000, 3000, df)
+const coneAt = (x: number, z: number, df: number) => (df < 800 || df > 9000 ? 0 : cones(x, z) * sst(800, 1500, df) * sst(9000, 3000, df)) + volcanoAt(x, z, df)
 const ext = (b: number, F: number, sd: number) => (x: number, z: number) => rimW(x, z, b, sd) + fallL(x, z, F, sd) + 900 + (massif(x, z, sd) > 0.02 ? 1e9 : 0)
 
 const WORLDS: Record<LandStyle, World> = {
@@ -193,7 +215,7 @@ const WORLDS: Record<LandStyle, World> = {
         : 800 + 180 * cn(x, z, 3, 312) + 70 * fbmR(x / 2600, z / 2600, 2, 302)
       // (The walls' set-back wanders: as a function of the distance alone, the benches ran round the loop
       //  like contour lines.)
-      const dd = Math.max(0, df) + 520 * warp(x / 1400, z / 1400, 306, 0.9, 2) * sst(0, 500, df)
+      const dd = Math.max(0, df) + (inner ? 900 : 520) * warp(x / 1400, z / 1400, 306, 0.9, 2) * sst(0, 500, df)
       const lam = 230 + 220 * (0.5 + 0.5 * warp(x / 3500, z / 3500, 303, 0.8, 2))
       let E = T * (1 - Math.exp(-Math.max(0, dd) / lam))
       // Gullies and alcoves every few hundred metres: the benches broken, the rims notched.
@@ -230,7 +252,7 @@ const WORLDS: Record<LandStyle, World> = {
       const T = inner
         ? 680 + Math.max(-160, Math.min(200, 20 * tilt(x, z, 7))) + 70 * fbmR(x / 8000, z / 8000, 2, 402) + shield + 120 * sst(600, 4000, df) + 0.6 * crest
         : 700 + 160 * cn(x, z, 3, 412) + shield + crest
-      const dd = Math.max(0, df) + 650 * Math.abs(warp(x / 1100, z / 1100, 406, 1.0, 2)) * sst(0, 500, df)
+      const dd = Math.max(0, df) + (inner ? 900 * warp(x / 1100, z / 1100, 406, 1.0, 2) : 650 * Math.abs(warp(x / 1100, z / 1100, 406, 1.0, 2))) * sst(0, 500, df)
       const lam = 220 + 180 * (0.5 + 0.5 * warp(x / 3200, z / 3200, 403, 0.8, 2))
       let E = T * (1 - Math.exp(-Math.max(0, dd) / lam))
       if (!inner) {
@@ -267,13 +289,15 @@ const WORLDS: Record<LandStyle, World> = {
         ? 440 + Math.max(-120, Math.min(160, 14 * tilt(x, z, 11))) + 110 * fbmR(x / 7000, z / 7000, 2, 501) + 0.03 * Math.min(df, 6000)
         : 450 + 130 * cn(x, z, 3, 512) + 60 * fbmR(x / 7000, z / 7000, 2, 501)
       const lam = 160 + 140 * (0.5 + 0.5 * warp(x / 3000, z / 3000, 503, 0.8, 2))
-      const dd = Math.max(0, df) + 250 * warp(x / 1500, z / 1500, 506, 0.9, 2) * sst(0, 400, df)
+      const dd = Math.max(0, df) + (inner ? 600 : 250) * warp(x / 1500, z / 1500, 506, 0.9, 2) * sst(0, 400, df)
       let E = (G + 30 * fbmR(x / 1800, z / 1800, 2, 502)) * (1 - Math.exp(-Math.max(0, dd) / lam))
       if (!inner) {
         const t = Math.min(fall(x, z, dd, 2400, 5500, 511), 1 - 0.85 * massif(x, z, 511))
         // Convex: the ice thins slowly, then rolls over at its margin onto the snowfield.
         E = E * (1 - t * t) + 30 * sst(1.2, 0.9, t) * sst(0.5, 0.9, t)
         E += 4 * t * (1 - t) * 35 * sst(0.2, 0.65, warp(x / 650, z / 650, 507, 1.0, 2))
+        // Nunataks: rock peaks standing up through the ice a few km out, seen from the snowfield.
+        E += nunatakAt(x, z, df)
       }
       if (roofTop > 0) E = Math.max(E, (roofTop - 0.12 * Math.max(0, df - 300)) * sst(2400, 900, df))
       return Math.max(0, E)
@@ -282,7 +306,7 @@ const WORLDS: Record<LandStyle, World> = {
     // off the walls): the glacier's own blue faces — on white rolling ice alone the gorge could not be seen
     // from the land. (Not sheer: on the tile's 60 m cells a sheer step was drawn as a sawtooth.)
     surface: (E, x, z, df) => {
-      const tk = sst(-0.1, 0.45, warp(x / 3200, z / 3200, 521, 0.9, 2)) * sst(6000, 2000, df) * sst(500, 900, df)
+      const tk = sst(-0.1, 0.45, warp(x / 3200, z / 3200, 521, 0.9, 2)) * sst(6000, 2000, df) * sst(500, 900, df) * (1 - sst(5, 60, nunatakAt(x, z, df)))
       return Math.max(0, tk > 0 ? E + (terrace(E, ICE_LV, 0.75, 0.15, (j) => 40 * fbmR(x / 4000, z / 4000, 2, 522 + j), 0.3) - E) * tk : E)
     },
     canyonK: [0.5, 0.9], wTrunk: [70, 120], wWay: [200, 260], wOut: [160, 300], wBig: 900, top: 420, ways: [0.07, 0.31, 0.58, 0.95], seed: 9431,
@@ -319,6 +343,18 @@ const WORLDS: Record<LandStyle, World> = {
     canyonK: [0.5, 0.8], wTrunk: [30, 70], wWay: [150, 230], wOut: [70, 150], wBig: 600, top: 380, ways: [0.16, 0.42, 0.69, 0.92], seed: 6151,
     erode: [8, 0.75, 0.25], apron: 0,
   },
+}
+
+// The island's rim broken: saddles where it dips toward the floor, deep by the gorge and filling back in over
+// km toward the island's middle — its rim one height all round read as a moat round a plateau. (With the
+// spurs and bays its set-back now swings through — see each world's `dd`.)
+function saddle(x: number, z: number, df: number, sd: number): number {
+  const s = sst(0.1, 0.6, warp(x / 2200, z / 2200, sd, 0.9, 2))
+  return 1 - 0.8 * s * Math.exp(-Math.max(0, df - 100) / 1800)
+}
+for (const [k, W] of Object.entries(WORLDS)) {
+  const pot = W.potential, sd = 700 + k.length * 31
+  W.potential = (x, z, df, inner, roofTop) => { const E = pot(x, z, df, inner, roofTop); return inner && roofTop <= 0 && df < 7000 ? E * saddle(x, z, df, sd) : E }
 }
 
 /** How far out the land can reach at a point (m from the floor's edge), with its edge zone. */

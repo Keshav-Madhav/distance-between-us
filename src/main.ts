@@ -419,6 +419,9 @@ const caveRoof = new THREE.ShaderMaterial({
     float h(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
     float n(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f); return mix(mix(h(i), h(i + vec2(1, 0)), f.x), mix(h(i + vec2(0, 1)), h(i + 1.0), f.x), f.y); }
     void main() {
+      // (Only ever seen from under it: two-sided, its edges showed through the glacier from the air as blue
+      //  slivers along the rim.)
+      if (cameraPosition.y > vW.y) discard;
       // Glacier ice overhead: dark, faceted (flat-shaded facets from the screen-space normal), lit from
       // within — deep blue, a few thin glowing seams. (A bright swirled roof read as a cloudy sky.)
       vec3 nrm = normalize(cross(dFdx(vW), dFdy(vW)));
@@ -464,11 +467,12 @@ let canyonMesh: THREE.Group | null = null
 //  it (unlit, its faces turned from the low sun were black slabs) — as the ground, its wide flats cost a fifth
 //  of the frame from the air.)
 const buildCanyonMesh = (cv: Canyon): THREE.Group => {
-  if (cv.style === 'desert') return cv.build(wallMat!, { topMat: smoothTop() })
-  if (cv.style === 'lava') return cv.build(wallMat!, { topMat: hazed(new THREE.MeshStandardMaterial({ color: 0x8a6650, emissive: 0x5a3c2a, roughness: 0.95 })), cliffMat: gorgeWall(0x6a4c3c, [4.5, 1.4, 0.25], 0x6a4430) })
-  if (cv.style !== 'ice') return cv.build(wallMat!)
-  const look = world.groundLook()
-  return cv.build(wallMat!, { roofMat: caveRoof, topMat: look, roofTopMat: look, cliffMat: look })
+  // (The arches drawn as the land itself — each world's own rock on their faces, its cover on their tops.)
+  const archMat = world.groundLook()
+  if (cv.style === 'desert') return cv.build(wallMat!, { topMat: smoothTop(), archMat })
+  if (cv.style === 'lava') return cv.build(wallMat!, { archMat, topMat: hazed(new THREE.MeshStandardMaterial({ color: 0x8a6650, emissive: 0x5a3c2a, roughness: 0.95 })), cliffMat: gorgeWall(0x6a4c3c, [4.5, 1.4, 0.25], 0x6a4430) })
+  if (cv.style !== 'ice') return cv.build(wallMat!, { archMat })
+  return cv.build(wallMat!, { roofMat: caveRoof, topMat: archMat, roofTopMat: archMat, cliffMat: archMat, archMat })
 }
 // The polar world's set pieces: glaciers, seracs and spike fields placed close beside the line
 // (150–400 m off its edge), so the race threads past the ice instead of seeing it on the horizon.

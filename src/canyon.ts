@@ -20,8 +20,8 @@
 // gentle ground is ground; a cliff is not a ramp (its foot is the ground).
 import * as THREE from 'three'
 import { mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js'
-import { groundBase as groundH } from './terrain'
-import { fbmR, landNetwork, landReach, lineAt, useLoop, vn, WALL_TO, type LandLoop, type LandTile } from './land'
+import { groundBase as groundH, SKY_GLSL, WORLD_FADE } from './terrain'
+import { fbmR, landNetwork, landReach, lineAt, sst, useLoop, vn, WALL_TO, type LandLoop, type LandTile } from './land'
 import { ROOF_D, ROOF_H, ROOF_T, type WallsIn, type WallsOut } from './walls'
 import { patchStandard } from './shaders'
 
@@ -83,6 +83,8 @@ const STYLES: Record<GorgeStyle, Style> = {
 const BIG = 20000
 /** Beside the floor (m out from the foot) the wall is the race's own (see wallsNear). */
 const BAND = 150
+/** The arches' undersides over the floor (m), at least, everywhere across it. */
+const ARCH_CLEAR: Record<GorgeStyle, number> = { desert: 420, lava: 380, ice: 340, forest: 300 }
 /** Wall rows per row of the race's wall grid (every ~200 m → ~100 m). */
 const SUB = 2
 /** The water's clock (main.ts advances it). */
@@ -248,10 +250,17 @@ export class Canyon {
       const S = this.sides[si], W = walls.sides[si], K = S.K, dir = S.inner ? -1 : 1
       for (let r = 0; r < N; r++) {
         const ox = (S.fx[r] - this.cx) / S.lam[r], oz = (S.fz[r] - this.cz) / S.lam[r]
+        const roofed = this.roofK[Math.floor(r / SUB)] > 0
         for (let k = 0; k < K; k++) {
-          const q = r * K + k, g = groundH(S.fx[r] + ox * dir * S.col[k], S.fz[r] + oz * dir * S.col[k])
-          G.push(g)
-          S.y[q] = W.y[q] + g; S.rel[q] = W.rel[q]; S.cv[q] = W.cv[q]; S.low[q] = W.low[q]
+          const x = S.fx[r] + ox * dir * S.col[k], z = S.fz[r] + oz * dir * S.col[k]
+          const q = r * K + k, g = groundH(x, z)
+          // Their outer edge into the tile as it was built — eroded, talus at its cliffs' feet, sampled on its
+          // own cells — not the land's formula the worker blended into: where the two parted (steep crests,
+          // cones) the walls' edge stood up out of the land like a card, or sank into it as a gash.
+          const w = roofed ? 0 : sst(230, WALL_TO, S.col[k])
+          const dl = w > 0 ? (this.tileH(x, z) - (k === K - 1 ? 25 : 0) - W.rel[q]) * w : 0
+          G.push(g + dl)
+          S.y[q] = W.y[q] + dl + g; S.rel[q] = W.rel[q] + dl; S.cv[q] = W.cv[q]; S.low[q] = W.low[q]
         }
       }
       const sg = S.inner ? this.land.sgIn : -this.land.sgIn, open = sg > 0 ? this.openP : this.openN
@@ -270,9 +279,86 @@ export class Canyon {
     for (const B of walls.blocks) for (const [p, q] of [[B.pos, B.posQ], [B.top, B.topQ], [B.cliff, B.cliffQ]] as const) for (let j = 0; j < q.length; j++) p[j * 3 + 1] += g[q[j]]
     this.reachMemo.clear()
     this.reach = Math.max(Math.hypot(tile.x0 - this.cx, tile.z0 - this.cz), Math.hypot(tile.x0 + tile.nx * tile.step - this.cx, tile.z0 + tile.nz * tile.step - this.cz))
+    this.placeArches()
   }
   /** The walls' triangles, from their worker (src/walls.ts). */
   private walls: WallsOut | null = null
+
+  // ── natural arches ──
+  // A few rock (or ice) bridges spanning the gorge, high over the race: from the sky they break the ring.
+  // Each: its row, its spine from one rim's anchor to the other's (A → B, on the land), and its underside's
+  // height over the floor at its middle. Their undersides stay ARCH_CLEAR over the floor across the whole of
+  // it — several times the highest any racer has flown there (80 m, a rival thrown on CANYON RUN).
+  readonly arches: { row: number; ax: number; az: number; ay: number; bx: number; bz: number; by: number; tx: number; tz: number; W: number; T: number; rise: number }[] = []
+  /** Place the arches (after the land: their feet are found on it). */
+  private placeArches(): void {
+    const m = this.m, clear = ARCH_CLEAR[this.style]
+    let sd = (this.land.rx.length * 7919 + this.style.length * 31) >>> 0
+    const rnd = () => { sd = (sd * 1664525 + 1013904223) >>> 0; return sd / 4294967296 }
+    const n = 3 + Math.floor(rnd() * 3), taken: number[] = []
+    for (let tries = 0; tries < 240 && this.arches.length < n; tries++) {
+      const i = Math.floor(rnd() * m)
+      // (Not over a way in, a cave, or another arch.)
+      const near = (j: number, w: number) => Math.min(Math.abs(i - j), m - Math.abs(i - j)) < w
+      if (taken.some((j) => near(j, m * 0.07)) || this.breaches.some((b) => near(b.row, 10))) continue
+      let roofed = false
+      for (let q = -5; q <= 5; q++) if (this.roofK[(i + q + m) % m] > 0) roofed = true
+      if (roofed) continue
+      const g0 = groundH(this.rx[i], this.rz[i])
+      // Each foot: out along the row to where the land stands high enough, then a little into it.
+      const foot = (sg: number) => {
+        for (let d = 60; d < 1600; d += 20) {
+          const x = this.rx[i] + this.tz[i] * sg * (this.half[i] + d), z = this.rz[i] - this.tx[i] * sg * (this.half[i] + d)
+          const h = this.heightAt(x, z)
+          if (h > g0 + clear + 40) return [this.rx[i] + this.tz[i] * sg * (this.half[i] + d + 70), this.rz[i] - this.tx[i] * sg * (this.half[i] + d + 70), Math.min(h, g0 + clear + 160)]
+        }
+        return null
+      }
+      const A = foot(-1), B = foot(1)
+      if (!A || !B) continue
+      const span = Math.hypot(B[0] - A[0], B[1] - A[1])
+      if (span > 4200) continue
+      taken.push(i)
+      // (Broad as natural bridges go — 0.7–1.3 km along the gorge over its middle, more at its feet: narrower, from
+      //  the sky they were threads across the ring, and from the oblique camera not there at all.)
+      const W = 360 + 300 * rnd(), T = 140 + 110 * rnd()
+      this.arches.push({ row: i, ax: A[0], az: A[1], ay: A[2], bx: B[0], bz: B[1], by: B[2], tx: this.tx[i], tz: this.tz[i], W, T, rise: 40 + 120 * rnd() })
+    }
+  }
+  /** An arch's underside and thickness at t (0…1 from A to B; smooth, without the rock's own roughness):
+   *  the span sags into an arch, thickest and widest at its feet. */
+  private static archAt(a: Canyon['arches'][number], t: number): { u: number; T: number; W: number } {
+    const s = Math.sin(Math.PI * Math.min(1, Math.max(0, t))), foot = (1 - s) ** 2
+    return { u: a.ay + (a.by - a.ay) * t - 40 + a.rise * s, T: a.T * (1 + 2.2 * foot), W: a.W * (1 + 1.4 * foot) }
+  }
+  /** Inside an arch's rock at (x, z, y)? Then how far to its nearer face along the gorge (signed; +: toward
+   *  the arch's +t̂ side), else null. */
+  private archHit(x: number, z: number, y: number): { a: Canyon['arches'][number]; out: number } | null {
+    for (const a of this.arches) {
+      const ex = a.bx - a.ax, ez = a.bz - a.az, l2 = ex * ex + ez * ez
+      const t = ((x - a.ax) * ex + (z - a.az) * ez) / l2
+      if (t < 0 || t > 1) continue
+      const along = (x - a.ax - ex * t) * a.tx + (z - a.az - ez * t) * a.tz
+      const p = Canyon.archAt(a, t)
+      if (Math.abs(along) > p.W * 0.9 || y < p.u || y > p.u + p.T) continue
+      return { a, out: (along >= 0 ? 1 : -1) * (p.W * 0.9 - Math.abs(along)) }
+    }
+    return null
+  }
+  /** An arch's top under (x, z) when you are over it (FREE ROAM lands on it), else -Infinity. */
+  private archTop(x: number, z: number, y: number): number {
+    for (const a of this.arches) {
+      const ex = a.bx - a.ax, ez = a.bz - a.az, l2 = ex * ex + ez * ez
+      const t = ((x - a.ax) * ex + (z - a.az) * ez) / l2
+      if (t < 0 || t > 1) continue
+      const along = (x - a.ax - ex * t) * a.tx + (z - a.az - ez * t) * a.tz
+      const p = Canyon.archAt(a, t)
+      if (Math.abs(along) > p.W * 0.85) continue
+      const top = p.u + p.T
+      if (y > top - 15) return top
+    }
+    return -Infinity
+  }
 
   /** The land tile's height above the ground at (x, z) (whether it is switched on or not). */
   tileH(x: number, z: number): number {
@@ -369,6 +455,8 @@ export class Canyon {
    */
   surface(x: number, z: number, y = Infinity): number {
     if (this.st.roof) { const roof = this.roofAt(x, z); if (roof && y > roof.ceil + 10) return roof.top }
+    // (Over an arch: its top is ground — only up there: the race far below never asks it.)
+    if (this.arches.length && y < Infinity) { const at = this.archTop(x, z, y); if (at > -Infinity) return Math.max(at, this.heightAt(x, z)) }
     const h = this.heightAt(x, z)
     if (h === -Infinity) return h
     const g = this.g2
@@ -453,6 +541,18 @@ export class Canyon {
   inside(x: number, z: number): boolean { const a = this.across(x, z); return Math.abs(a.lat) < a.half }
 
   wallsNear(x: number, z: number, y: number, out: { x: number; z: number; cr: number; big: boolean; wall?: boolean }[], n: number): number {
+    // An arch's rock, flown into: a cliff's face across the gorge (only up there — never in the race's way).
+    if (this.arches.length) {
+      const h = this.archHit(x, z, y)
+      if (h) {
+        let o = out[n]
+        if (!o) out[n] = o = { x: 0, z: 0, cr: 0, big: false }
+        o.big = false; o.wall = true
+        const s = Math.sign(h.out) || 1
+        o.x = x - h.a.tx * s * (BIG - Math.abs(h.out)); o.z = z - h.a.tz * s * (BIG - Math.abs(h.out)); o.cr = BIG
+        n++
+      }
+    }
     const i = this.nearest(x, z)
     const sx = this.tz[i], sz = -this.tx[i], h = this.half[i]
     const lat = (x - this.rx[i]) * this.tz[i] - (z - this.rz[i]) * this.tx[i]
@@ -525,7 +625,7 @@ export class Canyon {
   // ── drawing ──
 
   /** The land (and the roof, the lamps, the water) as one group. `topMat`: the gentlest faces' own. */
-  build(mat: THREE.Material, extra: { roofMat?: THREE.Material; topMat?: THREE.Material; roofTopMat?: THREE.Material; cliffMat?: THREE.Material } = {}): THREE.Group {
+  build(mat: THREE.Material, extra: { roofMat?: THREE.Material; topMat?: THREE.Material; roofTopMat?: THREE.Material; cliffMat?: THREE.Material; archMat?: THREE.Material } = {}): THREE.Group {
     const g = new THREE.Group()
     // A few chunks round the loop, both sides in each, each culled on its own: smaller ones culled better,
     // but every chunk is a draw call in every pass (at ~4 km chunks the frame's calls rose by half).
@@ -549,6 +649,7 @@ export class Canyon {
     // Down the two big valleys, what made the gorge: the river coming in and going out, a lava flow, a frozen
     // meltwater stream, a dry wash.
     g.add(this.valleyStreams())
+    if (this.arches.length) g.add(this.archMesh(extra.archMat ?? mat))
     return g
   }
 
@@ -734,8 +835,9 @@ export class Canyon {
       // (Into the roof, so they hang from it: they floated just below before.)
       const y = groundH(this.rx[r], this.rz[r]) + this.roofLift(r, t) + 8
       v.set(this.rx[r] + this.tz[r] * across, y, this.rz[r] - this.tx[r] * across)
+      // (Up to ~70 m: longer, they hung far down into the hall, well below the ceiling's own height.)
       const w = 2.5 + 5 * ((f * 3.1) % 1) ** 1.5
-      s.set(w * (0.7 + 0.6 * ((f * 5.7) % 1)), 25 + 125 * ((f * 7.3) % 1) ** 2, w * (0.7 + 0.6 * ((f * 9.1) % 1)))
+      s.set(w * (0.7 + 0.6 * ((f * 5.7) % 1)), 12 + 55 * ((f * 7.3) % 1) ** 2, w * (0.7 + 0.6 * ((f * 9.1) % 1)))
       q.setFromEuler(e.set(0.12 * (((f * 13.7) % 1) - 0.5), ((f * 17.3) % 1) * 6.28, 0.12 * (((f * 19.1) % 1) - 0.5)))
       ic.setMatrixAt(c++, m.compose(v, q, s))
     }
@@ -865,54 +967,95 @@ export class Canyon {
     geo.setAttribute('position', new THREE.BufferAttribute(pos, 3))
     geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2))
     geo.setIndex(idx)
+    geo.setAttribute('aF', new THREE.BufferAttribute(new Float32Array(rows * A).fill(0.5), 1))
     const w = new THREE.Mesh(geo, Canyon.waterMat())
     w.frustumCulled = false
     w.renderOrder = 1
     return w
   }
 
+  /** Every arch in one mesh: a rough tube along its spine — sagging, thickest and widest at its feet, which
+   *  run on down into the land — its rock knobbled and eroded (a smooth even span read as a built bridge). */
+  private archMesh(mat: THREE.Material): THREE.Mesh {
+    const NS = 56, NR = 16, pos: number[] = [], idx: number[] = []
+    for (const a of this.arches) {
+      const base = pos.length / 3, i0 = idx.length, ex = a.bx - a.ax, ez = a.bz - a.az
+      for (let i = 0; i <= NS; i++) {
+        // (Past both feet a little, and down: buried in the rim, never standing on it.)
+        const t = -0.06 + 1.12 * (i / NS), p = Canyon.archAt(a, t), bury = Math.max(0, -t, t - 1) * 900
+        const cx = a.ax + ex * t, cz = a.az + ez * t, cy = p.u + p.T / 2 - bury
+        for (let k = 0; k < NR; k++) {
+          const ang = (k / NR) * Math.PI * 2, ca = Math.cos(ang), sa = Math.sin(ang)
+          const x0 = cx + a.tx * p.W * ca, z0 = cz + a.tz * p.W * ca, y0 = cy + (p.T / 2) * sa
+          // Eroded: lumps and hollows, deeper on the underside and the sides; the top flatter.
+          // (No finer than the spine's own spacing, ~70 m: finer, it aliased into a sawtooth along the edges.)
+          const e = 1 + 0.3 * vn(x0 / 170, (z0 + y0) / 170, 81) + 0.12 * vn(x0 / 75, (z0 - y0) / 75, 82) - 0.12 * Math.max(0, -sa)
+          const top = sa > 0.5 ? 0.6 : 1
+          pos.push(cx + a.tx * p.W * ca * e, cy + (p.T / 2) * sa * (1 + (e - 1) * top), cz + a.tz * p.W * ca * e)
+        }
+        if (i < NS) for (let k = 0; k < NR; k++) {
+          const q0 = base + i * NR + k, q1 = base + i * NR + ((k + 1) % NR), q2 = q0 + NR, q3 = q1 + NR
+          idx.push(q0, q2, q1, q1, q2, q3)
+        }
+      }
+      // (Its faces wound to face out: their normal is the spine × up, which is +t̂ only one way round.)
+      if (ex * a.tz - ez * a.tx < 0) for (let j = i0; j < idx.length; j += 3) { const q = idx[j + 1]; idx[j + 1] = idx[j + 2]; idx[j + 2] = q }
+    }
+    const geo = new THREE.BufferGeometry()
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3))
+    geo.setIndex(idx)
+    geo.computeVertexNormals()
+    const m = new THREE.Mesh(geo, mat)
+    m.castShadow = true; m.receiveShadow = true
+    return m
+  }
+
   /** The big valleys' streams: a strip down each one's axis from inside the floor out onto the plain, as wide
    *  as part of its floor, at the floor's own level (the land round it rises over its edges). */
   private valleyStreams(): THREE.Mesh {
-    const A = 9, pos: number[] = [], uv: number[] = [], idx: number[] = []
-    const frac = this.style === 'forest' ? 0.6 : this.style === 'lava' ? 0.4 : this.style === 'desert' ? 0.45 : 0.16
+    const A = 9, pos: number[] = [], uv: number[] = [], fa: number[] = [], idx: number[] = []
+    const frac = this.style === 'forest' ? 0.6 : this.style === 'lava' ? 0.4 : this.style === 'desert' ? 0.45 : 0.3
     for (const b of this.breaches) {
       if (!b.big) continue
       const P = b.axis, n = P.length / 3, base = pos.length / 3
-      // (The frozen stream from the floor's edge on: lying out on the floor it was a white sheet on the ice.)
-      for (let i = this.style === 'ice' ? 1 : 0; i < n; i++) {
+      // (From the floor's edge on: lying out on the floor it was a sheet on the ice, and a second river laid
+      //  over the first.)
+      for (let i = 1; i < n; i++) {
         const j = Math.min(n - 2, i), dx = P[(j + 1) * 3] - P[j * 3], dz = P[(j + 1) * 3 + 1] - P[j * 3 + 1], l = Math.hypot(dx, dz) || 1
         // (Its first point is on the floor: the stream starts in the river, or out of the gorge's lava.)
         const hw = (i === 0 ? b.wid[1] : b.wid[i]) * frac * (0.85 + 0.3 * vn(i * 0.37, b.row, 61))
         for (let k = 0; k < A; k++) {
           const t = k / (A - 1), a = (t * 2 - 1) * hw, x = P[i * 3] + (dz / l) * a, z = P[i * 3 + 1] - (dx / l) * a
-          pos.push(x, groundH(x, z) + 1.4, z); uv.push(t, P[i * 3 + 2])
+          pos.push(x, groundH(x, z) + 1.4, z); uv.push(t, P[i * 3 + 2]); fa.push((i - 1) / (n - 2))
         }
-        const i0 = this.style === 'ice' ? 1 : 0
-        if (i < n - 1) for (let k = 0; k < A - 1; k++) { const q = base + (i - i0) * A + k; idx.push(q, q + 1, q + A, q + A, q + 1, q + A + 1) }
+        if (i < n - 1) for (let k = 0; k < A - 1; k++) { const q = base + (i - 1) * A + k; idx.push(q, q + 1, q + A, q + A, q + 1, q + A + 1) }
       }
     }
     const geo = new THREE.BufferGeometry()
     geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3))
     geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2))
+    geo.setAttribute('aF', new THREE.Float32BufferAttribute(fa, 1))
     geo.setIndex(idx)
-    const m = new THREE.Mesh(geo, Canyon.waterMat(this.style === 'lava' ? 1 : this.style === 'ice' ? 2 : this.style === 'desert' ? 3 : 0))
+    const m = new THREE.Mesh(geo, Canyon.waterMat(this.style === 'lava' ? 1 : this.style === 'ice' ? 2 : this.style === 'desert' ? 3 : 0, true))
     m.frustumCulled = false
     m.renderOrder = 1
     return m
   }
 
   /** Running water (kind 0), molten lava (1), a frozen stream (2), or a dry wash (3). */
-  private static waterMat(kind = 0): THREE.ShaderMaterial {
+  private static waterMat(kind = 0, stream = false): THREE.ShaderMaterial {
     return new THREE.ShaderMaterial({
       defines: { KIND: kind },
-      uniforms: { uTime: WATER_T },
+      uniforms: { uTime: WATER_T, uAurT: { value: 0 }, ...WORLD_FADE },
       side: THREE.DoubleSide,
       // (Lifted with distance — 1.4 m over the ground is below the depth buffer's grain km off: there the
-      //  ground cut through it along its triangles, the river's edges sawn into steps from the air.)
-      vertexShader: `varying vec2 vUv; varying vec3 vW;
-        void main() { vUv = uv; vec4 w = modelMatrix * vec4(position, 1.0); w.y += 6e-4 * length(w.xz - cameraPosition.xz); vW = w.xyz; gl_Position = projectionMatrix * viewMatrix * w; }`,
-      fragmentShader: `uniform float uTime; varying vec2 vUv; varying vec3 vW;
+      //  ground cut through it along its triangles, the river's edges sawn into steps from the air. With the
+      //  square of it, as the grain grows: lifted evenly, near by it stood above its banks as a bright line.)
+      // aF: how far along a valley's stream (0…1; the river's own is 0.5 all along).
+      vertexShader: `attribute float aF; varying vec2 vUv; varying vec3 vW; varying float vF;
+        void main() { vUv = uv; vF = aF; vec4 w = modelMatrix * vec4(position, 1.0); float d = length(w.xz - cameraPosition.xz); w.y += min(15.0, 1.5e-7 * d * d); vW = w.xyz; gl_Position = projectionMatrix * viewMatrix * w; }`,
+      fragmentShader: `${SKY_GLSL}
+        uniform float uTime; varying vec2 vUv; varying vec3 vW; varying float vF;
         float h(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
         float n(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f); return mix(mix(h(i), h(i + vec2(1, 0)), f.x), mix(h(i + vec2(0, 1)), h(i + 1.0), f.x), f.y); }
         void main() {
@@ -940,21 +1083,26 @@ export class Canyon {
           float hot = smoothstep(0.55, 0.35, pl) * (0.4 + 0.6 * mid);
           c = mix(vec3(0.06, 0.035, 0.03), vec3(2.6, 0.9, 0.15), hot) + vec3(0.5, 0.12, 0.02) * mid * 0.3;
           #elif KIND == 2
-          // Frozen: pale ice, cracked, blue where it is clear, the sky in it; no flow.
+          // Frozen: ice, cracked, blue where it is clear, the sky in it; no flow. Lit as the snow round it is.
           float cr = smoothstep(0.03, 0.0, abs(n(vec2(vUv.x * 14.0, vUv.y * 0.04)) - 0.5));
-          c = mix(vec3(0.22, 0.38, 0.58), vec3(0.5, 0.64, 0.8), n(vec2(vUv.x * 5.0, vUv.y * 0.01))) * (1.0 - 0.3 * cr) + vec3(0.15, 0.2, 0.3) * fr;
+          c = mix(vec3(0.3, 0.48, 0.7), vec3(0.55, 0.7, 0.86), n(vec2(vUv.x * 5.0, vUv.y * 0.01))) * (1.0 - 0.3 * cr);
+          c *= SUN_COL * max(SUN_DIR.y, 0.0) * 0.6 + skyColor(vec3(0.0, 1.0, 0.0)) * 0.5 + vec3(0.3, 0.36, 0.48);
           #elif KIND == 3
-          // A dry wash: pale silt in braided channels, darker gravel bars between, fading into the sand at its edges.
+          // A dry wash: paler silt in braided channels, darker gravel bars between — lit as the ground is.
           float br = n(vec2(vUv.x * 7.0 + 2.0 * n(vec2(vUv.y * 0.004, 1.0)), vUv.y * 0.006));
-          c = mix(vec3(0.46, 0.33, 0.22), vec3(0.64, 0.52, 0.4), smoothstep(0.35, 0.6, br)) * (0.9 + 0.2 * n(vec2(vUv.x * 60.0, vUv.y * 0.2)));
+          c = mix(vec3(0.5, 0.36, 0.24), vec3(0.66, 0.53, 0.4), smoothstep(0.35, 0.6, br)) * (0.9 + 0.2 * n(vec2(vUv.x * 60.0, vUv.y * 0.2)));
+          c *= (SUN_COL * max(SUN_DIR.y, 0.0) + skyColor(vec3(0.0, 1.0, 0.0)) * 0.36) * 0.72;
           #endif
-          #if KIND >= 2
-          gl_FragColor = vec4(c, smoothstep(0.0, 0.25, vUv.x) * smoothstep(1.0, 0.75, vUv.x));
-          #else
-          gl_FragColor = vec4(c, 1.0); // (opaque: the worn track's orange smear showed through)
-          #endif
+          // (Running water and lava half as hazed as the land: the haze is the land's, and fully in it the river
+          //  went to milk from the air.)
+          c = KIND <= 1 ? mix(c, applyFog(c, vW), 0.5) : applyFog(c, vW);
+          // A valley's stream fades in from the gorge's edge, out at its sides, and away into the plain at its far
+          // end (cut off, it ended in a hook or an arrowhead; edged, it lay on the land as a ribbon).
+          float edge = KIND >= 2 ? smoothstep(0.0, 0.3, vUv.x) * smoothstep(1.0, 0.7, vUv.x) : 1.0;
+          gl_FragColor = vec4(c, edge * smoothstep(0.0, 0.06, vF) * smoothstep(0.95, 0.6, vF)); // (else opaque: the worn track's orange smear showed through)
         }`,
-      transparent: kind >= 2, depthWrite: kind < 2,
+      // (Blended only down the valleys, which fade: the river is opaque, and drawn so it hides what is under it.)
+      transparent: stream, depthWrite: !stream,
     })
   }
 }
