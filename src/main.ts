@@ -490,12 +490,13 @@ let canyonMesh: THREE.Group | null = null
 //  it (unlit, its faces turned from the low sun were black slabs) — as the ground, its wide flats cost a fifth
 //  of the frame from the air.)
 const buildCanyonMesh = (cv: Canyon): THREE.Group => {
-  // (The arches drawn as the land itself — each world's own rock on their faces, its cover on their tops.)
-  const archMat = world.groundLook()
+  // (The arches drawn as the land is — each world's own rock, its cap on their tops: see World.archLook.)
+  const archMat = world.archLook()
   if (cv.style === 'desert') return cv.build(wallMat!, { topMat: smoothTop(), archMat })
   if (cv.style === 'lava') return cv.build(wallMat!, { archMat, topMat: hazed(new THREE.MeshStandardMaterial({ color: 0x8a6650, emissive: 0x5a3c2a, roughness: 0.95 }), true), cliffMat: gorgeWall(0x6a4c3c, [4.5, 1.4, 0.25], 0x6a4430) })
   if (cv.style !== 'ice') return cv.build(wallMat!, { archMat })
-  return cv.build(wallMat!, { roofMat: caveRoof, topMat: archMat, roofTopMat: archMat, cliffMat: archMat, archMat })
+  const look = world.groundLook()
+  return cv.build(wallMat!, { roofMat: caveRoof, topMat: look, roofTopMat: look, cliffMat: look, archMat })
 }
 // The polar world's set pieces: glaciers, seracs and spike fields placed close beside the line
 // (150–400 m off its edge), so the race threads past the ice instead of seeing it on the horizon.

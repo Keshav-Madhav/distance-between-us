@@ -393,7 +393,7 @@ export function lineAt(L: LandLoop, x: number, z: number, cand: ArrayLike<number
  *  shallow at their heads, widening toward the gorge; the ways in keep their floor at the plain's level all
  *  the way out and open onto it in a fan. Each line: [x, z, floor, half-width] every 120 m; k its walls'
  *  rise per metre. */
-export function landNetwork(L: LandLoop, style: LandStyle): { lines: number[][]; k: number[]; open: LandOpen[] } {
+export function landNetwork(L: LandLoop, style: LandStyle): { lines: number[][]; k: number[]; open: LandOpen[]; hmax: number } {
   useLoop(L)
   const W = WORLDS[style], m = L.rx.length, lines: number[][] = [], ks: number[] = [], open: LandOpen[] = []
   let sd = W.seed >>> 0
@@ -515,26 +515,28 @@ export function landNetwork(L: LandLoop, style: LandStyle): { lines: number[][];
     lines.push(line); ks.push(W.canyonK[0] + (W.canyonK[1] - W.canyonK[0]) * rn2())
     for (let b = 0, nb = 2 + Math.floor(rn2() * 2); b < nb; b++) branch(line, 0.1, 0.7, 2600, W.top * (0.8 + 0.2 * rn2()))
   }
-  return { lines, k: ks, open }
+  return { lines, k: ks, open, hmax: HMAX[style] }
 }
 
 /** How far a canyon's carve reaches past its line (m) at most; and segment i's own reach — only as far as its
- *  walls can still cut land (no land stands above HMAX: a carve that high cuts nothing; painting every
- *  segment the full reach was most of the build). */
-const CARVE_R = 1600, HMAX = 1800
-function carveReach(P: number[], i: number, k: number): number {
-  return Math.min(CARVE_R, Math.max(P[i + 3], P[i + 7]) + (HMAX - Math.min(P[i + 2], P[i + 6])) / k)
+ *  walls can still cut land (no land of its world stands above `hmax`: a carve that high cuts nothing; painting
+ *  every segment the full reach was most of the build). (Not a fixed 1.6 km: a broad valley with gentle walls
+ *  was still below the land there, and its walls ended in a scalloped cliff, segment by segment.) */
+const CARVE_R = 3000
+const HMAX: Record<LandStyle, number> = { desert: 1330, lava: 1200, ice: 820, forest: 1000 }
+function carveReach(P: number[], i: number, k: number, hmax: number): number {
+  return Math.min(CARVE_R, Math.max(P[i + 3], P[i + 7]) + (hmax - Math.min(P[i + 2], P[i + 6])) / k)
 }
 
 /** The side canyons' carve at single points (the walls' mesh): their segments hashed in 600 m cells. */
 export class CarveAt {
   private readonly cells = new Map<number, number[]>()
-  private readonly net: { lines: number[][]; k: number[] }
-  constructor(net: { lines: number[][]; k: number[] }) {
+  private readonly net: { lines: number[][]; k: number[]; hmax: number }
+  constructor(net: { lines: number[][]; k: number[]; hmax: number }) {
     this.net = net
     net.lines.forEach((P, li) => {
       for (let i = 0; i + 4 < P.length; i += 4) {
-        const R = carveReach(P, i, net.k[li])
+        const R = carveReach(P, i, net.k[li], net.hmax)
         if (R <= 0) continue
         const x0 = Math.min(P[i], P[i + 4]) - R, x1 = Math.max(P[i], P[i + 4]) + R, z0 = Math.min(P[i + 1], P[i + 5]) - R, z1 = Math.max(P[i + 1], P[i + 5]) + R
         for (let cx = Math.floor(x0 / 600); cx <= Math.floor(x1 / 600); cx++) for (let cz = Math.floor(z0 / 600); cz <= Math.floor(z1 / 600); cz++) {
@@ -574,7 +576,7 @@ export function landRows(L: LandLoop, spec: LandSpec, j0: number, j1: number): {
     const ax = P[i], az = P[i + 1], bx = P[i + 4], bz = P[i + 5]
     const ex = bx - ax, ez = bz - az, l2 = ex * ex + ez * ez || 1
     const e0 = P[i + 2], de = P[i + 6] - e0, w0 = P[i + 3], dw = P[i + 7] - w0
-    const reach = carveReach(P, i, k)
+    const reach = carveReach(P, i, k, net.hmax)
     if (reach <= 0) continue
     const ja = Math.max(j0, Math.floor((Math.min(az, bz) - reach - z0) / step)), jb = Math.min(j1 - 1, Math.ceil((Math.max(az, bz) + reach - z0) / step))
     if (ja > jb) continue

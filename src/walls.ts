@@ -3,7 +3,7 @@
 // walls' finer spacing — each world's foot on it — blended into the land's surface at their outer edge and
 // tucked under it; then cut into triangles (gentle faces smooth-shaded apart from the cliffs).
 // Pure maths, no three.js: built in a worker at boot (src/landjob.ts) alongside the tile.
-import { CarveAt, LAND_ZERO, landNetwork, landPotential, landSurface, sst, useLoop, vn, WALL_TO, warp, type LandLoop, type LandStyle } from './land'
+import { CarveAt, fbmR, LAND_ZERO, landNetwork, landPotential, landSurface, sst, useLoop, vn, WALL_TO, warp, type LandLoop, type LandStyle } from './land'
 
 /** The cave's roof: its edges stand on the walls `ROOF_D` out from the foot, at `ROOF_H` (× the row's
  *  height scale); its ice is `ROOF_T` thick (the glacier over the cave is that much higher). */
@@ -64,7 +64,10 @@ function tileHere(s: LandStyle, x: number, z: number, d: number, inner: boolean,
 /** The walls d out from the foot, at race row i: the land's own surface (cut by its side canyons), with each
  *  world's foot — a cliff always (a canyon notches the rim, never the foot), lava glowing along it, the cave's
  *  walls leaning out to its roof. */
-function wallShape(inp: WallsIn, carve: CarveAt, x: number, z: number, d: number, inner: boolean, i: number, side: number): { h: number; crev: number } {
+function wallShape(inp: WallsIn, carve: CarveAt, x: number, z: number, d: number, inner: boolean, i: number, side: number, fr: number): { h: number; crev: number } {
+  // (The cave's per-row figures between the rows, not held a row at a time: held, the cave wall's top stepped
+  //  every 200 m — stair-steps along every cave from the air.)
+  const nR = inp.roofK.length, i2 = (i + 1) % nR, lerp = (a: ArrayLike<number>) => a[i] + (a[i2] - a[i]) * fr
   const s = inp.style, C = carve.at(x, z), open = C < 60, roofTop = inp.L.roofTop[i]
   let E = Math.min(landPotential(s, x, z, d, inner, roofTop), C)
   let h: number, crev = 0
@@ -74,9 +77,10 @@ function wallShape(inp: WallsIn, carve: CarveAt, x: number, z: number, d: number
     // is lower. (One tall face at the floor's edge, one height all round and cut square behind, read as a road
     // cut, and from the air as boxes on a shelf; a bench held up until the land rose past it ended in a sheer
     // face wherever a side canyon came down, a card standing in the land.)
-    const Hf = 15 + 190 * sst(-0.5, 0.7, warp(x / 900, z / 900, 441, 0.9, 2)) - 40 * Math.max(0, vn(x / 260, z / 260, 442)) ** 2
+    // (Its notches no finer than ~3 of the walls' rows: finer, they aliased into a comb along its crest.)
+    const Hf = 15 + 190 * sst(-0.5, 0.7, warp(x / 900, z / 900, 441, 0.9, 2)) - 40 * Math.max(0, vn(x / 650, z / 650, 442)) ** 2
     E = Math.max(E, Hf * sst(4, 18, d) * (1 - sst(45, 230, d)) * sst(60, 260, C))
-    h = landSurface(s, E, x, z, d) - 6 * sst(30, 0, d)
+    h = landSurface(s, E, x, z, d) - 6 * sst(30, 0, d) + 30 * fbmR(x / 420, z / 420, 2, 444) * sst(30, 80, d) * (1 - sst(220, 320, d))
   } else if (s === 'lava') {
     // (The glow only on the foot's own narrow faces: across a 200 m face it read as a band of yellow paint.)
     // (And in pools along it, not one unbroken seam: from the air a lit line drawn round the floor.)
@@ -85,9 +89,10 @@ function wallShape(inp: WallsIn, carve: CarveAt, x: number, z: number, d: number
     // (Low in long stretches, tall in others, and falling back into the land as a levee: one band of even
     //  height with flat tops read from the air as a wall built round the gorge; a bench held up behind it
     //  ended in a sheer card wherever a side canyon came down.)
-    const Hr = 25 + 230 * sst(-0.5, 0.7, warp(x / 800, z / 800, 431, 0.8, 2)) - 50 * Math.max(0, vn(x / 240, z / 240, 432)) ** 2
+    const Hr = 25 + 230 * sst(-0.5, 0.7, warp(x / 800, z / 800, 431, 0.8, 2)) - 50 * Math.max(0, vn(x / 650, z / 650, 432)) ** 2
     E = Math.max(E, Hr * sst(12, 22, d) * (1 - sst(40, 220, d)) * sst(60, 260, C))
-    h = landSurface(s, E, x, z, d)
+    // (Knobbed and hollowed between the lip and the land behind: smooth there, a face a km long was one flat plane.)
+    h = landSurface(s, E, x, z, d) + 40 * fbmR(x / 420, z / 420, 2, 434) * sst(25, 70, d) * (1 - sst(220, 320, d))
   } else if (s === 'ice') {
     // The foot's ice cliff, its height wandering, its back falling away as a long slope (a ledge of one height
     // cut square behind lay along the gorge as a plank, and from afar notched its skyline like a castle).
@@ -96,10 +101,10 @@ function wallShape(inp: WallsIn, carve: CarveAt, x: number, z: number, d: number
     // (No terraced ice cliffs in the walls' own mesh: their steps fell between its columns, and every row
     //  cut them its own way — a sawtooth along the rim from the air. The sheet's cliffs stand out past it.)
     h = E
-    const roof = inp.roofK[i]
+    const roof = lerp(inp.roofK)
     if (roof > 0) {
       // Under the roof: the cave wall leaning out to the roof's edge; past it the ice, never below the roof's.
-      const eh = inp.eh[side][i]
+      const eh = lerp(inp.eh[side])
       let w: number
       if (d <= ROOF_D) {
         const P = CAVE_WALL
@@ -117,8 +122,11 @@ function wallShape(inp: WallsIn, carve: CarveAt, x: number, z: number, d: number
       crev = d <= ROOF_D - 50 && roof > 0.85 ? 0.15 * (1 - d / ROOF_D) * roof : 0
     }
   } else h = landSurface(s, E, x, z, d)
-  // Into the land's own surface at the walls' outer edge (above or below it, a step there read as a fence).
-  if (d > 230) h += (tileHere(s, x, z, d, inner, C, roofTop) - h) * sst(230, WALL_TO, d) * (s === 'ice' && inp.roofK[i] > 0 ? 0 : 1)
+  // Into the land's own surface at the walls' outer edge (above or below it, a step there read as a fence) —
+  // under the cave's roof too, past the roof's edge (held at the cave wall's height, which steps from row to
+  // row, its shelf met the land in stair-steps all along the caves from the air).
+  const b0 = s === 'ice' && lerp(inp.roofK) > 0 ? ROOF_D + 50 : 230
+  if (d > b0) h += (tileHere(s, x, z, d, inner, C, roofTop) - h) * sst(b0, WALL_TO, d)
   return { h, crev }
 }
 
@@ -145,7 +153,7 @@ export function buildWalls(inp: WallsIn): WallsOut {
           // (The skirt: just under the land's own surface there.)
           const C = carve.at(x, z)
           h = tileHere(style, x, z, d, inner, C, L.roofTop[i]) - 25
-        } else { const w = wallShape(inp, carve, x, z, d, inner, i, si); h = w.h; c = w.crev }
+        } else { const w = wallShape(inp, carve, x, z, d, inner, i, si, (r % SUB) / SUB); h = w.h; c = w.crev }
         // (Never down at the ground's own level past the foot, where the ground and the walls' faces crossed:
         //  lying on the floor at a way's mouth they z-fought it into a dark striped band; pressed just under it,
         //  the ground cut through them along their long triangles as spikes of grass. Down a way in, under it

@@ -383,7 +383,7 @@ function terrainMaterial(shared: GroundUniforms, snap: { value: THREE.Vector2 },
       varying float vH;
       varying float vRiver;
       varying float vLand;
-      #if defined(LAND_MODE) && LAND_MODE == 3
+      #if defined(LAND_MODE) && LAND_MODE >= 3
       float gH(vec2 p) { return groundH(p); }
       #elif defined(LAND_MODE)
       // The far rings: the gorge's land averaged to their own scale (see tLandF).
@@ -392,7 +392,7 @@ function terrainMaterial(shared: GroundUniforms, snap: { value: THREE.Vector2 },
       float gH(vec2 p) { return groundH(p); }
       #endif
       void main() {
-        #if defined(LAND_MODE) && LAND_MODE == 3
+        #if defined(LAND_MODE) && LAND_MODE >= 3
         {
           // A mesh of its own drawn as this ground (BLUE HOLLOW's glacier over its caves): its own heights
           // and normals, the ground's look.
@@ -473,7 +473,7 @@ function terrainMaterial(shared: GroundUniforms, snap: { value: THREE.Vector2 },
       ${FBMT_GLSL}
       uniform vec4 uTrackBox;
       uniform float uTrackOn;
-      #if defined(LAND_MODE) && LAND_MODE == 3
+      #if defined(LAND_MODE) && LAND_MODE >= 3
       #define uTrackOn 0.0
       #endif
       varying vec3 vW;
@@ -484,6 +484,20 @@ function terrainMaterial(shared: GroundUniforms, snap: { value: THREE.Vector2 },
       uniform sampler2D tRock;
       uniform vec2 uRing2C;
       ${SPACE_FN}
+      // The coordinate along an upright face (m), from four upright planes 45 degrees apart — the one the face
+      // is most nearly in mostly, each pointed the same way along it. (From two planes, on a face turned half-way
+      // between them their coordinates cancelled along it: its rock stretched into streaks.)
+      float alongFace(vec2 p, vec3 gn) {
+        vec2 g = normalize(gn.xz + vec2(1e-5, 0.0)), tg = vec2(-g.y, g.x);
+        float s = 0.0, w = 0.0;
+        for (int i = 0; i < 4; i++) {
+          float a = float(i) * 0.785398;
+          vec2 nA = vec2(cos(a), sin(a)), pA = vec2(-nA.y, nA.x);
+          float k = pow(abs(dot(g, nA)), 16.0);
+          s += k * sign(dot(pA, tg) + 1e-6) * dot(p, pA); w += k;
+        }
+        return s / max(w, 1e-6);
+      }
       void main() {
         if (worldCutGround(vW, gl_FragCoord.xy)) discard;
         vec2 p = vW.xz;
@@ -668,45 +682,51 @@ function terrainMaterial(shared: GroundUniforms, snap: { value: THREE.Vector2 },
           float rust = smoothstep(0.55, 0.8, fbmT(p * 0.0019 + 2.0));
           alb = mix(alb, mix(vec3(0.15, 0.12, 0.11), vec3(0.3, 0.15, 0.08), rust * 0.6) * (0.8 + 0.4 * fbmT(p * 0.011)), 0.75 * onL);
           #endif
+          #if defined(BIOME_ICE)
+          // (The ice's faces graded in over a wide band of slope: switched on at one, on the land's 60 m cells
+          //  its steep blue came and went triangle by triangle — stair-steps along every slope from the air.)
+          float steep = smoothstep(0.8, 0.35, gn.y) * onL;
+          #else
           float steep = smoothstep(0.66, 0.48, gn.y) * onL;
+          #endif
           float scree = smoothstep(0.9, 0.7, gn.y) * onL * (1.0 - steep);
+          #if defined(LAND_MODE) && LAND_MODE == 4
+          // An arch: rock all over (its top too — the plateau's cover on it read as a rug laid across the gorge).
+          vec3 cover = alb;
+          steep = 1.0; scree = 0.0;
+          #endif
           if (steep + scree > 0.0) {
-            // (One plane's texture at a time, mostly: two blended evenly crossed their streaks into smudges.)
-            vec3 an = abs(gn);
-            // (Floored: on a face turned straight down — an arch's underside — both planes' weights were ~0 and
-            //  their ratio noise: black blotches.)
-            vec2 wq = an.xz * an.xz * an.xz * an.xz + 1e-3;
-            vec2 wxz = wq / max(wq.x + wq.y, 1e-6);
             float wy = vW.y + 7.0 * fbmT(p * 0.003);
+            float fa = alongFace(p, gn);
             // Turned down (an arch's underside, an overhang): the rock seen from below, mapped flat — mapped on the
             // upright planes it was smeared along them into a plaid of lines and a wood-grain swirl.
             float dn = smoothstep(-0.3, -0.65, gn.y);
             #if defined(BIOME_ICE)
             // Blue glacier ice: dense ice in the faces, paler and darker by noise, streaks running down.
-            vec3 rk = mix(vec3(0.16, 0.36, 0.62), vec3(0.42, 0.66, 0.88), 0.5 + 0.5 * fbmT(vec2(dot(p, wxz.yx) * 0.01, wy * 0.004)));
-            // (Deep blue under an ice bridge, veined and cracked: a pale even blue there read as more sky.)
-            float vein = smoothstep(0.012, 0.0, abs(fbmT(p * 0.004 + 7.0) - 0.5)) * 0.5;
-            rk = mix(rk, mix(vec3(0.04, 0.12, 0.26), vec3(0.16, 0.36, 0.6), smoothstep(0.3, 0.7, fbmT(p * 0.006 + 1.0))) * (0.8 + 0.4 * fbmT(p * 0.03)) + vec3(0.3, 0.55, 0.8) * vein * 0.5, dn);
+            vec3 rk = mix(vec3(0.16, 0.36, 0.62), vec3(0.42, 0.66, 0.88), 0.5 + 0.5 * fbmT(vec2(fa * 0.01, wy * 0.004)));
+            // (Under an ice bridge: dense blue ice, darker and paler in long bands across it, mottled — a pale even
+            //  blue there read as more sky, and glowing veins as the cave's ceiling.)
+            rk = mix(rk, mix(vec3(0.08, 0.2, 0.38), vec3(0.22, 0.42, 0.64), smoothstep(0.3, 0.7, fbmT(p * 0.0015 + 3.0))) * (0.8 + 0.35 * fbmT(p * 0.025)), dn);
             vec3 sc = alb * vec3(0.9, 0.95, 1.05);
             #elif defined(BIOME_LAVA)
             // Basalt: dark, jointed in columns (vertical streaks), rust here and there.
-            float colj = fbmT(vec2(dot(p, wxz.yx) * 0.09, wy * 0.002));
+            float colj = fbmT(vec2(fa * 0.09, wy * 0.002));
             vec3 rk = vec3(0.17, 0.14, 0.13) * (0.8 + 0.45 * colj);
             rk = mix(rk, vec3(0.17, 0.14, 0.13) * (0.75 + 0.5 * fbmT(p * 0.02)), dn);
             rk = mix(rk, vec3(0.34, 0.16, 0.08), smoothstep(0.62, 0.8, fbmT(p * 0.0021 + 3.0)) * 0.4);
             vec3 sc = vec3(0.2, 0.17, 0.15) * (0.8 + 0.4 * fbmT(p * 0.02));
             #elif defined(BIOME_FOREST)
             // Granite: grey, streaked, lichen on it.
-            vec3 rk = vec3(0.46, 0.45, 0.42) * (0.78 + 0.35 * fbmT(vec2(dot(p, wxz.yx) * 0.03, wy * 0.006)));
+            vec3 rk = vec3(0.46, 0.45, 0.42) * (0.78 + 0.35 * fbmT(vec2(fa * 0.03, wy * 0.006)));
             rk = mix(rk, vec3(0.3, 0.34, 0.2), smoothstep(0.55, 0.8, fbmT(p * 0.004 + 6.0)) * 0.35 * (1.0 - dn));
-            rk = mix(rk, vec3(0.36, 0.39, 0.44) * (0.75 + 0.4 * fbmT(p * 0.015 + 2.0)), dn);
+            rk = mix(rk, vec3(0.46, 0.46, 0.44) * (0.75 + 0.4 * fbmT(p * 0.015 + 2.0)), dn);
             vec3 sc = alb;
             #else
             // Sandstone, the mesas' own rock on the two vertical planes, its beds level to the world: the
             // texture's beds spread to the walls' own scale (it repeated every 110 m: fine candy stripes),
             // beds thicker and thinner (the level wanders through them), and a few duller ones.
-            float wyb = wy + 30.0 * fbmT(vec2(dot(p, wxz.yx) * 0.0008, 1.0));
-            vec3 rk = texture2D(tRock, vec2(vW.z / 140.0, wyb / 220.0)).rgb * wxz.x + texture2D(tRock, vec2(vW.x / 140.0, wyb / 220.0)).rgb * wxz.y;
+            float wyb = wy + 30.0 * fbmT(vec2(fa * 0.0008, 1.0));
+            vec3 rk = texture2D(tRock, vec2(fa / 140.0, wyb / 220.0)).rgb;
             float band = fract(wyb / (70.0 + 40.0 * fbmT(p * 0.0004)));
             rk *= 1.0 - 0.3 * smoothstep(0.55, 0.7, band) * (1.0 - smoothstep(0.85, 0.95, band));
             rk = mix(vec3(dot(rk, vec3(0.333))), rk, 0.6) * vec3(1.05, 0.86, 0.72) * mix(vec3(1.0), vec3(1.05, 0.92, 0.85), smoothstep(0.3, 0.7, fbmT(p * 0.0006 + 4.0)));
@@ -720,6 +740,22 @@ function terrainMaterial(shared: GroundUniforms, snap: { value: THREE.Vector2 },
             #endif
             alb = mix(alb, sc, scree);
             alb = mix(alb, rk, steep);
+            #if defined(LAND_MODE) && LAND_MODE == 4
+            // Its top: bare rock mapped flat (slickrock, basalt) — snow lying on the ice, moss and grass on the
+            // granite — with the rock showing at its edges.
+            float upF = smoothstep(0.55, 0.85, gn.y);
+            #if defined(BIOME_ICE)
+            vec3 tc = cover;
+            #elif defined(BIOME_FOREST)
+            vec3 tc = mix(cover, vec3(0.2, 0.3, 0.12) * (0.8 + 0.3 * fbmT(p * 0.02)), 0.4);
+            #elif defined(BIOME_LAVA)
+            vec3 tc = vec3(0.16, 0.13, 0.12) * (0.75 + 0.45 * fbmT(p * 0.012)) + vec3(0.12, 0.05, 0.02) * smoothstep(0.6, 0.8, fbmT(p * 0.003 + 5.0));
+            #else
+            vec3 tc = texture2D(tSand, p / 26.0, 7.0).rgb * vec3(1.0, 0.82, 0.7) * mix(0.85, 1.05, smoothstep(0.3, 0.7, fbmT(p * 0.004 + 2.0))) * (0.8 + 0.3 * fbmT(p * 0.03));
+            tc *= 1.0 - 0.3 * smoothstep(0.02, 0.0, abs(fbmT(p * 0.009 + 4.0) - 0.5)); // (joints in the slickrock)
+            #endif
+            alb = mix(alb, tc, upF * smoothstep(0.7, 0.9, gn.y + 0.12 * fbmT(p * 0.01)));
+            #endif
           }
         }
         alb *= 0.72;
@@ -733,7 +769,23 @@ function terrainMaterial(shared: GroundUniforms, snap: { value: THREE.Vector2 },
         // Cast shadows (mesas, trees, gate towers, the craft): sun light only, the sky fill stays.
         float shd = sunShadow(vW);
         sun *= shd;
+        #if defined(LAND_MODE) && LAND_MODE == 4
+        // (The sky's fill from above the horizon only: an arch's underside lit by the sky below it took its
+        //  blue-violet and smeared it along the edges. And light thrown up from the gorge under it — sand, ice,
+        //  grass, glowing lava — on its sides and underside: lit by the sky alone they were navy slabs.)
+        #if defined(BIOME_ICE)
+        vec3 bounce = vec3(0.45, 0.55, 0.72);
+        #elif defined(BIOME_LAVA)
+        vec3 bounce = vec3(0.8, 0.38, 0.16);
+        #elif defined(BIOME_FOREST)
+        vec3 bounce = vec3(0.55, 0.58, 0.45);
+        #else
+        vec3 bounce = vec3(0.5, 0.31, 0.2);
+        #endif
+        vec3 col = alb * (SUN_COL * sun + skyColor(normalize(vec3(n.x, max(n.y, 0.05), n.z))) * 0.36 + vec3(0.5, 0.22, 0.1) * 0.2 + bounce * 0.55 * smoothstep(0.3, -0.7, n.y));
+        #else
         vec3 col = alb * (SUN_COL * sun + skyColor(n) * 0.36 + vec3(0.5, 0.22, 0.1) * 0.2);
+        #endif
         // In a cast shadow the sunlit ground around it and the open sky still light it: ~35% of the sun as
         // bounce (a mesa's shadow fell to flat black: the track and craft read as a void — the art review).
         col += alb * (SUN_COL * max(dot(n, SUN_DIR), 0.0) * 0.35 + skyColor(n) * 0.2) * (1.0 - shd);
@@ -1440,6 +1492,8 @@ export class World {
   private farLand: THREE.Mesh | null = null
   /** A material that draws a mesh of its own as this world's ground (its look; the mesh's own heights). */
   groundLook(): THREE.ShaderMaterial { return terrainMaterial(this.ground, { value: new THREE.Vector2() }, 0, 3) }
+  /** The ground's look for the gorge's arches: rock all over, the world's cap on top. */
+  archLook(): THREE.ShaderMaterial { return terrainMaterial(this.ground, { value: new THREE.Vector2() }, 0, 4) }
   /** Ask every wrapped item's veto again (the gorge's land has arrived: what may stand where has changed). */
   revetoAll(): void { for (const w of this.wrapped) for (const it of w.items) (it as { vx?: number }).vx = NaN }
   envTexture: THREE.Texture | null = null
