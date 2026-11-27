@@ -3,7 +3,7 @@
 // walls' finer spacing — each world's foot on it — blended into the land's surface at their outer edge and
 // tucked under it; then cut into triangles (gentle faces smooth-shaded apart from the cliffs).
 // Pure maths, no three.js: built in a worker at boot (src/landjob.ts) alongside the tile.
-import { CarveAt, fbmR, LAND_ZERO, landNetwork, landPotential, landSurface, sst, useLoop, vn, WALL_TO, warp, type LandLoop, type LandStyle } from './land'
+import { CarveAt, LAND_ZERO, landNetwork, landPotential, landSurface, sst, useLoop, vn, WALL_TO, warp, type LandLoop, type LandStyle } from './land'
 
 /** The cave's roof: its edges stand on the walls `ROOF_D` out from the foot, at `ROOF_H` (× the row's
  *  height scale); its ice is `ROOF_T` thick (the glacier over the cave is that much higher). */
@@ -79,8 +79,8 @@ function wallShape(inp: WallsIn, carve: CarveAt, x: number, z: number, d: number
     // face wherever a side canyon came down, a card standing in the land.)
     // (Its notches no finer than ~3 of the walls' rows: finer, they aliased into a comb along its crest.)
     const Hf = 15 + 190 * sst(-0.5, 0.7, warp(x / 900, z / 900, 441, 0.9, 2)) - 40 * Math.max(0, vn(x / 650, z / 650, 442)) ** 2
-    E = Math.max(E, Hf * sst(4, 18, d) * (1 - sst(45, 230, d)) * sst(60, 260, C))
-    h = landSurface(s, E, x, z, d) - 6 * sst(30, 0, d) + 30 * fbmR(x / 420, z / 420, 2, 444) * sst(30, 80, d) * (1 - sst(220, 320, d))
+    E = Math.max(E, Hf * sst(4, 18, d) * (1 - sst(45, 340, d)) * sst(60, 260, C))
+    h = landSurface(s, E, x, z, d) - 6 * sst(30, 0, d) + 30 * vn(x / 900, z / 900, 444) * sst(30, 80, d) * (1 - sst(220, 320, d))
   } else if (s === 'lava') {
     // (The glow only on the foot's own narrow faces: across a 200 m face it read as a band of yellow paint.)
     // (And in pools along it, not one unbroken seam: from the air a lit line drawn round the floor.)
@@ -90,14 +90,16 @@ function wallShape(inp: WallsIn, carve: CarveAt, x: number, z: number, d: number
     //  height with flat tops read from the air as a wall built round the gorge; a bench held up behind it
     //  ended in a sheer card wherever a side canyon came down.)
     const Hr = 25 + 230 * sst(-0.5, 0.7, warp(x / 800, z / 800, 431, 0.8, 2)) - 50 * Math.max(0, vn(x / 650, z / 650, 432)) ** 2
-    E = Math.max(E, Hr * sst(12, 22, d) * (1 - sst(40, 220, d)) * sst(60, 260, C))
-    // (Knobbed and hollowed between the lip and the land behind: smooth there, a face a km long was one flat plane.)
-    h = landSurface(s, E, x, z, d) + 40 * fbmR(x / 420, z / 420, 2, 434) * sst(25, 70, d) * (1 - sst(220, 320, d))
+    E = Math.max(E, Hr * sst(12, 22, d) * (1 - sst(40, 330, d)) * sst(60, 260, C))
+    // (Knobbed and hollowed between the lip and the land behind: smooth there, a face a km long was one flat plane.
+    //  At no finer than ~9 of the walls' rows, and every crest's back a long slope: finer or narrower, the
+    //  rows cut them into a row of teeth.)
+    h = landSurface(s, E, x, z, d) + 40 * vn(x / 900, z / 900, 434) * sst(25, 70, d) * (1 - sst(220, 320, d))
   } else if (s === 'ice') {
     // The foot's ice cliff, its height wandering, its back falling away as a long slope (a ledge of one height
     // cut square behind lay along the gorge as a plank, and from afar notched its skyline like a castle).
     const Hi = 30 + 140 * sst(-0.5, 0.7, warp(x / 900, z / 900, 452, 0.9, 2))
-    E = Math.max(E, Hi * sst(4, 22, d) * (1 - sst(40, 240, d)) * sst(60, 260, C))
+    E = Math.max(E, Hi * sst(4, 22, d) * (1 - sst(40, 340, d)) * sst(60, 260, C))
     // (No terraced ice cliffs in the walls' own mesh: their steps fell between its columns, and every row
     //  cut them its own way — a sawtooth along the rim from the air. The sheet's cliffs stand out past it.)
     h = E

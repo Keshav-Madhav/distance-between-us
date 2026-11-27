@@ -701,25 +701,35 @@ function terrainMaterial(shared: GroundUniforms, snap: { value: THREE.Vector2 },
             // Turned down (an arch's underside, an overhang): the rock seen from below, mapped flat — mapped on the
             // upright planes it was smeared along them into a plaid of lines and a wood-grain swirl.
             float dn = smoothstep(-0.3, -0.65, gn.y);
+            // Seen from below: joints and cracks across it, darker in the shoulders where it curves up into the wall.
+            float jnt = 1.0 - 0.3 * smoothstep(0.02, 0.0, abs(fbmT(p * 0.0045 + 2.0) - 0.5)) - 0.15 * smoothstep(0.015, 0.0, abs(fbmT(p * 0.011 + 6.0) - 0.5));
+            float ao = 1.0 - 0.35 * smoothstep(-0.85, -0.45, gn.y) * dn;
             #if defined(BIOME_ICE)
             // Blue glacier ice: dense ice in the faces, paler and darker by noise, streaks running down.
             vec3 rk = mix(vec3(0.16, 0.36, 0.62), vec3(0.42, 0.66, 0.88), 0.5 + 0.5 * fbmT(vec2(fa * 0.01, wy * 0.004)));
             // (Under an ice bridge: dense blue ice, darker and paler in long bands across it, mottled — a pale even
             //  blue there read as more sky, and glowing veins as the cave's ceiling.)
-            rk = mix(rk, mix(vec3(0.08, 0.2, 0.38), vec3(0.22, 0.42, 0.64), smoothstep(0.3, 0.7, fbmT(p * 0.0015 + 3.0))) * (0.8 + 0.35 * fbmT(p * 0.025)), dn);
+            rk = mix(rk, mix(vec3(0.08, 0.2, 0.38), vec3(0.22, 0.42, 0.64), smoothstep(0.3, 0.7, fbmT(vec2(p.x + p.y, wy * 4.0) * 0.0015 + 3.0))) * (0.8 + 0.35 * fbmT(p * 0.025)) * jnt * ao, dn);
+            #if defined(LAND_MODE) && LAND_MODE == 4
+            // An ice bridge: dirty, matte, rock showing through it (glassy even blue read as a pipe).
+            rk = mix(rk, vec3(0.3, 0.31, 0.34) * (0.7 + 0.5 * fbmT(p * 0.02)), smoothstep(0.45, 0.7, fbmT(vec2(fa, wy) * 0.004 + 9.0)) * 0.7);
+            rk = mix(rk, vec3(0.75, 0.8, 0.88), 0.25 * smoothstep(0.5, 0.8, fbmT(vec2(fa * 0.02, wy * 0.08))));
+            #endif
             vec3 sc = alb * vec3(0.9, 0.95, 1.05);
             #elif defined(BIOME_LAVA)
             // Basalt: dark, jointed in columns (vertical streaks), rust here and there.
             float colj = fbmT(vec2(fa * 0.09, wy * 0.002));
             vec3 rk = vec3(0.17, 0.14, 0.13) * (0.8 + 0.45 * colj);
-            rk = mix(rk, vec3(0.17, 0.14, 0.13) * (0.75 + 0.5 * fbmT(p * 0.02)), dn);
+            // (From below, the columns' ends: a net of joints.)
+            float hexj = smoothstep(0.03, 0.0, abs(fbmT(p * 0.018) - 0.5)) + smoothstep(0.03, 0.0, abs(fbmT(p.yx * 0.018 + 4.0) - 0.5));
+            rk = mix(rk, vec3(0.17, 0.14, 0.13) * (0.75 + 0.5 * fbmT(p * 0.02)) * (1.0 - 0.4 * min(1.0, hexj)) * jnt * ao, dn);
             rk = mix(rk, vec3(0.34, 0.16, 0.08), smoothstep(0.62, 0.8, fbmT(p * 0.0021 + 3.0)) * 0.4);
             vec3 sc = vec3(0.2, 0.17, 0.15) * (0.8 + 0.4 * fbmT(p * 0.02));
             #elif defined(BIOME_FOREST)
             // Granite: grey, streaked, lichen on it.
             vec3 rk = vec3(0.46, 0.45, 0.42) * (0.78 + 0.35 * fbmT(vec2(fa * 0.03, wy * 0.006)));
             rk = mix(rk, vec3(0.3, 0.34, 0.2), smoothstep(0.55, 0.8, fbmT(p * 0.004 + 6.0)) * 0.35 * (1.0 - dn));
-            rk = mix(rk, vec3(0.46, 0.46, 0.44) * (0.75 + 0.4 * fbmT(p * 0.015 + 2.0)), dn);
+            rk = mix(rk, vec3(0.46, 0.46, 0.44) * (0.75 + 0.4 * fbmT(p * 0.015 + 2.0)) * jnt * ao, dn);
             vec3 sc = alb;
             #else
             // Sandstone, the mesas' own rock on the two vertical planes, its beds level to the world: the
@@ -731,7 +741,11 @@ function terrainMaterial(shared: GroundUniforms, snap: { value: THREE.Vector2 },
             rk *= 1.0 - 0.3 * smoothstep(0.55, 0.7, band) * (1.0 - smoothstep(0.85, 0.95, band));
             rk = mix(vec3(dot(rk, vec3(0.333))), rk, 0.6) * vec3(1.05, 0.86, 0.72) * mix(vec3(1.0), vec3(1.05, 0.92, 0.85), smoothstep(0.3, 0.7, fbmT(p * 0.0006 + 4.0)));
             rk *= 0.9;
-            rk = mix(rk, mix(vec3(0.5, 0.3, 0.2), vec3(0.7, 0.47, 0.32), 0.5 + 0.5 * fbmT(p * 0.005 + 2.0)) * (0.8 + 0.3 * fbmT(p * 0.025)), dn);
+            // From below, the same beds: level in the world, they cross its vaulted underside in curved bands.
+            vec3 ub = texture2D(tRock, p / 160.0).rgb;
+            ub *= 1.0 - 0.3 * smoothstep(0.55, 0.7, band) * (1.0 - smoothstep(0.85, 0.95, band));
+            ub = mix(vec3(dot(ub, vec3(0.333))), ub, 0.6) * vec3(1.05, 0.86, 0.72) * 0.85;
+            rk = mix(rk, ub * jnt * ao, dn);
             // Scree: the sand darkened with fallen rock, streaked down the slope.
             // (The sand's own colour, its ripples blurred out — the texture read at a coarse mip: the ripples ran on
             //  up every slope; a colour of its own read as a pale lilac cloth.)

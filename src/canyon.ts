@@ -291,33 +291,40 @@ export class Canyon {
   // height, buried there (lying on the land, an arch was a rug draped over both rims). Over the floor its
   // underside stays ARCH_CLEAR up, vaulted to `rise` more mid-span: four times the highest any racer has flown
   // there (80 m, a rival thrown on CANYON RUN).
-  readonly arches: { row: number; ax: number; az: number; bx: number; bz: number; tx: number; tz: number; g0: number; base: number; rise: number; top: number; W: number; f0: number; f1: number; e: number; dive: number }[] = []
+  readonly arches: { row: number; ax: number; az: number; bx: number; bz: number; tx: number; tz: number; g0: number; base: number; rise: number; top: number; W: number; f0: number; f1: number; e: number; dive: number; sh: number }[] = []
   /** Place the arches (after the land: their feet are found in it), each checked whole before it stands; the
    *  first one or two big ones where the gorge is narrowest. */
   private placeArches(): void {
     const m = this.m, clear = ARCH_CLEAR[this.style], low = this.style === 'forest' || this.style === 'ice', REACH = low ? 3800 : 2600
     let sd = (this.land.rx.length * 7919 + this.style.length * 31) >>> 0
     const rnd = () => { sd = (sd * 1664525 + 1013904223) >>> 0; return sd / 4294967296 }
+    // One huge where the gorge is narrowest, a medium one close by it (a pair), the rest small and scattered
+    // (evenly spaced and alike, round the loop they read from the sky as the spokes of a wheel).
     const n = 4 + Math.floor(rnd() * 2), taken: number[] = []
     const narrow = Array.from({ length: m }, (_, i) => i).sort((a, b) => this.half[a] - this.half[b])
-    for (let tries = 0; tries < 900 && this.arches.length < n; tries++) {
-      const big = this.arches.length < 2 && tries < 120
-      const i = big ? narrow[Math.floor(rnd() * Math.min(m, 60))] : Math.floor(rnd() * m)
+    for (let tries = 0; tries < 1200 && this.arches.length < n; tries++) {
+      const k = this.arches.length, huge = k === 0, pair = k === 1
+      const i = huge && tries < 200 ? narrow[Math.floor(rnd() * Math.min(m, 60))]
+        : pair && tries < 600 ? (taken[0] + (rnd() < 0.5 ? -1 : 1) * Math.round(m * (0.035 + 0.03 * rnd())) + m) % m
+        : Math.floor(rnd() * m)
       // (Not over a way in, a cave, or another arch.)
       const near = (j: number, w: number) => Math.min(Math.abs(i - j), m - Math.abs(i - j)) < w
-      if (taken.some((j) => near(j, m * 0.08)) || this.breaches.some((b) => near(b.row, 14))) continue
+      if (taken.some((j) => near(j, pair ? m * 0.03 : m * 0.07)) || this.breaches.some((b) => near(b.row, 14))) continue
       let roofed = false
       for (let q = -8; q <= 8; q++) if (this.roofK[(i + q + m) % m] > 0) roofed = true
       if (roofed) continue
-      const W = (big ? 750 + 450 * rnd() : 380 + 300 * rnd()) * (low ? 0.75 : 1)
+      const W = (huge ? 1000 + 400 * rnd() : pair ? 520 + 220 * rnd() : 240 + 200 * rnd()) * (low ? 0.8 : 1)
+      // Skewed across the gorge, not square to it: its spine turned up to ±0.35 rad.
+      const sk = (rnd() - 0.5) * 0.7, cs = Math.cos(sk), sn = Math.sin(sk)
       // (Its clearance from the highest floor under its whole width: the floor rises and falls along the gorge.)
       let g0 = -Infinity
       for (let q = -Math.ceil(W * 1.5 / 180); q <= Math.ceil(W * 1.5 / 180); q++) { const j = (i + q + m) % m; for (const l of [-0.8, 0, 0.8]) g0 = Math.max(g0, groundH(this.rx[j] + this.tz[j] * this.half[j] * l, this.rz[j] - this.tx[j] * this.half[j] * l)) }
       const base = g0 + clear
-      const nx = this.tz[i], nz = -this.tx[i], tx = this.tx[i], tz = this.tz[i]
-      // The land across the abutment's whole width, out along the row on each side: where it first stands
+      const n0x = this.tz[i], n0z = -this.tx[i]
+      const nx = n0x * cs - n0z * sn, nz = n0x * sn + n0z * cs, tx = -nz, tz = nx
+      // The land across the abutment's whole width, out along the spine on each side: where it first stands
       // above the arch's top, the foot.
-      const Wf = W * 1.1, at = (sg: number, d: number) => [this.rx[i] + nx * sg * (this.half[i] + d), this.rz[i] + nz * sg * (this.half[i] + d)]
+      const Wf = W * 1.3, hs = this.half[i] / cs, at = (sg: number, d: number) => [this.rx[i] + nx * sg * (hs + d), this.rz[i] + nz * sg * (hs + d)]
       const landMin = (sg: number, d: number) => {
         const [x, z] = at(sg, d)
         let h = Infinity
@@ -325,7 +332,7 @@ export class Canyon {
         return h
       }
       const rimOf = (sg: number) => { let r = -Infinity; for (let d = 100; d <= REACH; d += 50) r = Math.max(r, landMin(sg, d)); return r }
-      let rise = low ? 40 + 60 * rnd() : 80 + 140 * rnd(), T = low ? 70 + 50 * rnd() : 90 + 90 * rnd()
+      let rise = low ? 80 + 110 * rnd() : 120 + 160 * rnd(), T = low ? 60 + 40 * rnd() : 70 + 70 * rnd()
       // (On low land its abutments may stand up out of the rim as buttresses, up to `stand` over it.)
       const stand = low ? 160 : 60, topMax = Math.min(rimOf(-1), rimOf(1)) - 30 + stand
       if (topMax < base + 25 + 55) continue
@@ -339,8 +346,13 @@ export class Canyon {
       const [ax, az] = at(-1, dA), [bx, bz] = at(1, dB), span = Math.hypot(bx - ax, bz - az)
       // (Its underside starts down into the walls 200 m out past the floor's edge: over the floor and the walls'
       //  foot it keeps its clearance.)
-      const f0 = (dA - 200) / span, f1 = 1 - (dB - 200) / span
-      const a = { row: i, ax, az, bx, bz, tx, tz, g0, base, rise, top, W, f0, f1, e: 300 / span, dive: stand + 200 }
+      // (Skewed, its broad shoulders reach back over the floor by W·sin(skew): the descent starts that much
+      //  farther out.)
+      const back = 260 + Wf * 1.6 * Math.abs(sn)
+      const f0 = (dA - back) / span, f1 = 1 - (dB - back) / span
+      // (Its shoulders heavy: its top rising toward its feet by up to `sh` — never past the land there.)
+      const sh = Math.max(0, Math.min(landMin(-1, dA) - top + 0.7 * stand, landMin(1, dB) - top + 0.7 * stand, 50 + 130 * rnd()))
+      const a = { row: i, ax, az, bx, bz, tx, tz, g0, base, rise, top, W, f0, f1, e: 300 / span, dive: stand + 200 + sh, sh }
       if (!this.archOk(a)) continue
       taken.push(i)
       this.arches.push(a)
@@ -360,7 +372,7 @@ export class Canyon {
       const dr = Math.min(Math.abs(j - a.row), this.m - Math.abs(j - a.row))
       if (lat < this.half[j] + 150 && dr > 14) return false
       const q = t < a.f0 ? (a.f0 - t) / Math.max(a.f0, 1e-3) : t > a.f1 ? (t - a.f1) / Math.max(1 - a.f1, 1e-3) : 0
-      for (const s of [-1, -0.5, 0, 0.5, 1]) {
+      for (const s of [-1.3, -0.65, 0, 0.65, 1.3]) {
         const h = this.heightAt(x + a.tx * p.W * s, z + a.tz * p.W * s)
         if ((t <= -0.6 * a.e || t >= 1 + 0.6 * a.e) && !(h > p.u + p.T + 2)) return false
         if (q > 0.55 && q < 1 && !(h > p.u - 10)) return false
@@ -379,9 +391,10 @@ export class Canyon {
       const q = t < a.f0 ? (a.f0 - t) / Math.max(a.f0, 1e-3) : (t - a.f1) / Math.max(1 - a.f1, 1e-3)
       u = a.base - (a.base - a.g0 + 250) * sst(0, 1, q)
     }
-    const dive = Math.max(0, -t, t - 1) / a.e * a.dive
-    const top = a.top + 20 * Math.sin(Math.PI * tc) + 12 * Math.sin(tc * 13 + a.row) - dive
-    return { u, T: top - u, W: a.W * (1 + 0.45 * (1 - Math.sin(Math.PI * tc))) }
+    const dive = Math.max(0, -t, t - 1) / a.e * a.dive, sw = 1 - Math.sin(Math.PI * tc)
+    // A thin waist mid-span, heavy shoulders toward its feet — in depth and in breadth.
+    const top = a.top + a.sh * sw ** 1.3 + 14 * Math.sin(tc * 13 + a.row) - dive
+    return { u, T: top - u, W: a.W * (0.62 + 0.95 * sw ** 0.8) }
   }
   /** Inside an arch's rock at (x, z, y)? Then how far to its nearer face along the gorge (signed; +: toward
    *  the arch's +t̂ side), else null. */
@@ -701,7 +714,7 @@ export class Canyon {
     // Down the two big valleys, what made the gorge: the river coming in and going out, a lava flow, a frozen
     // meltwater stream, a dry wash.
     g.add(this.valleyStreams())
-    if (this.arches.length) g.add(this.archMesh(extra.archMat ?? mat))
+    if (this.arches.length) { g.add(this.archMesh(extra.archMat ?? mat)); if (this.style === 'forest') g.add(this.archTrees()) }
     return g
   }
 
@@ -1050,8 +1063,11 @@ export class Canyon {
           const ang = (k / NR) * Math.PI * 2, ca = se(Math.cos(ang), 0.6), sa = se(Math.sin(ang), 0.6)
           const x0 = cx + a.tx * p.W * ca, z0 = cz + a.tz * p.W * ca
           const n1 = vn(x0 / 320, (z0 + mid) / 320, 81), n2 = vn(x0 / 170, (z0 - mid) / 170, 82)
-          const eW = 1 + 0.18 * n1 + 0.08 * n2
-          const y = sa >= 0 ? mid + (p.T / 2) * sa * (1 + 0.08 * n2) : mid + (p.T / 2) * sa * (1 - 0.3 * Math.max(0, n1))
+          const eW = 1 + 0.2 * n1 + 0.1 * n2
+          // Its top knobbed and finned — up only, so it never thins below its own figure (a smooth top read
+          // as a plank laid across).
+          const knob = Math.max(0, vn(x0 / 230, z0 / 230, 83)) ** 1.5 * 70 + Math.max(0, vn(x0 / 120, z0 / 120, 84)) * 22
+          const y = sa >= 0 ? mid + (p.T / 2) * sa + knob * sa ** 2 : mid + (p.T / 2) * sa * (1 - 0.3 * Math.max(0, n1))
           pos.push(cx + a.tx * p.W * ca * eW, y, cz + a.tz * p.W * ca * eW)
         }
         if (i < NS) for (let k = 0; k < NR; k++) {
@@ -1079,6 +1095,35 @@ export class Canyon {
     //  and drawn after them it was all paid for twice.)
     m.renderOrder = -1
     return m
+  }
+
+  /** WHITEWATER's arches wooded on top as the hills round them are — never their edges (a bare turf top read
+   *  as a plank laid across the river). */
+  private archTrees(): THREE.Group {
+    const g = new THREE.Group(), pts: number[] = []
+    for (const a of this.arches) {
+      const ex = a.bx - a.ax, ez = a.bz - a.az
+      for (let i = 0; i < 160; i++) {
+        const h1 = Math.sin((a.row * 17 + i * 7.3) * 12.9898) * 43758.5453, f1 = h1 - Math.floor(h1)
+        const h2 = Math.sin((a.row * 29 + i * 3.1) * 78.233) * 12345.678, f2 = h2 - Math.floor(h2)
+        const t = f1, p = Canyon.archAt(a, t), sAcross = (f2 * 2 - 1) * 0.65
+        // (In clumps: thinned where a slow noise says.)
+        const x = a.ax + ex * t + a.tx * p.W * sAcross, z = a.az + ez * t + a.tz * p.W * sAcross
+        if (vn(x / 300, z / 300, 85) < -0.1) continue
+        pts.push(x, p.u + p.T - 3, z, 22 + 30 * ((f1 * 7.7) % 1))
+      }
+    }
+    const n = pts.length / 4
+    const crown = new THREE.InstancedMesh(new THREE.ConeGeometry(1, 1, 6).translate(0, 0.5, 0), new THREE.MeshStandardMaterial({ color: 0x24502a, roughness: 0.9, flatShading: true }), n)
+    const trunk = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.1, 0.14, 1, 5).translate(0, 0.5, 0), new THREE.MeshStandardMaterial({ color: 0x4a3524, roughness: 1 }), n)
+    const m = new THREE.Matrix4(), q = new THREE.Quaternion(), sc = new THREE.Vector3(), v = new THREE.Vector3()
+    for (let k = 0; k < n; k++) {
+      const x = pts[k * 4], y = pts[k * 4 + 1], z = pts[k * 4 + 2], H = pts[k * 4 + 3]
+      crown.setMatrixAt(k, m.compose(v.set(x, y + H * 0.3, z), q, sc.set(H * 0.32, H, H * 0.32)))
+      trunk.setMatrixAt(k, m.compose(v.set(x, y - 2, z), q, sc.set(H * 0.3, H * 0.35, H * 0.3)))
+    }
+    for (const x of [crown, trunk]) { x.frustumCulled = false; g.add(x) }
+    return g
   }
 
   /** The big valleys' streams: a strip down each one's axis from inside the floor out onto the plain, as wide
