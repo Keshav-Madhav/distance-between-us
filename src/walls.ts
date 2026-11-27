@@ -75,7 +75,7 @@ function wallShape(inp: WallsIn, carve: CarveAt, x: number, z: number, d: number
     // cut, and from the air as boxes on a shelf; a bench held up until the land rose past it ended in a sheer
     // face wherever a side canyon came down, a card standing in the land.)
     const Hf = 15 + 190 * sst(-0.5, 0.7, warp(x / 900, z / 900, 441, 0.9, 2)) - 40 * Math.max(0, vn(x / 260, z / 260, 442)) ** 2
-    E = Math.max(E, Hf * sst(4, 18, d) * (1 - sst(45, 230, d)) * (open ? 0 : 1))
+    E = Math.max(E, Hf * sst(4, 18, d) * (1 - sst(45, 230, d)) * sst(60, 260, C))
     h = landSurface(s, E, x, z, d) - 6 * sst(30, 0, d)
   } else if (s === 'lava') {
     // (The glow only on the foot's own narrow faces: across a 200 m face it read as a band of yellow paint.)
@@ -86,13 +86,13 @@ function wallShape(inp: WallsIn, carve: CarveAt, x: number, z: number, d: number
     //  height with flat tops read from the air as a wall built round the gorge; a bench held up behind it
     //  ended in a sheer card wherever a side canyon came down.)
     const Hr = 25 + 230 * sst(-0.5, 0.7, warp(x / 800, z / 800, 431, 0.8, 2)) - 50 * Math.max(0, vn(x / 240, z / 240, 432)) ** 2
-    E = Math.max(E, Hr * sst(12, 22, d) * (1 - sst(40, 220, d)) * (open ? 0 : 1))
+    E = Math.max(E, Hr * sst(12, 22, d) * (1 - sst(40, 220, d)) * sst(60, 260, C))
     h = landSurface(s, E, x, z, d)
   } else if (s === 'ice') {
     // The foot's ice cliff, its height wandering, its back falling away as a long slope (a ledge of one height
     // cut square behind lay along the gorge as a plank, and from afar notched its skyline like a castle).
     const Hi = 30 + 140 * sst(-0.5, 0.7, warp(x / 900, z / 900, 452, 0.9, 2))
-    E = Math.max(E, Hi * sst(4, 22, d) * (1 - sst(40, 240, d)) * (open ? 0 : 1))
+    E = Math.max(E, Hi * sst(4, 22, d) * (1 - sst(40, 240, d)) * sst(60, 260, C))
     // (No terraced ice cliffs in the walls' own mesh: their steps fell between its columns, and every row
     //  cut them its own way — a sawtooth along the rim from the air. The sheet's cliffs stand out past it.)
     h = E
@@ -146,10 +146,13 @@ export function buildWalls(inp: WallsIn): WallsOut {
           const C = carve.at(x, z)
           h = tileHere(style, x, z, d, inner, C, L.roofTop[i]) - 25
         } else { const w = wallShape(inp, carve, x, z, d, inner, i, si); h = w.h; c = w.crev }
-        // (Near the ground's level, pressed under it: at a way's mouth faces lying on the floor in the walls'
-        //  strata z-fought it into a dark striped band. Pressed smoothly — culled instead, the faces left at a
-        //  low bluff's foot stood up out of the ground as spikes of grass.)
-        if (k > 0 && h < 3) h = foot + (3 - foot) * ((Math.max(h, foot) - foot) / (3 - foot)) ** 3
+        // (Never down at the ground's own level past the foot, where the ground and the walls' faces crossed:
+        //  lying on the floor at a way's mouth they z-fought it into a dark striped band; pressed just under it,
+        //  the ground cut through them along their long triangles as spikes of grass. Down a way in, under it
+        //  for good (the way's floor is the ground); elsewhere a few metres up, covering it.)
+        if (k > 0 && k < K - 1 && h < 4) {
+          h = carve.at(x, z) < 100 ? foot : 4
+        }
         low[q] = h <= foot + 0.01 && k > 0 ? 1 : 0
         y[q] = h; rel[q] = h; cv[q] = c
       }

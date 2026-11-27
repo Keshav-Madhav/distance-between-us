@@ -214,7 +214,8 @@ function patchStandardBase(mat: THREE.MeshStandardMaterial, opts: PatchOpts = {}
           vec3 c;
           if (vCrev < 0.25) {
             // Granite: pale grey, streaked, moss and grass on every gentle slope.
-            c = vec3(0.52, 0.5, 0.47) * (0.8 + 0.3 * fh);
+            // (Its grain smooth, not hashed by 7 m cells: across a gorge's km-long faces those read as square pixels.)
+            c = vec3(0.52, 0.5, 0.47) * (0.8 + 0.3 * mix(fh, vnoise(vFogW.xz / 9.0 + vFogW.y / 13.0), 0.8));
             c *= 0.85 + 0.15 * vnoise(vec2((vFogW.x + vFogW.z) * 0.02, vFogW.y * 0.004));
             c = mix(c, vec3(0.16, 0.28, 0.08), smoothstep(0.55, 0.8, vWN.y + 0.15 * vnoise(vFogW.xz * 0.03)));
           } else if (vCrev < 0.75) {

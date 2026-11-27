@@ -429,11 +429,22 @@ function terrainMaterial(shared: GroundUniforms, snap: { value: THREE.Vector2 },
         //  lying in a fold of the land. Off its land by 150 m or more, then.)
         vRiver = riverAt(xz);
         if (vRiver > 0.0) {
-          #if defined(LAND_MODE)
-          float lm = max(max(landHF(xz + vec2(150.0, 0.0)), landHF(xz - vec2(150.0, 0.0))), max(landHF(xz + vec2(0.0, 150.0)), landHF(xz - vec2(0.0, 150.0))));
-          #else
-          float lm = max(max(landH(xz + vec2(150.0, 0.0)), landH(xz - vec2(150.0, 0.0))), max(landH(xz + vec2(0.0, 150.0)), landH(xz - vec2(0.0, 150.0))));
-          #endif
+          // (Out to 450 m; on the ice out to 1.35 km: down a way in, the land near by is still its flat floor, and
+          //  the polished ice river showed across it as a glowing seam. Not so far elsewhere: the lava and the
+          //  rivers on the gorge's own floor are its own.)
+          float lm = 0.0;
+          for (int k = 1; k <= 3; k++) {
+            #if defined(BIOME_ICE)
+            float r = 150.0 * float(k * k);
+            #else
+            float r = 150.0 * float(k);
+            #endif
+            #if defined(LAND_MODE)
+            lm = max(lm, max(max(landHF(xz + vec2(r, 0.0)), landHF(xz - vec2(r, 0.0))), max(landHF(xz + vec2(0.0, r)), landHF(xz - vec2(0.0, r)))));
+            #else
+            lm = max(lm, max(max(landH(xz + vec2(r, 0.0)), landH(xz - vec2(r, 0.0))), max(landH(xz + vec2(0.0, r)), landH(xz - vec2(0.0, r)))));
+            #endif
+          }
           vRiver *= (1.0 - smoothstep(1.0, 12.0, vLand)) * (1.0 - smoothstep(4.0, 30.0, lm));
         }
         vec3 w = vec3(xz.x, h - uDrop * smoothstep(0.0, 400.0, d), xz.y);
@@ -667,20 +678,28 @@ function terrainMaterial(shared: GroundUniforms, snap: { value: THREE.Vector2 },
             vec2 wq = an.xz * an.xz * an.xz * an.xz + 1e-3;
             vec2 wxz = wq / max(wq.x + wq.y, 1e-6);
             float wy = vW.y + 7.0 * fbmT(p * 0.003);
+            // Turned down (an arch's underside, an overhang): the rock seen from below, mapped flat — mapped on the
+            // upright planes it was smeared along them into a plaid of lines and a wood-grain swirl.
+            float dn = smoothstep(-0.3, -0.65, gn.y);
             #if defined(BIOME_ICE)
             // Blue glacier ice: dense ice in the faces, paler and darker by noise, streaks running down.
             vec3 rk = mix(vec3(0.16, 0.36, 0.62), vec3(0.42, 0.66, 0.88), 0.5 + 0.5 * fbmT(vec2(dot(p, wxz.yx) * 0.01, wy * 0.004)));
+            // (Deep blue under an ice bridge, veined and cracked: a pale even blue there read as more sky.)
+            float vein = smoothstep(0.012, 0.0, abs(fbmT(p * 0.004 + 7.0) - 0.5)) * 0.5;
+            rk = mix(rk, mix(vec3(0.04, 0.12, 0.26), vec3(0.16, 0.36, 0.6), smoothstep(0.3, 0.7, fbmT(p * 0.006 + 1.0))) * (0.8 + 0.4 * fbmT(p * 0.03)) + vec3(0.3, 0.55, 0.8) * vein * 0.5, dn);
             vec3 sc = alb * vec3(0.9, 0.95, 1.05);
             #elif defined(BIOME_LAVA)
             // Basalt: dark, jointed in columns (vertical streaks), rust here and there.
             float colj = fbmT(vec2(dot(p, wxz.yx) * 0.09, wy * 0.002));
             vec3 rk = vec3(0.17, 0.14, 0.13) * (0.8 + 0.45 * colj);
+            rk = mix(rk, vec3(0.17, 0.14, 0.13) * (0.75 + 0.5 * fbmT(p * 0.02)), dn);
             rk = mix(rk, vec3(0.34, 0.16, 0.08), smoothstep(0.62, 0.8, fbmT(p * 0.0021 + 3.0)) * 0.4);
             vec3 sc = vec3(0.2, 0.17, 0.15) * (0.8 + 0.4 * fbmT(p * 0.02));
             #elif defined(BIOME_FOREST)
             // Granite: grey, streaked, lichen on it.
             vec3 rk = vec3(0.46, 0.45, 0.42) * (0.78 + 0.35 * fbmT(vec2(dot(p, wxz.yx) * 0.03, wy * 0.006)));
-            rk = mix(rk, vec3(0.3, 0.34, 0.2), smoothstep(0.55, 0.8, fbmT(p * 0.004 + 6.0)) * 0.35);
+            rk = mix(rk, vec3(0.3, 0.34, 0.2), smoothstep(0.55, 0.8, fbmT(p * 0.004 + 6.0)) * 0.35 * (1.0 - dn));
+            rk = mix(rk, vec3(0.36, 0.39, 0.44) * (0.75 + 0.4 * fbmT(p * 0.015 + 2.0)), dn);
             vec3 sc = alb;
             #else
             // Sandstone, the mesas' own rock on the two vertical planes, its beds level to the world: the
@@ -692,8 +711,12 @@ function terrainMaterial(shared: GroundUniforms, snap: { value: THREE.Vector2 },
             rk *= 1.0 - 0.3 * smoothstep(0.55, 0.7, band) * (1.0 - smoothstep(0.85, 0.95, band));
             rk = mix(vec3(dot(rk, vec3(0.333))), rk, 0.6) * vec3(1.05, 0.86, 0.72) * mix(vec3(1.0), vec3(1.05, 0.92, 0.85), smoothstep(0.3, 0.7, fbmT(p * 0.0006 + 4.0)));
             rk *= 0.9;
+            rk = mix(rk, mix(vec3(0.5, 0.3, 0.2), vec3(0.7, 0.47, 0.32), 0.5 + 0.5 * fbmT(p * 0.005 + 2.0)) * (0.8 + 0.3 * fbmT(p * 0.025)), dn);
             // Scree: the sand darkened with fallen rock, streaked down the slope.
-            vec3 sc = mix(alb, vec3(dot(alb, vec3(0.333))) * vec3(0.95, 0.75, 0.6), 0.45) * (0.85 + 0.2 * fbmT(p * 0.03));
+            // (The sand's own colour, its ripples blurred out — the texture read at a coarse mip: the ripples ran on
+            //  up every slope; a colour of its own read as a pale lilac cloth.)
+            vec3 sAvg = texture2D(tSand, p / 26.0, 7.0).rgb;
+            vec3 sc = mix(sAvg, vec3(dot(sAvg, vec3(0.333))) * vec3(0.95, 0.75, 0.6), 0.35) * (0.82 + 0.25 * fbmT(p * 0.03)) * (0.9 + 0.2 * fbmT(p * 0.004 + 3.0));
             #endif
             alb = mix(alb, sc, scree);
             alb = mix(alb, rk, steep);
@@ -745,7 +768,8 @@ function terrainMaterial(shared: GroundUniforms, snap: { value: THREE.Vector2 },
         }
         // Sunlit grass glows a little (it scatters light): a warm fill so the meadow is never dull.
         #ifndef BIOME_JUNGLE
-        col += alb * vec3(0.12, 0.14, 0.06);
+        // (Not on rock turned down — an arch's underside: there it tinted the granite khaki.)
+        col += alb * vec3(0.12, 0.14, 0.06) * smoothstep(-0.6, -0.2, n.y);
         #endif
         #endif
         #ifdef BIOME_LAVA

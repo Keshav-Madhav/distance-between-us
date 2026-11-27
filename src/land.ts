@@ -106,7 +106,6 @@ const fronts = (E: number, step: number) => { const k = Math.floor(E / step), f 
 
 const DESERT_LV = [0, 210, 430, 640, 800, 960, 1110, 1260]
 const LAVA_LV = [0, 180, 360, 520, 640, 760, 880, 1000]
-export const ICE_LV = [0, 125, 330, 560, 790]
 
 interface World {
   /** How far out the land reaches (m from the floor's edge) at a point: its rim, then all the way down. */
@@ -302,13 +301,9 @@ const WORLDS: Record<LandStyle, World> = {
       if (roofTop > 0) E = Math.max(E, (roofTop - 0.12 * Math.max(0, df - 300)) * sst(2400, 900, df))
       return Math.max(0, E)
     },
-    // Ice cliffs across the sheet where it breaks over a step in its bed (here and there, not all round, and
-    // off the walls): the glacier's own blue faces — on white rolling ice alone the gorge could not be seen
-    // from the land. (Not sheer: on the tile's 60 m cells a sheer step was drawn as a sawtooth.)
-    surface: (E, x, z, df) => {
-      const tk = sst(-0.1, 0.45, warp(x / 3200, z / 3200, 521, 0.9, 2)) * sst(6000, 2000, df) * sst(500, 900, df) * (1 - sst(5, 60, nunatakAt(x, z, df)))
-      return Math.max(0, tk > 0 ? E + (terrace(E, ICE_LV, 0.75, 0.15, (j) => 40 * fbmR(x / 4000, z / 4000, 2, 522 + j), 0.3) - E) * tk : E)
-    },
+    // (The sheet rolls, unstepped: ice cliffs stepped into its 60 m cells were drawn as stair-steps and a sawtooth
+    //  crest from every distance. Its landmarks are the nunataks.)
+    surface: (E) => Math.max(0, E),
     canyonK: [0.5, 0.9], wTrunk: [70, 120], wWay: [200, 260], wOut: [160, 300], wBig: 900, top: 420, ways: [0.07, 0.31, 0.58, 0.95], seed: 9431,
     erode: [0, 1, 0], apron: 0,
   },

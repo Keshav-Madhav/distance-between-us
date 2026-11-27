@@ -84,7 +84,7 @@ const BIG = 20000
 /** Beside the floor (m out from the foot) the wall is the race's own (see wallsNear). */
 const BAND = 150
 /** The arches' undersides over the floor (m), at least, everywhere across it. */
-const ARCH_CLEAR: Record<GorgeStyle, number> = { desert: 420, lava: 380, ice: 340, forest: 300 }
+const ARCH_CLEAR: Record<GorgeStyle, number> = { desert: 300, lava: 300, ice: 300, forest: 300 }
 /** Wall rows per row of the race's wall grid (every ~200 m → ~100 m). */
 const SUB = 2
 /** The water's clock (main.ts advances it). */
@@ -286,50 +286,77 @@ export class Canyon {
 
   // ── natural arches ──
   // A few rock (or ice) bridges spanning the gorge, high over the race: from the sky they break the ring.
-  // Each: its row, its spine from one rim's anchor to the other's (A → B, on the land), and its underside's
-  // height over the floor at its middle. Their undersides stay ARCH_CLEAR over the floor across the whole of
-  // it — several times the highest any racer has flown there (80 m, a rival thrown on CANYON RUN).
-  readonly arches: { row: number; ax: number; az: number; ay: number; bx: number; bz: number; by: number; tx: number; tz: number; W: number; T: number; rise: number }[] = []
-  /** Place the arches (after the land: their feet are found on it). */
+  // Each runs along its row from one rim to the other (A → B). Its top lies near level, a little above the
+  // rim's own height; its underside is vaulted — highest mid-span, coming down toward each foot — so the rock
+  // is thin over the middle and massive at its feet, which stand buried in land higher than its top. The
+  // underside never comes below `base`: ARCH_CLEAR over the floor, several times the highest any racer has
+  // flown there (80 m, a rival thrown on CANYON RUN).
+  readonly arches: { row: number; ax: number; az: number; bx: number; bz: number; tx: number; tz: number; base: number; rise: number; top: number; W: number }[] = []
+  /** Place the arches (after the land: their feet are found on it), each checked whole before it stands. */
   private placeArches(): void {
-    const m = this.m, clear = ARCH_CLEAR[this.style]
+    const m = this.m, clear = ARCH_CLEAR[this.style], low = this.style === 'forest' || this.style === 'ice'
     let sd = (this.land.rx.length * 7919 + this.style.length * 31) >>> 0
     const rnd = () => { sd = (sd * 1664525 + 1013904223) >>> 0; return sd / 4294967296 }
     const n = 3 + Math.floor(rnd() * 3), taken: number[] = []
-    for (let tries = 0; tries < 240 && this.arches.length < n; tries++) {
-      const i = Math.floor(rnd() * m)
+    for (let tries = 0; tries < 400 && this.arches.length < n; tries++) {
+      const i = Math.floor(rnd() * m), rise = low ? 40 + 70 * rnd() : 90 + 140 * rnd(), T0 = low ? 55 + 40 * rnd() : 70 + 80 * rnd()
+      // (Broad along the gorge — 0.8–1.5 km over its middle, more at its feet: narrower, from the sky they were
+      //  twigs across the ring.)
+      const W = 400 + 350 * rnd()
       // (Not over a way in, a cave, or another arch.)
       const near = (j: number, w: number) => Math.min(Math.abs(i - j), m - Math.abs(i - j)) < w
-      if (taken.some((j) => near(j, m * 0.07)) || this.breaches.some((b) => near(b.row, 10))) continue
+      if (taken.some((j) => near(j, m * 0.07)) || this.breaches.some((b) => near(b.row, 12))) continue
       let roofed = false
-      for (let q = -5; q <= 5; q++) if (this.roofK[(i + q + m) % m] > 0) roofed = true
+      for (let q = -10; q <= 10; q++) if (this.roofK[(i + q + m) % m] > 0) roofed = true
       if (roofed) continue
-      const g0 = groundH(this.rx[i], this.rz[i])
-      // Each foot: out along the row to where the land stands high enough, then a little into it.
+      const g0 = groundH(this.rx[i], this.rz[i]), base = g0 + clear, top = base + rise + T0
+      const nx = this.tz[i], nz = -this.tx[i], tx = this.tx[i], tz = this.tz[i]
+      const land = (x: number, z: number) => this.heightAt(x, z)
+      // Each foot: out along the row to where the land, under most of the foot's width, reaches its underside —
+      // the arch stands on the rim there, its rock running on down into the land beyond as a buttress.
+      const Wf = W * 1.1
       const foot = (sg: number) => {
-        for (let d = 60; d < 1600; d += 20) {
-          const x = this.rx[i] + this.tz[i] * sg * (this.half[i] + d), z = this.rz[i] - this.tx[i] * sg * (this.half[i] + d)
-          const h = this.heightAt(x, z)
-          if (h > g0 + clear + 40) return [this.rx[i] + this.tz[i] * sg * (this.half[i] + d + 70), this.rz[i] - this.tx[i] * sg * (this.half[i] + d + 70), Math.min(h, g0 + clear + 160)]
+        for (let d = 100; d < 3600; d += 25) {
+          const x = this.rx[i] + nx * sg * (this.half[i] + d), z = this.rz[i] + nz * sg * (this.half[i] + d)
+          const need = base + 0.4 * rise
+          if (land(x, z) > need && land(x + tx * Wf, z + tz * Wf) > need && land(x - tx * Wf, z - tz * Wf) > need) return [x + nx * sg * 60, z + nz * sg * 60]
         }
         return null
       }
       const A = foot(-1), B = foot(1)
       if (!A || !B) continue
-      const span = Math.hypot(B[0] - A[0], B[1] - A[1])
-      if (span > 4200) continue
+      const a = { row: i, ax: A[0], az: A[1], bx: B[0], bz: B[1], tx, tz, base, rise, top, W }
+      if (!this.archOk(a)) continue
       taken.push(i)
-      // (Broad as natural bridges go — 0.7–1.3 km along the gorge over its middle, more at its feet: narrower, from
-      //  the sky they were threads across the ring, and from the oblique camera not there at all.)
-      const W = 360 + 300 * rnd(), T = 140 + 110 * rnd()
-      this.arches.push({ row: i, ax: A[0], az: A[1], ay: A[2], bx: B[0], bz: B[1], by: B[2], tx: this.tx[i], tz: this.tz[i], W, T, rise: 40 + 120 * rnd() })
+      this.arches.push(a)
     }
   }
-  /** An arch's underside and thickness at t (0…1 from A to B; smooth, without the rock's own roughness):
-   *  the span sags into an arch, thickest and widest at its feet. */
+  /** An arch whole: it crosses only its own floor, it is thick and wide everywhere, and its capped ends — out
+   *  past its feet, where it dives — are under land at every corner (an end standing open out of the land was
+   *  a hollow shell: from near it, sheets of nothing across the sky). */
+  private archOk(a: Canyon['arches'][number]): boolean {
+    const ex = a.bx - a.ax, ez = a.bz - a.az, span = Math.hypot(ex, ez)
+    if (span > 5000 || span < 1000) return false
+    for (let t = -0.08; t <= 1.08; t += 0.01) {
+      const p = Canyon.archAt(a, t), x = a.ax + ex * t, z = a.az + ez * t
+      if (p.T < 50 || p.W < 150) return false
+      // (Over another stretch of the gorge — a bend coming back toward it — is not its own floor.)
+      const j = this.nearest(x, z, true), lat = Math.abs((x - this.rx[j]) * this.tz[j] - (z - this.rz[j]) * this.tx[j])
+      const dr = Math.min(Math.abs(j - a.row), this.m - Math.abs(j - a.row))
+      if (lat < this.half[j] + 150 && dr > 12) return false
+      if (t <= -0.06 || t >= 1.06) for (const s of [-0.7, 0, 0.7]) {
+        const h = this.heightAt(x + a.tx * p.W * s, z + a.tz * p.W * s)
+        if (!(h > p.u + p.T + 5)) return false
+      }
+    }
+    return true
+  }
+  /** An arch at t (0…1 from A to B; out past the feet it dives into the land), smooth — without the rock's
+   *  roughness: its underside u, thickness T, half-width W along the gorge. */
   private static archAt(a: Canyon['arches'][number], t: number): { u: number; T: number; W: number } {
-    const s = Math.sin(Math.PI * Math.min(1, Math.max(0, t))), foot = (1 - s) ** 2
-    return { u: a.ay + (a.by - a.ay) * t - 40 + a.rise * s, T: a.T * (1 + 2.2 * foot), W: a.W * (1 + 1.4 * foot) }
+    const tc = Math.min(1, Math.max(0, t)), v = Math.sqrt(Math.max(0, 1 - (2 * tc - 1) ** 2)), dive = Math.max(0, -t, t - 1) * 6000
+    const u = a.base + a.rise * v ** 0.8 - dive, top = a.top + 30 * Math.sin(Math.PI * tc) + 18 * Math.sin(tc * 17 + a.row) - dive
+    return { u, T: top - u, W: a.W * (1 + 0.6 * (1 - Math.sin(Math.PI * tc))) }
   }
   /** Inside an arch's rock at (x, z, y)? Then how far to its nearer face along the gorge (signed; +: toward
    *  the arch's +t̂ side), else null. */
@@ -711,7 +738,7 @@ export class Canyon {
     }
     const hh = (n: number) => { const v = Math.sin(n * 12.9898) * 43758.5453; return v - Math.floor(v) }
     // (Every section's ceiling in one mesh, every top in one, every mouth in one: a draw call each.)
-    const ceil: number[] = [], top: number[] = [], mouth: number[] = [], ends: number[] = []
+    const ceil: number[] = [], ceilE: number[] = [], top: number[] = [], mouth: number[] = [], ends: number[] = []
     for (const [i0, i1] of segs) {
       // The mouths are ragged: each column's ice ends at its own place (up to most of a row on out), and
       // hangs below the ceiling there in a lip of its own depth — broken ice, not a sawn edge. (Out past the
@@ -723,6 +750,8 @@ export class Canyon {
         for (let j = 0; j < i1 - i0; j++) for (let k = 0; k < A - 1; k++) {
           P(R(j, k), k, lift, pos); P(R(j + 1, k), k, lift, pos); P(R(j, k + 1), k + 1, lift, pos)
           P(R(j + 1, k), k, lift, pos); P(R(j + 1, k + 1), k + 1, lift, pos); P(R(j, k + 1), k + 1, lift, pos)
+          // (The ceiling's edge columns marked: from afar they showed over the walls' tops as blue scallops.)
+          if (lift === 0) for (const kk of [k, k, k + 1, k, k + 1, k + 1]) ceilE.push(kk === 0 || kk === A - 1 ? 1 : 0)
         }
       }
       // The mouths: the ice between its lip and its top, across the gorge at both ends, facing out of the cave.
@@ -735,7 +764,7 @@ export class Canyon {
       }
     }
     if (!ceil.length) return
-    g.add(this.mesh(new Float32Array(ceil), new Float32Array(ceil.length / 3).fill(0.3), ceilMat))
+    g.add(this.mesh(new Float32Array(ceil), Float32Array.from(ceilE), ceilMat))
     // (The top must face the sky; the ceiling's material is two-sided.)
     const tm = this.mesh(new Float32Array(top), new Float32Array(top.length / 3), topMat)
     Canyon.orient(tm, () => [0, 1, 0])
@@ -974,29 +1003,37 @@ export class Canyon {
     return w
   }
 
-  /** Every arch in one mesh: a rough tube along its spine — sagging, thickest and widest at its feet, which
-   *  run on down into the land — its rock knobbled and eroded (a smooth even span read as a built bridge). */
+  /** Every arch in one mesh: a rough lens of rock along its spine — vaulted underneath, near level on top,
+   *  massive at its feet, which dive on down into the land — knobbled and eroded at no finer than the mesh's
+   *  own spacing (finer aliased into a sawtooth), its underside only ever eroded upward (down, lumps hung
+   *  below it like loose chunks). */
   private archMesh(mat: THREE.Material): THREE.Mesh {
-    const NS = 56, NR = 16, pos: number[] = [], idx: number[] = []
+    const NS = 64, NR = 18, pos: number[] = [], idx: number[] = []
     for (const a of this.arches) {
       const base = pos.length / 3, i0 = idx.length, ex = a.bx - a.ax, ez = a.bz - a.az
       for (let i = 0; i <= NS; i++) {
-        // (Past both feet a little, and down: buried in the rim, never standing on it.)
-        const t = -0.06 + 1.12 * (i / NS), p = Canyon.archAt(a, t), bury = Math.max(0, -t, t - 1) * 900
-        const cx = a.ax + ex * t, cz = a.az + ez * t, cy = p.u + p.T / 2 - bury
+        const t = -0.08 + 1.16 * (i / NS), p = Canyon.archAt(a, t)
+        const cx = a.ax + ex * t, cz = a.az + ez * t, mid = p.u + p.T / 2
         for (let k = 0; k < NR; k++) {
           const ang = (k / NR) * Math.PI * 2, ca = Math.cos(ang), sa = Math.sin(ang)
-          const x0 = cx + a.tx * p.W * ca, z0 = cz + a.tz * p.W * ca, y0 = cy + (p.T / 2) * sa
-          // Eroded: lumps and hollows, deeper on the underside and the sides; the top flatter.
-          // (No finer than the spine's own spacing, ~70 m: finer, it aliased into a sawtooth along the edges.)
-          const e = 1 + 0.3 * vn(x0 / 170, (z0 + y0) / 170, 81) + 0.12 * vn(x0 / 75, (z0 - y0) / 75, 82) - 0.12 * Math.max(0, -sa)
-          const top = sa > 0.5 ? 0.6 : 1
-          pos.push(cx + a.tx * p.W * ca * e, cy + (p.T / 2) * sa * (1 + (e - 1) * top), cz + a.tz * p.W * ca * e)
+          const x0 = cx + a.tx * p.W * ca, z0 = cz + a.tz * p.W * ca
+          const n1 = vn(x0 / 320, (z0 + mid) / 320, 81), n2 = vn(x0 / 170, (z0 - mid) / 170, 82)
+          const eW = 1 + 0.22 * n1 + 0.1 * n2
+          const y = sa >= 0 ? mid + (p.T / 2) * sa * (1 + 0.25 * n2) : mid + (p.T / 2) * sa * (1 - 0.4 * Math.max(0, n1))
+          pos.push(cx + a.tx * p.W * ca * eW, y, cz + a.tz * p.W * ca * eW)
         }
         if (i < NS) for (let k = 0; k < NR; k++) {
           const q0 = base + i * NR + k, q1 = base + i * NR + ((k + 1) % NR), q2 = q0 + NR, q3 = q1 + NR
           idx.push(q0, q2, q1, q1, q2, q3)
         }
+      }
+      // (Capped at both ends, deep in the land: never an open shell.)
+      for (const [ring, flip] of [[0, false], [NS, true]] as const) {
+        let x = 0, y = 0, z = 0
+        for (let k = 0; k < NR; k++) { const q = (base + ring * NR + k) * 3; x += pos[q]; y += pos[q + 1]; z += pos[q + 2] }
+        const c = pos.length / 3
+        pos.push(x / NR, y / NR, z / NR)
+        for (let k = 0; k < NR; k++) { const q0 = base + ring * NR + k, q1 = base + ring * NR + ((k + 1) % NR); if (flip) idx.push(c, q1, q0); else idx.push(c, q0, q1) }
       }
       // (Its faces wound to face out: their normal is the spine × up, which is +t̂ only one way round.)
       if (ex * a.tz - ez * a.tx < 0) for (let j = i0; j < idx.length; j += 3) { const q = idx[j + 1]; idx[j + 1] = idx[j + 2]; idx[j + 2] = q }
@@ -1007,6 +1044,9 @@ export class Canyon {
     geo.computeVertexNormals()
     const m = new THREE.Mesh(geo, mat)
     m.castShadow = true; m.receiveShadow = true
+    // (Before the ground, as the walls are: over a racer's head an arch hides much of the sky and land behind it,
+    //  and drawn after them it was all paid for twice.)
+    m.renderOrder = -1
     return m
   }
 
@@ -1014,7 +1054,7 @@ export class Canyon {
    *  as part of its floor, at the floor's own level (the land round it rises over its edges). */
   private valleyStreams(): THREE.Mesh {
     const A = 9, pos: number[] = [], uv: number[] = [], fa: number[] = [], idx: number[] = []
-    const frac = this.style === 'forest' ? 0.6 : this.style === 'lava' ? 0.4 : this.style === 'desert' ? 0.45 : 0.3
+    const frac = this.style === 'forest' ? 0.6 : this.style === 'lava' ? 0.25 : this.style === 'desert' ? 0.45 : 0.3
     for (const b of this.breaches) {
       if (!b.big) continue
       const P = b.axis, n = P.length / 3, base = pos.length / 3
@@ -1026,7 +1066,9 @@ export class Canyon {
         const hw = (i === 0 ? b.wid[1] : b.wid[i]) * frac * (0.85 + 0.3 * vn(i * 0.37, b.row, 61))
         for (let k = 0; k < A; k++) {
           const t = k / (A - 1), a = (t * 2 - 1) * hw, x = P[i * 3] + (dz / l) * a, z = P[i * 3 + 1] - (dx / l) * a
-          pos.push(x, groundH(x, z) + 1.4, z); uv.push(t, P[i * 3 + 2]); fa.push((i - 1) / (n - 2))
+          // (On the land as it stands — by the floor that is the walls' mesh, a few metres over the ground.)
+          const hl = this.heightAt(x, z)
+          pos.push(x, Math.max(groundH(x, z), hl) + 1.4, z); uv.push(t, P[i * 3 + 2]); fa.push((i - 1) / (n - 2))
         }
         if (i < n - 1) for (let k = 0; k < A - 1; k++) { const q = base + (i - 1) * A + k; idx.push(q, q + 1, q + A, q + A, q + 1, q + A + 1) }
       }
@@ -1069,7 +1111,9 @@ export class Canyon {
           // (Broken crests, not solid bands across the whole river.)
           float wave = smoothstep(0.85, 1.0, sin(vUv.y * 0.09 - uTime * 4.0 + n(vec2(vUv.x * 6.0, vUv.y * 0.01)) * 3.0)) * rap * smoothstep(0.4, 0.8, n(vec2(vUv.x * 18.0, vUv.y * 0.05)));
           vec3 c = mix(vec3(0.012, 0.05, 0.06), vec3(0.36, 0.52, 0.64), 0.04 + 0.3 * fr);
-          c += vec3(0.85, 0.95, 1.0) * smoothstep(0.5 - 0.2 * rap, 0.8 - 0.2 * rap, s) * (0.55 + 0.4 * rap);
+          // (The streaks fade out with distance: a few km off they aliased into white stripes along the river.)
+          float near = 1.0 - smoothstep(1500.0, 5000.0, length(vW - cameraPosition));
+          c += vec3(0.85, 0.95, 1.0) * smoothstep(0.5 - 0.2 * rap, 0.8 - 0.2 * rap, s) * (0.55 + 0.4 * rap) * (0.25 + 0.75 * near);
           // The sun in it: a broken glint.
           vec3 R = reflect(-V, vec3(0.0, 1.0, 0.0));
           c += vec3(1.0, 0.9, 0.7) * pow(max(dot(R, normalize(vec3(-0.62, 0.36, 0.68))), 0.0), 60.0) * (0.2 + s) * 0.6;
@@ -1090,7 +1134,9 @@ export class Canyon {
           #elif KIND == 3
           // A dry wash: paler silt in braided channels, darker gravel bars between — lit as the ground is.
           float br = n(vec2(vUv.x * 7.0 + 2.0 * n(vec2(vUv.y * 0.004, 1.0)), vUv.y * 0.006));
-          c = mix(vec3(0.5, 0.36, 0.24), vec3(0.66, 0.53, 0.4), smoothstep(0.35, 0.6, br)) * (0.9 + 0.2 * n(vec2(vUv.x * 60.0, vUv.y * 0.2)));
+          // (The world's own sand, a shade paler and greyer in the channels: a pale grey wash lay on the red land
+          //  as a white ribbon.)
+          c = mix(vec3(0.6, 0.33, 0.2), vec3(0.72, 0.48, 0.32), smoothstep(0.35, 0.6, br)) * (0.9 + 0.2 * n(vec2(vUv.x * 60.0, vUv.y * 0.2)));
           c *= (SUN_COL * max(SUN_DIR.y, 0.0) + skyColor(vec3(0.0, 1.0, 0.0)) * 0.36) * 0.72;
           #endif
           // (Running water and lava half as hazed as the land: the haze is the land's, and fully in it the river
@@ -1099,7 +1145,7 @@ export class Canyon {
           // A valley's stream fades in from the gorge's edge, out at its sides, and away into the plain at its far
           // end (cut off, it ended in a hook or an arrowhead; edged, it lay on the land as a ribbon).
           float edge = KIND >= 2 ? smoothstep(0.0, 0.3, vUv.x) * smoothstep(1.0, 0.7, vUv.x) : 1.0;
-          gl_FragColor = vec4(c, edge * smoothstep(0.0, 0.06, vF) * smoothstep(0.95, 0.6, vF)); // (else opaque: the worn track's orange smear showed through)
+          gl_FragColor = vec4(c, edge * smoothstep(0.0, 0.06, vF) * smoothstep(0.95, 0.6, vF) * (KIND == 3 ? 0.75 : 1.0)); // (else opaque: the worn track's orange smear showed through)
         }`,
       // (Blended only down the valleys, which fade: the river is opaque, and drawn so it hides what is under it.)
       transparent: stream, depthWrite: !stream,

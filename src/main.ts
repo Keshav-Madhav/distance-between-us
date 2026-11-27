@@ -414,14 +414,17 @@ world.addFixed(course.rocks)
 const caveRoof = new THREE.ShaderMaterial({
   side: THREE.DoubleSide,
   extensions: { derivatives: true } as never,
-  vertexShader: 'varying vec3 vW; void main() { vec4 w = modelMatrix * vec4(position, 1.0); vW = w.xyz; gl_Position = projectionMatrix * viewMatrix * w; }',
-  fragmentShader: `varying vec3 vW;
+  // (aCrev: 1 on its edge columns, where it meets the walls' tops.)
+  vertexShader: 'attribute float aCrev; varying vec3 vW; varying float vE; void main() { vec4 w = modelMatrix * vec4(position, 1.0); vW = w.xyz; vE = aCrev; gl_Position = projectionMatrix * viewMatrix * w; }',
+  fragmentShader: `varying vec3 vW; varying float vE;
     float h(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
     float n(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f); return mix(mix(h(i), h(i + vec2(1, 0)), f.x), mix(h(i + vec2(0, 1)), h(i + 1.0), f.x), f.y); }
     void main() {
       // (Only ever seen from under it: two-sided, its edges showed through the glacier from the air as blue
       //  slivers along the rim.)
       if (cameraPosition.y > vW.y) discard;
+      // (Nor its edge from out of the cave, far off: over the walls' tops it showed as blue scallops.)
+      if (vE > 0.02 && length(cameraPosition.xz - vW.xz) > 900.0) discard;
       // Glacier ice overhead: dark, faceted (flat-shaded facets from the screen-space normal), lit from
       // within — deep blue, a few thin glowing seams. (A bright swirled roof read as a cloudy sky.)
       vec3 nrm = normalize(cross(dFdx(vW), dFdy(vW)));
@@ -459,7 +462,27 @@ function smoothTop(): THREE.Material {
   patchStandard(m, { strata: true, shadow: true, detail: true })
   return m
 }
-const hazed = (m: THREE.MeshStandardMaterial): THREE.MeshStandardMaterial => { patchStandard(m, {}); return m }
+// (In the world's haze; `grain`: mottled by place — knobs and stains at a few scales — a smooth
+//  colour over a km-wide face read as an untextured slab.)
+const hazed = (m: THREE.MeshStandardMaterial, grain = false): THREE.MeshStandardMaterial => {
+  patchStandard(m, {})
+  if (!grain) return m
+  const base = m.onBeforeCompile
+  m.onBeforeCompile = (sh, r) => {
+    base(sh, r)
+    sh.fragmentShader = sh.fragmentShader
+      .replace('void main() {', `vec3 grainK(vec3 q) {
+        float g = 0.55 * vnoise(q.xz / 140.0 + q.y / 90.0) + 0.3 * vnoise(q.xz / 37.0 - q.y / 29.0) + 0.15 * vnoise(q.zx / 9.0 + q.y / 11.0);
+        return (0.62 + 0.76 * g) * mix(vec3(1.0), vec3(1.25, 0.8, 0.6), smoothstep(0.6, 0.85, vnoise(q.xz / 400.0 + 5.0)) * 0.5);
+      }
+      void main() {`)
+      .replace('#include <color_fragment>', '#include <color_fragment>\n      vec3 gk = grainK(vFogW);\n      diffuseColor.rgb *= gk;')
+      .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n      totalEmissiveRadiance *= gk;')
+  }
+  const key = m.customProgramCacheKey.bind(m)
+  m.customProgramCacheKey = () => key() + '|grain'
+  return m
+}
 let canyonMesh: THREE.Group | null = null
 // (BLUE HOLLOW's walls past their foot drawn as the ground itself, like the glacier they run into: in materials
 //  of their own they met it along a seam, and read from the air as dark slabs laid round it. MAGMA's in the same
@@ -470,7 +493,7 @@ const buildCanyonMesh = (cv: Canyon): THREE.Group => {
   // (The arches drawn as the land itself — each world's own rock on their faces, its cover on their tops.)
   const archMat = world.groundLook()
   if (cv.style === 'desert') return cv.build(wallMat!, { topMat: smoothTop(), archMat })
-  if (cv.style === 'lava') return cv.build(wallMat!, { archMat, topMat: hazed(new THREE.MeshStandardMaterial({ color: 0x8a6650, emissive: 0x5a3c2a, roughness: 0.95 })), cliffMat: gorgeWall(0x6a4c3c, [4.5, 1.4, 0.25], 0x6a4430) })
+  if (cv.style === 'lava') return cv.build(wallMat!, { archMat, topMat: hazed(new THREE.MeshStandardMaterial({ color: 0x8a6650, emissive: 0x5a3c2a, roughness: 0.95 }), true), cliffMat: gorgeWall(0x6a4c3c, [4.5, 1.4, 0.25], 0x6a4430) })
   if (cv.style !== 'ice') return cv.build(wallMat!, { archMat })
   return cv.build(wallMat!, { roofMat: caveRoof, topMat: archMat, roofTopMat: archMat, cliffMat: archMat, archMat })
 }
