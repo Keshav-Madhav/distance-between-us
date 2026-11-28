@@ -9,7 +9,7 @@ import { startLand } from './landjob'
 import { FullScreenQuad } from 'three/addons/postprocessing/Pass.js'
 import { CFG, MACH, REBASE } from './config'
 import { World, prebuildLand } from './world'
-import { primeModels, Craft, FINISHES, FLAMES, LIVERIES, MODELS, type Paint } from './craft'
+import { primeModels, Craft, CRAFT_LOD, FINISHES, FLAMES, LIVERIES, MODELS, type Paint } from './craft'
 import { Fx, resetE } from './particles'
 import { Trail } from './trails'
 import { Player } from './player'
@@ -2560,7 +2560,9 @@ type Tier = 'low' | 'medium' | 'balanced' | 'high' | 'ultra'
 // lod: the LodPairs' score scale (lighter shapes nearer); up: their refined close-up form; scatter: the
 // ground clutter's reach (its instances go as the square); near: the scatter's refined near ring.
 const TIERS: Record<Tier, { pr: number; samples: number; bloom: boolean; density: number; lod?: number; up?: boolean; scatter?: number; near?: boolean; cut?: number; speedRes?: number }> = {
-  low: { pr: 0.75, samples: 0, bloom: false, density: 0.5, lod: 0.55, up: false, scatter: 0.6, near: false, cut: 0.16 },
+  // (LOW's scatter reach 0.6 → 0.42: the shrubs and tumbleweeds are 150–450 triangles each and every one in reach
+  //  runs the vertex shader even where the density hides it — 647k of RED MESA's 1.3M triangles a frame at 0.6.)
+  low: { pr: 0.75, samples: 0, bloom: false, density: 0.5, lod: 0.55, up: false, scatter: 0.42, near: false, cut: 0.16 },
   medium: { pr: 1, samples: 2, bloom: true, density: 0.75, lod: 0.8, up: false, scatter: 0.8, near: false, cut: 0.08 },
   // (Full Retina now: at speed the scene drops to ~0.6 of it by itself — see dynScale — so the cost
   // lands only where the detail can actually be seen.)
@@ -2933,6 +2935,9 @@ function applyDetail(): void {
   LOD.cut = (t.cut ?? 0) + (d >= 3 ? 0.1 : d >= 2 ? 0.05 : 0)
   scatter.rangeK = (t.scatter ?? 1) * (d >= 3 ? 0.6 : d >= 2 ? 0.8 : 1)
   scatter.nearOn = (t.near ?? true) && d < 1
+  world.setTerrainLow(tier === 'low' || d >= 3)
+  // (Each detailed ship is ~12 draws: at a race start the whole field is near — 120 draws on LOW.)
+  CRAFT_LOD.far = tier === 'low' || d >= 3 ? 180 : d >= 2 ? 350 : 600
 }
 function applyTier(): void {
   const t = TIERS[tier]
@@ -2955,8 +2960,10 @@ addEventListener('resize', resize)
 addEventListener('resize', () => { if (mode === 'title') drawTrackPreview(COURSES[pickedCourse]) })
 applyTier()
 
-// (Declared up here: applyGraphics() resets it during boot, before the frame-pacing code below.)
-let autoCap = 0
+// Refreshes per frame AUTO has settled on (1 = every refresh; see frame pacing below), remembered: a slower
+// machine should not re-learn it every race. (Declared up here: boot code runs before the pacing code.)
+let paceN = (() => { try { return Math.min(4, Math.max(1, Math.round(+(localStorage.getItem('dbu-pace') ?? 1)) || 1)) } catch { return 1 } })()
+function savePace(): void { try { localStorage.setItem('dbu-pace', String(paceN)) } catch { /* blocked */ } }
 let govAcc = 0, govN = 0, govBad = 0, govGood = 0, govLast = 0, govClean = 0
 let pendingScale = -1, pendingTier: Tier | null = null, partCut = 1, detailT = 0
 function saveAuto(): void { try { localStorage.setItem('dbu-auto', JSON.stringify({ tier, renderScale, detail: detailCut })) } catch { /* blocked */ } }
@@ -3041,7 +3048,6 @@ const applyGraphics = () => {
   settings.cloud = $<HTMLInputElement>('#g-cloud').checked
   settings.map = $<HTMLInputElement>('#g-map').checked
   settings.fps = $<HTMLSelectElement>('#g-fps').value as typeof settings.fps
-  autoCap = 0
   world.setDrawDistance(settings.dist * 1000)
   fx.smoke.density = Math.min(TIERS[tier].density, settings.part)
   fx.glow.density = settings.part
@@ -3736,43 +3742,48 @@ function drawRacer(p: Player, alpha: number, dt: number, isMe: boolean): void {
 }
 
 // ── frame pacing ──
-// On a 120 Hz screen a frame that takes 9–12 ms is shown alternately for 8 ms and 16 ms: judder, at a
-// "high" frame rate. AUTO watches for that and locks to an even 60 (retrying 120 later); 60 / 120 / MAX
-// are fixed. (rAF still fires every refresh; skipped refreshes simply don't render.)
+// On a high-refresh screen a frame that misses the refresh is shown alternately for one refresh and two:
+// judder, at a "high" frame rate. AUTO watches for that and steps down to an EVEN rate — a whole number of
+// refreshes per frame (144 Hz: 72, then 48; 120 Hz: 60, then 40; 165 Hz: 82, then 55) — and never back up
+// mid-race. (It used to cap at 16.7 ms: on a 144 Hz laptop that rendered every THIRD refresh, 48 fps, and it
+// retried the full rate every 8–60 s, a burst of missed frames each time — "unstable 60, lag and hitches".)
+// 60 / 120 / MAX are fixed (60 = the even rate nearest 60). rAF still fires every refresh; skipped ones don't render.
 // Refresh interval: the median of the last 30 rAF gaps, in a fixed ring (no per-frame arrays).
 const rafGaps = new Float64Array(30), rafSorted = new Float64Array(30)
 let rafN = 0, rafHead = 0, refreshMs = 16.7
 let lastRaf = performance.now()
-let autoMisses = 0, autoFrames = 0, autoSince = 0
+let autoMisses = 0, autoFrames = 0
+/** This race's frames and misses: a race held cleanly lets the next try one step faster (once a session). */
+let paceRaceFrames = 0, paceRaceMiss = 0, paceTriedUp = false
 function frameCap(): number {
   const refresh = refreshMs
   if (refresh > 12) return 0 // a 60 Hz screen: every refresh
-  if (settings.fps === '60') return 1000 / 60
+  if (settings.fps === '60') return refresh * Math.max(1, Math.round(16.67 / refresh))
   if (settings.fps === '120' || settings.fps === 'max') return 0
-  return autoCap
+  return paceN > 1 ? refresh * paceN : 0
 }
 /** No pacing decisions until this time: a boot, a race start, a mode change — their first frames are heavy
  *  (first draws, the start burst) and said nothing about the frame rate the race will hold. (On a 120 Hz
  *  screen they tripped AUTO into a 60 cap in the first second, and it stayed there all race.) */
-let paceGraceUntil = 0, paceMode = '', paceState = '', capTries = 0
+let paceGraceUntil = 0, paceState = ''
 function paceAuto(delta: number, now: number): void {
-  // A new moment: hold the judgement for 3 s.
+  // A new moment (a race starts or ends, a mode): hold the judgement for 3 s. Capped, it cannot see whether
+  // a faster rate would hold, so it never tries mid-race (each try was a burst of missed frames); a race
+  // held cleanly lets the next one start a step faster, once a session — if that misses, it steps back.
   const st = mode + '|' + race.state
-  if (st !== paceState) { paceState = st; paceGraceUntil = now + 3000; autoFrames = 0; autoMisses = 0; govAcc = 0; govN = 0; void paceMode }
+  if (st !== paceState) {
+    if (paceN > 1 && !paceTriedUp && paceRaceFrames > 1800 && paceRaceMiss < paceRaceFrames * 0.004) { paceN--; paceTriedUp = true; savePace() }
+    paceState = st; paceGraceUntil = now + 3000; autoFrames = 0; autoMisses = 0; paceRaceFrames = 0; paceRaceMiss = 0; govAcc = 0; govN = 0
+  }
   if (now < paceGraceUntil || delta > 250) return
   if (settings.fps !== 'auto') return
   const refresh = refreshMs
   if (refresh > 12) return
-  autoFrames++
-  if (delta > (autoCap || refresh) * 1.45) autoMisses++
+  autoFrames++; paceRaceFrames++
+  if (delta > refresh * paceN * 1.45) { autoMisses++; paceRaceMiss++ }
   if (autoFrames >= 120) {
-    // (The 60 cap is the last resort: first the resolution trims itself to hold the refresh — governor.)
-    if (!autoCap && autoMisses > 10 && (dynPerf <= 0.62 || tierName !== 'auto')) { autoCap = 1000 / 60; autoSince = now; capTries++ }
-    // Capped, it cannot see whether the full rate would hold now: it tries again after 8 s, then backing off
-    // (16, 32, … 60 s) each time the try fails. (It waited for 30 s of perfect frames at 60, which said
-    // nothing about 120, and stayed capped all race.)
-    else if (autoCap && autoMisses <= 2 && now - autoSince > Math.min(60000, 8000 * 2 ** Math.max(0, capTries - 1))) { autoCap = 0; autoSince = now }
-    else if (!autoCap && autoMisses <= 2 && now - autoSince > 20000) capTries = 0
+    // (A step down is the last resort: first the resolution trims itself to hold the rate — governor. Never below ~38 fps.)
+    if (autoMisses > 10 && refresh * (paceN + 1) <= 26 && (dynPerf <= 0.62 || tierName !== 'auto')) { paceN++; savePace() }
     autoFrames = 0; autoMisses = 0
   }
 }
@@ -3812,7 +3823,7 @@ function frame(now: number): void {
   rafHead = (rafHead + 1) % 30; if (rafN < 30) rafN++
   if ((rafHead & 7) === 0) { const v = rafSorted.subarray(0, rafN); v.set(rafGaps.subarray(0, rafN)); v.sort(); refreshMs = v[rafN >> 1] }
   const cap = frameCap()
-  if (cap > 0 && now - last < cap - 2) return
+  if (cap > 0 && now - last < cap - refreshMs * 0.5) return
   paceAuto(now - last, now)
   const realDt = Math.min(0.1, (now - last) / 1000)
   lastMs = now - last
@@ -4542,7 +4553,7 @@ function updateHud(dt: number, slow: boolean): void {
   }
   if (debugEl.style.display === 'block' && slow) {
     const i = renderer.info
-    debugEl.textContent = `${fps.toFixed(0)} fps  ${lastMs.toFixed(1)} ms\n${BROWSER_INFO}\ncalls ${i.render.calls}  tris ${(i.render.triangles / 1000).toFixed(0)}k\ntier ${tier} (${tierName})  scale ${renderScale.toFixed(2)}  dyn ${dynScale.toFixed(2)}  pr ${pixelRatio().toFixed(2)}\ncap ${frameCap() ? '60' : 'max'}  mach ${m.toFixed(2)}  agl ${player.agl.toFixed(1)}  air ${player.airborne}\nslip ${(player.slip * 57.3).toFixed(0)}°  yaw ${player.yawRate.toFixed(2)}  drift ${player.drift.toFixed(2)}  spin ${player.spin.toFixed(1)}\nparticles ${fx.glow.count}+${fx.smoke.count}`
+    debugEl.textContent = `${fps.toFixed(0)} fps  ${lastMs.toFixed(1)} ms\n${BROWSER_INFO}\ncalls ${i.render.calls}  tris ${(i.render.triangles / 1000).toFixed(0)}k\ntier ${tier} (${tierName})  scale ${renderScale.toFixed(2)}  dyn ${dynScale.toFixed(2)}  pr ${pixelRatio().toFixed(2)}\ncap ${frameCap() ? Math.round(1000 / frameCap()) : 'max'}  mach ${m.toFixed(2)}  agl ${player.agl.toFixed(1)}  air ${player.airborne}\nslip ${(player.slip * 57.3).toFixed(0)}°  yaw ${player.yawRate.toFixed(2)}  drift ${player.drift.toFixed(2)}  spin ${player.spin.toFixed(1)}\nparticles ${fx.glow.count}+${fx.smoke.count}`
   }
 }
 
@@ -5017,7 +5028,8 @@ const g = {
   hold: (v: boolean) => { paused = v },
   draw: () => { post.render(0) },
   /** Tests: a whole frame's drawing as the loop does it — the sun's shadow maps, then the scene and passes. */
-  drawFrame: () => { sunShadow.update(renderer, scene, camera.position, new THREE.Vector3(-camera.matrixWorld.elements[8], 0, -camera.matrixWorld.elements[10])); post.render(0) },
+  // (The minimap too, as a real frame draws it: without it a re-drawn frame showed the map's panel see-through.)
+  drawFrame: () => { sunShadow.update(renderer, scene, camera.position, new THREE.Vector3(-camera.matrixWorld.elements[8], 0, -camera.matrixWorld.elements[10])); post.render(0); renderMap() },
   sunShadow, LOD,
   /** Tests (tools/rollout.mjs): a savestate of the simulation — the craft, the race and every racer, the RNG,
    *  the run clock — taken and put back, so alternatives can be tried from the same moment. */

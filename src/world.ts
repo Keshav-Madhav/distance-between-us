@@ -1504,6 +1504,10 @@ export class World {
   readonly sunLight: THREE.DirectionalLight
   /** The far ring for the gorge's land (on only with it). */
   private farLand: THREE.Mesh | null = null
+  /** The middle ring (60 m cells out to 12 km, 315k triangles in one draw) and its LOW stand-in: 120 m cells, a
+   *  quarter of the triangles. Out there a 120 m cell still follows every dune and mesa shoulder you can see. */
+  private ringMid: THREE.Mesh | null = null
+  private ringMidLow: THREE.Mesh | null = null
   /** A material that draws a mesh of its own as this world's ground (its look; the mesh's own heights). */
   groundLook(): THREE.ShaderMaterial { return terrainMaterial(this.ground, { value: new THREE.Vector2() }, 0, 3) }
   /** The ground's look for the gorge's arches: rock all over, the world's cap on top. */
@@ -1534,6 +1538,18 @@ export class World {
       const mesh = new THREE.Mesh(ringGeometry(step, cells, hole), terrainMaterial(this.ground, snap, drop, step === 400 ? 1 : 0))
       mesh.frustumCulled = false
       this.rings.push({ mesh, snap, step: step * 2 })
+      this.group.add(mesh)
+      if (step === 60) this.ringMid = mesh
+    }
+    {
+      // (Its own snap: snapped to its own 240 m, and sunk 3 m, not 1.2: its coarser cells must stay under the
+      //  near ring where the two overlap, 1.5–1.6 km out.)
+      const snap = { value: new THREE.Vector2() }
+      const mesh = new THREE.Mesh(ringGeometry(120, 200, 1500), terrainMaterial(this.ground, snap, 3, 0))
+      mesh.frustumCulled = false
+      mesh.visible = false
+      this.ringMidLow = mesh
+      this.rings.push({ mesh, snap, step: 240 })
       this.group.add(mesh)
     }
 
@@ -1914,6 +1930,11 @@ export class World {
   }
 
   /** `vel`: the camera's velocity (motion-aware LOD, src/lod.ts). */
+  /** LOW: the middle terrain ring at a quarter of its triangles. */
+  setTerrainLow(low: boolean): void {
+    if (this.ringMid) this.ringMid.visible = !low
+    if (this.ringMidLow) this.ringMidLow.visible = low
+  }
   update(cam: THREE.Vector3, time: number, view?: THREE.PerspectiveCamera, vel?: THREE.Vector3): void {
     this.sky.position.copy(cam)
     this.hills.position.set(cam.x, 0, cam.z)

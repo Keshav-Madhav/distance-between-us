@@ -10,7 +10,9 @@ import { calm } from './loadguard.mjs'
 const ports = (process.argv[2] ?? '4498').split(','), rounds = +(process.argv[3] ?? 3)
 const Q = process.env.Q ?? 'high', DPR = +(process.env.DPR ?? 2), W = +(process.env.W ?? 1280), H = +(process.env.H ?? 720), CPU = +(process.env.CPU ?? 1)
 const COURSES = (process.env.C ?? 'sprint,frostline,caldera,greenway,mistriver').split(','), T = +(process.env.T ?? 8)
-const b = await chromium.launch({ channel: 'chrome', headless: true, args: ['--mute-audio', '--use-gl=angle', '--disable-gpu-vsync', '--disable-frame-rate-limit', '--ignore-gpu-blocklist'] })
+// SW=1: SwiftShader (Chrome's software GPU), a stand-in for a weak GPU: its cost follows the real vertex + pixel work.
+const SW = !!process.env.SW
+const b = await chromium.launch({ channel: 'chrome', headless: true, args: ['--mute-audio', '--use-gl=angle', ...(SW ? ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'] : []), '--disable-gpu-vsync', '--disable-frame-rate-limit', '--ignore-gpu-blocklist'] })
 async function one(port, c) {
   await calm()
   const ctx = await b.newContext({ viewport: { width: W, height: H }, deviceScaleFactor: DPR })

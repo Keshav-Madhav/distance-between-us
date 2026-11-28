@@ -17,6 +17,8 @@ export const MODELS = ['VANGUARD', 'BULWARK', 'LANCE', 'ARROW', 'BRUTE', 'NEEDLE
 const LOD_DIST = 260
 /** Past this the whole ship is two draws (lit, glowing), its colours baked in: ~9 px tall here. */
 const FAR_DIST = 600
+/** Beyond this the merged far ship is drawn (one lit + one glowing draw, not ~12). LOW brings it in (applyDetail). */
+export const CRAFT_LOD = { far: FAR_DIST }
 const GLOW_KEYS = new Set(['glow', 'hot', 'neon'])
 const FAR_CACHE = new Map<number, { geo: THREE.BufferGeometry; spans: [string, number, number][]; glowing: boolean }[]>()
 const NOZZLE_Z = -4.45
@@ -435,7 +437,7 @@ export class Craft {
   /** Detail by distance from the camera. */
   lod(cam: THREE.Vector3): void {
     const d2 = this.root.position.distanceToSquared(cam)
-    const far = d2 > FAR_DIST * FAR_DIST
+    const far = d2 > CRAFT_LOD.far * CRAFT_LOD.far
     // (Each part its own draw — ~12 a ship, 120 of a frame's ~230 — even kilometres out, a pixel tall.)
     this.hi.visible = !far
     for (const n of this.numbers) n.visible = d2 < LOD_DIST * LOD_DIST
